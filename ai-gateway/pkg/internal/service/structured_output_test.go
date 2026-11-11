@@ -65,7 +65,7 @@ func TestStructuredOutput_CompatibleStructuredOutputs(t *testing.T) {
 			for _, fallback := range []bool{false, true} {
 				for _, name := range structuredOutputNames {
 					t.Run(fmt.Sprintf("stream=%t/fallback=%t/name=%s", streaming, fallback, name.fragment), func(t *testing.T) {
-						response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody(name.fragment, nativeStructuredOutputOptions), streaming, fallback, withStructuredOutputs(true, true))
+						response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody(name.fragment, nativeStructuredOutputOptions), streaming, fallback, nil, withStructuredOutputs(true, true))
 						require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 						require.Len(t, requests, structuredOutputRequestCount(fallback))
 						for _, request := range requests {
@@ -85,7 +85,7 @@ func TestStructuredOutput_CompatibleStructuredOutputs(t *testing.T) {
 	t.Run("per-call strict override", func(t *testing.T) {
 		for _, streaming := range []bool{false, true} {
 			t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
-				response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody("", `{"myVllm":{"strictJsonSchema":false}}`), streaming, false, withStructuredOutputs(true, true))
+				response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody("", `{"myVllm":{"strictJsonSchema":false}}`), streaming, false, nil, withStructuredOutputs(true, true))
 				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 				require.Len(t, requests, 1)
 				assert.Equal(t, false, compatibleJSONSchemaFormat(t, requests[0])["strict"])
@@ -105,7 +105,7 @@ func TestStructuredOutput_CompatibleStructuredOutputs(t *testing.T) {
 				{name: "fallback enabled", primary: false, fallback: true},
 			} {
 				t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
-					response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody("", nativeStructuredOutputOptions), streaming, true, withStructuredOutputs(tc.primary, tc.fallback))
+					response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody("", nativeStructuredOutputOptions), streaming, true, nil, withStructuredOutputs(tc.primary, tc.fallback))
 					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 					require.Len(t, requests, 2)
 					assertCompatibleResponseFormat(t, tc.primary, requests[0])

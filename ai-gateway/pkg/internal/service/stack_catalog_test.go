@@ -336,3 +336,25 @@ func TestStackCatalogLister(t *testing.T) {
 		assert.NotErrorIs(t, err, execution.ErrCatalogConfiguration)
 	})
 }
+
+func TestSelectStackCatalog_RefusesOperatorPolicedAnthropicOptions(t *testing.T) {
+	for name, raw := range map[string]string{
+		"container skills":             `{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]}}`,
+		"server-side fallback chain":   `{"fallbacks":[{"model":"claude-backup"}]}`,
+		"default server-side fallback": `{"fallbacks":"default"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var sent int
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				sent++
+				return nil, fmt.Errorf("request not sent")
+			})}
+			selected, err := SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{Client: client})
+			require.NoError(t, err)
+			options := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
+			_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16), ProviderOptions: options})
+			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+			assert.Zero(t, sent)
+		})
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/providers/anthropic"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
@@ -70,7 +71,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if !ok {
 				return nil, fmt.Errorf("gateway service: model %q references unresolved provider", id)
 			}
-			candidate, identity, err := newCandidate(providerConfig, descriptor, client, construct)
+			if descriptor.ServerFallbacks != nil && providerConfig.Type != "anthropic" {
+				return nil, fmt.Errorf("gateway service: model %q sets server fallbacks on a provider that is not anthropic", id)
+			}
+			candidate, identity, err := newCandidate(providerConfig, descriptor, anthropicPolicy(descriptor), client, construct)
 			if errors.Is(err, errNilCandidate) {
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
@@ -113,8 +117,9 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 var errNilCandidate = errors.New("gateway service: constructing a candidate returned nil")
 
 // newCandidate constructs the physical model of one configured candidate and
-// returns it with its configured identity.
-func newCandidate(providerConfig config.ResolvedProvider, descriptor config.Primary, client *http.Client, construct modelConstructor) (provider.LanguageModel, catalog.ConfiguredCandidate, error) {
+// returns it with its configured identity. An anthropic candidate validates
+// its call options under policy.
+func newCandidate(providerConfig config.ResolvedProvider, descriptor config.Primary, policy nativeoptions.AnthropicPolicy, client *http.Client, construct modelConstructor) (provider.LanguageModel, catalog.ConfiguredCandidate, error) {
 	if providerConfig.APIKey == "" {
 		return nil, catalog.ConfiguredCandidate{}, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 	}
@@ -124,7 +129,7 @@ func newCandidate(providerConfig config.ResolvedProvider, descriptor config.Prim
 	switch providerConfig.Type {
 	case "anthropic":
 		candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-		validateOptions = nativeoptions.Anthropic
+		validateOptions = nativeoptions.Anthropic(policy)
 		target.Type = execution.TargetAnthropic
 	case "openai-compatible":
 		if providerConfig.BaseURL == "" {
@@ -188,4 +193,22 @@ func ConfiguredIdentity(canonicalID string, lower provider.LanguageModel) (provi
 		ProviderID: "grafana",
 		ModelID:    canonicalID,
 	}), nil
+}
+
+// anthropicPolicy converts a configured candidate's skills and server-side
+// fallback policies. Configured candidates never admit container IDs, and an
+// absent policy refuses every skill or every active server-side fallback.
+func anthropicPolicy(descriptor config.Primary) nativeoptions.AnthropicPolicy {
+	var policy nativeoptions.AnthropicPolicy
+	if fallbacks := descriptor.ServerFallbacks; fallbacks != nil {
+		policy.Fallbacks = nativeoptions.NewAnthropicFallbackPolicy(fallbacks.Models, fallbacks.AllowDefault)
+	}
+	if skills := descriptor.Skills; skills != nil {
+		grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
+		for _, entry := range skills.Allow {
+			grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+		}
+		policy.Skills = nativeoptions.AllowlistedAnthropicSkills(grants)
+	}
+	return policy
 }

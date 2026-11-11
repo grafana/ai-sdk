@@ -33,7 +33,7 @@ const (
 )
 
 type nativeRequest struct {
-	host, key, marker, body string
+	host, key, marker, beta, body string
 }
 
 // nativeServer answers Anthropic and OpenAI requests by host, and fails the
@@ -55,7 +55,7 @@ func (s *nativeServer) client() *http.Client {
 			key = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
 		s.mu.Lock()
-		s.seen = append(s.seen, nativeRequest{host: r.URL.Host, key: key, marker: r.Header.Get("X-Translated-For"), body: string(body)})
+		s.seen = append(s.seen, nativeRequest{host: r.URL.Host, key: key, marker: r.Header.Get("X-Translated-For"), beta: r.Header.Get("Anthropic-Beta"), body: string(body)})
 		s.mu.Unlock()
 		status, response := http.StatusOK, translationOpenAIBody
 		switch {
@@ -88,7 +88,7 @@ func markTranslation(target execution.Target, options provider.CallOptions) (pro
 	options.Headers["X-Translated-For"] = string(target.Type) + "/" + target.ModelID
 	switch target.Type {
 	case execution.TargetAnthropic:
-		options.ProviderOptions["anthropic"] = provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"id":"translated-anthropic"}}`)}
+		options.ProviderOptions["anthropic"] = provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"name":"translated-anthropic","url":"https://mcp.example.test"}]}`)}
 	case execution.TargetOpenAI:
 		options.ProviderOptions["openai"] = provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(`{"user":"translated-openai"}`)}
 	}
@@ -178,6 +178,35 @@ func TestTranslation_HeterogeneousConfiguredChain(t *testing.T) {
 	assert.NotContains(t, requests[1].body, "translated-anthropic")
 }
 
+func TestTranslation_HeterogeneousConfiguredChainRefusesContainerID(t *testing.T) {
+	containerID := json.RawMessage(`{"container":{"id":"container_01"}}`)
+	for _, tc := range []struct {
+		name       string
+		options    provider.CallOptions
+		translator execution.Translator
+	}{
+		{name: "caller container ID", options: providerOptionsCall("anthropic", string(containerID)), translator: func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+			return options, nil
+		}},
+		{name: "translated container ID", translator: func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+			if target.Type == execution.TargetAnthropic {
+				options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: containerID}}
+			}
+			return options, nil
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := &nativeServer{}
+			selector := NewSelector(translationCatalog(t, server.client()), nil, nil)
+			require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/chain", options: tc.options, translator: tc.translator}))
+			requests := server.requests()
+			require.Len(t, requests, 1)
+			assert.Equal(t, translationOpenAIHost, requests[0].host)
+			assert.NotContains(t, requests[0].body, "container_01")
+		})
+	}
+}
+
 func TestTranslation_BYOKAccountsAreTranslatedPerAttempt(t *testing.T) {
 	server := &nativeServer{failing: map[string]bool{"dummy-first": true}}
 	selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
@@ -259,7 +288,36 @@ func TestTranslation_AnthropicNativeValidation(t *testing.T) {
 			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
 			assert.Equal(t, execution.CategoryInvalidRequest, execution.ClassifyProvider(err))
 			assert.Len(t, server.requests(), 1)
+
+			withContainerID := route.call
+			withContainerID.translator = translatedAnthropic(`{"container":{"id":"translated-container"}}`)
+			err = runTranslation(t, selector, withContainerID)
+			if route.name == "configured" {
+				require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+				assert.Len(t, server.requests(), 1)
+			} else {
+				require.NoError(t, err)
+				requests := server.requests()
+				require.Len(t, requests, 2)
+				assert.Contains(t, requests[1].body, "translated-container")
+			}
 		})
+	}
+
+	t.Run("BYOK admits a translated custom skill", func(t *testing.T) {
+		server := &nativeServer{}
+		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+		require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.RequestBYOK, modelID: "anthropic/claude", options: byokControls("anthropic", "dummy-first"), translator: translatedAnthropic(`{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":"skill_01translated"}}]}}`)}))
+		requests := server.requests()
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0].body, "skill_01translated")
+	})
+}
+
+func translatedAnthropic(raw string) execution.Translator {
+	return func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+		options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
+		return options, nil
 	}
 }
 
@@ -307,6 +365,32 @@ func TestTranslation_BYOKAnthropicValidation(t *testing.T) {
 			assert.Empty(t, server.requests())
 		})
 	}
+}
+
+func TestTranslation_BYOKRefusalThenOutageIsTheRealFailure(t *testing.T) {
+	server := &nativeServer{failing: map[string]bool{"dummy-second": true}}
+	var outcomes []fallback.AttemptOutcome
+	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) {
+		chain, ok := byokChain(model).(*fallback.Model)
+		require.True(t, ok)
+		chain.WithAttemptObserver(func(_ context.Context, attempt fallback.Attempt) { outcomes = append(outcomes, attempt.Outcome) })
+		return model, nil
+	}
+	attempts := 0
+	translator := func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+		attempts++
+		if attempts == 1 {
+			options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`)}}
+		}
+		return options, nil
+	}
+	err := runTranslation(t, byokSelector(server.client(), factory), translationCall{access: gatewayauth.RequestBYOK, modelID: "anthropic/claude", options: byokControls("anthropic", "dummy-first", "dummy-second"), translator: translator})
+	require.Error(t, err)
+	assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
+	assert.Equal(t, []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptFailed}, outcomes)
+	requests := server.requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "dummy-second", requests[0].key)
 }
 
 func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
@@ -408,4 +492,26 @@ func TestTranslation_ConcurrentCallsAreIsolated(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, wantMarkers, markers)
+}
+
+func TestTranslation_BYOKForwardsServerSideFallback(t *testing.T) {
+	for _, tc := range []struct{ name, options, field, beta string }{
+		{"chain", `{"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]}`, `"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]`, explicitFallbackBeta},
+		{"default", `{"fallbacks":"default"}`, `"fallbacks":"default"`, defaultFallbackBeta},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := &nativeServer{}
+			addFallbacks := func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+				options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(tc.options)}}
+				return options, nil
+			}
+			selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+			require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.RequestBYOK, modelID: "anthropic/claude", options: byokControls("anthropic", "dummy-first"), translator: addFallbacks}))
+			requests := server.requests()
+			require.Len(t, requests, 1)
+			assert.Equal(t, "dummy-first", requests[0].key)
+			assert.Contains(t, requests[0].body, tc.field)
+			assert.Contains(t, requests[0].beta, tc.beta)
+		})
+	}
 }
