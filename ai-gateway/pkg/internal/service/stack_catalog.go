@@ -49,8 +49,12 @@ func StackCatalogFromContext(ctx context.Context) (StackCatalog, bool) {
 
 // StackCatalogOptions configures stack-catalog selection.
 type StackCatalogOptions struct {
-	// Client is the shared model HTTP client.
+	// Client is the shared model HTTP client, for providers on their native
+	// endpoint.
 	Client *http.Client
+	// EgressClient is the egress client, for providers with a custom
+	// endpoint.
+	EgressClient *http.Client
 	// Egress is the policy custom endpoints are checked against.
 	Egress outbound.EgressPolicy
 }
@@ -64,15 +68,48 @@ type candidateBuilder func(providerConfig config.ResolvedProvider, descriptor co
 // reason, resolves the requested model and models entries within the catalog,
 // and composes the routed chain. Only the chain's candidates are constructed,
 // with the catalog's keys, and no physical attempt records are written. The
-// selection carries the catalog's name and keys.
+// selection carries the catalog's name and keys. A candidate with a custom
+// endpoint connects through the egress client and reports a refusal as the
+// bare [execution.ErrEgressRefused].
 func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, options StackCatalogOptions) (execution.Selection, error) {
-	if options.Client == nil {
-		return execution.Selection{}, fmt.Errorf("gateway service: model HTTP client is required")
+	if options.Client == nil || options.EgressClient == nil {
+		return execution.Selection{}, fmt.Errorf("gateway service: model and egress HTTP clients are required")
 	}
 	return selectStackCatalog(stack, modelID, gateway, options.Egress, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
-		candidate, _, err := newCandidate(providerConfig, descriptor, options.Client, nativemodel.NewAnthropic)
-		return candidate, err
+		if providerConfig.BaseURL == "" {
+			candidate, _, err := newCandidate(providerConfig, descriptor, options.Client, nativemodel.NewAnthropic)
+			return candidate, err
+		}
+		candidate, _, err := newCandidate(providerConfig, descriptor, options.EgressClient, nativemodel.NewAnthropic)
+		if err != nil {
+			return nil, err
+		}
+		return egressCandidate{LanguageModel: candidate}, nil
 	})
+}
+
+// egressCandidate reports an egress refusal of its model as the bare
+// [execution.ErrEgressRefused], without the request URL that HTTP client and
+// provider errors wrap around it.
+type egressCandidate struct {
+	provider.LanguageModel
+}
+
+func (candidate egressCandidate) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+	result, err := candidate.LanguageModel.DoGenerate(ctx, options)
+	return result, bareRefusal(err)
+}
+
+func (candidate egressCandidate) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	result, err := candidate.LanguageModel.DoStream(ctx, options)
+	return result, bareRefusal(err)
+}
+
+func bareRefusal(err error) error {
+	if errors.Is(err, execution.ErrEgressRefused) {
+		return execution.ErrEgressRefused
+	}
+	return err
 }
 
 func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, policy outbound.EgressPolicy, build candidateBuilder) (execution.Selection, error) {
@@ -91,7 +128,8 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	}
 	lower, expected, err := composeRoute(groups, controls, func(group routedGroup, candidate int) (provider.LanguageModel, error) {
 		descriptor := group.descriptors[candidate]
-		return build(config.ResolvedProvider{Type: file.Providers[descriptor.Provider].Type, APIKey: string(stack.Keys[descriptor.Provider])}, descriptor)
+		configured := file.Providers[descriptor.Provider]
+		return build(config.ResolvedProvider{Type: configured.Type, APIKey: string(stack.Keys[descriptor.Provider]), BaseURL: configured.BaseURL, ProviderName: configured.ProviderName, SupportsStructuredOutputs: configured.SupportsStructuredOutputs}, descriptor)
 	}, nil)
 	if err != nil {
 		return execution.Selection{}, err
@@ -183,7 +221,8 @@ func (index stackIndex) resolve(name string) (routedGroup, error) {
 	descriptors := append([]config.Primary{model.Primary}, model.Fallback...)
 	candidates := make([]catalog.ConfiguredCandidate, len(descriptors))
 	for i, descriptor := range descriptors {
-		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: index.file.Providers[descriptor.Provider].Type, ModelID: descriptor.Model}
+		configured := index.file.Providers[descriptor.Provider]
+		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: providerSlug(configured.Type, configured.ProviderName), ModelID: descriptor.Model}
 	}
 	return routedGroup{name: name, canonical: id, candidates: candidates, descriptors: descriptors}, nil
 }

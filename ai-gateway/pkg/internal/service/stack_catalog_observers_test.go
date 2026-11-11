@@ -63,7 +63,7 @@ func stackAnthropicClient(failPrimary bool) *http.Client {
 
 func stackSelector(stack StackCatalog, client *http.Client) execution.RequestSelector {
 	return func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
-		return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: client})
+		return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: client, EgressClient: client})
 	}
 }
 
@@ -179,7 +179,7 @@ func TestStackCatalogSelection_WritesNoPhysicalAttemptRecords(t *testing.T) {
 	stack := stackObservedCatalog("team-catalog", "stack-model")
 	runtime, err := execution.New(execution.Config{Limits: serviceTestLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 		if id == "stack-model" {
-			return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: stackAnthropicClient(true)})
+			return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: stackAnthropicClient(true), EgressClient: http.DefaultClient})
 		}
 		return NewSelector(operator, nil, nil)(ctx, id, options, gateway)
 	}})
