@@ -11,6 +11,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 )
 
 const (
@@ -105,6 +109,14 @@ func TestRun_CompilesFromAnExternalModule(t *testing.T) {
 	require.NoError(t, err, string(output))
 }
 
-func TestDefaultExtensions_ShippedBuildRegistersNone(t *testing.T) {
-	require.Empty(t, DefaultExtensions())
+func TestDefaultExtensions_ShippedTenantExtensions(t *testing.T) {
+	definitions := DefaultExtensions()
+	names := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		names = append(names, definition.Name)
+		require.Equal(t, extension.ScopeTenant, definition.Scope)
+		require.False(t, definition.EnabledByDefault)
+	}
+	require.Equal(t, []string{"default-instructions", "default-settings"}, names)
+	require.NoError(t, extensionhost.ValidateDefinitions(definitions, nil, tenanttype.All()), "each binds to its public type")
 }
