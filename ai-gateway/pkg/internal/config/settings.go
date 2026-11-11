@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 // LookupEnv resolves one environment variable.
@@ -47,6 +48,13 @@ const (
 // ModelCatalogSetting is the setting key of the YAML model catalog document.
 const ModelCatalogSetting = "model_catalog"
 
+// Egress list setting keys: the destinations the stack-catalog egress policy
+// allows despite its built-in refusal, and those it always refuses.
+const (
+	EgressAllowSetting = "stack_catalog_egress_allow"
+	EgressDenySetting  = "stack_catalog_egress_deny"
+)
+
 // AgentObservabilityTokenSetting is the setting key of the Agent
 // Observability bearer token. The token is read only by ResolveAuthSecret,
 // after the other settings and the model configuration are validated.
@@ -67,6 +75,8 @@ type Settings struct {
 	ModelCatalog       string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
+	// Egress is the policy for custom stack-catalog provider endpoints.
+	Egress outbound.EgressPolicy
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -113,6 +123,18 @@ func (e *environment) bool(key string, fallback bool) bool {
 	return parsed
 }
 
+func (e *environment) egressList(key string) outbound.EgressList {
+	name, value, ok := e.raw(key)
+	if !ok {
+		return outbound.EgressList{}
+	}
+	list, err := outbound.ParseEgressList(value)
+	if err != nil && e.err == nil {
+		e.err = fmt.Errorf("config: %s has an invalid entry: %w", name, err)
+	}
+	return list
+}
+
 // ParseSettings reads and validates the plugin settings from the environment.
 func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
@@ -124,6 +146,7 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			Endpoint: env.string("agento11y_endpoint", ""),
 			TLS:      env.bool("agento11y_tls", true),
 		},
+		Egress: outbound.EgressPolicy{Allow: env.egressList(EgressAllowSetting), Deny: env.egressList(EgressDenySetting)},
 	}
 	if env.err != nil {
 		return Settings{}, env.err

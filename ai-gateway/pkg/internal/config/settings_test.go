@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +74,42 @@ func TestParseSettings_InvalidValuesNameTheSetting(t *testing.T) {
 			_, err := ParseSettings(mapLookup(environment))
 			require.EqualError(t, err, "config: "+tc.env+" has an invalid value")
 		})
+	}
+}
+
+func TestParseSettings_EgressLists(t *testing.T) {
+	t.Run("unset lists apply only the built-in refusal", func(t *testing.T) {
+		settings, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
+		require.NoError(t, err)
+		assert.Equal(t, outbound.EgressPolicy{}, settings.Egress)
+		require.ErrorIs(t, settings.Egress.CheckHost("10.0.0.1"), execution.ErrEgressRefused)
+	})
+	t.Run("both lists", func(t *testing.T) {
+		environment := baseSettingsEnvironment()
+		environment["GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW"] = "10.20.0.0/16, llm.corp.example"
+		environment["GF_PLUGIN_STACK_CATALOG_EGRESS_DENY"] = "*.internal.example,203.0.113.7"
+		settings, err := ParseSettings(mapLookup(environment))
+		require.NoError(t, err)
+		allow, err := outbound.ParseEgressList("10.20.0.0/16, llm.corp.example")
+		require.NoError(t, err)
+		deny, err := outbound.ParseEgressList("*.internal.example,203.0.113.7")
+		require.NoError(t, err)
+		assert.Equal(t, outbound.EgressPolicy{Allow: allow, Deny: deny}, settings.Egress)
+		require.NoError(t, settings.Egress.CheckHost("10.20.0.1"))
+		require.ErrorIs(t, settings.Egress.CheckHost("203.0.113.7"), execution.ErrEgressRefused)
+	})
+	for _, name := range []string{"GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW", "GF_PLUGIN_STACK_CATALOG_EGRESS_DENY"} {
+		for _, value := range []string{"private-entry.example,,", "10.20.0.5/16", "private-entry.example,private-entry.example", "*.", " "} {
+			t.Run(name+" "+value, func(t *testing.T) {
+				environment := baseSettingsEnvironment()
+				environment[name] = value
+				_, err := ParseSettings(mapLookup(environment))
+				require.Error(t, err)
+				assert.True(t, strings.HasPrefix(err.Error(), "config: "+name+" has an invalid entry: "), err.Error())
+				assert.NotContains(t, err.Error(), "private-entry")
+				assert.NotContains(t, err.Error(), "10.20.0.5")
+			})
+		}
 	}
 }
 
