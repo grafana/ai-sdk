@@ -3,7 +3,6 @@ package grafana
 import (
 	"context"
 	"errors"
-	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,22 +16,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// Limits bounds response processing. A nil Limits configuration selects defaults;
-// an explicit configuration must set every field to a positive safe value.
-type Limits struct {
-	DiscoveryBytes int64
-	UnaryBytes     int64
-	ErrorBytes     int64
-	StreamBytes    int64
-	// StreamEventBytes bounds a complete event after CRLF normalization, including fields and delimiters.
-	StreamEventBytes int64
-	StreamEvents     int64
-}
-
-// DefaultLimits returns a fresh copy of the client processing limits.
-func DefaultLimits() Limits {
-	return Limits{DiscoveryBytes: 4 << 20, UnaryBytes: 16 << 20, ErrorBytes: 64 << 10, StreamBytes: 64 << 20, StreamEventBytes: 1 << 20, StreamEvents: 100000}
-}
+const maxBufferedResponseBytes int64 = 2 << 30
 
 // TokenExchangeConfig configures CAP exchange for an internally provisioned service.
 // Audience is required and names the Gateway plugin, grafana-aigateway-app.
@@ -44,7 +28,6 @@ type TokenExchangeConfig struct {
 	BaseURL          string
 	HTTPClient       *http.Client
 	Headers          http.Header
-	Limits           *Limits
 }
 
 // ServiceAccountConfig configures a Grafana service account token.
@@ -53,7 +36,6 @@ type ServiceAccountConfig struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	Headers    http.Header
-	Limits     *Limits
 }
 
 // AccessTokenConfig configures a caller-managed access token.
@@ -62,7 +44,6 @@ type AccessTokenConfig struct {
 	BaseURL     string
 	HTTPClient  *http.Client
 	Headers     http.Header
-	Limits      *Limits
 }
 
 // Option configures provider construction.
@@ -76,15 +57,15 @@ func WithHTTPClient(client *http.Client) Option {
 
 // Provider creates models and discovers the Gateway's public catalog.
 type Provider struct {
-	baseURL   string
-	client    *http.Client
-	headers   http.Header
-	limits    Limits
-	exchanger authn.TokenExchanger
-	namespace string
-	audience  string
-	bearer    string
-	exchanges singleflight.Group
+	baseURL           string
+	client            *http.Client
+	headers           http.Header
+	bufferedReadLimit int64
+	exchanger         authn.TokenExchanger
+	namespace         string
+	audience          string
+	bearer            string
+	exchanges         singleflight.Group
 }
 
 // NewWithServiceAccountToken constructs a provider that sends a Grafana
@@ -93,7 +74,7 @@ func NewWithServiceAccountToken(cfg ServiceAccountConfig, opts ...Option) (*Prov
 	if !validCredential(cfg.Token) {
 		return nil, errors.New("grafana: invalid service account token")
 	}
-	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
+	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +104,7 @@ func NewWithAccessToken(cfg AccessTokenConfig, opts ...Option) (*Provider, error
 	if !validCredential(cfg.AccessToken) {
 		return nil, errors.New("grafana: invalid access token")
 	}
-	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
+	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +127,7 @@ func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, e
 	if err != nil {
 		return nil, errors.New("grafana: invalid token exchange URL")
 	}
-	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
+	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +139,7 @@ func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, e
 	return p, nil
 }
 
-func newProvider(rawURL string, client *http.Client, headers http.Header, limits *Limits, opts []Option) (*Provider, error) {
+func newProvider(rawURL string, client *http.Client, headers http.Header, opts []Option) (*Provider, error) {
 	baseURL, err := normalizeURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -180,18 +161,6 @@ func newProvider(rawURL string, client *http.Client, headers http.Header, limits
 	// redirects from forwarding Grafana credentials to another endpoint.
 	ownedClient := *client
 	ownedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	selectedLimits := DefaultLimits()
-	if limits != nil {
-		selectedLimits = *limits
-	}
-	for _, limit := range []int64{selectedLimits.DiscoveryBytes, selectedLimits.UnaryBytes, selectedLimits.ErrorBytes, selectedLimits.StreamBytes, selectedLimits.StreamEventBytes, selectedLimits.StreamEvents} {
-		if limit <= 0 || limit >= int64(math.MaxInt) {
-			return nil, errors.New("grafana: invalid client limit")
-		}
-	}
-	if selectedLimits.StreamEventBytes > selectedLimits.StreamBytes {
-		return nil, errors.New("grafana: event byte limit exceeds stream limit")
-	}
 	canonical := make(http.Header, len(headers))
 	for key, values := range headers {
 		if reservedAuthenticationHeader(key) {
@@ -211,7 +180,7 @@ func newProvider(rawURL string, client *http.Client, headers http.Header, limits
 			}
 		}
 	}
-	return &Provider{baseURL: baseURL, client: &ownedClient, headers: canonical, limits: selectedLimits}, nil
+	return &Provider{baseURL: baseURL, client: &ownedClient, headers: canonical, bufferedReadLimit: maxBufferedResponseBytes}, nil
 }
 
 func normalizeURL(raw string) (string, error) {

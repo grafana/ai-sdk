@@ -5,9 +5,7 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
-
 ## Requirements
-
 ### Requirement: Provider construction and identity
 
 The `providers/openai` Go module SHALL expose `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel` and `NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`, backed by Responses via `github.com/openai/openai-go`. Both SHALL implement provider.LanguageModel, report v4 and the supplied modelID, accept functional options, and neither panic nor call the network during construction.
@@ -132,15 +130,19 @@ Assistant calls SHALL become function_call or corresponding built-in call items 
 - **THEN** hosted items are omitted with the upstream warning unless that tool taxonomy supports stateless reconstruction
 - **AND** execution-denied synthetic results are omitted
 
+#### Scenario: Approval-correlated denial result is omitted
+- **WHEN** a tool-role `execution-denied` result carries `providerOptions.openai.approvalId`, including on an Azure model
+- **THEN** the request emits no `function_call_output` for it, because the matching `mcp_approval_response` carries the denial
+
 ### Requirement: Function result output conversion
 
-Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL retain string and output-schema JSON encoding rules. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.
+Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar error-text and error-JSON SHALL serialize as JSON objects with one error property containing the original text or JSON value, regardless of output schema. Text, JSON and execution-denied SHALL retain their existing string and output-schema encoding rules. Conversion SHALL NOT mutate caller inputs. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.
 
 #### Scenario: Scalar results retain cache precedence and schema encoding
 - **WHEN** a function output is text, JSON, error-text, error-JSON, or execution-denied and both its output and tool-result part carry distinct active-namespace cache breakpoints
 - **THEN** its `function_call_output.output` is an `input_text` array carrying the output-level breakpoint and the correctly encoded scalar text
 - **AND** without an output-level breakpoint the result-part breakpoint applies, and without either breakpoint output remains a string
-- **AND** a function tool with an output schema quotes text/error-text/denial as JSON string literals, while JSON/error-JSON remains JSON-serialized and denial without a reason uses the default reason
+- **AND** a function tool with an output schema quotes text/denial as JSON string literals, while successful JSON remains JSON-serialized and errors retain their JSON object envelope and denial without a reason uses the default reason
 
 #### Scenario: Generic multipart text and file content
 - **WHEN** a generic function result contains mixed text, image data/URL, and non-image file data/URL content elements with per-element cache options
@@ -160,7 +162,7 @@ Ordinary results SHALL use function_call_output with original call_id and existi
 
 ### Requirement: Custom tool result output conversion
 
-Configured custom results SHALL retain custom_tool_call_output and original call_id. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL stay strings unless a selected active-namespace breakpoint (output before result part) makes an input_text array. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
+Configured custom results SHALL retain custom_tool_call_output and original call_id. Error-text and error-JSON SHALL serialize as JSON objects containing the original value under error, independent of output schemas and without mutating caller inputs. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL stay strings unless a selected active-namespace breakpoint (output before result part) makes an input_text array. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
 
 #### Scenario: Custom scalar breakpoint and output identity
 - **WHEN** a custom tool result has a scalar output with output-level or result-part active-namespace cache breakpoint
@@ -175,7 +177,7 @@ Configured custom results SHALL retain custom_tool_call_output and original call
 
 ### Requirement: Parallel wrapper function result serialization
 
-Grouped parallel function results SHALL retain wrapper call_id, child index order and continuation behavior. Each child SHALL undergo ordinary result conversion: scalar strings stay strings, multipart typed arrays become JSON strings; wrapper SHALL join strings with newlines. Unsupported multipart items SHALL warn without reordering. Hosted-tool and invalid/incomplete group dispatch SHALL remain unchanged.
+Grouped parallel function results SHALL retain wrapper call_id, child index order and continuation behavior. Each child SHALL undergo ordinary result conversion, including JSON error envelopes for failed children: scalar strings stay strings, multipart typed arrays become JSON strings; wrapper SHALL join strings with newlines. Unsupported multipart items SHALL warn without reordering. Hosted-tool and invalid/incomplete group dispatch SHALL remain unchanged.
 
 #### Scenario: Ordered multipart and scalar children
 - **WHEN** a grouped parallel wrapper receives child results out of index order, including generic multipart output with an uploaded reference and a scalar child
@@ -187,17 +189,46 @@ Grouped parallel function results SHALL retain wrapper call_id, child index orde
 - **THEN** the wrapper output is an ordered array of `input_text` child strings with later children newline-prefixed and each selected breakpoint on its corresponding element
 - **AND** multipart child result/output-level cache options do not cause wrapper-level breakpoints
 
+#### Scenario: Error values survive unary and streaming continuation
+- **WHEN** function, custom or applicable parallel children return error-text or error-json, including empty text, null, scalar or structured JSON
+- **THEN** unary and streaming requests contain serialized objects with an error property preserving the value
+- **AND** successful text/JSON, execution-denied and multipart outputs retain their distinct behavior
+- **AND** active OpenAI/Azure cache hints wrap the serialized error while inactive namespace hints are ignored
+
+#### Scenario: Error envelopes preserve HTML characters
+- **WHEN** error-text or error-json contains `<`, `>` or `&`
+- **THEN** the serialized error envelope preserves those characters without HTML escaping, matching the registered upstream JSON.stringify behavior
+
+#### Scenario: Malformed Go error JSON retains the failure
+- **WHEN** a Go tool result supplies nonempty malformed JSON bytes as error-json
+- **THEN** conversion falls back to a JSON object with the original text as a string under error
+- **AND** this Go adaptation preserves the failure signal without mutating the caller's bytes; nil and empty byte slices continue to serialize as null
+
 ### Requirement: Reasoning conversion
 
-Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Missing IDs SHALL fall back to encrypted_content; store=false reasoning without encrypted content SHALL be filtered with a warning.
+Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Reasoning parts of one assistant message sharing an item ID SHALL produce at most one input item. Missing IDs SHALL fall back to encrypted_content; store=false reasoning items without encrypted content SHALL be filtered from the request with one warning.
 
 #### Scenario: Stored reasoning becomes item reference
 - **WHEN** `store` is true and a reasoning part carries an item id
 - **THEN** the request emits a single `item_reference` for that reasoning id
 
+#### Scenario: Stored reasoning parts sharing an item id
+- **WHEN** `store` is true and two reasoning parts of one assistant message carry item id `rs_1`
+- **THEN** the request emits exactly one `item_reference` for `rs_1`
+
+#### Scenario: Non-stored reasoning parts sharing an item id are merged
+- **WHEN** `store` is false and two reasoning parts of one assistant message carry item id `rs_1` with summaries and encrypted content
+- **THEN** the request emits one `reasoning` item for `rs_1` with both summaries in order and the last non-null encrypted content
+- **AND** reasoning parts with different item ids still produce separate items
+
+#### Scenario: Empty later reasoning part is skipped
+- **WHEN** `store` is false and an empty reasoning part follows another part with the same item id
+- **THEN** no summary entry is added for the empty part and an `other` warning is emitted
+
 #### Scenario: Non-stored reasoning without encrypted content is dropped
-- **WHEN** `store` is false and a reasoning part has no encrypted content
-- **THEN** the reasoning item is omitted from the request and an `unsupported` warning is emitted
+- **WHEN** `store` is false and no reasoning part for an item supplies encrypted content
+- **THEN** the reasoning item is omitted from the request
+- **AND** a single `other` warning is emitted for the request, however many reasoning items or assistant messages are omitted
 
 ### Requirement: Request parameters and structured output
 The provider SHALL map `temperature`, `topP`, and `maxOutputTokens` to the
@@ -217,19 +248,28 @@ when no schema is provided.
 
 ### Requirement: GPT-6 Responses capability and reasoning-effort validation
 
-Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, others omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
+Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, plus none for exact `gpt-6-sol`/`gpt-6-luna`; others SHALL be omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
 
 #### Scenario: Supported GPT-6 effort from provider option
 - **WHEN** a `gpt-6-astra` generate or stream request sets `reasoningEffort` to `max`
 - **THEN** the request uses reasoning effort `max` without a capability warning
 
 #### Scenario: Unsupported GPT-6 effort from provider option or core fallback
-- **WHEN** a GPT-6 or later generate or stream request resolves effort `none` or `minimal` from either the OpenAI provider option or the existing core reasoning setting
-- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming `low, medium, high, xhigh, max`
+- **WHEN** a GPT-6 or later generate or stream request resolves effort `minimal`, or resolves `none` on a model other than `gpt-6-sol` or `gpt-6-luna`, from either the OpenAI provider option or the existing core reasoning setting
+- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming the model's supported efforts: `low, medium, high, xhigh, max`, prefixed with `none` for `gpt-6-sol` and `gpt-6-luna`
 - **AND** it does not mutate the supplied options
 
+#### Scenario: Only exact Sol and Luna IDs accept effort none
+- **WHEN** a versioned, fast or otherwise suffixed Sol/Luna ID such as `gpt-6.1-sol` or `gpt-6-luna-fast`, or a Mantle-prefixed `openai.gpt-6-sol`, resolves effort `none`
+- **THEN** the direct OpenAI IDs follow the GPT-6 unsupported-effort behavior
+- **AND** the Mantle ID sends effort `none` while omitting `temperature` and `top_p` with `unsupported` warnings
+
+#### Scenario: GPT-6 Sol and Luna retain non-reasoning controls
+- **WHEN** a `gpt-6-sol` or `gpt-6-luna` request under the `openai` or `azure` namespace resolves effort `none` and sets temperature, topP and logprobs
+- **THEN** the request sends reasoning effort `none`, `temperature`, `top_p`, `top_logprobs` and the `message.output_text.logprobs` include without warnings
+
 #### Scenario: GPT-6 omits unsupported logprobs
-- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`
+- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`, unless its effective effort is `none` on a model that supports non-reasoning parameters
 - **THEN** both settings are omitted and an `unsupported` `logprobs` warning is emitted
 
 #### Scenario: GPT-6 omits legacy prompt-cache retention
@@ -243,7 +283,7 @@ Anchored gpt-6 and later SHALL support configuration updates and async calling. 
 
 ### Requirement: OpenAI reasoning configuration update and explicit compaction trigger
 
-The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/xhigh/max and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before all converted prompt items in the current request. Neither control SHALL mutate caller messages, change request effort, persist as conversation content or alter defaults.
+The provider SHALL accept reasoningEffortUpdate none/low/medium/high/xhigh/max (others invalid) and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation and with a model-supported effort SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before converted prompt items. Request-level controls SHALL NOT mutate caller messages, change request effort, persist as conversation content or alter defaults.
 
 #### Scenario: Independent update with previous response
 - **WHEN** a `gpt-6-astra` request has `reasoningEffort: low`, `reasoningEffortUpdate: high`, `previousResponseId`, and a user prompt
@@ -252,6 +292,11 @@ The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/x
 #### Scenario: Unsupported configuration update
 - **WHEN** a GPT-5.6 request specifies `reasoningEffortUpdate: high`
 - **THEN** no configuration update is sent and an `unsupported` `reasoningEffortUpdate` warning is returned
+
+#### Scenario: Update effort unsupported by the model
+- **WHEN** a `gpt-6-astra` request specifies `reasoningEffortUpdate: none`
+- **THEN** no request-level configuration update is sent and an `unsupported` `reasoningEffortUpdate` warning lists the model's supported efforts
+- **AND** the same update on `gpt-6-sol` or `gpt-6-luna` is prepended
 
 #### Scenario: Incompatible update combinations
 - **WHEN** a GPT-6 request specifies `reasoningEffortUpdate` together with `reasoningMode: pro`, a present automatic `contextManagement` value, or `truncation: auto`
@@ -265,6 +310,26 @@ The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/x
 #### Scenario: Disabled trigger retains existing request
 - **WHEN** `compactionTrigger` is absent or false
 - **THEN** the request contains no compaction-trigger item, including on pre-GPT-6 models
+
+### Requirement: Message-level reasoning effort updates
+
+A system message whose part options carry reasoningEffortUpdate SHALL emit a configuration update at its position regardless of systemMessageMode. Non-empty content, unsupported configuration or a model-unsupported effort SHALL fail before sending; invalid values SHALL fail as invalid. A request-level update matching the first item SHALL NOT be prepended. Adjacent updates after conversion SHALL fail.
+
+#### Scenario: Positioned updates are retained
+- **WHEN** a `gpt-6-astra` prompt contains empty system messages with updates `high` and `low` between user turns
+- **THEN** the input carries both configuration updates at those positions and the request effort is unchanged
+
+#### Scenario: Unsupported positioned update
+- **WHEN** a positioned update has system text, targets a model without configuration-update support, conflicts with pro mode, context management or automatic truncation, or uses `none` on `gpt-6-astra`
+- **THEN** the request fails with `provider.ErrUnsupportedFunctionality` and no HTTP request is sent
+
+#### Scenario: Adjacent updates
+- **WHEN** updates become adjacent through the prompt, request-level prepending, system-text removal or stored-reasoning filtering
+- **THEN** the request fails with `provider.ErrUnsupportedFunctionality`
+
+#### Scenario: Azure message options
+- **WHEN** an Azure request system message has `azure` update options, only `openai` options, or an explicit empty `azure` object
+- **THEN** the Azure value wins, the OpenAI value is the fallback, and the explicit empty object leaves an ordinary empty system message
 
 ### Requirement: Capability-gated async tools and round-trip metadata
 
@@ -318,11 +383,20 @@ Before HTTP, the provider SHALL reject execution-denied programmatic function re
 
 ### Requirement: Model capability gating
 
-Capabilities SHALL use upstream getOpenAILanguageModelCapabilities prefix matching: isReasoningModel, systemMessageMode, supportsFlexProcessing, supportsPriorityProcessing, supportsNonReasoningParameters. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effort=none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
+Capabilities SHALL follow upstream getOpenAILanguageModelCapabilities model-ID matching. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effective effort (last input update, else request effort) is none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
 
 #### Scenario: Temperature stripped on reasoning model
 - **WHEN** the model is a reasoning model and `temperature` is set
 - **THEN** the request omits `temperature` and emits an `unsupported` warning
+
+#### Scenario: Non-reasoning parameter support
+- **WHEN** capabilities are resolved for `gpt-5.1` and later GPT-5 minors, exact `gpt-6-sol`/`gpt-6-luna`, other GPT-6 IDs, `gpt-5`, and Mantle-prefixed IDs
+- **THEN** only the GPT-5.1+ and exact Sol/Luna IDs support non-reasoning parameters
+
+#### Scenario: Positive configuration update restricts sampling
+- **WHEN** a `gpt-6-sol` request sets reasoning effort `none`, a positive `reasoningEffortUpdate`, temperature and topP
+- **THEN** the request prepends the configuration update, keeps reasoning effort `none`, omits `temperature` and `top_p`, and emits `unsupported` warnings for them
+- **AND** a positive request effort with a `none` update retains `temperature` and `top_p` without warnings
 
 #### Scenario: Flex tier unsupported
 - **WHEN** `serviceTier == flex` on a model that does not support flex processing
@@ -1005,3 +1079,19 @@ Stored assistant text on reasoning models SHALL use an item reference only when 
 #### Scenario: Repeated references share a reasoning item
 - **WHEN** multiple text parts carry the same stored item ID after a reasoning part
 - **THEN** one item reference SHALL be sent for that text ID
+
+### Requirement: Shell execution controls round-trip
+
+Shell tool calls SHALL expose `action.timeout_ms` and `action.max_output_length` as `timeoutMs` and `maxOutputLength` in the tool input, omitting null or absent values, in both unary and streaming responses. Provider-executed `shell_call_output` results SHALL include `maxOutputLength` when present. Shell tool results carrying `maxOutputLength` SHALL be sent as `shell_call_output.max_output_length` in stored and stateless history.
+
+#### Scenario: Model-requested execution controls
+- **WHEN** a `shell_call` carries `timeout_ms: 1000` and `max_output_length: 2048`
+- **THEN** the tool input SHALL be `{"action":{"commands":[...],"timeoutMs":1000,"maxOutputLength":2048}}`
+
+#### Scenario: Null execution controls
+- **WHEN** both controls are null or absent
+- **THEN** the tool input SHALL contain only `commands`
+
+#### Scenario: Output length round trip
+- **WHEN** a shell tool result contains `maxOutputLength: 10000`
+- **THEN** the next request's `shell_call_output` SHALL contain `max_output_length: 10000`, and SHALL omit it when the result has none

@@ -18,7 +18,7 @@ func TestModel_NativeUnaryValues(t *testing.T) {
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
-	}, nil)
+	})
 	model, err := p.LanguageModel("assistant")
 	require.NoError(t, err)
 	result, err := model.DoGenerate(context.Background(), provider.CallOptions{})
@@ -50,7 +50,7 @@ func TestModel_NativeStreamIdentity(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedBody{Reader: strings.NewReader(sseFrame(tc.event) + sseFrame(finishEvent))}
-			model := streamFromBody(t, body, nil)
+			model := streamFromBody(t, body)
 			result, err := model.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectParts(t, result)
@@ -69,7 +69,7 @@ func TestModel_NativeStreamIdentity(t *testing.T) {
 		`{"type":"response-metadata","timestamp":"bad"}`, `{"type":"response-metadata","modelId":"` + string([]byte{255}) + `"}`,
 	} {
 		t.Run(event, func(t *testing.T) {
-			model := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(event)+sseFrame(finishEvent))), nil)
+			model := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(event)+sseFrame(finishEvent))))
 			result, err := model.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectParts(t, result)

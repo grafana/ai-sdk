@@ -514,9 +514,9 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 	input := body["input"].([]any)
 	require.Len(t, input, 4)
 	assert.Equal(t, `"The weather is sunny"`, input[0].(map[string]any)["output"])
-	assert.Equal(t, `"Error: boom"`, input[1].(map[string]any)["output"])
+	assert.Equal(t, `{"error":"Error: boom"}`, input[1].(map[string]any)["output"])
 	assert.Equal(t, `"User denied the tool execution"`, input[2].(map[string]any)["output"])
-	assert.Equal(t, "Error: unchanged", input[3].(map[string]any)["output"])
+	assert.Equal(t, `{"error":"Error: unchanged"}`, input[3].(map[string]any)["output"])
 }
 
 func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
@@ -659,7 +659,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 				},
 				provider.ToolResultPart("call_shell", "terminal", &provider.ToolResultOutput{
 					Type: provider.ToolOutputJSON,
-					JSON: json.RawMessage(`{"output":[{"stdout":"hello","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`),
+					JSON: json.RawMessage(`{"maxOutputLength":10000,"output":[{"stdout":"hello","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`),
 				}),
 			)},
 			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"}},
@@ -675,6 +675,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		output := input[1].(map[string]any)
 		assert.Equal(t, "shell_call_output", output["type"])
 		assert.Equal(t, "call_shell", output["call_id"])
+		assert.Equal(t, float64(10000), output["max_output_length"])
 	})
 
 	t.Run("stored shell call pairs with reconstructed output", func(t *testing.T) {
@@ -692,7 +693,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 					Type:       provider.ContentPartTypeToolResult,
 					ToolCallID: "call_shell",
 					ToolName:   "terminal",
-					Output:     &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"output":[{"stdout":"x86_64\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`)},
+					Output:     &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"maxOutputLength":10000,"output":[{"stdout":"x86_64\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`)},
 				}),
 			},
 			Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"}},
@@ -704,6 +705,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		output := input[1].(map[string]any)
 		assert.Equal(t, "shell_call_output", output["type"])
 		assert.Equal(t, "call_shell", output["call_id"])
+		assert.Equal(t, float64(10000), output["max_output_length"])
 	})
 
 	t.Run("apply patch call and output retain provider taxonomy", func(t *testing.T) {
@@ -957,13 +959,35 @@ func TestBuildParams_ProviderToolContinuationFlexibleSchemas(t *testing.T) {
 	assert.Equal(t, 1.5, input[0].(map[string]any)["action"].(map[string]any)["timeout_ms"])
 	assert.Equal(t, 2.5, input[1].(map[string]any)["action"].(map[string]any)["max_output_length"])
 	assert.Equal(t, 3.5, input[2].(map[string]any)["output"].([]any)[0].(map[string]any)["outcome"].(map[string]any)["exit_code"])
+	assert.NotContains(t, input[2].(map[string]any), "max_output_length")
 	assert.Equal(t, "future_tool", input[3].(map[string]any)["tools"].([]any)[0].(map[string]any)["type"])
 }
 
-func TestShellInput_OnlyExposesCommands(t *testing.T) {
+func TestShellInput_ForwardsExecutionControls(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "present", raw: `{"commands":["echo hi"],"timeout_ms":1000.5,"max_output_length":2048}`, want: `{"action":{"commands":["echo hi"],"timeoutMs":1000.5,"maxOutputLength":2048}}`},
+		{name: "null", raw: `{"commands":["echo hi"],"timeout_ms":null,"max_output_length":null}`, want: `{"action":{"commands":["echo hi"]}}`},
+		{name: "absent", raw: `{"commands":["echo hi"]}`, want: `{"action":{"commands":["echo hi"]}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, string(shellInput(tc.raw, nil)))
+		})
+	}
+}
+
+func TestShellOutput_RoundTripsMaxOutputLength(t *testing.T) {
 	assert.JSONEq(t,
-		`{"action":{"commands":["echo hi"]}}`,
-		string(shellInput(`{"commands":["echo hi"],"timeout_ms":1000.5,"max_output_length":2048.5}`, nil)),
+		`{"maxOutputLength":10000,"output":[]}`,
+		string(shellOutput(`{"type":"shell_call_output","call_id":"c","max_output_length":10000,"output":[]}`)),
+	)
+	assert.JSONEq(t,
+		`{"output":[]}`,
+		string(shellOutput(`{"type":"shell_call_output","call_id":"c","max_output_length":null,"output":[]}`)),
 	)
 }
 
@@ -1032,6 +1056,20 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 			assert.Equal(t, true, response["approve"])
 		})
 	}
+
+	t.Run("azure omits openai-correlated denial", func(t *testing.T) {
+		params, _, _, err := buildParamsForProvider("gpt-4o", provider.CallOptions{Prompt: prompt}, "azure")
+		require.NoError(t, err)
+		raw, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(raw, &body))
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, "item_reference", input[0].(map[string]any)["type"])
+		assert.Equal(t, "mcp_approval_response", input[1].(map[string]any)["type"])
+	})
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {
@@ -1429,45 +1467,6 @@ func TestBuildParams_BedrockMantleRejectsUnsupportedServiceTiers(t *testing.T) {
 	}
 }
 
-func TestBuildParams_ReasoningNoneSamplingParameters(t *testing.T) {
-	tests := []struct {
-		modelID      string
-		wantSampling bool
-	}{
-		{modelID: "gpt-5.6-luna", wantSampling: true},
-		{modelID: "gpt-6-astra", wantSampling: false},
-		{modelID: "gpt-99", wantSampling: false},
-		{modelID: "openai.gpt-6-astra", wantSampling: false},
-		{modelID: "openai.gpt-5.6-luna", wantSampling: false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.modelID, func(t *testing.T) {
-			temp := 0.7
-			topP := 0.9
-			body, warnings := buildBody(t, tc.modelID, provider.CallOptions{
-				Prompt:      []provider.Message{provider.UserText("hi")},
-				Temperature: &temp,
-				TopP:        &topP,
-				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
-					ReasoningEffort: "none",
-				}),
-			})
-			if tc.wantSampling {
-				assert.Equal(t, temp, body["temperature"])
-				assert.Equal(t, topP, body["top_p"])
-				assert.NotContains(t, warningFeatures(warnings), "temperature")
-				assert.NotContains(t, warningFeatures(warnings), "topP")
-				return
-			}
-			assert.NotContains(t, body, "temperature")
-			assert.NotContains(t, body, "top_p")
-			assert.Contains(t, warningFeatures(warnings), "temperature")
-			assert.Contains(t, warningFeatures(warnings), "topP")
-		})
-	}
-}
-
 func TestBuildParams_TopLevelReasoning(t *testing.T) {
 	t.Run("provider default is omitted", func(t *testing.T) {
 		body, _ := buildBody(t, "gpt-5.5", provider.CallOptions{
@@ -1707,6 +1706,95 @@ func TestBuildParams_NonStoredReasoningEmptySummaryIsEmptyArray(t *testing.T) {
 		assert.Equal(t, "summary_text", entry["type"])
 		assert.Equal(t, "thinking...", entry["text"])
 	})
+}
+
+func TestBuildParams_ReasoningPartsSharingItemID(t *testing.T) {
+	reasoning := func(text, itemID string, encrypted *string) provider.ContentPart {
+		part := provider.ReasoningPart(text)
+		part.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: itemID, ReasoningEncryptedContent: encrypted})
+		return part
+	}
+	firstEncrypted, lastEncrypted := "enc_first", "enc_last"
+	summary := func(texts ...string) []any {
+		out := []any{}
+		for _, text := range texts {
+			out = append(out, map[string]any{"type": "summary_text", "text": text})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name         string
+		store        bool
+		messages     [][]provider.ContentPart
+		want         []any
+		wantWarnings []provider.Warning
+	}{
+		{
+			name:     "stored parts produce one reference",
+			store:    true,
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", nil)}},
+			want:     []any{map[string]any{"type": "item_reference", "id": "rs_1"}},
+		},
+		{
+			name:     "non-stored parts merge summaries and keep the last encrypted content",
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", &firstEncrypted), reasoning("second", "rs_1", &lastEncrypted), reasoning("third", "rs_1", nil)}},
+			want:     []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first", "second", "third")}},
+		},
+		{
+			name:     "encrypted content on a later part keeps earlier summaries",
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", &lastEncrypted)}},
+			want:     []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first", "second")}},
+		},
+		{
+			name:         "empty later part warns and adds no summary",
+			messages:     [][]provider.ContentPart{{reasoning("first", "rs_1", &firstEncrypted), reasoning("", "rs_1", &lastEncrypted)}},
+			want:         []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first")}},
+			wantWarnings: []provider.Warning{emptyReasoningAppendWarning},
+		},
+		{
+			name: "non-stored reasoning without encrypted content is omitted with one warning",
+			messages: [][]provider.ContentPart{
+				{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", nil), reasoning("other", "rs_2", nil)},
+				{reasoning("later", "rs_3", nil), reasoning("kept", "rs_4", &lastEncrypted)},
+			},
+			want:         []any{map[string]any{"type": "reasoning", "id": "rs_4", "encrypted_content": lastEncrypted, "summary": summary("kept")}},
+			wantWarnings: []provider.Warning{unstoredReasoningWithoutEncryptedContentWarning},
+		},
+		{
+			name:         "ID-less reasoning without encrypted content warns per part before the omission warning",
+			messages:     [][]provider.ContentPart{{reasoning("foreign", "", nil), reasoning("first", "rs_1", nil)}},
+			wantWarnings: []provider.Warning{nonOpenAIReasoningWarning, unstoredReasoningWithoutEncryptedContentWarning},
+		},
+		{
+			name:     "different stored IDs produce separate references",
+			store:    true,
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", nil), reasoning("second", "rs_2", nil)}},
+			want:     []any{map[string]any{"type": "item_reference", "id": "rs_1"}, map[string]any{"type": "item_reference", "id": "rs_2"}},
+		},
+		{
+			name:     "different non-stored IDs produce separate items",
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", &firstEncrypted), reasoning("second", "rs_2", &lastEncrypted)}},
+			want: []any{
+				map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": firstEncrypted, "summary": summary("first")},
+				map[string]any{"type": "reasoning", "id": "rs_2", "encrypted_content": lastEncrypted, "summary": summary("second")},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := tc.store
+			var prompt []provider.Message
+			for _, parts := range tc.messages {
+				prompt = append(prompt, provider.NewAssistantMessage(parts...))
+			}
+			body, warnings := buildBody(t, "o4-mini", provider.CallOptions{
+				Prompt:          prompt,
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store}),
+			})
+			input, _ := body["input"].([]any)
+			assert.Equal(t, tc.want, input)
+			assert.Equal(t, tc.wantWarnings, warnings)
+		})
+	}
 }
 
 func findInput(body map[string]any, itemType string) map[string]any {

@@ -286,6 +286,16 @@ func TestDefaultDecider(t *testing.T) {
 			false,
 		},
 		{
+			"stream buffer limit stops fallback",
+			fmt.Errorf("candidate: %w", ErrStreamBufferLimit),
+			false,
+		},
+		{
+			"unknown error triggers fallback",
+			errors.New("unknown failure"),
+			true,
+		},
+		{
 			"500 server error triggers fallback",
 			provider.NewAPICallError(provider.APICallErrorOptions{
 				Message:    "internal server error",
@@ -312,7 +322,7 @@ func TestDefaultDecider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := defaultDecider(tt.err)
+			got := DefaultDecider(tt.err)
 			assert.Equal(t, tt.wantFall, got)
 		})
 	}

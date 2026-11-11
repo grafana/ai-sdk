@@ -49,23 +49,8 @@ func TestGeneratedFileMalformed(t *testing.T) {
 func TestGeneratedFileHostileBoundsAndBackpressure(t *testing.T) {
 	event := `{"type":"file","mediaType":"image/png","data":{"type":"data","data":"` + strings.Repeat("x", 512) + `"}}`
 	frame := sseFrame(event)
-	for _, total := range []bool{false, true} {
-		limits := DefaultLimits()
-		limits.StreamEventBytes = int64(len(frame) - 1)
-		if total {
-			limits.StreamBytes = limits.StreamEventBytes
-		}
-		body := &trackedBody{Reader: strings.NewReader(frame)}
-		model := streamFromBody(t, body, &limits)
-		result, err := model.DoStream(context.Background(), provider.CallOptions{})
-		require.NoError(t, err)
-		parts := collectParts(t, result)
-		require.Len(t, parts, 1)
-		require.Equal(t, provider.PartError, parts[0].Type)
-		require.True(t, body.closed)
-	}
 	body := &atomicBody{ReadCloser: io.NopCloser(strings.NewReader(strings.Repeat(frame, 1000)))}
-	model := streamFromBody(t, body, nil)
+	model := streamFromBody(t, body)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result, err := model.DoStream(ctx, provider.CallOptions{})
@@ -75,12 +60,11 @@ func TestGeneratedFileHostileBoundsAndBackpressure(t *testing.T) {
 	collectParts(t, result)
 	require.Equal(t, int32(1), body.closed.Load())
 	unary := `{"content":[` + event + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
-	limits := DefaultLimits()
-	limits.UnaryBytes = int64(len(unary) - 1)
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, unary)
-	}, &limits)
+	})
+	p.bufferedReadLimit = int64(len(unary) - 1)
 	m, err := p.LanguageModel("files")
 	require.NoError(t, err)
 	_, err = m.DoGenerate(context.Background(), provider.CallOptions{})

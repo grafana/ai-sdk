@@ -69,6 +69,18 @@ describe("Gateway execution metadata schema", () => {
     },
     nativeMetadata: { execution: { native: true }, empty: {}, null: null, privateNativeField: "opaque" },
   };
+  const routing = {
+    originalModelId: "assistant",
+    canonicalSlug: "grafana/assistant",
+    resolvedProvider: "anthropic",
+    finalProvider: "openai",
+    modelAttemptCount: 2,
+    totalProviderAttemptCount: 2,
+    modelAttempts: [
+      { modelId: "assistant", canonicalSlug: "grafana/assistant", success: false, providerAttemptCount: 1, providerAttempts: [{ provider: "anthropic", success: false, statusCode: 503 }] },
+      { modelId: "grafana/backup", canonicalSlug: "grafana/backup", success: true, providerAttemptCount: 1, providerAttempts: [{ provider: "openai", success: true }] },
+    ],
+  };
 
   for (const [name, value] of [
     ["selected candidate", namespace],
@@ -76,6 +88,14 @@ describe("Gateway execution metadata schema", () => {
     ["canceled native failure", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "canceled", error: { statusCode: 503 } }] } }],
     ["numeric code", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: { code: 42 } }] } }],
     ["missing diagnostics", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed" }] } }],
+    ["request accounts without canonical identity", { execution: { requestedModelId: "openai/gpt-5", attempts: [
+      { provider: "openai", modelId: "gpt-5", outcome: "failed", error: { message: "overloaded", statusCode: 503 } },
+      { provider: "openai", modelId: "gpt-5", outcome: "selected" },
+    ] } }],
+    ["served model on the selected attempt", { execution: { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "claude-b", outcome: "selected" }] } }],
+    ["routing summary", { ...namespace, routing }],
+    ["routing without a selected attempt", { ...namespace, routing: { ...routing, finalProvider: undefined, modelAttempts: [{ ...routing.modelAttempts[0] }] } }],
+    ["request-account routing without canonical slugs", { ...namespace, routing: { ...routing, canonicalSlug: undefined, modelAttempts: [{ modelId: "openai/gpt-5", success: true, providerAttemptCount: 1, providerAttempts: [{ provider: "openai", success: true }] }] } }],
   ] as const) {
     it(`accepts ${name}`, () => {
       assert.equal(validateGatewayMetadata(value), true, formatValidationErrors(validateGatewayMetadata.errors));
@@ -84,6 +104,8 @@ describe("Gateway execution metadata schema", () => {
 
   for (const [name, execution] of [
     ["empty attempts", { ...namespace.execution, attempts: [] }],
+    ["empty canonical identity", { ...namespace.execution, canonicalModelId: "" }],
+    ["missing requested identity", { canonicalModelId: "grafana/assistant", attempts: namespace.execution.attempts }],
     ["missing outcome", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model" }] }],
     ["unknown outcome", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "retried" }] }],
     ["selected index", { ...namespace.execution, selectedAttempt: 2 }],
@@ -92,9 +114,25 @@ describe("Gateway execution metadata schema", () => {
     ["raw details", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: { details: {} } }] }],
     ["empty error", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: {} }] }],
     ["attempt disposition", { ...namespace.execution, attempts: { state: "over-limit", count: 17 } }],
+    ["served model on a failed attempt", { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "claude-b", outcome: "failed" }] }],
+    ["served model on a canceled attempt", { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "claude-b", outcome: "canceled" }] }],
+    ["empty served model", { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "", outcome: "selected" }] }],
   ] as const) {
     it(`rejects ${name}`, () => {
       assert.equal(validateGatewayMetadata({ ...namespace, execution }), false);
+    });
+  }
+
+  for (const [name, value] of [
+    ["routing timestamps", { ...routing, modelAttempts: [{ ...routing.modelAttempts[0], providerAttempts: [{ provider: "anthropic", success: false, startTime: 1 }] }] }],
+    ["routing credential type", { ...routing, modelAttempts: [{ ...routing.modelAttempts[0], providerAttempts: [{ provider: "anthropic", success: false, credentialType: "byok" }] }] }],
+    ["routing planning prose", { ...routing, planningReasoning: "planned" }],
+    ["routing unrun candidates", { ...routing, fallbacksAvailable: ["bedrock"] }],
+    ["empty model attempts", { ...routing, modelAttempts: [] }],
+    ["missing original model", { ...routing, originalModelId: undefined }],
+  ] as const) {
+    it(`rejects ${name}`, () => {
+      assert.equal(validateGatewayMetadata({ ...namespace, routing: value }), false);
     });
   }
 });

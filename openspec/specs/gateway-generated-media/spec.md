@@ -27,26 +27,6 @@ Unary and streaming Gateway responses SHALL preserve generated file order, media
 - **WHEN** a valid generated file includes a provider-local filename, including an oversized or invalid UTF-8 filename
 - **THEN** the normalized output SHALL omit filename and acceptance SHALL depend only on emitted registered fields
 
-### Requirement: Invalid or oversized media fails atomically
-Generated-file validation SHALL reject missing, conflicting or unsupported data arms and malformed consumed fields. The service SHALL enforce aggregate unary-response and complete-SSE-frame bounds before successful write, accounting for base64 and JSON escaping expansion. Rejection SHALL use existing bounded error behavior and SHALL NOT emit a partial file or successful finish.
-
-#### Scenario: Oversized unary file
-- **WHEN** media bytes or encoded metadata exceed the unary response budget
-- **THEN** no successful response header or partial media body SHALL be written
-
-#### Scenario: Oversized stream frame
-- **WHEN** a selected generated file cannot fit its encoded SSE frame budget
-- **THEN** the service SHALL emit only the existing bounded terminal error behavior, cancel the producer and close owned resources
-- **AND** it SHALL NOT replay the selected generation through another candidate
-
-#### Scenario: Escaping and base64 limits
-- **WHEN** raw strings fit but JSON escaping or byte-to-base64 expansion exceeds the encoded budget
-- **THEN** the file SHALL fail before its body or frame is written
-
-#### Scenario: Unsupported output arm
-- **WHEN** a generated file supplies reference, text, missing data or conflicting sources
-- **THEN** the service SHALL fail through its adapter error path without projecting an invented data/URL value
-
 ### Requirement: File delivery retains streaming and fallback ownership
 A generated file SHALL be valid without a text-start event and SHALL retain its relative content order. Its selected provider SHALL remain committed under reusable fallback semantics. Cancellation, downstream backpressure and terminal errors SHALL preserve bounded stream cleanup without introducing another reader or post-output replay.
 
@@ -69,3 +49,23 @@ Generated-file acceptance SHALL include registered TypeScript and Go client HTTP
 #### Scenario: Frontend assembly and capture
 - **WHEN** generated files pass through the Apache Grafana provider and core UI streaming with independently configured consumer capture
 - **THEN** the existing frontend suite extended for the Grafana path SHALL assemble schema-parsed file chunks; separate HTTP/capture tests SHALL prove server capture choices do not alter caller results
+
+### Requirement: Invalid media fails atomically
+Generated-file validation SHALL reject missing, conflicting or unsupported data arms and malformed consumed fields. Media SHALL NOT be bounded by a unary-response or SSE-frame budget; base64 and JSON escaping expansion SHALL NOT cause a valid file to fail. Rejection SHALL use existing bounded error behavior and SHALL NOT emit a partial file or successful finish.
+
+#### Scenario: Large unary file
+- **WHEN** valid generated media and its metadata encode above the former unary response budget
+- **THEN** the complete response SHALL be written with HTTP 200 and the unchanged media
+
+#### Scenario: Large stream file
+- **WHEN** a selected valid generated file encodes to a frame above the former 1 MiB limit
+- **THEN** the complete file event SHALL be written and the stream SHALL continue
+
+#### Scenario: Invalid stream file
+- **WHEN** a selected generated file has invalid media fields
+- **THEN** the service SHALL emit only the existing bounded terminal error behavior, cancel the producer and close owned resources
+- **AND** it SHALL NOT replay the selected generation through another candidate
+
+#### Scenario: Unsupported output arm
+- **WHEN** a generated file supplies reference, text, missing data or conflicting sources
+- **THEN** the service SHALL fail through its adapter error path without projecting an invented data/URL value

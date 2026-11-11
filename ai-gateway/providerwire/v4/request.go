@@ -17,6 +17,10 @@ const (
 	capabilityProviderOptions     requestFailureReason = "provider-options"
 	policyReservedProviderOptions requestFailureReason = "reserved-provider-options"
 	policyProtectedCallHeader     requestFailureReason = "protected-call-header"
+	routingControls               requestFailureReason = "routing-controls"
+	routingNoCandidates           requestFailureReason = "routing-no-candidates"
+	routingAttemptBound           requestFailureReason = "routing-attempt-bound"
+	routingFallbackModel          requestFailureReason = "routing-fallback-model"
 )
 
 type wireRequest struct {
@@ -145,54 +149,6 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 		options.Reasoning = reasoning
 	}
 	return options, nil
-}
-
-type historicalToolCall struct {
-	reemitted        bool
-	name             string
-	providerExecuted bool
-	completed        bool
-}
-
-func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *requestFailure) {
-	calls := make(map[string]historicalToolCall)
-	orphanResults := make(map[string]struct{})
-	for _, message := range prompt {
-		for _, part := range message.Content {
-			switch part.Type {
-			case provider.ContentPartTypeToolCall:
-				if previous, exists := calls[part.ToolCallID]; exists {
-					if previous.completed || previous.reemitted || !previous.providerExecuted || !part.ProviderExecuted || previous.name != part.ToolName {
-						return nil, invalidMappingFailure()
-					}
-					previous.reemitted = true
-					calls[part.ToolCallID] = previous
-					continue
-				}
-				if _, exists := orphanResults[part.ToolCallID]; exists {
-					return nil, invalidMappingFailure()
-				}
-				calls[part.ToolCallID] = historicalToolCall{name: part.ToolName, providerExecuted: part.ProviderExecuted}
-			case provider.ContentPartTypeToolResult:
-				if call, exists := calls[part.ToolCallID]; exists {
-					if call.name != part.ToolName || call.completed {
-						return nil, invalidMappingFailure()
-					}
-					call.completed = true
-					calls[part.ToolCallID] = call
-				} else {
-					orphanResults[part.ToolCallID] = struct{}{}
-				}
-			}
-		}
-	}
-	pending := make(map[string]string)
-	for id, call := range calls {
-		if call.providerExecuted && !call.completed {
-			pending[id] = call.name
-		}
-	}
-	return pending, nil
 }
 
 func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
@@ -337,47 +293,9 @@ func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requ
 	}
 }
 
-// ReservedProviderOptionNamespace is the provider-option namespace the host
-// owns. A caller that sends it is rejected rather than silently stripped, so
-// nothing it carries can reach a backend and the caller learns the option was
-// refused. Configuration reads it so a provider cannot be named after it, and
-// compares it exactly, because provider-option namespaces are case-significant.
-const ReservedProviderOptionNamespace = "grafana"
-
-// IsProtectedCallHeader reports whether a header name carries credentials and so
-// may not cross from a request body into a backend call. The inbound
-// authenticated edge refuses some of the same names in outer HTTP headers, and
-// TestInboundRefusedHeadersAreProtectedCallHeaders in the auth package asserts
-// every name it refuses is in this set.
-func IsProtectedCallHeader(name string) bool {
-	_, protected := protectedCallHeaders[strings.ToLower(name)]
-	return protected
-}
-
-// protectedCallHeaders never cross from a request body into a backend call.
-// Providers apply call headers after their own authorization header, so a
-// caller-supplied entry here would choose the credential presented upstream.
-// The set covers credential-bearing names only: the HTTP contract retains
-// protocol headers such as ai-language-model-id in the body, so rejecting those
-// would break a documented round trip.
-var protectedCallHeaders = map[string]struct{}{
-	"authorization":       {},
-	"proxy-authorization": {},
-	"x-access-token":      {},
-	"x-grafana-id":        {},
-	"x-api-key":           {},
-	"api-key":             {},
-	"openai-api-key":      {},
-	"anthropic-api-key":   {},
-	"openai-organization": {},
-	"openai-project":      {},
-	"x-scope-orgid":       {},
-	"x-cloud-org-id":      {},
-	"x-access-policy-id":  {},
-}
-
 // mapWireHeaders copies body-carried call headers, preserving key case because
-// the wire contract round-trips a caller's exact spelling.
+// the wire contract round-trips a caller's exact spelling. The execution runtime
+// refuses credential-bearing names.
 func mapWireHeaders(headers map[string]string) (map[string]string, *requestFailure) {
 	if len(headers) == 0 {
 		return nil, nil
@@ -385,9 +303,6 @@ func mapWireHeaders(headers map[string]string) (map[string]string, *requestFailu
 	mapped := make(map[string]string, len(headers))
 	seen := make(map[string]struct{}, len(headers))
 	for name, value := range headers {
-		if IsProtectedCallHeader(name) {
-			return nil, rejectedMappingFailure(policyProtectedCallHeader)
-		}
 		// HTTP header names are case-insensitive, so two spellings of one name
 		// would reach a backend in map order, with a different value each run.
 		lower := strings.ToLower(name)
@@ -409,21 +324,13 @@ func mapWireHeaders(headers map[string]string) (map[string]string, *requestFailu
 	return mapped, nil
 }
 
-// mapWireProviderOptions converts namespaces to opaque provider options. Each
+// mapWireProviderOptions converts namespaces to opaque provider options, the
+// call-level gateway controls included, which the execution runtime removes. Each
 // namespace value must be a JSON object; nested contents are preserved byte for
 // byte, including null, false, zero, empty string, empty object and array.
 func mapWireProviderOptions(options map[string]json.RawMessage) (provider.ProviderOptions, *requestFailure) {
 	if len(options) == 0 {
 		return nil, nil
-	}
-	// Reserved namespaces are found in their own pass, so a request carrying both
-	// a reserved namespace and a malformed one always reports the same refusal
-	// rather than whichever the map yielded first. Namespace names are compared
-	// exactly, because provider-option namespaces are case-significant.
-	for _, namespace := range []string{ReservedProviderOptionNamespace, "gateway", "grafana-ai-sdk"} {
-		if _, reserved := options[namespace]; reserved {
-			return nil, rejectedMappingFailure(policyReservedProviderOptions)
-		}
 	}
 	mapped := make(provider.ProviderOptions, len(options))
 	for namespace, raw := range options {

@@ -9,11 +9,16 @@ const config = JSON.parse(readFileSync(new URL('../../release-please-config.json
 const silent = Object.fromEntries(['debug', 'info', 'warn', 'error', 'trace'].map(level => [level, () => {}]));
 setLogger(silent);
 
+const modules = {
+  'providers/openai/go.mod': 'module github.com/grafana/ai-sdk/providers/openai\n\nrequire github.com/grafana/ai-sdk v0.1.0-alpha.1\n',
+  'middleware/logger/go.mod': 'module github.com/grafana/ai-sdk/middleware/logger\n\nrequire github.com/grafana/ai-sdk v0.1.0-alpha.1\n',
+};
+
 function repository() {
   return {
     repository: { owner: 'grafana', repo: 'ai-sdk', defaultBranch: 'main' },
     octokit: { repos: { getCommit: async () => ({ data: { sha: 'base' } }) } },
-    getFileJson: async path => path === 'release-please-config.json' ? config : {},
+    getFileJson: async path => path === 'release-please-config.json' ? config : { '.': '0.1.0-alpha.1' },
     async *releaseIterator() {},
     async *tagIterator() {},
     async *mergeCommitIterator() {
@@ -21,8 +26,10 @@ function repository() {
       yield { sha: 'b'.repeat(40), message: 'fix: provider behavior', files: ['providers/openai/model.go'] };
       yield { sha: 'c'.repeat(40), message: 'fix: middleware behavior', files: ['middleware/logger/logger.go'] };
     },
+    findFilesByFilenameAndRef: async () => Object.keys(modules),
+    getFileContentsOnBranch: async path => ({ parsedContent: modules[path] }),
     buildChangeSet: async updates => new Map(updates.map(update => [
-      update.path, { originalContent: '', content: 'generated' },
+      update.path, { originalContent: modules[update.path] ?? '', content: modules[update.path] ? update.updater.updateContent(modules[update.path]) : 'generated' },
     ])),
   };
 }
@@ -38,12 +45,12 @@ test('pinned release-please selects root without downstream proposals', async ()
   assert.doesNotMatch(candidates[0].body.toString(), /provider behavior|middleware behavior/);
 });
 
-test('default preview preserves independent component proposals', async () => {
+test('default preview combines library proposals into one release pull request', async () => {
   const candidates = await prepareCandidates(repository());
-  assert.deepEqual(candidates.map(candidate => candidate.headRefName), [
-    'release-please--branches--main',
-    'release-please--branches--main--components--providers/openai',
-    'release-please--branches--main--components--middleware/logger',
+  assert.deepEqual(candidates.map(candidate => candidate.headRefName), ['release-please--branches--main']);
+  assert.equal(candidates[0].title.toString(), 'chore: release main');
+  assert.deepEqual(candidates[0].updates.map(update => update.path).sort(), [
+    '.release-please-manifest.json', 'CHANGELOG.md', 'middleware/logger/CHANGELOG.md', 'providers/openai/CHANGELOG.md',
   ]);
 });
 
@@ -63,8 +70,9 @@ test('preview reports source revision and generated contents', async () => {
   assert.equal(result.sha, 'base');
   assert.equal(result.proposals.length, 1);
   assert.deepEqual(result.proposals[0].changes.map(change => change.path), [
-    'CHANGELOG.md', '.release-please-manifest.json',
+    'CHANGELOG.md', '.release-please-manifest.json', 'middleware/logger/go.mod', 'providers/openai/go.mod',
   ]);
+  assert.match(result.proposals[0].changes[3].after, /github.com\/grafana\/ai-sdk v0\.1\.0-alpha\.2\n/);
 });
 
 test('read-only transport blocks writes, GraphQL mutations, and other hosts', async () => {

@@ -14,6 +14,14 @@ function freeze(value) {
   return value;
 }
 
+const COMBINED_DETAILS = /<details><summary>(?:([^:<]+): )?([^<]+)<\/summary>\n\n([\s\S]*?)\n<\/details>/g;
+
+export function combinedNotes(body) {
+  const section = (body ?? '').replaceAll('\r\n', '\n').split(/^---$/m)[1] ?? '';
+  return new Map([...section.matchAll(COMBINED_DETAILS)].map(([, component, version, notes]) =>
+    [`${component ?? ''}@${version}`, notes.trim()]));
+}
+
 export async function discoverMerged(github, component) {
   const before = (await github.octokit.repos.getCommit({ ...REPO, ref: 'main' })).data.sha;
   assert.match(before, SHA);
@@ -33,9 +41,11 @@ export async function discoverMerged(github, component) {
     const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: release.pullRequest.number });
     assert.equal(pr.merge_commit_sha, release.sha, 'discovered merge changed');
     const { data: commit } = await github.octokit.repos.getCommit({ ...REPO, ref: release.sha });
+    const version = release.tag.version.toString();
+    const raw = combinedNotes(pr.body).get(`${config.packages[release.path]?.component ?? ''}@${version}`);
     candidates.push({
-      repositoryId: REPOSITORY_ID, component: release.path, version: release.tag.version.toString(),
-      tag: release.tag.toString(), notes: release.notes, name: release.name,
+      repositoryId: REPOSITORY_ID, component: release.path, version,
+      tag: release.tag.toString(), notes: raw ?? release.notes, name: release.name,
       draft: !!release.draft, prerelease: !!release.prerelease,
       prNumber: pr.number, headSha: pr.head.sha, mergeSha: release.sha,
       parents: commit.parents.map(parent => parent.sha), treeSha: commit.commit.tree.sha,

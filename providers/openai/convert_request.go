@@ -3,8 +3,6 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -97,47 +95,39 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		Model: shared.ResponsesModel(modelID),
 	}
 
+	resolvedEffort := popts.ReasoningEffort
+	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
+		resolvedEffort = string(opts.Reasoning)
+	}
+	if reason := unsupportedReasoningEffortReason(modelID, caps, resolvedEffort); reason != "" {
+		warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: reason})
+		resolvedEffort = ""
+	}
+
 	// Input conversion.
 	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
 	inputCtx.isReasoningModel = isReasoning
+	inputCtx.configurationUpdateUnsupportedReason = configurationUpdateUnsupportedReason(caps, popts)
 	input, inputWarnings, err := convertInput(opts.Prompt, systemMode, popts, inputCtx)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 	warnings = append(warnings, inputWarnings...)
-	if popts.ReasoningEffortUpdate != "" {
-		if !caps.supportsConfigurationUpdate || popts.ReasoningMode == "pro" || popts.ContextManagement != nil || popts.Truncation == "auto" {
-			details := "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
-			if !caps.supportsConfigurationUpdate {
-				details = "reasoningEffortUpdate is only supported by GPT-6 and later models"
-			}
-			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: details})
-		} else {
-			update := responses.ResponseInputItemUnionParam{OfConfigurationUpdate: &responses.ResponseConfigurationUpdateItemParam{
-				Reasoning: responses.ResponseConfigurationUpdateItemParamReasoning{Effort: shared.ReasoningEffort(popts.ReasoningEffortUpdate)},
-			}}
-			input = append(responses.ResponseInputParam{update}, input...)
-		}
+	input, updateWarnings, err := applyConfigurationUpdates(input, modelID, caps, popts)
+	if err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
+	warnings = append(warnings, updateWarnings...)
 	if popts.CompactionTrigger != nil && *popts.CompactionTrigger {
 		input = append(input, responses.ResponseInputItemUnionParam{OfCompactionTrigger: &responses.ResponseInputItemCompactionTriggerParam{}})
 	}
 	body.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: input}
 
-	resolvedEffort := popts.ReasoningEffort
-	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
-		resolvedEffort = string(opts.Reasoning)
-	}
-	if resolvedEffort != "" && caps.supportedReasoningEfforts != nil && !slices.Contains(caps.supportedReasoningEfforts, resolvedEffort) {
-		warnings = append(warnings, provider.Warning{
-			Type: provider.WarnUnsupported, Feature: "reasoningEffort",
-			Details: fmt.Sprintf("%s only supports the following reasoning efforts: %s", modelID, strings.Join(caps.supportedReasoningEfforts, ", ")),
-		})
-		resolvedEffort = ""
-	}
+	restrictSampling := isReasoning && (effectiveReasoningEffort(input, resolvedEffort) != "none" || !caps.supportsNonReasoningParameters)
+	restrictLogprobs := restrictSampling && caps.supportedReasoningEfforts != nil
 
 	// Scalar params + unsupported-param warnings.
-	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, resolvedEffort)...)
+	warnings = append(warnings, applyScalarParams(&body, opts, restrictSampling)...)
 
 	// Structured output.
 	formatWarnings, err := applyResponseFormat(&body, opts, popts)
@@ -157,7 +147,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyProviderOptions(&body, popts, isReasoning, caps)...)
 
 	// include auto-population + reasoning block.
-	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, caps, &br)...)
+	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, restrictLogprobs, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, &br)...)
 
 	return body, warnings, br, nil
 }
@@ -235,9 +225,7 @@ func validateOpenAIResponsesOptions(options OpenAIResponsesOptions) error {
 			return fmt.Errorf("openai: invalid reasoningSummary: %w", err)
 		}
 	}
-	switch options.ReasoningEffortUpdate {
-	case "", OpenAIReasoningEffortUpdateLow, OpenAIReasoningEffortUpdateMedium, OpenAIReasoningEffortUpdateHigh, OpenAIReasoningEffortUpdateXHigh, OpenAIReasoningEffortUpdateMax:
-	default:
+	if options.ReasoningEffortUpdate != "" && !options.ReasoningEffortUpdate.valid() {
 		return fmt.Errorf("openai: invalid reasoningEffortUpdate %q", options.ReasoningEffortUpdate)
 	}
 	switch options.ServiceTier {
@@ -264,8 +252,9 @@ func resolveSystemMessageMode(popts OpenAIResponsesOptions, caps modelCapabiliti
 }
 
 // applyScalarParams maps temperature/topP/maxOutputTokens and emits warnings for
-// unsupported sampling parameters and capability-gated parameters.
-func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, caps modelCapabilities, isReasoning bool, resolvedEffort string) []provider.Warning {
+// unsupported sampling parameters and, when restrictSampling is set, the
+// temperature/topP controls that reasoning models reject.
+func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, restrictSampling bool) []provider.Warning {
 	var warnings []provider.Warning
 
 	if opts.TopK != nil {
@@ -288,18 +277,15 @@ func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOpti
 		body.MaxOutputTokens = param.NewOpt(int64(*opts.MaxOutputTokens))
 	}
 
-	// Capability gating for temperature/topP on reasoning models.
-	allowNonReasoning := resolvedEffort == "none" && caps.supportsNonReasoningParameters
-
 	if opts.Temperature != nil {
-		if isReasoning && !allowNonReasoning {
+		if restrictSampling {
 			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "temperature", Details: "temperature is not supported for reasoning models"})
 		} else {
 			body.Temperature = param.NewOpt(*opts.Temperature)
 		}
 	}
 	if opts.TopP != nil {
-		if isReasoning && !allowNonReasoning {
+		if restrictSampling {
 			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "topP", Details: "topP is not supported for reasoning models"})
 		} else {
 			body.TopP = param.NewOpt(*opts.TopP)

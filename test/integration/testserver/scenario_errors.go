@@ -23,6 +23,9 @@ func init() {
 			writeUIStreamError(w, r, &uiStreamErrorModel{partial: kind})
 		})
 	}
+	registerScenario("ui-stream-error-after-finish", func(w http.ResponseWriter, r *http.Request) {
+		writeUIStreamError(w, r, &uiStreamErrorModel{partial: "after-finish"})
+	})
 }
 
 func handleHTTPError(w http.ResponseWriter, _ *http.Request) {
@@ -41,7 +44,7 @@ func (*uiStreamErrorModel) DoGenerate(context.Context, provider.CallOptions) (*p
 	return nil, nil
 }
 func (m *uiStreamErrorModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	stream := make(chan provider.StreamPart, 3)
+	stream := make(chan provider.StreamPart, 5)
 	switch m.partial {
 	case "text":
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
@@ -49,6 +52,11 @@ func (m *uiStreamErrorModel) DoStream(context.Context, provider.CallOptions) (*p
 	case "tool":
 		stream <- provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-1", ToolName: "weather"}
 		stream <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-1", Delta: `{"city":"Lon`}
+	case "after-finish":
+		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "complete"}
+		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
+		stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}, Usage: &provider.Usage{}}
 	}
 	retryable := m.partial != ""
 	stream <- provider.StreamPart{

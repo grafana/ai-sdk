@@ -41,9 +41,9 @@ func TestReasoningUnary(t *testing.T) {
 		{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"r1","reasoningEncryptedContent":null,"backend":"secret"}`)}},
 		{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data},
 	}
-	mapped, err := mapUnarySuccess(result, 1<<20)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `"text":""`)
 	assert.Contains(t, string(body), `"reasoningEncryptedContent":null`)
@@ -54,8 +54,8 @@ func TestReasoningUnary(t *testing.T) {
 }
 
 func TestReasoningConcurrentLifecycle(t *testing.T) {
-	h := &handler{limits: Limits{StreamFrameBytes: 1 << 20}}
-	state := newStreamState(100, nil)
+	h := &handler{}
+	state := &streamState{}
 	w := httptest.NewRecorder()
 	parts := []provider.StreamPart{
 		{Type: provider.PartReasoningStart, ID: "1"},
@@ -71,7 +71,7 @@ func TestReasoningConcurrentLifecycle(t *testing.T) {
 	for _, part := range parts {
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part), part.Type)
 	}
-	require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart()))
+	require.Equal(t, streamPartContinue, h.processStreamPart(w, state, finishPart()))
 	assert.Contains(t, w.Body.String(), `"delta":""`)
 	assert.Contains(t, w.Body.String(), `"providerMetadata":{}`)
 	assert.Contains(t, w.Body.String(), "end-only")
@@ -89,7 +89,6 @@ func TestReasoningRequestRejectsBeforeResolution(t *testing.T) {
 		`{"type":"reasoning-file","mediaType":"image/png","data":{"type":"reference","reference":{}}}`,
 		`{"type":"reasoning-file","mediaType":"image/png","data":{"type":"data","data":""},"filename":"private"}`,
 		`{"type":"reasoning","text":"","providerOptions":{"anthropic":null}}`,
-		`{"type":"reasoning","text":"","providerOptions":{"gateway":{"token":"private"}}}`,
 	} {
 		for _, streaming := range []string{"true", "false"} {
 			harness := newRuntimeHarness(t, testLimits())
@@ -128,7 +127,7 @@ func TestReasoningMetadata_Opaque(t *testing.T) {
 		{name: "invalid utf8", input: provider.ProviderMetadata{"openai": json.RawMessage{'"', 255, '"'}}, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning", metadata: tc.input}, 4096)
+			frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning", metadata: tc.input})
 			if tc.invalid {
 				assert.False(t, ok)
 				assert.Empty(t, frame)
@@ -140,45 +139,22 @@ func TestReasoningMetadata_Opaque(t *testing.T) {
 			assert.JSONEq(t, tc.want, string(event["providerMetadata"]))
 		})
 	}
-	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning"}, 4096)
+	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning"})
 	require.True(t, ok)
 	assert.NotContains(t, string(frame), "providerMetadata")
-	frame, ok = encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + strings.Repeat("x", 1024) + `"}`)}}, 1024)
-	assert.False(t, ok)
-	assert.Empty(t, frame)
+	large := strings.Repeat("x", 2<<20)
+	frame, ok = encodeStreamFrame(streamEvent{typeName: provider.PartReasoningStart, id: "reasoning", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + large + `"}`)}})
+	require.True(t, ok)
+	assert.Contains(t, string(frame), large)
 }
 
-func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {
+func TestReasoningFrameEncoding(t *testing.T) {
 	for _, part := range []provider.StreamPart{
 		{Type: provider.PartReasoningDelta, ID: "r", Delta: "\"<>&☃", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"signed"}`)}},
 		{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}},
 	} {
 		event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
-		frame, ok := encodeStreamFrame(event, 1<<20)
+		_, ok := encodeStreamFrame(event)
 		require.True(t, ok)
-		for _, offset := range []int64{-1, 0, 1} {
-			got, ok := encodeStreamFrame(event, int64(len(frame))+offset)
-			assert.Equal(t, offset >= 0, ok)
-			assert.LessOrEqual(t, int64(len(got)), int64(len(frame))+offset)
-		}
-	}
-	for _, parts := range [][]provider.StreamPart{
-		{{Type: provider.PartReasoningDelta, ID: "r"}},
-		{{Type: provider.PartReasoningEnd, ID: "r"}},
-		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartReasoningStart, ID: "r"}},
-		{{Type: provider.PartReasoningStart, ID: "r"}, finishPart()},
-		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartResponseMeta}},
-		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartReasoningEnd, ID: "r"}, {Type: provider.PartReasoningStart, ID: "r"}},
-	} {
-		h := &handler{limits: Limits{StreamFrameBytes: 1024}}
-		state := newStreamState(100, nil)
-		w := httptest.NewRecorder()
-		for i, part := range parts {
-			want := streamPartContinue
-			if i == len(parts)-1 {
-				want = streamPartAdapterFailure
-			}
-			assert.Equal(t, want, h.processStreamPart(w, state, part))
-		}
 	}
 }

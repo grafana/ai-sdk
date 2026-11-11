@@ -10,15 +10,15 @@ ignore (
 require (
 	github.com/anthropics/anthropic-sdk-go v1.80.0
 	github.com/go-jose/go-jose/v4 v4.1.6
-	github.com/grafana/agento11y/go v0.19.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1
-	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260928202004-dd43c6dff058
+	github.com/grafana/agento11y/go v0.20.0
+	github.com/grafana/ai-sdk v0.1.0-alpha.5
+	github.com/grafana/ai-sdk/middleware/agentobservability v0.1.0-alpha.2
+	github.com/grafana/ai-sdk/middleware/logger v0.1.0-alpha.2
+	github.com/grafana/ai-sdk/middleware/prometheus v0.1.0-alpha.2
+	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.3
+	github.com/grafana/ai-sdk/providers/grafana v0.1.0-alpha.2
+	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.2
+	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.2
 	github.com/grafana/authlib v0.0.0-20260922202713-e3b571f7135d
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/grafana-app-sdk v0.60.16
@@ -26,6 +26,7 @@ require (
 	github.com/grafana/grafana-plugin-sdk-go v0.297.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
+	github.com/magefile/mage v1.17.2
 	github.com/openai/openai-go/v3 v3.76.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -103,9 +104,8 @@ require (
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/jaegertracing/jaeger-idl v0.13.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	github.com/magefile/mage v1.17.2 // indirect
 	github.com/mattetti/filebuffer v1.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
@@ -158,7 +158,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
@@ -178,9 +178,25 @@ require (
 	k8s.io/apiextensions-apiserver v0.37.1 // indirect
 	k8s.io/client-go v0.37.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
+	k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab // indirect
 	sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/grafana/ai-sdk => ..
+
+replace github.com/grafana/ai-sdk/middleware/agentobservability => ../middleware/agentobservability
+
+replace github.com/grafana/ai-sdk/middleware/logger => ../middleware/logger
+
+replace github.com/grafana/ai-sdk/middleware/prometheus => ../middleware/prometheus
+
+replace github.com/grafana/ai-sdk/providers/anthropic => ../providers/anthropic
+
+replace github.com/grafana/ai-sdk/providers/grafana => ../providers/grafana
+
+replace github.com/grafana/ai-sdk/providers/openai => ../providers/openai
+
+replace github.com/grafana/ai-sdk/providers/openai-compatible => ../providers/openai-compatible

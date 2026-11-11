@@ -6,132 +6,75 @@ Separate required Gateway candidate-source integration from standalone artifact 
 
 ## Requirements
 
-### Requirement: Explicit Gateway candidate-source integration
-
-The repository SHALL provide a separately selected Gateway workspace with local SDK/provider/middleware dependencies, excluding Gateway from root `go.work`. Required Gateway source build/test/lint/vet and cross-language commands SHALL select it explicitly; SDK-only commands SHALL select root `go.work` and keep their integration testserver Gateway-free. Required ProviderWire Go-client captures SHALL use candidate root/client source, not stale published pins.
-
-#### Scenario: Candidate-source Gateway integration
-- **WHEN** coordinated source changes affect SDK and Gateway and required checks run
-- **THEN** Go tests and cross-language binaries SHALL execute the candidate implementations, not merely report local paths from `go list`
-
-#### Scenario: Isolated Gateway validation
-- **WHEN** a Gateway plugin backend builds
-- **THEN** it SHALL resolve local SDK/provider/middleware source at the exact selected revision through explicit `go.gateway.work`, with readonly manifests and no out-of-repository substitutions
-- **AND** an on-demand standalone Gateway module diagnostic SHALL resolve declared published versions with `GOWORK=off` and no local replacements
-
-#### Scenario: Root default workspace
-- **WHEN** Go selects root `go.work`
-- **THEN** Gateway SHALL be absent from that workspace
-
 ### Requirement: Structural boundary enforcement independent of standalone execution
 
-Structural checks SHALL enforce AGPL Gateway/Apache SDK boundaries: reject Gateway imports, requirements or replacements in tracked source/manifests outside `ai-gateway/`; exclude Gateway from root `go.work` and SDK/Grafana graphs; reject root workspace replacements. An independent required check SHALL build/test candidate SDK root and Grafana client with Gateway physically absent in a copied Gateway-free workspace.
+Structural checks SHALL enforce AGPL Gateway/Apache SDK boundaries: reject Gateway imports, requirements or replacements in tracked source/manifests outside `ai-gateway/` and exclude Gateway from SDK and Grafana client build graphs. An independent required check SHALL build and test candidate SDK root and Grafana client with Gateway physically absent in a repository copy without `ai-gateway/`.
 
 #### Scenario: Reverse dependency in nested module
+
 - **WHEN** tracked source or a manifest outside `ai-gateway/` references Gateway, including in a nested module
 - **THEN** the structural check SHALL fail in any validation mode
 
 #### Scenario: SDK and Grafana source independence
+
 - **WHEN** the independent source-absence check runs
-- **THEN** candidate SDK root and Grafana client SHALL build and test with Gateway absent without needing compatibility with an older published root pin
+- **THEN** candidate SDK root and Grafana client SHALL build and test with Gateway absent through their local replacements
 
 #### Scenario: Structural check without standalone tests
+
 - **WHEN** the structural boundary check runs
-- **THEN** it SHALL report boundary violations independently of public-proxy build/test execution
+- **THEN** it SHALL report boundary violations independently of build/test execution
 
-### Requirement: Standalone readiness does not replace source-absence checks
+### Requirement: Same-revision first-party source through local replacements
 
-Standalone root/client checks MAY run on demand for consumer readiness but SHALL NOT become a source-PR prerequisite.
+Every tracked `go.mod` SHALL replace each first-party module in its build graph,
+including transitive ones, with that module's repository directory.
+Required build, vet, lint, test and cross-language commands SHALL run inside each
+module with `GOWORK=off` and readonly manifests, so they execute same-revision
+candidate source. Required ProviderWire Go-client captures SHALL use candidate
+root and client source.
 
-#### Scenario: Standalone readiness does not replace source-absence checks
-- **WHEN** candidate root/client build and test with Gateway physically absent
-- **THEN** standalone compatibility with older published pins SHALL remain on-demand readiness evidence, not a source-PR prerequisite
+#### Scenario: Coordinated change across modules
 
-### Requirement: Selectable published-module standalone validation
+- **WHEN** a pull request changes root and a provider that uses the new root behavior
+- **THEN** the provider builds and tests against the candidate root source without a published root version containing it
 
-The repository SHALL retain one-module/all-module standalone commands using public Go proxy, clean cache, `GOWORK=off`, readonly manifests, download/verification, build/test and no committed local replacements. Inventory SHALL use tracked nested `go.mod` roots and declared paths; unknown/local-only example/test selection SHALL fail. These commands SHALL remain callable on demand.
+#### Scenario: Missing transitive replacement
 
-#### Scenario: One published module
+- **WHEN** a module's build graph contains a first-party module that its `go.mod` does not replace with the registered directory
+- **THEN** the module-policy check fails and identifies the module and missing replacement
+
+#### Scenario: Ambient workspace
+
+- **WHEN** a developer has an uncommitted `go.work` or `GOWORK` set in the environment
+- **THEN** required tasks and CI still resolve first-party modules through each module's local replacements
+
+### Requirement: Per-module validation
+
+The repository SHALL provide one-module and all-module commands that download,
+verify, build and test each tracked module with `GOWORK=off`, readonly manifests
+and only its local first-party replacements. Inventory SHALL use tracked `go.mod`
+roots and declared paths; an unknown selection SHALL fail.
+
+#### Scenario: One module
+
 - **WHEN** a tracked module is selected by its registered module path or root
-- **THEN** standalone validation SHALL exercise only that module with the same checks used by the all-module command
+- **THEN** validation exercises only that module with the same checks used by the all-module command
 
-#### Scenario: All published modules
-- **WHEN** the existing all-module entry point runs
-- **THEN** it SHALL continue validating every tracked module including Gateway, providers, middleware, the Grafana client, and the SDK root without treating Gateway as a supported external Go-module release
+#### Scenario: Invalid selection
 
-#### Scenario: Invalid or local-only selection
-- **WHEN** a caller selects an unregistered module or a deliberately local-only example/test module
-- **THEN** validation SHALL fail rather than silently skipping it
+- **WHEN** a caller selects an unregistered module
+- **THEN** validation fails rather than silently skipping it
 
-#### Scenario: SDK module release versus Gateway image
-- **WHEN** a Gateway plugin passes workspace-source plugin checks but a candidate SDK/provider/middleware module fails standalone validation
-- **THEN** Gateway publication MAY proceed without the dependency being repinned or tagged first
-- **AND** the failing independent Go module SHALL NOT be published on plugin success alone
+### Requirement: Gateway plugin backend builds from its module
 
-### Requirement: Standalone validation publication boundary
+Gateway plugin backend, release and production builds SHALL build
+`ai-gateway/go.mod` at the selected checkout revision with `GOWORK=off` and
+readonly manifests, resolving SDK, provider and middleware source through its
+local replacements. Ambient development workspaces SHALL NOT determine backend
+dependencies.
 
-Selected SDK/provider/middleware standalone validation SHALL be required before independently consumable Go-module publication under #245/#21. Selected Gateway standalone results SHALL NOT block plugin publication/deployment; all-module results SHALL NOT block ordinary source PRs. Gateway SHALL remain a plugin-only supported release even if Go tooling discovers its tag.
+#### Scenario: Explicit Gateway dependencies
 
-#### Scenario: Standalone validation publication boundary
-- **WHEN** Go tooling discovers a Gateway release tag but standalone compilation fails
-- **THEN** Gateway SHALL remain plugin-only, with plugin/deployment gating independent of standalone results; no independent SDK/provider/middleware publication SHALL bypass its own standalone check
-
-### Requirement: No premature source-gate switch
-
-Required source checks MAY activate candidate integration only together with a blocking workspace-source Gateway plugin-validation path for eligible main/tag publication. Boundary, parity, integration and merged-pin checks SHALL remain blocking source checks; all-module standalone compilation SHALL not block an otherwise valid source PR. Gateway standalone compilation SHALL NOT become a plugin publication prerequisite.
-
-#### Scenario: Source PR with incomplete standalone dependencies
-- **WHEN** a source PR passes required candidate-source checks but cannot build against its older merged published pins
-- **THEN** it SHALL remain mergeable, while publication SHALL require successful same-revision workspace-source plugin validation and protocol test host suites rather than standalone Gateway readiness
-
-### Requirement: Explicit workspace for Gateway plugin backend dependencies
-Gateway release and production plugin backend builds SHALL explicitly select the checked-in Gateway workspace at the selected checkout revision with readonly manifests. Ambient development workspaces SHALL NOT determine backend dependencies. Standalone Go-module validation SHALL still use `GOWORK=off` and published dependencies.
-
-#### Scenario: Explicit workspace for Gateway plugin backend dependencies
 - **WHEN** a Gateway production plugin backend builds with a different ambient development workspace
-- **THEN** its dependencies SHALL still come from the explicit checked-in Gateway workspace at the selected revision
-
-### Requirement: Selected consumer regression evidence
-
-Library readiness SHALL run relevant deterministic consumer regression scenarios
-against the candidate library and its selected published dependency graph.
-Workspace substitutions for prerequisites SHALL NOT supply release evidence.
-Unrelated candidate modules SHALL NOT be required to compile.
-
-#### Scenario: Older dependency compiles but lacks behavior
-
-- **WHEN** a selected dependency omits runtime changes required through the candidate base
-- **THEN** freshness validation fails even if compilation succeeds
-
-#### Scenario: Selected provider consumer
-
-- **WHEN** a provider release is validated
-- **THEN** consumer scenarios use that candidate provider with published prerequisites and no local replacement
-
-#### Scenario: Root with unready downstream source
-
-- **WHEN** root is releasable and provider source awaits a new root version
-- **THEN** root consumer validation does not import the unready provider source
-
-### Requirement: Deterministic prerequisite source ownership
-
-Prerequisite freshness SHALL compare explicitly owned shipped-source snapshots at
-the prerequisite revision and candidate base. Ownership SHALL use the longest
-registered module root, retain root-owned middleware, and include runtime assets.
-Excluded development-only files SHALL be enumerated and tested.
-
-#### Scenario: Root-owned middleware
-
-- **WHEN** `middleware/extract_json.go` changes
-- **THEN** it changes root's prerequisite snapshot
-- **AND** nested `middleware/logger` files remain owned by Logger
-
-#### Scenario: Documentation-only difference
-
-- **WHEN** prerequisite revisions differ only in excluded documentation or tests
-- **THEN** that difference does not alone require a prerequisite release
-
-#### Scenario: Embedded runtime asset
-
-- **WHEN** a shipped runtime asset changes
-- **THEN** freshness rejects an older prerequisite even if the asset uses a documentation-like extension
+- **THEN** its dependencies still come from the local replacements in `ai-gateway/go.mod` at the selected revision

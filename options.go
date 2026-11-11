@@ -88,10 +88,11 @@ type baseConfig struct {
 
 type streamConfig struct {
 	baseConfig
-	onChunk                  func(OnChunkState)
-	onAbort                  func(OnAbortState)
-	includeRawChunks         bool
-	parseOutputOnAllFinishes bool
+	onChunk                       func(OnChunkState)
+	onAbort                       func(OnAbortState)
+	includeRawChunks              bool
+	parseOutputOnAllFinishes      bool
+	providerExecutedDenialResults bool
 }
 
 type generateConfig struct {
@@ -102,7 +103,7 @@ func (gc *generateConfig) toStreamConfig() *streamConfig {
 	bc := gc.baseConfig
 	bc.timeout.FirstChunk = 0
 	bc.timeout.Chunk = 0
-	return &streamConfig{baseConfig: bc}
+	return &streamConfig{baseConfig: bc, providerExecutedDenialResults: true}
 }
 
 func buildStreamConfig(opts []StreamOption) *streamConfig {
@@ -288,6 +289,9 @@ func WithToolApproval(policy ToolApprovalPolicyConfig) Option {
 }
 
 // WithToolApprovalSecret sets the secret used to sign and verify tool approval requests.
+// Only approvals for locally executed tools are signed and verified; approvals
+// for provider-executed tools are unsigned and passed to the provider unchecked,
+// as upstream does.
 func WithToolApprovalSecret(secret string) Option {
 	return sharedOption{fn: func(c *baseConfig) {
 		if secret != "" {
@@ -297,6 +301,9 @@ func WithToolApprovalSecret(secret string) Option {
 }
 
 // WithToolApprovalSecretBytes sets the byte secret used to sign and verify tool approval requests.
+// Only approvals for locally executed tools are signed and verified; approvals
+// for provider-executed tools are unsigned and passed to the provider unchecked,
+// as upstream does.
 func WithToolApprovalSecretBytes(secret []byte) Option {
 	return sharedOption{fn: func(c *baseConfig) {
 		if len(secret) > 0 {

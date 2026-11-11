@@ -102,7 +102,7 @@ func TestRuntimeApproval_DenialAndNestedOptions(t *testing.T) {
 	}
 }
 
-func TestRuntimeApproval_StreamCorrelationAndBounds(t *testing.T) {
+func TestRuntimeApproval_StreamCorrelationAndValidity(t *testing.T) {
 	call := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "mcp", Input: `{}`, ProviderExecuted: true}
 	approval := provider.StreamPart{Type: provider.PartToolApprovalRequest, ToolCallID: "call", ApprovalID: "native", ProviderMetadata: provider.ProviderMetadata{"future": json.RawMessage(`{"empty":{},"false":false}`)}}
 	local := call
@@ -114,8 +114,8 @@ func TestRuntimeApproval_StreamCorrelationAndBounds(t *testing.T) {
 	otherCall.ToolCallID = "other"
 	duplicateID := approval
 	duplicateID.ToolCallID = "other"
-	huge := approval
-	huge.ApprovalID = string(make([]byte, 1<<20))
+	large := approval
+	large.ApprovalID = string(make([]byte, 1<<20))
 	invalid := approval
 	invalid.ApprovalID = string([]byte{0xff})
 	for _, tc := range []struct {
@@ -130,7 +130,7 @@ func TestRuntimeApproval_StreamCorrelationAndBounds(t *testing.T) {
 		{"duplicate", []provider.StreamPart{call, approval, approval}, false},
 		{"conflicting", []provider.StreamPart{call, approval, conflicting}, false},
 		{"duplicate ID across calls", []provider.StreamPart{call, approval, otherCall, duplicateID}, false},
-		{"oversized", []provider.StreamPart{call, huge}, false},
+		{"large", []provider.StreamPart{call, large}, true},
 		{"invalid utf8", []provider.StreamPart{call, invalid}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

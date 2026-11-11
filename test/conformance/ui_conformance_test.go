@@ -189,6 +189,33 @@ func TestUIConformance_ErrorThenFinish(t *testing.T) {
 	require.Equal(t, expected, actual)
 }
 
+func TestUIConformance_FinishThenError(t *testing.T) {
+	for _, name := range []string{"terminal", "next-segment"} {
+		t.Run(name, func(t *testing.T) {
+			fixtureDir := filepath.Join("ui", "finish-then-error", name)
+			parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+			expected := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+
+			result := aisdk.StreamText(t.Context(), uiFixtureModel{parts: parts},
+				aisdk.WithModelMessages(provider.UserText("test")),
+			)
+			var actual []map[string]any
+			for chunk := range result.ToUIMessageStream(
+				aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" }),
+				aisdk.OnUIMessageStreamError(func(error) string { return "provider error" }),
+			) {
+				data, err := json.Marshal(chunk)
+				require.NoError(t, err)
+				var decoded map[string]any
+				require.NoError(t, json.Unmarshal(data, &decoded))
+				actual = append(actual, decoded)
+			}
+
+			require.Equal(t, expected, actual)
+		})
+	}
+}
+
 func TestUIConformance_EffectiveToolChoice(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -311,6 +338,97 @@ func TestUIConformance_BoundedArrayOutput(t *testing.T) {
 			}
 			requireErrorCause(t, expected.ElementStreamError, result.ElementStreamError())
 			requireErrorCause(t, expected.OutputError, result.OutputError())
+		})
+	}
+}
+
+func TestUIConformance_PartialOutput(t *testing.T) {
+	nameSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`))
+	require.NoError(t, err)
+	array, err := output.Array[any](nameSchema)
+	require.NoError(t, err)
+	object, err := output.Object[any](nameSchema)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		out  aisdk.Output
+	}{
+		{"empty-array", array},
+		{"multi-step-repeat", object},
+		{"interleaved-text", object},
+		{"first-text-start", object},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixtureDir := filepath.Join("ui", "partial-output", tc.name)
+			model := uiFixtureModel{}
+			opts := []aisdk.StreamOption{aisdk.WithModelMessages(provider.UserText("test")), aisdk.WithOutput(tc.out)}
+			if _, err := os.Stat(filepath.Join(fixtureDir, "input-1.jsonl")); err == nil {
+				model.calls = new(int)
+				model.steps = [][]provider.StreamPart{
+					loadUIFixtureParts(t, filepath.Join(fixtureDir, "input-1.jsonl")),
+					loadUIFixtureParts(t, filepath.Join(fixtureDir, "input-2.jsonl")),
+				}
+				lookupSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object"}`))
+				require.NoError(t, err)
+				opts = append(opts,
+					aisdk.WithTools(aisdk.ToolSet{"lookup": {InputSchema: lookupSchema, Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					}}}),
+					aisdk.WithStopWhen(aisdk.StepCountIs(3)),
+				)
+			} else {
+				model.parts = loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+			}
+			expectedChunks := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+			data, err := os.ReadFile(filepath.Join(fixtureDir, "expected-partials.json"))
+			require.NoError(t, err)
+			var expectedPartials []json.RawMessage
+			require.NoError(t, json.Unmarshal(data, &expectedPartials))
+			data, err = os.ReadFile(filepath.Join(fixtureDir, "expected-result.json"))
+			require.NoError(t, err)
+			var expectedResult struct {
+				Text        string          `json:"text"`
+				Output      json.RawMessage `json:"output"`
+				OutputError *string         `json:"outputError"`
+			}
+			require.NoError(t, json.Unmarshal(data, &expectedResult))
+
+			result := aisdk.StreamText(t.Context(), model, opts...)
+			var partials []json.RawMessage
+			partialsDone := make(chan struct{})
+			go func() {
+				defer close(partialsDone)
+				for partial := range result.PartialOutputStream() {
+					partials = append(partials, partial)
+				}
+			}()
+			var actualChunks []map[string]any
+			for chunk := range result.ToUIMessageStream(aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" })) {
+				data, err := json.Marshal(chunk)
+				require.NoError(t, err)
+				var decoded map[string]any
+				require.NoError(t, json.Unmarshal(data, &decoded))
+				actualChunks = append(actualChunks, decoded)
+			}
+			<-partialsDone
+
+			require.Equal(t, expectedChunks, actualChunks)
+			require.Len(t, partials, len(expectedPartials))
+			for i := range partials {
+				require.JSONEq(t, string(expectedPartials[i]), string(partials[i]))
+			}
+			require.Equal(t, expectedResult.Text, result.Text())
+			// The upstream cause is a JavaScript JSON.parse message, so only
+			// whether the final output failed is compared.
+			if expectedResult.OutputError != nil {
+				require.Error(t, result.OutputError())
+				require.Nil(t, result.OutputValue())
+			} else {
+				require.NoError(t, result.OutputError())
+				value, err := json.Marshal(result.OutputValue())
+				require.NoError(t, err)
+				require.JSONEq(t, string(expectedResult.Output), string(value))
+			}
 		})
 	}
 }

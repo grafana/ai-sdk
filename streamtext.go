@@ -19,6 +19,9 @@ import (
 const (
 	// defaultStreamBuffer is the channel buffer size for stream channels.
 	defaultStreamBuffer = 256
+	// deniedApprovalCorrelationProvider is the provider options namespace
+	// upstream generateText uses to correlate provider-executed denials.
+	deniedApprovalCorrelationProvider = "openai"
 )
 
 // ErrNoOutputGenerated is returned when a model stream ends before producing output.
@@ -789,7 +792,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			}
 		}
 
-		if outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
+		interrupted := step.FinishReason.Unified == provider.FinishReasonInterrupted
+		if interrupted || outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
 			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
 				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
@@ -882,7 +886,19 @@ func (r *StreamTextResult) processStep(
 	var warnings []provider.Warning
 	responseMeta := provider.ResponseMetadata{ID: generateConfigID(cfg), ModelID: stepModel.ModelID}
 	var responseHeaders map[string]string
-	var textBuilder strings.Builder
+	// Step text joins each text block in the order it first appeared, as
+	// upstream's step content does, rather than in delta arrival order.
+	var textBlocks []*strings.Builder
+	textBlockByID := make(map[string]*strings.Builder)
+	textBlock := func(id string) *strings.Builder {
+		block, ok := textBlockByID[id]
+		if !ok {
+			block = &strings.Builder{}
+			textBlockByID[id] = block
+			textBlocks = append(textBlocks, block)
+		}
+		return block
+	}
 	var reasoningBlocks []ReasoningOutput
 	type activeReasoningBlock struct {
 		text             strings.Builder
@@ -904,7 +920,7 @@ func (r *StreamTextResult) processStep(
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
 	var outputTextMeta provider.ProviderMetadata
-	var lastPublishedOutput string
+	r.lastPartialJSON = ""
 
 	r.emit(StreamStartStep{Warnings: warnings, Request: streamResult.Request})
 
@@ -966,6 +982,9 @@ loop:
 		switch part.Type {
 		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
 			part.ID = remapStreamPartID(part, textPartIDs, r.usedTextIDs, cfg)
+			if cfg.output != nil && outputTextChunkID == "" {
+				outputTextChunkID = part.ID
+			}
 		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 			part.ID = remapStreamPartID(part, reasoningPartIDs, r.usedReasoningIDs, cfg)
 		}
@@ -981,6 +1000,7 @@ loop:
 				Type:            provider.ContentPartTypeText,
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
+			textBlock(part.ID)
 			tsp := StreamTextStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
@@ -992,12 +1012,11 @@ loop:
 					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
 				}
 			}
-			textBuilder.WriteString(part.Delta)
+			block := textBlock(part.ID)
+			block.WriteString(part.Delta)
 
 			if cfg.output != nil {
-				if outputTextChunkID == "" {
-					outputTextChunkID = part.ID
-				} else if part.ID != outputTextChunkID {
+				if part.ID != outputTextChunkID {
 					tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -1013,9 +1032,7 @@ loop:
 					r.callOnChunk(cfg, tsp)
 					continue
 				}
-				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
-				if parsed != lastPublishedOutput && parsed != "" {
-					lastPublishedOutput = parsed
+				if r.emitPartialOutput(cfg.output, block.String()) {
 					tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -1278,11 +1295,6 @@ loop:
 					break
 				}
 			}
-			if req.Signature == "" {
-				if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
-					return step, stepStreamOutcome{hasOutput: hasOutput}, err
-				}
-			}
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeToolApprovalRequest,
@@ -1310,6 +1322,7 @@ loop:
 		case provider.PartError:
 			terminated = true
 			providerFailed = true
+			step.FinishReason.Unified = provider.FinishReasonError
 			// Synthesize a non-retryable APICallError when a producer emits
 			// a PartError without a populated APICallError. Wire boundaries
 			// MUST always carry an *APICallError so the orchestration layer
@@ -1343,7 +1356,11 @@ loop:
 		r.callOnChunk(cfg, tsp)
 	}
 
-	step.Text = textBuilder.String()
+	var stepText strings.Builder
+	for _, block := range textBlocks {
+		stepText.WriteString(block.String())
+	}
+	step.Text = stepText.String()
 	step.Reasoning = reasoningBlocks
 	for _, output := range reasoningBlocks {
 		if text, ok := output.(ReasoningTextOutput); ok {
@@ -1377,7 +1394,7 @@ loop:
 		})
 	}
 	var choiceViolation error
-	if completed && !providerFailed && ctx.Err() == nil {
+	if completed && !providerFailed && ctx.Err() == nil && step.FinishReason.Unified != provider.FinishReasonInterrupted {
 		choiceViolation = validateToolChoice(*cfg.toolChoice, step.ToolCalls)
 		if choiceViolation != nil {
 			step.FinishReason.Unified = provider.FinishReasonError
@@ -2092,10 +2109,10 @@ func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
 	r.callOnChunk(cfg, part)
 }
 
-func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
+func (r *StreamTextResult) emitPartialOutput(out Output, text string) bool {
 	v, ok := out.ParsePartial(text)
 	if !ok {
-		return ""
+		return false
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
 		var overflow error
@@ -2129,16 +2146,16 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		var err error
 		data, err = json.Marshal(v)
 		if err != nil {
-			return ""
+			return false
 		}
 	}
 	canonical, err := canonicalPartialJSON(data)
 	if err != nil || canonical == r.lastPartialJSON {
-		return ""
+		return false
 	}
 	r.lastPartialJSON = canonical
 	r.partialOutputStream.send(data)
-	return canonical
+	return true
 }
 
 func canonicalPartialJSON(data json.RawMessage) (string, error) {
@@ -2191,12 +2208,17 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// mutates existing message Content slices.
 	resultMsgs := cloneMessages(msgs)
 
-	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, approved)
+	localApproved := slices.DeleteFunc(slices.Clone(approved), isProviderExecutedApproval)
+	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, localApproved)
 	if err != nil {
 		return nil, err
 	}
+	localDenied := append(slices.DeleteFunc(slices.Clone(denied), isProviderExecutedApproval), demoted...)
+	providerDenied := slices.DeleteFunc(slices.Clone(denied), func(approval collectedToolApproval) bool {
+		return !isProviderExecutedApproval(approval)
+	})
 	denied = append(denied, demoted...)
-	for _, approval := range denied {
+	for _, approval := range slices.Concat(localDenied, providerDenied) {
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
 		r.emit(deniedEvent)
 		r.callOnChunk(cfg, deniedEvent)
@@ -2209,9 +2231,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	}
 	var executable []executableApproval
 	for _, approval := range approved {
-		if approval.toolCall.ProviderExecuted {
-			continue
-		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
 		if !ok || !isExecutableTool(tool) {
 			return nil, &ToolNotExecutableError{ToolName: approval.toolCall.ToolName}
@@ -2254,17 +2273,21 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
-		if approval.toolCall.ProviderExecuted || approval.hasExistingToolResult {
+		if approval.hasExistingToolResult || (approval.toolCall.ProviderExecuted && !cfg.providerExecutedDenialResults) {
 			continue
+		}
+		output := &provider.ToolResultOutput{
+			Type:   provider.ToolOutputExecutionDenied,
+			Reason: denialReason(approval.response.Reason),
+		}
+		if approval.toolCall.ProviderExecuted {
+			output.ProviderOptions = providerExecutedDenialOptions(approval.response.ApprovalID)
 		}
 		deniedToolParts = append(deniedToolParts, provider.ContentPart{
 			Type:       provider.ContentPartTypeToolResult,
 			ToolCallID: approval.toolCall.ToolCallID,
 			ToolName:   approval.toolCall.ToolName,
-			Output: &provider.ToolResultOutput{
-				Type:   provider.ToolOutputExecutionDenied,
-				Reason: denialReason(approval.response.Reason),
-			},
+			Output:     output,
 		})
 	}
 
@@ -2275,6 +2298,19 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		resultMsgs = append(resultMsgs, provider.NewToolMessage(toolParts...))
 	}
 	return resultMsgs, nil
+}
+
+func isProviderExecutedApproval(approval collectedToolApproval) bool {
+	return approval.toolCall.ProviderExecuted
+}
+
+func providerExecutedDenialOptions(approvalID string) provider.ProviderOptions {
+	raw, _ := json.Marshal(struct {
+		ApprovalID string `json:"approvalId"`
+	}{ApprovalID: approvalID})
+	return provider.ProviderOptions{
+		deniedApprovalCorrelationProvider: provider.RawProviderOption{Key: deniedApprovalCorrelationProvider, Raw: raw},
+	}
 }
 
 func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, error) {

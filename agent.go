@@ -271,6 +271,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	cfg.onAbort = nil
 	cfg.includeRawChunks = false
 	cfg.parseOutputOnAllFinishes = false
+	cfg.providerExecutedDenialResults = true
 	cfg.timeout.FirstChunk = 0
 	cfg.timeout.Chunk = 0
 	a.finalizeConfig(cfg, call.runtimeContext, call.runtimeContextSet)

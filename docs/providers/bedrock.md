@@ -99,6 +99,18 @@ the `bedrock-mantle` signing service for a Mantle host, it still emits
 Converse-shaped requests and must not be used for the Mantle OpenAI-compatible
 surface.
 
+## Tag requests for cost attribution
+
+Set `BedrockOptions.RequestMetadata` on a call to attach string tags for Bedrock
+invocation-log filtering and cost attribution. Both Converse and ConverseStream
+send these tags at the request top level. A nil map omits metadata; an empty
+non-nil map sends an empty object. Raw provider options use the same string-only
+contract and reject null or non-string values before HTTP. Modern
+`amazonBedrock` options take precedence over the legacy `bedrock` namespace as a
+whole, so an empty modern object does not inherit legacy metadata. See the
+[Bedrock package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock#BedrockOptions)
+for the typed options.
+
 ## Protect selected Converse content
 
 When a guardrail should inspect only selected input, attach Bedrock provider
@@ -117,9 +129,19 @@ then applies family-specific behavior based on the Bedrock model ID. For opaque
 application inference profiles, set the Anthropic model family on the model
 when its ID and request options do not identify it. JSON schema requests can
 use automatic, native output-format, or synthetic JSON-tool routing; automatic
-routing accounts for Bedrock's model-specific native-output reliability.
+routing accounts for Bedrock's model-specific native-output reliability and
+uses a system JSON instruction for unknown Claude IDs and for Claude models
+without strict-tool support when caller tools are present.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
+
+When portable reasoning and an explicit Bedrock reasoning configuration are both
+supplied, explicit effort or budget takes precedence. Only missing values are
+derived, so warnings describe the settings actually used. Explicit disabled
+thinking suppresses portable reasoning and removes its budget and effort;
+provider-default reasoning leaves explicit controls as supplied. Request
+preparation preserves caller configuration for reuse across calls. Both the
+`amazonBedrock` namespace and legacy `bedrock` namespace follow these rules.
 
 Cache points can be set on a message or on a single content part, and remain
 attached only when that message or part contributes content to the Converse
@@ -130,7 +152,8 @@ and unsigned reasoning also cannot create cache-only messages. A synthetic JSON
 response tool counts as an active tool.
 
 Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
-`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking,
+`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking
+and explicit disabled thinking is normalized to the same minimum with an unsupported warning. Provider-default calls preserve explicit effort capped at high; custom portable reasoning clears budget and effort before normalization. For this model,
 a `required` or named tool choice is sent as `auto` with a warning, and a JSON
 schema response uses a system-prompt instruction instead of the forced JSON
 tool.

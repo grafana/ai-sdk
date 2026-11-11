@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: b7f6255acaae7724adc0fd37aac3dae3f3466578
+  commit: 028a025398782f4938303f48fbeee45c79af544b
   packageSource: npm
-  verifiedAt: 2026-10-20
+  verifiedAt: 2026-11-04
 packages:
-  ai: 7.0.143
-  "@ai-sdk/anthropic": 4.0.82
-  "@ai-sdk/amazon-bedrock": 5.0.118
-  "@ai-sdk/gateway": 4.0.116
-  "@ai-sdk/openai": 4.0.96
-  "@ai-sdk/openai-compatible": 3.0.71
-  "@ai-sdk/provider": 4.0.29
-  "@ai-sdk/provider-utils": 5.0.62
-  "@ai-sdk/react": 4.0.147
+  ai: 7.0.159
+  "@ai-sdk/anthropic": 4.0.94
+  "@ai-sdk/amazon-bedrock": 5.0.130
+  "@ai-sdk/gateway": 4.0.132
+  "@ai-sdk/openai": 4.0.106
+  "@ai-sdk/openai-compatible": 3.0.82
+  "@ai-sdk/provider": 4.0.35
+  "@ai-sdk/provider-utils": 5.0.72
+  "@ai-sdk/react": 4.0.163
 verification:
   status: enforced
   conformanceScope: full
@@ -67,7 +67,7 @@ knownGaps:
     surface: provider-anthropic
     status: intentional-deviation
     description: After converting a hosted-MCP result to mcp_tool_result,
-      registered @ai-sdk/anthropic 4.0.71 falls through to the provider-executed
+      registered @ai-sdk/anthropic 4.0.82 falls through to the provider-executed
       routing and also warns that the tool result is not supported. Go emits the
       same mcp_tool_result without that contradictory warning. The synthetic
       cases under testdata/anthropic-prompt-conversion verify the upstream
@@ -157,7 +157,7 @@ knownGaps:
     status: intentional-deviation
     description: Go rejects clean frame-boundary EOF before messageStop with a
       retryable APICallError and no finish or synthesized incomplete tool call.
-      The registered upstream reference emits finish with other and
+      The registered upstream reference emits finish with interrupted and
       no raw reason instead. EOF after messageStop remains valid without
       metadata, including empty or unmapped stop reasons. Synthetic HTTP and
       frame tests cover this transport failure; no provider recording is claimed.
@@ -171,13 +171,14 @@ knownGaps:
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation
-    description: Upstream @ai-sdk/amazon-bedrock 5.0.99 maps reasoning none to
-      disabled, which omits the thinking field, so claude-sonnet-5-5 runs adaptive
-      thinking at its default effort. Go sends thinking type between_tools, the
-      model's lowest setting, matching the Anthropic provider; Bedrock Converse
-      accepts it at low, medium, and high effort. Go also accepts
-      reasoningConfig.type between_tools, which upstream does not, and lowers
-      xhigh or max effort to high for it, as the Anthropic provider does.
+    description: Go sends thinking type between_tools for reasoning none on
+      claude-sonnet-5-5, the model's lowest setting, matching the Anthropic
+      provider. Historical @ai-sdk/amazon-bedrock 5.0.99 omitted the thinking
+      field instead; the registered reference now also substitutes
+      between_tools, so the remaining deviation is that Go also accepts
+      reasoningConfig.type between_tools, which the registered option schema
+      rejects, and lowers xhigh or max effort to high for it, as the Anthropic
+      provider does.
   - id: bedrock-tool-result-file-urls
     surface: provider-bedrock
     status: intentional-deviation
@@ -283,17 +284,36 @@ knownGaps:
   - id: openai-chat-provider
     surface: provider-openai
     status: gap
-    description: Upstream OpenAI exposes both Chat Completions and Responses
-      language models. The Go OpenAI provider intentionally exposes only its
-      Responses adapter, so Chat-only request/output behavior (including audio
-      transcript fallback) is outside the current supported provider surface.
+    description: Upstream OpenAI exposes Chat Completions, legacy Completions
+      and Responses language models. The Go OpenAI provider intentionally exposes
+      only its Responses adapter, so Chat-only and Completions-only request/output
+      behavior (including audio transcript fallback and completion prompt
+      validation) is outside the current supported provider surface.
+  - id: openai-compatible-completion-model
+    surface: provider-openai-compatible
+    status: gap
+    description: Upstream @ai-sdk/openai-compatible exposes a legacy /completions
+      language model next to its chat model. The Go OpenAI-compatible provider
+      targets /chat/completions only, so completion prompt conversion, its
+      validation errors and completion response parsing are outside the current
+      supported provider surface.
+  - id: openai-compatible-user-file-reference-evidence
+    surface: provider-openai-compatible
+    status: gap
+    description: Uploaded user-file references resolve the configured provider
+      namespace and emit file.file_id, including empty identifiers. Synthetic
+      unary and streaming request tests cover exact namespaces, pre-I/O errors,
+      media independence, ordering, metadata and input immutability. No recorded
+      or imported fixture establishes live server acceptance of file IDs;
+      multipart tool-result support remains separate.
   - id: openai-incomplete-stream
     surface: provider-openai
     status: intentional-deviation
     description: Legacy nested-error envelopes terminate stream consumption. A
       plain EOF without a terminal or error event does not synthesize a provider
-      finish, preserving Go's incomplete-stream distinction; complete upstream
-      EOF parity is not claimed.
+      finish, preserving Go's incomplete-stream distinction, where the registered
+      upstream reference emits finish with interrupted; complete upstream EOF
+      parity is not claimed.
   - id: sdk-final-outbound-request-body
     surface: provider-contract
     status: documented-deviation
@@ -304,6 +324,15 @@ knownGaps:
       payloads. Both adapters limit stream startup to 64 data frames and 1 MiB
       before handoff; overflow fails setup without truncating evidence or
       enabling retries.
+  - id: speech-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 and ai expose speech generation models,
+      including the experimental streaming speech contract, experimental_streamSpeech
+      orchestration and the Gateway speech WebSocket transport in the current
+      registered baseline. The Go port currently scopes provider parity to
+      LanguageModel surfaces and does not expose speech generation APIs, streaming
+      speech orchestration or conformance coverage.
   - id: speech-translation-model-surface
     surface: provider-contract
     status: gap
@@ -320,6 +349,16 @@ knownGaps:
       provider-executed, rejected, denied and executed calls, so the field is
       deterministic across runs. UI chunks, step content and the next provider
       request keep their existing order.
+  - id: telemetry-integration-surface
+    surface: core-streamtext
+    status: gap
+    description: Upstream ai exposes a telemetry integration contract for
+      generation calls, including the telemetry option, Telemetry and dispatcher
+      callbacks, the diagnostics tracing channel and its event payloads such as
+      aiVersion and step errors. The Go port does not expose this integration
+      surface or its event payloads. Go provider middleware such as Agent
+      Observability, Prometheus and logger is a separate Go extension and is not
+      evidence of upstream telemetry parity.
   - id: transcription-model-surface
     surface: provider-contract
     status: gap

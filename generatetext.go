@@ -34,7 +34,10 @@ type GenerateTextResult struct {
 
 // GenerateText performs a non-streaming LLM call. It runs StreamText
 // internally and blocks until the stream completes, returning a
-// populated result or the first error encountered.
+// populated result or the first error encountered. Unlike StreamText, an
+// approval continuation also adds execution-denied results for denied
+// provider-executed tool calls, carrying the approval ID in the OpenAI
+// provider options so the provider can correlate them.
 func GenerateText(ctx context.Context, model provider.LanguageModel, opts ...GenerateOption) (*GenerateTextResult, error) {
 	cfg := buildGenerateConfig(opts)
 	timeoutWarnings := generateTimeoutWarnings(cfg.timeout)

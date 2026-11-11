@@ -156,6 +156,8 @@ func (OpenAIResponsesOptions) ProviderKey() string { return "openai" }
 type OpenAIReasoningEffortUpdate string
 
 const (
+	// OpenAIReasoningEffortUpdateNone disables reasoning on models that support it, such as GPT-6 Sol and Luna.
+	OpenAIReasoningEffortUpdateNone OpenAIReasoningEffortUpdate = "none"
 	// OpenAIReasoningEffortUpdateLow selects low reasoning effort.
 	OpenAIReasoningEffortUpdateLow OpenAIReasoningEffortUpdate = "low"
 	// OpenAIReasoningEffortUpdateMedium selects medium reasoning effort.
@@ -273,8 +275,9 @@ type OpenAIToolCaller struct {
 	CallerID string               `json:"callerId,omitempty"`
 }
 
-// OpenAIPartOptions carries per-content-part OpenAI options used for
-// round-tripping item references, reasoning, approvals, image detail, etc.
+// OpenAIPartOptions carries per-content-part and system-message OpenAI options
+// used for round-tripping item references, reasoning, approvals, image detail,
+// prompt cache breakpoints and positioned reasoning effort updates.
 type OpenAIPartOptions struct {
 	// ItemID is the OpenAI output item id used to emit item references.
 	ItemID string `json:"itemId,omitempty"`
@@ -298,6 +301,10 @@ type OpenAIPartOptions struct {
 	Caller *OpenAIToolCaller `json:"caller,omitempty"`
 	// Phase is the message phase ("commentary","final_answer").
 	Phase string `json:"phase,omitempty"`
+	// ReasoningEffortUpdate, on a system message with empty content, emits a
+	// configuration update at that position in the Responses input. Unsupported
+	// updates fail the request instead of being omitted.
+	ReasoningEffortUpdate OpenAIReasoningEffortUpdate `json:"reasoningEffortUpdate,omitempty"`
 }
 
 // ProviderKey returns the provider namespace key.

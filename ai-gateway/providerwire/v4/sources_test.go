@@ -16,9 +16,9 @@ func TestSourcesUnaryTitleAndIdentity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			part := provider.GenerateContentPart{Type: provider.ContentSource, SourceType: provider.SourceTypeDocument, ID: "private-id", Title: tc.title, Text: tc.legacy, MediaType: "text/plain"}
 			result := &provider.GenerateResult{Content: []provider.GenerateContentPart{part, part}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
-			mapped, err := mapUnarySuccess(result, 4096)
+			mapped, err := mapUnarySuccess(result)
 			require.NoError(t, err)
-			encoded, ok := encodeUnarySuccess(mapped, 4096)
+			encoded, ok := marshalUnarySuccess(mapped)
 			require.True(t, ok)
 			var value struct {
 				Content []map[string]any `json:"content"`

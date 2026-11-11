@@ -108,7 +108,6 @@ export async function executeScenario(tc: TestCase, model: LanguageModelV4, sign
     ...options,
     ...(signal ? { abortSignal: signal } : {}),
     onError: ({ error }) => { capture.error = String(error); },
-    experimental_lowMemory: false,
   });
   const normalize = tc.provider === "openai" ? createSourceIdNormalizer() : (chunk: unknown) => chunk;
   const outputPromise = output ? Promise.resolve(result.output).then(value => { capture.object = value; }, error => { capture.outputError = String(error); }) : undefined;

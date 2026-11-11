@@ -22,25 +22,22 @@ events as `aisdk.StreamRaw` parts, in order with the normalized parts. Without
 the option, the Gateway sends no raw events. Unary calls accept the option and
 return no raw output.
 
-Raw events are diagnostic. Their shape is whatever the provider sends and can
+Raw events are for debugging. Their shape is whatever the provider sends and can
 change without notice, so do not build application logic on them. Events keep
 their JSON values but not their exact bytes: whitespace, key order and escaping
-can differ from the provider's. A native event that is not valid UTF-8 JSON, or
-that repeats an object key, is skipped. Native provider error events pass
-through, so they can contain more detail than the Gateway's own error events.
-The Gateway does not log or export raw values.
+can differ from the provider's. An event that is not valid JSON arrives as a raw
+part without a value. An event that repeats an object key or is not valid UTF-8
+is skipped. Provider error events pass through, so they can
+contain more detail than the Gateway's own errors. Treat raw events as
+sensitive. The Gateway does not log or export them.
 
-Before writing an event, the Gateway removes MCP tool credentials that OpenAI
-echoes from the request: the `headers` object becomes `null`, `authorization`
-is removed, and `server_url` loses userinfo and the `access_token`, `api_key`
-and `X-Amz-*` credential query keys, or is removed if it cannot be parsed.
-Other query keys pass through.
+The Gateway removes MCP tool credentials that OpenAI echoes from your request
+before it sends an event: headers, the authorization value, and credential
+query parameters in the server URL.
 
-Requesting raw output can make an otherwise successful stream fail. Raw parts
-use the stream part budget, and a raw event larger than the frame limit ends
-the stream with an error and no finish; it is never truncated. To allow larger
-events, raise the Gateway's stream frame limit and the client's
-`Limits.StreamEventBytes` together.
+Raw events are never truncated, and their size does not end a stream. The
+Gateway does not limit the size of a provider stream; the request deadline and
+the stream idle limit bound it.
 
 ## Authenticate the client
 
@@ -148,12 +145,10 @@ A Grafana service can send its exchanged token in `X-Access-Token` instead of
 
 ### Handle large catalogs
 
-Listing returns the whole catalog or an error, never part of it. If a catalog
-is larger than the Go client accepts, raise `DiscoveryBytes` in a copy of
-[`grafana.DefaultLimits()`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#Limits)
-and pass it to the client. The TypeScript helper's `maxBytes` can only lower
-its limit; for a larger catalog, ask your Gateway administrator to publish
-fewer models.
+Listing returns the whole catalog or an error, never part of it. The Go client
+does not limit the catalog size. The TypeScript helper's `maxBytes` can only
+lower its limit, so if a catalog is too large for it, ask your Gateway
+administrator to publish fewer models.
 
 To combine the Gateway with other providers, see
 [Fallback and registry](../guides/fallback-and-registry.md).
@@ -174,6 +169,57 @@ that must not run twice.
 To see which models were tried, read the
 [execution overview](#inspect-execution-overviews-and-failures).
 
+## Use Anthropic server-side fallback
+
+Anthropic can retry a turn its safety classifiers refuse on another model,
+inside the same request. Ask for it with `providerOptions.anthropic.fallbacks`,
+either a list of fallback models or `"default"`, which lets Anthropic choose:
+
+```go
+result, err := aisdk.GenerateText(ctx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+	aisdk.WithProviderOptions(anthropic.AnthropicOptions{
+		Fallbacks: &anthropic.FallbackConfig{Chain: []anthropic.Fallback{{Model: "claude-opus-4-8"}}},
+	}),
+)
+```
+
+Use `anthropic.DefaultFallbacks()` for `"default"`. From a Vercel server:
+
+```ts
+const result = await generateText({
+  model: gateway("grafana/assistant"),
+  prompt: "Summarize this incident.",
+  providerOptions: {
+    anthropic: { fallbacks: [{ model: "claude-opus-4-8", max_tokens: 2048 }] },
+  },
+});
+```
+
+With configured models, your Gateway administrator decides what each provider
+of a model allows. A call is refused with an invalid request error, before the
+provider is called, when it names a model the provider does not allow, names
+a model twice, or sends `"default"` that is not allowed. The policy grants
+models, not their settings: `max_tokens`, `thinking` and `speed` in each entry
+are yours to choose, and can raise the cost.
+
+It combines with [Gateway fallback](#configure-fallback) and
+[routing](#route-a-call-to-other-models-and-providers) per attempt:
+
+- Each configured provider of a model, and each provider a routed call reaches,
+  applies its own policy. A provider that refuses is skipped like a failed
+  one, and the Gateway tries the next. If none allows the call, it fails.
+- A provider that is not Anthropic ignores `anthropic` options, so it answers
+  without server-side fallback.
+- Routes that share a provider and model are tried once, under the one policy
+  the administrator must give that provider and model in every route.
+
+Calls with [your own key](#use-your-own-provider-credentials) send
+`fallbacks` to Anthropic unchanged, without any Gateway policy; your account
+pays for the fallback model, including the one Anthropic chooses for
+`"default"`. Either way, when Anthropic switches models, the execution
+overview reports the model that answered as `servedModelId`.
+
 ## Use your own provider credentials
 
 When you bring your own key (BYOK), the Gateway calls the provider with your
@@ -182,23 +228,16 @@ Grafana Cloud. Select the provider's own model as `provider/model`, such as
 `openai/gpt-5`, and send your key with every call:
 
 ```go
-credentials, err := json.Marshal(map[string]any{
-	"byok": map[string]any{
-		"openai": []map[string]string{{"apiKey": apiKey}},
-	},
-})
-if err != nil {
-	return err
-}
 model, err := client.LanguageModel("openai/gpt-5")
 if err != nil {
 	return err
 }
 result, err := aisdk.GenerateText(ctx, model,
 	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
-	aisdk.WithProviderOptions(provider.RawProviderOption{
-		Key: "gateway",
-		Raw: credentials,
+	aisdk.WithProviderOptions(grafana.GatewayOptions{
+		BYOK: map[string][]grafana.BYOKAccount{
+			"openai": {{APIKey: apiKey}},
+		},
 	}),
 )
 if err != nil {
@@ -233,6 +272,81 @@ under the provider's own options, such as `openai`.
 - OpenAI accounts can also set `organization` and `project`.
 
 Calls with your own key do not use the Gateway's configured models or aliases.
+To see which of your accounts were tried, read the
+[execution overview](#inspect-execution-overviews-and-failures).
+
+## Route a call to other models and providers
+
+For one call, you can name fallback models and prefer or restrict providers.
+These controls use the same names as the Vercel AI Gateway, under
+`providerOptions.gateway`:
+
+- `models` lists fallback model IDs. The Gateway tries the model you selected
+  first, with all of its providers, then each listed model in order.
+- `order` lists providers to try first. Within each model, matching providers
+  move to the front in that order, and the others follow in their usual order.
+  It does not remove providers.
+- `only` lists the only providers to use. It applies to each model before
+  `order`. A model with none of these providers is skipped.
+
+```go
+result, err := aisdk.GenerateText(ctx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+	aisdk.WithProviderOptions(grafana.GatewayOptions{
+		Models: []string{"grafana/backup"},
+		Order:  []string{"anthropic"},
+	}),
+)
+```
+
+```ts
+import type { GatewayProviderOptions } from "@ai-sdk/gateway";
+import { generateText } from "ai";
+
+const result = await generateText({
+  model: gateway("grafana/assistant"),
+  prompt: "Summarize this incident.",
+  providerOptions: {
+    gateway: { models: ["grafana/backup"], order: ["anthropic"] } satisfies GatewayProviderOptions,
+  },
+});
+```
+
+Which names you can use depends on how you call the Gateway:
+
+- With configured models, `models` entries are model IDs or aliases from
+  [model discovery](#discover-and-select-public-models). Provider names are the
+  `provider` values discovery reports for each model, such as `anthropic`,
+  `openai` or a compatible provider's name, not the names of configured
+  provider accounts.
+- With your own keys, `models` entries are `provider/model` selectors, and you
+  must send keys under `byok` for each provider you name. The Gateway never
+  uses its own provider accounts for your calls.
+
+The controls never add destinations: you can only reach models and accounts
+you could already call directly. A call tries at most 8 providers in total;
+each provider and model is tried once, even when several routes share it.
+Everything else about the call still applies to every attempt: each provider
+reads its own options, such as `anthropic` or `openai`, each model applies its
+own [skills policy](#anthropic-agent-skills), and the
+[fallback rules](#configure-fallback) about committed output are the same.
+
+The Gateway checks the controls before calling any provider, and rejects:
+
+- with configured models, a `models` entry it cannot find, with a model not
+  found error;
+- with your own keys, a `models` entry that is not a supported
+  `provider/model` selector or names a provider you sent no keys for, with an
+  invalid request error;
+- an `only` list that leaves no provider, a list with an entry that is not a
+  non-empty string, a conditional `models` entry, or a call that would try more
+  than 8 providers, with an invalid request error;
+- any other control, such as `sort`, `user`, `tags`, `zeroDataRetention` or
+  `providerTimeouts`, with an invalid request error, rather than ignoring it.
+
+The Go client does not check these values itself, and its `GatewayOptions`
+has only the controls the Gateway supports. To see how a call was routed, read
+the [routing summary](#inspect-execution-overviews-and-failures).
 
 ## Keep credentials out of logs
 
@@ -260,8 +374,9 @@ the Gateway in generated and streamed calls. Schemas need an object at the
 root. The model returns JSON text, and the SDK parses and validates it.
 
 Schema support depends on the provider. OpenAI and Anthropic models follow the
-schema natively. Models from OpenAI-compatible providers use JSON mode and
-return a warning when you supply a schema.
+schema natively. Models from OpenAI-compatible providers follow the schema when
+the operator sets `supportsStructuredOutputs: true` on that provider. Otherwise
+they use JSON mode and return a warning when you supply a schema.
 
 `provider.ResponseFormat.Name` is a pointer: use `new("answer")` to set a name.
 See the [provider reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
@@ -297,6 +412,31 @@ the `approvalId`. The SDK does not do this for you.
 `ToolResultOutput.Reason` is a pointer, so a denied tool call can tell an
 absent reason (nil) from an empty one (`new("")`).
 
+### Anthropic agent skills
+
+Send Anthropic agent skills under `providerOptions.anthropic.container.skills`,
+together with the code-execution tool; see the [Anthropic](anthropic.md#agent-skills)
+guide. A call can carry at most 20 distinct skills.
+
+- **Configured models** allow only the skills your Gateway administrator lists
+  for that model; other skills fail with an invalid-request error before the
+  provider is called. The version must match the allowed entry exactly: a
+  call without a version matches only an entry without versions, and `latest`
+  is matched literally. A listed custom skill is shared by every caller of the
+  model.
+- **Configured models refuse `container.id`**, with or without skills, because
+  containers belong to the Gateway's provider account. Every call starts a
+  fresh container, so continuing a `pause_turn` or reusing a container across
+  turns needs your own key. The response still reports
+  `providerMetadata.anthropic.container`.
+- **Your own key** allows any bounded skills, including custom ones, and a
+  `container.id` of at most 128 bytes. Skills and containers belong to one
+  Anthropic account, so a later account in your list fails at the provider.
+
+Files that skills create, such as a `.pptx`, are returned as `file_id`s in the
+code-execution result. They stay in the provider account; the Gateway has no
+download path for them.
+
 ## Continue conversations with provider metadata
 
 Models can return data they need on later calls, such as Claude thinking
@@ -322,7 +462,7 @@ in a tool result, the call fails with an invalid request error.
 
 When a model generates files, the Gateway returns them in generated and
 streamed responses. The SDK downloads files that arrive as URLs; the Gateway
-does not. Generated files count toward the response size limits. Once a model
+does not. Once a model
 has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
@@ -330,6 +470,10 @@ has returned a file, the Gateway does not fall back for that call.
 Use returned sources and text citations to display references, and warnings to
 identify unsupported settings. See the [source guide](../../ai-gateway/docs/sources.md) for citation
 handling. Keep sensitive warning text and response details out of public logs.
+
+One stream can carry several `response-metadata` and `finish` events when the
+provider returns several messages or responses in one call. The stream ends
+when the provider closes it, not at the first `finish`.
 
 Response IDs and model names come from the provider and can differ from the
 model you selected. Use them to diagnose a call, not to pick the next model.
@@ -339,12 +483,37 @@ from the response metadata after the call. With `model.DoGenerate`, they are in
 
 ## Inspect execution overviews and failures
 
-Calls to configured models return a `gateway.execution` entry in the provider
-metadata of the result or the stream's finish. It names the model you selected
-and lists each attempt in order, with its provider, model, outcome and, for a
-failure, the provider's error message, type, code and status. In Go, read it
-from `ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has
-its own overview, so retries and tool loop steps start new ones.
+Calls return a `gateway.execution` entry in the provider metadata of the
+result or each stream finish. It names the model you selected and lists each
+attempt in order, with its provider, model, outcome and, for a failure, the
+provider's error message, type, code and status. In Go, read it from
+`ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has its
+own overview, so retries and tool loop steps start new ones.
+
+When Anthropic [server-side fallback](#use-anthropic-server-side-fallback)
+moved the response to another model, the selected attempt also has
+`servedModelId`, the model that answered; `modelId` stays the model the
+Gateway called. A stream reports the latest such model in each finish and
+error. `gateway.routing` does not report it.
+
+For configured models, the overview also has the resolved `canonicalModelId`
+and each attempt's `providerInstance`. For calls with your own key,
+`requestedModelId` is the `provider/model` you sent, there is no
+`canonicalModelId` or `providerInstance`, and the attempts follow the order of
+your accounts. An account that failed before a later one answered keeps its
+own error summary. The overview has no account or key field; use the
+attempt's position to match it to your list. A provider's error text can still
+repeat your key, as described below.
+
+Next to it, `gateway.routing` groups the same attempts by model, using field
+names from the Vercel AI Gateway: `originalModelId`, `canonicalSlug` for
+configured models, `resolvedProvider` (the first provider tried),
+`finalProvider` (the one that answered, absent when none did), and
+`modelAttempts`. Each model attempt has its `modelId` as you sent it, a
+`success` flag and its `providerAttempts`, each with a `provider`, a `success`
+flag and, for a failure, the provider's `statusCode`. Models the call never
+reached are not listed. Unlike Vercel's, it has no timings, costs, credential
+types or providers that were not tried.
 
 Errors carry the same information:
 
@@ -354,11 +523,12 @@ Errors carry the same information:
   provider's error in `error.data.nativeError`. In Go, read the part's
   `APICallError.Data`. The stream's later parts remain readable.
 
-Overviews are best-effort. One may be missing, for example when a response is
-close to its size limit, and a missing overview does not mean no provider was
-tried. Calls with your own provider key don't return overviews yet, only
-provider errors on streams
-([#317](https://github.com/grafana/ai-sdk/issues/317)).
+Overviews are best-effort: a missing overview does not mean no provider was
+tried. A call the Gateway rejects before trying any account, such as one with
+missing or malformed `gateway.byok` credentials, unsupported options or
+invalid routing controls, has no overview. A selected attempt, or a provider
+attempt with `success`, means the provider started answering, not that the
+stream completed.
 
 The Gateway replaces its own configured provider keys with `[REDACTED]` in
 error summaries. It does not change your own provider key if a provider repeats
@@ -375,11 +545,29 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
-If responses or streams exceed the client's size limits, raise them from
-[`grafana.DefaultLimits`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#DefaultLimits)
-instead of using a partial result. `APICallError.Data` and `ResponseBody`
-contain the error response, which can include provider details; keep it out of
-public logs.
+A stream error part whose `APICallError` has `StatusCode` 0 and the message
+`provider stream error` means the provider reported an error inside its stream.
+It is not retryable: `IsRetryable` is false, so the root `fallback` package with
+`WithBufferedStream` does not fall back on it. Later parts of the same stream
+remain readable, and the stream can end right after the error without a finish
+part.
+
+The Gateway limits provider response sizes and stream idle time, and Grafana
+limits request size and duration, so the client has no size limits to
+configure. To bound a call yourself, use the
+context deadline above, and your own `http.Client` for transport-level limits
+such as timeouts.
+
+When the Gateway tries several candidates, the error reports the failure that
+ended the call: a cancellation or deadline of the call wins, otherwise the most
+recent candidate failure that is not a refusal decides. A refusal is a
+candidate that cannot take the request, such as a model whose skills policy
+does not list a requested skill. The error is invalid request only when every
+candidate refused. This applies to configured fallback, routed calls and your
+own keys alike; keep the skills policies of models you combine consistent.
+
+`APICallError.Data` and `ResponseBody` contain the error response, which can
+include provider details; keep it out of public logs.
 
 ## Reference
 

@@ -28,7 +28,7 @@ type reasoningWireFileData struct {
 	OriginalURL *string `json:"originalUrl,omitempty"`
 }
 
-// Called only after bounded preflight and validation. Do not expose provider
+// Called only after validation. Do not expose provider
 // marshalers at the strict service boundary.
 func projectReasoningFile(data *provider.StreamFileData) reasoningWireFileData {
 	if data.Type == provider.StreamFileDataTypeURL || (data.Type == "" && data.URL != "") {
@@ -39,33 +39,6 @@ func projectReasoningFile(data *provider.StreamFileData) reasoningWireFileData {
 		encoded = base64.StdEncoding.EncodeToString(data.Bytes)
 	}
 	return reasoningWireFileData{Type: "data", Data: &encoded}
-}
-
-func reasoningFileFits(data *provider.StreamFileData, mediaType string, remaining *int64) bool {
-	if data == nil {
-		return false
-	}
-	for _, size := range []int{len(mediaType), len(data.Base64), len(data.URL)} {
-		if int64(size) > *remaining {
-			return false
-		}
-		*remaining -= int64(size)
-	}
-	if data.OriginalURL != nil {
-		if int64(len(*data.OriginalURL)) > *remaining {
-			return false
-		}
-		*remaining -= int64(len(*data.OriginalURL))
-	}
-	if int64(len(data.Bytes)) > (*remaining/4)*3 {
-		return false
-	}
-	encoded := (int64(len(data.Bytes)) + 2) / 3 * 4
-	if encoded > *remaining {
-		return false
-	}
-	*remaining -= encoded
-	return true
 }
 
 func unaryReasoningFile(data *provider.DataContent) *provider.StreamFileData {
@@ -85,34 +58,13 @@ func validReasoningFile(data *provider.StreamFileData, mediaType string) bool {
 	return data != nil && data.Validate() == nil && utf8.ValidString(mediaType) && utf8.ValidString(data.Base64) && utf8.ValidString(data.URL) && (data.OriginalURL == nil || utf8.ValidString(*data.OriginalURL))
 }
 
-func (h *handler) processReasoningPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
+func (h *handler) processReasoningPart(w http.ResponseWriter, part provider.StreamPart) streamPartResult {
 	event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
-	switch part.Type {
-	case provider.PartReasoningStart:
-		if part.ID == "" {
-			return streamPartAdapterFailure
-		}
-		if _, exists := state.usedReasoningIDs[part.ID]; exists {
-			return streamPartAdapterFailure
-		}
-	case provider.PartReasoningDelta, provider.PartReasoningEnd:
-		if _, active := state.reasoningIDs[part.ID]; !active {
-			return streamPartAdapterFailure
-		}
-	}
 	switch h.emitStreamEvent(w, event) {
 	case streamWriteEncodingFailure:
 		return streamPartAdapterFailure
 	case streamWriteWriterFailure:
 		return streamPartWriterFailure
-	}
-	state.textStarted = true
-	if part.Type == provider.PartReasoningStart {
-		state.reasoningIDs[part.ID] = struct{}{}
-		state.usedReasoningIDs[part.ID] = struct{}{}
-	}
-	if part.Type == provider.PartReasoningEnd {
-		delete(state.reasoningIDs, part.ID)
 	}
 	return streamPartContinue
 }

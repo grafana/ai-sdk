@@ -6,7 +6,7 @@ Define how the authenticated Gateway command configures named provider instances
 ## Requirements
 
 ### Requirement: Configured provider state cannot influence BYOK
-All startup provider-instance configuration, secret resolution, custom endpoints and constructed account-bound models SHALL belong exclusively to configured-account access. BYOK provider construction SHALL use supported built-in adapters, fixed native destinations and supplied request credentials without consulting those instances or ambient SDK credentials. Credential-independent transport/lifecycle infrastructure SHALL remain reusable without shared mutable authentication state.
+All startup provider-instance and candidate-policy configuration, secret resolution, custom endpoints and account-bound models SHALL belong exclusively to configured-account access. BYOK provider construction SHALL use supported built-in adapters, fixed native destinations and supplied request credentials without consulting that configuration or ambient SDK credentials. Credential-independent transport/lifecycle infrastructure SHALL remain reusable without shared mutable authentication state.
 
 #### Scenario: Configured provider of the same type exists
 - **WHEN** an OpenAI BYOK request arrives and an OpenAI instance has a configured custom endpoint and key
@@ -19,6 +19,10 @@ All startup provider-instance configuration, secret resolution, custom endpoints
 #### Scenario: Configured request includes BYOK
 - **WHEN** a configured-access caller supplies providerOptions.gateway.byok
 - **THEN** the host SHALL reject it explicitly before provider I/O rather than replace or ignore the configured credential source
+
+#### Scenario: Configured candidate policy exists
+- **WHEN** an Anthropic BYOK request selects a model that a configured candidate also serves with a skills policy
+- **THEN** BYOK admission SHALL be decided without that policy, under the BYOK rules of gateway-anthropic-skills
 
 ### Requirement: OpenAI Responses provider configuration
 The Gateway command model configuration SHALL accept `providers.<name>` instances with `type: openai`. Each instance SHALL require a non-empty `apiKeyEnv` and SHALL accept an optional `baseURL`. When `baseURL` is empty, OpenAI Responses models SHALL use `https://api.openai.com/v1`. A non-empty `baseURL` SHALL pass the same credential-free endpoint validation as other provider endpoints, including HTTPS in production deployment mode.
@@ -49,7 +53,7 @@ Each public model backed by an `openai` provider SHALL be constructed once throu
 - **AND** the ProviderWire streaming finish part SHALL carry the output token total from the backend's completed response
 
 #### Scenario: Responses backend exceeds the byte bound
-- **WHEN** an OpenAI Responses backend response exceeds `anthropic.response-bytes`
+- **WHEN** an OpenAI Responses backend response exceeds the 16 MiB model transport bound
 - **THEN** the call SHALL fail without returning the response
 - **AND** the client SHALL receive a fixed safe error
 
@@ -59,13 +63,6 @@ The Gateway SHALL NOT construct these models through `openai-go`'s `NewClient`, 
 #### Scenario: OpenAI SDK environment exclusion and proxy compatibility
 - **WHEN** OPENAI_API_KEY and OPENAI_BASE_URL conflict with configured values while HTTPS_PROXY is set
 - **THEN** explicit Gateway configuration SHALL remain authoritative without openai-go NewClient while standard proxy handling SHALL still apply
-
-### Requirement: OpenAI Responses shared bounded transport and flag help
-OpenAI Responses models SHALL inherit the shared redirect rejection, the `anthropic.response-header-timeout` response-header timeout and the `anthropic.response-bytes` cumulative response byte bound, and the help text for both flags SHALL state that they govern all provider types.
-
-#### Scenario: OpenAI Responses shared bounded transport and flag help
-- **WHEN** an OpenAI backend redirects or exceeds the configured response timeout/byte bound
-- **THEN** the shared hardened client SHALL enforce the same all-provider bounds and both flag help texts SHALL identify that scope
 
 ### Requirement: OpenAI Responses configuration and operator identity boundaries
 Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/provider/providerModelId facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials.
@@ -101,7 +98,7 @@ Configured secrets and another tenant's state SHALL remain protected. Configured
 - **THEN** discovery SHALL NOT add attempt/failure evidence or expose configured secrets or another tenant state
 
 ### Requirement: OpenAI-compatible provider configuration
-The Gateway command model configuration SHALL accept `providers.<name>` instances with `type: openai-compatible`. Each instance SHALL require a non-empty `apiKeyEnv` and a non-empty `baseURL`, and SHALL accept an optional `providerName`. `providerName` SHALL be rejected for `anthropic` providers. An unsupported `type` SHALL fail with `providers.<name>.type` and the list of supported types. Configuration SHALL remain strict YAML, so unknown keys still fail.
+Model configuration SHALL accept `providers.<name>` instances with `type: openai-compatible`. Each instance SHALL require a non-empty `apiKeyEnv` and `baseURL` and SHALL accept an optional `providerName`, which SHALL be rejected for `anthropic` providers and, for compatible providers, in the host-owned `gateway` option namespace. An unsupported `type` SHALL fail with `providers.<name>.type` and the list of supported types. Configuration SHALL remain strict YAML, so unknown keys still fail.
 
 #### Scenario: Compatible provider omits the base URL
 - **WHEN** a `type: openai-compatible` provider has no `baseURL`
@@ -112,6 +109,14 @@ The Gateway command model configuration SHALL accept `providers.<name>` instance
 - **WHEN** a `type: anthropic` provider sets `providerName`
 - **THEN** the returned configuration error SHALL name `providers.<name>.providerName`
 
+#### Scenario: Provider named after the host controls
+- **WHEN** a compatible provider sets `providerName` to `gateway`, ` gateway` or `gateway.chat`
+- **THEN** the returned configuration error SHALL name `providers.<name>.providerName`
+
+#### Scenario: Provider named grafana
+- **WHEN** a compatible provider sets `providerName` to `grafana`
+- **THEN** configuration SHALL load and callers SHALL be able to send `grafana` provider options to that backend
+
 #### Scenario: Unsupported provider type
 - **WHEN** a provider declares a `type` the command does not support
 - **THEN** the returned configuration error SHALL name `providers.<name>.type` and list every supported provider type
@@ -119,6 +124,27 @@ The Gateway command model configuration SHALL accept `providers.<name>` instance
 #### Scenario: Valid compatible provider resolves
 - **WHEN** a compatible provider sets `apiKeyEnv`, `baseURL` and `providerName`, and the referenced environment variable is non-empty
 - **THEN** the resolved provider SHALL carry the API key value, base URL and provider name
+
+### Requirement: Compatible structured-output capability setting
+Model configuration SHALL accept an optional boolean `supportsStructuredOutputs` on `providers.<name>` instances. It SHALL default to `false`. Setting it to `true` on an `anthropic` or `openai` provider SHALL fail during startup, before readiness, with an error that names `providers.<name>.supportsStructuredOutputs`. Configuration SHALL remain strict YAML. Configured discovery SHALL NOT expose the capability.
+
+#### Scenario: Compatible provider enables structured outputs
+- **WHEN** a `type: openai-compatible` provider sets `supportsStructuredOutputs: true` and its other settings are valid
+- **THEN** configuration SHALL load
+- **AND** the resolved provider SHALL carry the enabled capability with its API key value, base URL and provider name
+
+#### Scenario: Compatible provider omits the setting
+- **WHEN** a `type: openai-compatible` provider does not set `supportsStructuredOutputs`
+- **THEN** configuration SHALL load and the resolved provider SHALL carry the capability disabled
+
+#### Scenario: Structured outputs enabled on a non-compatible provider
+- **WHEN** a `type: anthropic` or `type: openai` provider sets `supportsStructuredOutputs: true`
+- **THEN** the returned configuration error SHALL name `providers.<name>.supportsStructuredOutputs` and state that the setting is only supported for openai-compatible providers
+- **AND** the process SHALL NOT become ready
+
+#### Scenario: Explicit false on a non-compatible provider
+- **WHEN** a `type: anthropic` or `type: openai` provider sets `supportsStructuredOutputs: false`
+- **THEN** configuration SHALL load as if the setting were absent
 
 ### Requirement: Compatible endpoint validation before readiness
 Every failure SHALL occur during startup before readiness, and a non-empty compatible `baseURL` SHALL pass the same credential-free http or https endpoint validation as other provider endpoints.
@@ -128,11 +154,17 @@ Every failure SHALL occur during startup before readiness, and a non-empty compa
 - **THEN** startup SHALL reject it before readiness under the shared endpoint validation
 
 ### Requirement: Compatible model construction over the bounded model transport
-Each public model backed by an `openai-compatible` provider SHALL be constructed once through `providers/openai-compatible` with the resolved API key, the configured `baseURL`, the configured `primary.model` as the backend model ID, and the Gateway's hardened model HTTP client. The Gateway SHALL NOT retry a failed compatible request. Canonical IDs and aliases SHALL resolve to the same constructed model.
+Each public model backed by an `openai-compatible` provider SHALL be constructed once through `providers/openai-compatible` with the resolved API key, the configured `baseURL`, the configured `primary.model` as the backend model ID, the configured `supportsStructuredOutputs` capability, and the Gateway's hardened model HTTP client. The Gateway SHALL NOT retry a failed compatible request. Canonical IDs and aliases SHALL resolve to the same constructed model.
 
 #### Scenario: Unary and streaming calls reach the configured backend
 - **WHEN** an authenticated client invokes a compatible public model by canonical ID or alias, unary or streaming
 - **THEN** the backend SHALL receive `POST <baseURL>/chat/completions` with `Authorization: Bearer <resolved key>` and the configured backend model ID
+
+#### Scenario: Structured-output capability reaches each compatible candidate
+- **WHEN** a compatible provider used as a primary or configured fallback candidate sets `supportsStructuredOutputs: true`
+- **THEN** the model constructed for that candidate SHALL send JSON-schema response formats
+- **AND** a compatible provider without the setting SHALL be constructed with the capability disabled
+- **AND** when a primary and a fallback candidate have opposite settings, each candidate's backend request SHALL use the response format of its own provider's setting
 
 #### Scenario: Backend redirects
 - **WHEN** a compatible backend responds with an HTTP redirect
@@ -140,16 +172,9 @@ Each public model backed by an `openai-compatible` provider SHALL be constructed
 - **AND** the client SHALL receive a fixed safe error
 
 #### Scenario: Backend response exceeds the byte bound
-- **WHEN** a compatible backend response exceeds `anthropic.response-bytes`
+- **WHEN** a compatible backend response exceeds the 16 MiB model transport bound
 - **THEN** the call SHALL fail without returning the response
 - **AND** the client SHALL receive a fixed safe error
-
-### Requirement: Compatible shared transport flags and provider-independent help
-The compatible model HTTP client SHALL be the same client used for Anthropic models, so compatible backends inherit redirect rejection, the `anthropic.response-header-timeout` response-header timeout and the `anthropic.response-bytes` cumulative response byte bound; no provider-specific flags SHALL be added, and the help text for both flags SHALL state that they govern all provider types.
-
-#### Scenario: Compatible shared transport flags and provider-independent help
-- **WHEN** a compatible backend redirects, exceeds the response-byte bound or stalls response headers
-- **THEN** the same Anthropic shared client SHALL enforce the limits without provider-specific flags, and both help texts SHALL state their all-provider scope
 
 ### Requirement: Compatible streams request usage
 Streaming requests to `openai-compatible` backends SHALL send `stream_options.include_usage: true` so ProviderWire finish parts carry backend token counts. This SHALL be unconditional for Gateway-constructed compatible models. A backend that omits the usage chunk SHALL still finish the stream.
@@ -207,3 +232,17 @@ Returned native modelId SHALL NOT be replaced with canonical route identity. Sec
 #### Scenario: Compatible native model identity and tenant protection
 - **WHEN** a successful compatible response supplies a native modelId different from the route
 - **THEN** output SHALL retain native modelId rather than canonical replacement while secrets and another tenant state remain protected
+
+### Requirement: OpenAI Responses shared bounded transport
+OpenAI Responses models SHALL use the shared model HTTP client and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
+
+#### Scenario: OpenAI Responses shared bounded transport
+- **WHEN** an OpenAI backend redirects, stalls its response headers, exceeds the byte bound in a unary response, or streams more than 16 MiB
+- **THEN** the shared client SHALL enforce the same bounds as for every other provider type, and only the long stream SHALL succeed
+
+### Requirement: Compatible shared bounded transport
+The compatible model HTTP client SHALL be the shared model HTTP client used for every provider type, so compatible backends inherit redirect rejection, the fixed 10-second response-header timeout and the fixed 16 MiB decompressed byte bound per non-stream response, and leave streams to the execution time bounds. No provider-specific transport setting SHALL be added.
+
+#### Scenario: Compatible shared bounded transport
+- **WHEN** a compatible backend redirects, exceeds the byte bound in a unary response, stalls response headers, or streams more than 16 MiB
+- **THEN** the shared client SHALL enforce the same bounds without provider-specific settings, and only the long stream SHALL succeed

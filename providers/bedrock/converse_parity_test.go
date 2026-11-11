@@ -68,24 +68,48 @@ func TestConverseParity_ModelFamilyAndReasoning(t *testing.T) {
 
 func TestConverseParity_OutputMode(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)
+	const (
+		unknownClaude = "us.anthropic.claude-future-9-20990101-v1:0"
+		profileARN    = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom"
+	)
+	strict := true
 	cases := []struct {
 		name, modelID             string
+		family                    ModelFamily
 		mode                      StructuredOutputMode
-		withTool                  bool
+		withTool, thinking        bool
 		native, tool, instruction bool
+		strictWarning             bool
 	}{
 		{name: "sonnet 4.6 auto fallback", modelID: "anthropic.claude-sonnet-4-6", tool: true},
 		{name: "haiku 4.5 auto fallback", modelID: "anthropic.claude-haiku-4-5", tool: true},
 		{name: "older sonnet 4 auto fallback", modelID: "anthropic.claude-sonnet-4-20250514-v1:0", tool: true},
 		{name: "older opus 4 auto fallback", modelID: "anthropic.claude-opus-4-20250514-v1:0", tool: true},
 		{name: "older opus 4.1 native", modelID: "anthropic.claude-opus-4-1-20250805-v1:0", native: true},
-		{name: "unknown claude native", modelID: "us.anthropic.claude-future-9-20990101-v1:0", native: true},
+		{name: "unknown claude auto instruction", modelID: unknownClaude, instruction: true},
+		{name: "unknown claude thinking instruction", modelID: unknownClaude, thinking: true, instruction: true},
+		{name: "unknown claude user tools instruction", modelID: unknownClaude, withTool: true, instruction: true, strictWarning: true},
+		{name: "unknown claude explicit anthropic family instruction", modelID: unknownClaude, family: ModelFamilyAnthropic, instruction: true},
+		{name: "unknown claude json tool", modelID: unknownClaude, mode: StructuredOutputModeJSONTool, tool: true},
+		{name: "unknown claude json tool with user tools", modelID: unknownClaude, mode: StructuredOutputModeJSONTool, withTool: true, tool: true, strictWarning: true},
+		{name: "unknown claude explicit format", modelID: unknownClaude, mode: StructuredOutputModeOutputFormat, native: true},
+		{name: "future major claude instruction", modelID: "us.anthropic.claude-opus-6-v1:0", instruction: true},
+		{name: "future minor claude instruction", modelID: "us.anthropic.claude-opus-4-9-v1:0", instruction: true},
+		{name: "future minor claude thinking instruction", modelID: "us.anthropic.claude-opus-4-9-v1:0", thinking: true, instruction: true},
+		{name: "haiku 5.5 auto fallback", modelID: "us.anthropic.claude-haiku-5-5", tool: true},
+		{name: "haiku 5.5 thinking fallback", modelID: "us.anthropic.claude-haiku-5-5", thinking: true, tool: true},
+		{name: "haiku 5.5 user tools instruction", modelID: "us.anthropic.claude-haiku-5-5", withTool: true, instruction: true, strictWarning: true},
 		{name: "legacy claude fallback", modelID: "anthropic.claude-3-haiku-20240307-v1:0", tool: true},
+		{name: "legacy claude thinking native", modelID: "anthropic.claude-3-haiku-20240307-v1:0", thinking: true, native: true},
+		{name: "legacy claude user tools fallback", modelID: "anthropic.claude-3-haiku-20240307-v1:0", withTool: true, tool: true},
+		{name: "regional legacy claude 3.7 fallback", modelID: "us.anthropic.claude-3-7-sonnet-20250219-v1:0", tool: true},
+		{name: "explicit anthropic profile native", modelID: profileARN, family: ModelFamilyAnthropic, native: true},
+		{name: "opaque profile fallback", modelID: profileARN, tool: true},
 		{name: "non-anthropic fallback", modelID: "mistral.mistral-large-2407-v1:0", tool: true},
 		{name: "sonnet 4.6 explicit format", modelID: "anthropic.claude-sonnet-4-6", mode: StructuredOutputModeOutputFormat, native: true},
 		{name: "sonnet 4.5 json tool", modelID: testAnthropicModel, mode: StructuredOutputModeJSONTool, tool: true},
-		{name: "opus 4.8 auto user tools", modelID: "anthropic.claude-opus-4-8", withTool: true, instruction: true},
-		{name: "opus 4.8 forced tool with user tools", modelID: "anthropic.claude-opus-4-8", mode: StructuredOutputModeJSONTool, withTool: true, tool: true},
+		{name: "opus 4.8 auto user tools", modelID: "anthropic.claude-opus-4-8", withTool: true, instruction: true, strictWarning: true},
+		{name: "opus 4.8 forced tool with user tools", modelID: "anthropic.claude-opus-4-8", mode: StructuredOutputModeJSONTool, withTool: true, tool: true, strictWarning: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,14 +118,48 @@ func TestConverseParity_OutputMode(t *testing.T) {
 				config["format"] = "old"
 			}
 			bo := BedrockOptions{StructuredOutputMode: tc.mode, AdditionalModelRequestFields: map[string]any{"output_config": config}}
-			opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema}, ProviderOptions: provider.BuildProviderOptions(bo)}
-			if tc.withTool {
-				opts.Tools = []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)}}
+			if tc.thinking {
+				bo.ReasoningConfig = &ReasoningConfig{Type: "enabled", BudgetTokens: 1024}
 			}
-			req, _, meta, err := buildRequestWithFamily(tc.modelID, "", opts)
+			prompt := []provider.Message{provider.UserText("hi")}
+			opts := provider.CallOptions{Prompt: prompt, ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema}, ProviderOptions: provider.BuildProviderOptions(bo)}
+			if tc.withTool {
+				opts.Tools = []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather", Strict: &strict, InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)}}
+			}
+			req, warnings, meta, err := buildRequestWithFamily(tc.modelID, tc.family, opts)
 			require.NoError(t, err)
 			assert.Equal(t, tc.tool, meta.usesJSONResponseTool)
 			assert.Equal(t, tc.instruction, meta.usesJSONInstruction)
+			assert.Equal(t, []provider.Message{provider.UserText("hi")}, prompt)
+			if tc.strictWarning {
+				assert.Equal(t, []string{"strict"}, warningFeatures(warnings))
+			} else {
+				assert.Empty(t, warnings)
+			}
+			if tc.instruction {
+				require.Len(t, req.System, 1)
+				assert.Equal(t, "JSON schema:\n"+string(schema)+"\nYou MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.", req.System[0].Text)
+			} else {
+				assert.Empty(t, req.System)
+			}
+			if tc.withTool {
+				require.NotNil(t, req.ToolConfig)
+				assert.Equal(t, "weather", req.ToolConfig.Tools[0].ToolSpec.Name)
+				if tc.strictWarning {
+					assert.Nil(t, req.ToolConfig.Tools[0].ToolSpec.Strict)
+				} else {
+					assert.Equal(t, &strict, req.ToolConfig.Tools[0].ToolSpec.Strict)
+				}
+			}
+			if tc.instruction && !tc.withTool {
+				assert.Nil(t, req.ToolConfig)
+			}
+			if tc.instruction && tc.withTool {
+				assert.Len(t, req.ToolConfig.Tools, 1)
+				assert.Nil(t, req.ToolConfig.ToolChoice)
+			}
+			_, hasThinking := req.AdditionalModelRequestFields["thinking"]
+			assert.Equal(t, tc.thinking, hasThinking)
 			oc, _ := req.AdditionalModelRequestFields["output_config"].(map[string]any)
 			if tc.native {
 				assert.IsType(t, map[string]any{}, oc["format"])
@@ -115,6 +173,7 @@ func TestConverseParity_OutputMode(t *testing.T) {
 			if tc.tool {
 				require.NotNil(t, req.ToolConfig)
 				assert.Equal(t, "json", req.ToolConfig.Tools[len(req.ToolConfig.Tools)-1].ToolSpec.Name)
+				assert.Equal(t, &toolChoiceUnion{Any: &struct{}{}}, req.ToolConfig.ToolChoice)
 			}
 		})
 	}

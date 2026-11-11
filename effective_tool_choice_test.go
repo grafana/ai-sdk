@@ -160,6 +160,8 @@ func TestStreamText_EffectiveToolChoice(t *testing.T) {
 		{name: "filtered empty tools", choice: named, opts: []StreamOption{WithActiveTools()}, wantError: true},
 		{name: "length with call", choice: named, calls: []provider.StreamPart{call("c1", "lookup")}, finish: provider.FinishReasonLength},
 		{name: "error finish without call", choice: required, finish: provider.FinishReasonError, wantError: true},
+		{name: "interrupted required without call", choice: required, finish: provider.FinishReasonInterrupted},
+		{name: "interrupted named miss", choice: named, calls: []provider.StreamPart{call("c1", "other")}, finish: provider.FinishReasonInterrupted},
 		{name: "duplicate selected overwritten", choice: named, calls: []provider.StreamPart{call("c1", "lookup"), call("c1", "other")}, wantError: true},
 		{name: "duplicate selected last", choice: named, calls: []provider.StreamPart{call("c1", "other"), call("c1", "lookup")}, finish: provider.FinishReasonLength},
 	} {
@@ -395,7 +397,7 @@ func TestStreamText_EffectiveToolChoiceApprovalSuppression(t *testing.T) {
 		assert.True(t, step.ToolResults[0].ProviderExecuted)
 		require.Len(t, step.ToolApprovalRequests, 1)
 		assert.Equal(t, "provider-approval", step.ToolApprovalRequests[0].ApprovalID)
-		assert.NotEmpty(t, step.ToolApprovalRequests[0].Signature)
+		assert.Empty(t, step.ToolApprovalRequests[0].Signature)
 	})
 	t.Run("prior-message approval preserved", func(t *testing.T) {
 		executions := 0

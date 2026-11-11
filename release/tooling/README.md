@@ -20,7 +20,8 @@ Credentials are passed through the environment rather than command arguments.
 
 The preview reads configuration, release state, and history from GitHub `main`.
 Its JSON output includes the source SHA, proposed branches, versions, PR bodies,
-and original/generated file contents. Diagnostics go to stderr. If `main`
+and original/generated file contents, including the first-party requirement
+updates of library proposals. Diagnostics go to stderr. If `main`
 advances during preparation, the command fails; discard that run and retry.
 Individual requests have a 30-second timeout.
 

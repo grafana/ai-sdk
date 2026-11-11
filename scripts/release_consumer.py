@@ -3,14 +3,14 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
-import zipfile
+import time
 
-from release_readiness import PREFIX, json_stream, owner, run
+from release_readiness import PREFIX, VERSION, json_stream, run
 
 
-VERSION = "v0.0.0-releasecheck"
 SCENARIOS = {
     "providers/anthropic": "TestDoStream_APIError_ReturnsAPICallErrorWithData",
     "providers/openai": "TestDoGenerate_APIError",
@@ -25,73 +25,97 @@ SCENARIOS = {
 }
 
 
-def verify_graph(graph, path, expected, cache):
+POLL_SECONDS = 30
+TAG = re.compile(r"^(?:(?P<root>(?:providers|middleware)/[a-z0-9-]+)/)?(?P<version>v" + VERSION + r")$")
+
+
+def parse_tag(tag):
+    match = TAG.fullmatch(tag)
+    if not match:
+        raise ValueError(f"not a library release tag: {tag}")
+    return match.group("root") or ".", match.group("version")
+
+
+def proxy_env(cache):
+    return dict(os.environ, GOWORK="off", GOFLAGS="-mod=mod -modcacherw", GOPROXY="https://proxy.golang.org",
+                GOPRIVATE="", GONOPROXY="", GONOSUMDB="", GOSUMDB="sum.golang.org", GOMODCACHE=str(cache))
+
+
+def unavailable(modules, env):
+    missing = []
+    for path, version in modules:
+        result = subprocess.run(["go", "mod", "download", "-json", f"{path}@{version}"],
+                                env=env, text=True, capture_output=True)
+        try:
+            info = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            info = {"Error": result.stderr.strip()}
+        if result.returncode or info.get("Error"):
+            missing.append((path, version, info.get("Error") or result.stderr.strip()))
+        elif path == modules[0][0]:
+            manifest = json.loads(run("go", "mod", "edit", "-json", info["GoMod"], env=env))
+            modules.extend((m["Path"], m["Version"]) for m in manifest.get("Require") or []
+                           if (m["Path"] == PREFIX or m["Path"].startswith(PREFIX + "/"))
+                           and (m["Path"], m["Version"]) not in modules)
+    return missing
+
+
+def wait_until_available(path, version, minutes, sleep=time.sleep, clock=time.monotonic):
+    deadline = clock() + minutes * 60
+    while True:
+        with tempfile.TemporaryDirectory(prefix="release-availability-") as cache:
+            missing = unavailable([(path, version)], proxy_env(Path(cache)))
+        if not missing:
+            return
+        if clock() >= deadline:
+            details = "; ".join(f"{p}@{v}: {e}" for p, v, e in missing)
+            raise ValueError(f"not resolvable through the public Go proxy after {minutes} minutes: {details}")
+        print(f"Waiting for the public Go proxy: {', '.join(f'{p}@{v}' for p, v, _ in missing)}", flush=True)
+        sleep(POLL_SECONDS)
+
+
+def verify_graph(graph, path, version, cache):
     candidate = None
-    actual = {}
     for module in graph:
         if module.get("Replace"):
             raise ValueError(f"consumer selected a replacement: {module['Path']}")
         if module["Path"] == path:
             candidate = module
-        elif not module.get("Main"):
-            actual[module["Path"]] = module.get("Version")
-    if (not candidate or candidate.get("Main") or candidate.get("Version") != VERSION
+    if (not candidate or candidate.get("Main") or candidate.get("Version") != version
             or not Path(candidate.get("Dir", "/")).resolve().is_relative_to(cache.resolve())):
-        raise ValueError("consumer did not select the archived candidate from its module cache")
-    if actual != expected:
-        raise ValueError(f"consumer dependency graph differs: {set(actual.items()) ^ set(expected.items())}")
+        raise ValueError(f"consumer did not select the published {path}@{version} from its module cache")
 
 
-def verify_consumer(root, env, graph, tooling_root=None):
+def verify_published(root, version):
     if root != "." and root not in SCENARIOS:
         raise ValueError(f"no consumer regression registered for {root}")
-    repo = Path.cwd()
-    harness = Path(tooling_root) if tooling_root else repo
+    harness = Path(__file__).resolve().parent.parent
     path = PREFIX if root == "." else f"{PREFIX}/{root}"
-    expected = {m["Path"]: m["Version"] for m in graph if not m.get("Main")}
-    files = run("git", "ls-files", "-z").split("\0")
-    roots = {str(Path(f).parent) for f in files if f == "go.mod" or f.endswith("/go.mod")}
     with tempfile.TemporaryDirectory(prefix="release-consumer-") as directory:
         temp = Path(directory)
-        proxy = temp / "proxy"
-        versions = proxy / path / "@v"
-        versions.mkdir(parents=True)
-        source = repo / root
-        (versions / f"{VERSION}.mod").write_bytes((source / "go.mod").read_bytes())
-        (versions / f"{VERSION}.info").write_text(json.dumps({"Version": VERSION, "Time": "2000-01-01T00:00:00Z"}))
-        with zipfile.ZipFile(versions / f"{VERSION}.zip", "w") as archive:
-            for file in files:
-                if file and owner(file, roots) == root and not Path(file).is_symlink():
-                    relative = Path(file) if root == "." else Path(file).relative_to(root)
-                    archive.write(file, f"{path}@{VERSION}/{relative.as_posix()}")
+        cache = temp / "cache"
         consumer = temp / "consumer"
         consumer.mkdir()
-        manifest = json.loads(run("go", "mod", "edit", "-json", cwd=source, env=env))
-        requirements = {m["Path"]: m["Version"] for m in manifest.get("Require", [])}
-        requirements[path] = VERSION
-        (consumer / "go.mod").write_text(
-            f"module releasecheck.local/consumer\n\ngo {manifest['Go']}\n\nrequire (\n"
-            + "".join(f"\t{p} {v}\n" for p, v in sorted(requirements.items())) + ")\n")
-        (consumer / "go.sum").write_bytes((source / "go.sum").read_bytes())
-        consumer_env = dict(env, GOPROXY=f"{proxy.as_uri()},https://proxy.golang.org", GONOSUMDB=path)
-        packages = list(json_stream(run("go", "list", "-json", "./...", cwd=source, env=env)))
-        imports = [p["ImportPath"] for p in packages
-                   if p.get("Name") != "main" and "internal" not in p["ImportPath"].split("/")]
+        env = proxy_env(cache)
+        run("go", "mod", "init", "releasecheck.local/consumer", cwd=consumer, env=env)
+        run("go", "get", f"{path}@{version}", cwd=consumer, env=env)
+        packages = list(json_stream(run("go", "list", "-json", f"{path}/...", cwd=consumer, env=env)))
+        imports = [p["ImportPath"] for p in packages if p.get("Module", {}).get("Path") == path
+                   and p.get("Name") != "main" and "internal" not in p["ImportPath"].split("/")]
         (consumer / "consumer_test.go").write_text(
             'package consumer\n\nimport (\n' + "".join(f'\t_ "{p}"\n' for p in imports) + ')\n')
-        download_env = dict(consumer_env, GOFLAGS="-mod=mod -modcacherw")
-        run("go", "mod", "download", "all", cwd=consumer, env=download_env)
-        selected = list(json_stream(run("go", "list", "-m", "-json", "all", cwd=consumer, env=consumer_env)))
-        verify_graph(selected, path, expected, Path(env["GOMODCACHE"]))
-        subprocess.run(["go", "test", "./..."], cwd=consumer, env=consumer_env, check=True)
+        run("go", "mod", "tidy", cwd=consumer, env=env)
+        selected = list(json_stream(run("go", "list", "-m", "-json", "all", cwd=consumer, env=env)))
+        verify_graph(selected, path, version, cache)
+        subprocess.run(["go", "test", "./..."], cwd=consumer, env=env, check=True)
         if root != ".":
             scenario = SCENARIOS[root]
             results = list(json_stream(run("go", "test", "-json", "-count=1", "-run", f"^{scenario}$", path,
-                                           cwd=consumer, env=consumer_env)))
+                                           cwd=consumer, env=env)))
             if not any(event.get("Test") == scenario and event.get("Action") == "pass" for event in results):
                 raise ValueError(f"consumer regression did not run: {scenario}")
             print(f"Consumer regression passed: {root}/{scenario}")
-        if root == ".":
+        else:
             scenario = (harness / "test/integration/testserver/scenario_simple_text.go").read_text()
             scenario = scenario.replace('func init() {\n\tregisterScenario("simple-text", handleSimpleText)\n}', '')
             (consumer / "consumer_test.go").unlink()
@@ -105,23 +129,26 @@ func main() {
     if _, err := os.Stdout.Write(response.Body.Bytes()); err != nil { os.Exit(1) }
 }
 ''')
-            wire = subprocess.check_output(["go", "run", "."], cwd=consumer, env=consumer_env)
+            wire = subprocess.check_output(["go", "run", "."], cwd=consumer, env=env)
             subprocess.run(["pnpm", "install", "--frozen-lockfile", "--filter", "@ai-sdk/test-integration"], cwd=harness, env=env, check=True)
             subprocess.run(["node", "test/integration/release-consumer.mjs"], input=wire, cwd=harness, env=env, check=True)
-    print(f"Consumer verified: {path}; archived candidate and {len(expected)} pinned dependencies")
+    print(f"Published version verified: {path}@{version}")
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("root")
+    parser = argparse.ArgumentParser(description="Verify a published library release through the public Go proxy.")
+    parser.add_argument("tag", help="library release tag, for example providers/openai/v0.1.0-alpha.2")
+    parser.add_argument("--wait-minutes", type=int, default=0,
+                        help="wait up to this long for the version and its first-party requirements to resolve")
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="release-consumer-cache-") as cache:
-        env = dict(os.environ, GOWORK="off", GOFLAGS="-mod=readonly -modcacherw",
-                   GOPROXY="https://proxy.golang.org", GOPRIVATE="", GONOPROXY="",
-                   GONOSUMDB="", GOSUMDB="sum.golang.org", GOMODCACHE=cache)
-        graph = list(json_stream(run("go", "list", "-m", "-json", "all", cwd=args.root, env=env)))
-        verify_consumer(args.root, env, graph)
+    root, version = parse_tag(args.tag)
+    if args.wait_minutes:
+        wait_until_available(PREFIX if root == "." else f"{PREFIX}/{root}", version, args.wait_minutes)
+    verify_published(root, version)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, subprocess.CalledProcessError) as error:
+        raise SystemExit(f"release consumer: {error}")

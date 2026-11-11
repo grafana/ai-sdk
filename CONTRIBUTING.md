@@ -507,7 +507,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway is an independently versioned Grafana app plugin built from workspace source.
+Gateway is an independently versioned Grafana app plugin built from same-revision source.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -515,15 +515,14 @@ Conventional Commits that land on `main`. Pull requests are squash-merged with
 their title as the subject, so a pull request records its release intent by
 using the right type in its title:
 
-- `fix:` and `perf:` produce a patch release.
+- `fix:`, `perf:` and `refactor:` produce a patch release.
 - `feat:` produces a minor release.
 - `feat!:` or a `BREAKING CHANGE:` footer produces a major release.
-- `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
-  release.
+- `chore:`, `ci:`, `docs:`, `test:`, and `build:` produce no release.
 
 A library change is attributed to its module by the files it touches. #245 will
 also attribute relevant SDK, provider, and middleware changes to the
-workspace-built Gateway plugin release. While the modules are in the `alpha`
+Gateway plugin release. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -537,9 +536,8 @@ mise run release-preview    # dry-run of the next release pull request
 Library automation defaults off and requires the reviewed settings and explicit
 mode in the [activation rollout](release/tooling/ACTIVATION.md). Gateway work does
 not gate library activation.
-After activation, each library gets its own release pull request. Maintainers merge the root one
-first, let Renovate carry the new core version into the nested `go.mod` files,
-then merge the rest. The complete workflow is in the
+After activation, all pending libraries release from one release pull request;
+Gateway keeps its own. The complete workflow is in the
 [release runbook](release/README.md).
 
 ## Dependency management
@@ -552,50 +550,96 @@ SDK's Go module dependency graph.
 ### What to validate
 
 - **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
-  client, and Gateway from the proposed source. It also verifies module-pin
-  ancestry and dependency and license boundaries. See
+  client, and Gateway from the proposed source. It also verifies first-party
+  requirements and dependency and license boundaries. See
   [CI](.github/workflows/ci.yml) for the seven required source checks. The `ci`
   check requires both the parallel `build-test` and `lint` jobs to succeed. CI no
   longer builds or publishes Gateway container images. The App Platform migration
   and its plugin validation are tracked separately in #428.
-- **Go module releases:** Before tagging an SDK, provider, or middleware version
-  for external Go consumers, validate that module against its declared `go.mod`
-  dependencies with `MODULE=providers/anthropic mise run verify-published-module`
-  (substitute the module being released). Release PR readiness additionally checks
-  current-base metadata, canonical tagged prerequisite freshness, and isolated
-  selected-consumer regressions; see the [release runbook](release/README.md).
-  Publication requires explicit activation under #245. For a broader diagnostic,
-  `mise run verify-module-resolution` checks all published modules.
-- **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
-  plugin backend from same-revision local source. Plugin validation runs on pull
+- **Go module releases:** Libraries are released from one release pull request,
+  whose CI is the release evidence. Readiness additionally checks current-base
+  metadata and that first-party requirements are tagged or released together, and
+  each published version is verified as an external consumer through the public
+  Go proxy; see the [release runbook](release/README.md). Publication requires
+  explicit activation under #245. `MODULE=providers/anthropic mise run verify-module`
+  downloads, verifies, builds and tests one module; `mise run verify-modules` runs
+  every module.
+- **Gateway plugin:** Gateway builds the plugin backend in `ai-gateway/pkg`, the
+  standard plugin backend root, from same-revision SDK source through the
+  replacements in `ai-gateway/go.mod`. `mage -v buildPlugin` builds the Linux
+  backends into the built frontend package and adds the license inventory and
+  `SOURCE_REVISION`; `mise run build-ai-gateway-plugin` and the shared plugin
+  workflow both use it. `SOURCE_REVISION` is the checked-out commit in GitHub
+  Actions and `local-unverified` elsewhere. Plugin validation runs on pull
   requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
   `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
-  revision, as a workflow artifact. Gateway is not published as a standalone Go
-  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  revision, as a workflow artifact. Full Gateway Go source tests run in parallel
+  with the plugin build and checks. The `Validate AI Gateway plugin` check waits
+  for both jobs to succeed before retaining the validated package; the build
+  job hands off a separate, short-lived candidate artifact. Gateway is not published
+  as a standalone Go module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
+- **Gateway dev publication:** for each push to `main`, the [publish
+  workflow](.github/workflows/publish-ai-gateway-dev.yml) waits until the push's
+  CI run shows every required source check and plugin validation succeeded, then
+  publishes the plugin to the dev plugin catalog through Grafana's shared plugin
+  CI/CD workflow, which is pinned to a release tag. The version is the
+  `ai-gateway/package.json` version followed by `+` and the full commit SHA, such
+  as `0.1.0-alpha.1+<sha>`, with the `grafana_cloud` scope, and its
+  `SOURCE_REVISION` is that commit. The shared workflow lints, tests, builds,
+  validates, scans and signs the package again before publishing. Publications run
+  one at a time in push order: a newer push replaces one that is still waiting, so
+  not every commit is published. The publish run's summary shows the published
+  version. Publication runs outside the CI workflow, so it never delays or changes
+  the CI evidence that release automation reads. The publish run waits about 20
+  minutes for CI. If CI passes only after a re-run past that window, re-run the
+  publish run by hand, but only while its commit is still the newest on `main`.
+  Publishing needs a `grafana-aigateway-app` plugin stub with the Grafana Labs
+  signature level in the dev catalog, which exists; the shared workflow brings its
+  own credentials and runners. Publication does not publish to the ops or prod
+  catalogs, or create tags or releases.
+- **Gateway dev rollout:** the deployment repository pins the plugin version that
+  each environment's plugin backend runs. After a successful dev publication, the
+  publish workflow opens an auto-merge pull request there that pins dev to exactly
+  the version just published; the pull request links back to the publish run. A
+  newer publication replaces a pin pull request that has not merged yet. Only a
+  commit that is still the head of `main` is pinned: a run whose commit was
+  superseded, including a rerun of an older run, skips the pin with a notice, so
+  it never moves dev back. Once the
+  pin merges and is applied, the dev plugin backend restarts on that version, so
+  dev runs a commit only after its pin pull request merged. Ops and prod pins are
+  not changed. The pin needs a one-time grant in the deployment repository that
+  lets this workflow open those pull requests, and an existing dev pin to update;
+  without the grant the pin job fails, and without the pin it opens no pull
+  request. To roll dev back, pin an earlier published `<version>+<sha>` in the
+  deployment repository. The next `main` publication replaces that pin, so also
+  revert the faulty commit on `main` to keep dev on a good version.
 
-The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
-but SDK modules must not import, require, or replace Gateway. Real published
-module pins must refer to commits merged on canonical `grafana/ai-sdk` `main`;
-merged pseudo-versions are valid, while local example/test replacements are not
-published pins. `scripts/module-policy.sh` implements the module checks. These
-checks do not replace license review for copied code or third-party dependencies.
+Every `go.mod` replaces each first-party module in its
+build graph with that module's directory, so builds in this repository always use
+same-revision source, while consumers ignore the replacements and resolve published
+tags. First-party requirements equal the module's version in
+`.release-please-manifest.json` (or its `initial-version` before its first
+release); pseudo-versions are not used. Release pull requests update these
+requirements. Gateway may depend on SDK modules, but SDK modules must not import,
+require, or replace Gateway. `scripts/module-policy.sh` implements the module
+checks. These checks do not replace license review for copied code or third-party
+dependencies.
 
 ```bash
-mise run tidy        # go mod tidy across all modules
+mise run tidy        # sync first-party replacements and requirements, then tidy every module
 ```
 
-Commit `go.mod` and `go.sum` changes together. When adding a dependency to a
-provider or middleware module, run tidy from that module's directory.
+Commit `go.mod` and `go.sum` changes together.
 
 The pnpm test workspace is supply-chain hardened: `blockExoticSubdeps`,
 `strictDepBuilds`, and a `minimumReleaseAge` gate in
 `pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
-Dependency updates are otherwise automated via Renovate
-([`renovate.json`](renovate.json)).
+Third-party dependency updates are otherwise automated via Renovate
+([`renovate.json`](renovate.json)); first-party modules are excluded.
 
 ## Reporting security issues
 

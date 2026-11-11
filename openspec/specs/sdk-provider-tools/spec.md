@@ -51,11 +51,11 @@ Gateway support SHALL depend on request mapping and selected native adapter, not
 
 ### Requirement: Internal pins and standalone publication checks
 
-Declared internal module pins SHALL resolve to revisions already merged into canonical main. Standalone builds SHALL be checked separately before module or plugin package publication.
+Declared first-party requirements SHALL equal the version manifest and SHALL resolve to same-revision source through local replacements. Libraries SHALL publish only through a validated library release pull request, and each published version SHALL pass post-publication proxy verification.
 
 #### Scenario: Publication uses merged pins and standalone checks
 - **WHEN** a module or plugin package is prepared for publication
-- **THEN** internal pins SHALL reference canonical-main merged revisions and standalone builds SHALL be checked separately.
+- **THEN** its first-party requirements SHALL equal the manifest versions being released or already tagged, and published library versions SHALL be verified as external consumers after tagging
 
 ### Requirement: Text-encoded partial tool input survives the complete transport path
 

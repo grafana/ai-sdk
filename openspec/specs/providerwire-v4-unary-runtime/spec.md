@@ -3,32 +3,25 @@
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
 
 ## Requirements
+
 ### Requirement: Constructed language-model handler
 
-The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil host-owned request selector independent of catalog interfaces and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration.
+The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil execution runtime, which owns the request selector and the stream idle and drain durations under gateway-execution-runtime. Construction SHALL NOT accept a total model duration, or request, response, frame or stream-part size limits.
 
 #### Scenario: Valid construction
-- **WHEN** a caller supplies a request selector and valid limits
+- **WHEN** a caller supplies a constructed execution runtime
 - **THEN** construction SHALL return an immutable handler
 
 #### Scenario: Invalid construction
-- **WHEN** the selector is nil, a limit is non-positive, or a byte limit cannot safely use `limit+1`
+- **WHEN** the runtime is nil
 - **THEN** construction SHALL fail before serving traffic
 
-### Requirement: Safe handler limit arithmetic and fixed-frame capacity
-
-Request and unary byte limits and the stream-part limit SHALL support safe `limit+1` arithmetic, and the frame limit SHALL contain the fixed start and stream-error frames.
-
-#### Scenario: Safe handler limit arithmetic and fixed-frame capacity
-- **WHEN** construction receives an integer limit that cannot support limit+1 or a frame limit smaller than a fixed error frame
-- **THEN** construction SHALL fail before serving requests
-
 ### Requirement: Host selection preserves mapped options
-The selector SHALL consume validated call-level host controls under authenticated request policy and return a non-nil executable model and logical identity. The handler SHALL retain its mapped native options after removing Gateway controls; model selection SHALL NOT require returning or replacing those options. Configured catalog resolution and request-only BYOK selection SHALL be separate host implementations; the wire package SHALL NOT require BYOK to implement a catalog.
+The selector SHALL consume validated call-level host controls under authenticated request policy and return a non-nil executable model and logical identity. The execution runtime SHALL retain the mapped native options after removing call-level Gateway controls, without requiring the selector to return them. Configured catalog resolution and request-only BYOK selection SHALL be separate host implementations; neither the runtime nor the wire package SHALL require BYOK to implement a catalog.
 
 #### Scenario: Host selection returns an executable model
 - **WHEN** a configured or request-only selector returns model and identity
-- **THEN** the handler SHALL retain mapped native options after consuming Gateway controls without requiring the selector to return or replace them
+- **THEN** the runtime SHALL retain mapped native options after consuming Gateway controls without requiring the selector to return or replace them
 
 ### Requirement: Language-model HTTP envelope
 
@@ -44,11 +37,15 @@ The handler SHALL accept only `POST /language-model` with JSON content and exact
 
 ### Requirement: Bounded complete request validation
 
-After envelope validation, the handler SHALL read and close the request body through the configured `limit+1` boundary and reject oversized or invalid UTF-8 input. It SHALL validate the complete bounded document against the embedded draft 2020-12 ProviderWire request schema before supported-subset mapping. Malformed JSON and schema-invalid input SHALL fail before resolution or model invocation.
+After envelope validation, the handler SHALL read the request body to EOF and close it. The host SHALL own the body byte bound under gateway-resource-policy. The handler SHALL reject invalid UTF-8 input and SHALL validate the complete document against the embedded draft 2020-12 ProviderWire request schema before supported-subset mapping. Malformed JSON and schema-invalid input SHALL fail before resolution or model invocation.
 
 #### Scenario: Request byte boundary
-- **WHEN** a request is below, exactly at, or one byte above the configured body limit
-- **THEN** the first two SHALL continue and the last SHALL fail without retaining bytes beyond `limit+1`
+- **WHEN** a request served behind the host bound is below, exactly at, or one byte above that bound
+- **THEN** the first two SHALL continue and the last SHALL return the fixed invalid-request document before resolution or model invocation
+
+#### Scenario: Body read fails
+- **WHEN** reading or closing the body fails for a reason other than the host bound
+- **THEN** the handler SHALL return the fixed internal error before resolution or model invocation
 
 #### Scenario: Invalid document
 - **WHEN** the body is invalid UTF-8, malformed JSON, contains trailing JSON, or violates the request schema
@@ -183,29 +180,30 @@ Assistant reasoning text and reasoning-file history SHALL execute within gateway
 - **THEN** reasoning options SHALL survive without selected-backend filtering and no client-visible precedence SHALL be defined among simultaneously unsupported families
 
 ### Requirement: Reserved provider options and protected call headers
-Host namespaces SHALL remain reserved and be consumed only by their owning selector. Protected call headers and native-consumption controls SHALL prevent account/model/transport bypass before I/O without blanket filtering or value-echoing refusals.
+Call-level `gateway` controls SHALL be consumed only by the selector, and protected call headers SHALL be refused, both by the execution runtime under gateway-execution-runtime. No other namespace or scope SHALL be reserved. Native-consumption controls SHALL prevent account/model/transport bypass before I/O without blanket filtering or value-echoing refusals.
 
 #### Scenario: Host-control and header processing policy
 - **WHEN** the handler maps host controls, native options and call headers
-- **THEN** The runtime SHALL reserve the `grafana`, `gateway`, and `grafana-ai-sdk` provider-option namespaces for the host.
-- **AND** A request carrying any of them SHALL be rejected with a stable invalid-request document before resolution or model invocation unless an owning host feature explicitly consumes it.
-- **AND** Such controls SHALL never reach native adapters as provider options.
-- **AND** Call-level gateway controls SHALL be consumed by the host selector before native middleware; the catalog selector SHALL reject them, while request-only selection SHALL follow gateway-request-byok.
-- **AND** Nested host namespaces and unsupported controls SHALL remain rejected before provider I/O.
+- **THEN** the handler SHALL map every provider-option namespace at every supported scope, including `gateway`, `grafana` and `grafana-ai-sdk`, as an ordinary opaque namespace.
+- **AND** The execution runtime SHALL remove call-level `gateway` before selection and pass it to the selector; it SHALL never reach native adapters as a provider option.
+- **AND** Configured and request-only selection SHALL apply call-level `gateway` controls under gateway-request-routing and gateway-request-byok, and SHALL refuse any other control with the fixed unsupported-gateway-control document.
 - **AND** Unknown ordinary namespaces and fields SHALL NOT be treated as host controls merely because they are unlisted.
-- **AND** The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`.
+- **AND** The execution runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering the set gateway-execution-runtime lists.
 - **AND** The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends.
-- **AND** The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused.
 - **AND** Outer authentication SHALL remain independent from body-carried provider call headers; unrelated outer HTTP headers SHALL NOT be forwarded automatically.
 - **AND** Provider-option protections SHALL follow gateway-native-provider-options: actual native consumption and precedence at the consuming namespace and scope SHALL justify any check preventing credential/account/destination, model/prompt, role/union, tool-ownership or transport/execution bypass.
 - **AND** A blanket case/underscore/hyphen-folded field list SHALL NOT reject ordinary fields that cannot cause the bypass.
-- **AND** Native-specific checks SHALL fail before external provider I/O; schema, reserved-host and protected-body-header refusals SHALL retain their pre-resolution processing order.
+- **AND** Native-specific checks SHALL fail before external provider I/O; schema and mapping refusals SHALL precede the protected-header refusal, and both SHALL precede selection.
 - **AND** These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
 
 #### Scenario: Reserved namespace
-- **WHEN** a request carries the `grafana`, `gateway`, or `grafana-ai-sdk` provider-option namespace without an owning feature consuming it
-- **THEN** the response SHALL be a stable invalid-request document naming neither the namespace contents nor the caller's values
-- **AND** no model SHALL be resolved or invoked
+- **WHEN** a configured request carries a call-level `providerOptions.gateway` member other than `models`, `order` or `only`
+- **THEN** the response SHALL be the fixed unsupported-gateway-control document naming neither the namespace contents nor the caller's values
+- **AND** no model SHALL be invoked
+
+#### Scenario: Former host namespaces are ordinary
+- **WHEN** a request carries `grafana` or `grafana-ai-sdk` at any supported scope, or `gateway` at a message, part or tool scope
+- **THEN** the request SHALL succeed and the model SHALL receive the namespace unchanged at its scope
 
 #### Scenario: Protected provider option
 - **WHEN** an option can cause a concrete native model/prompt, credential/account/destination, role/union, tool-ownership or transport/execution bypass
@@ -220,14 +218,18 @@ Host namespaces SHALL remain reserved and be consumed only by their owning selec
 - **THEN** the response SHALL be a stable invalid-request document
 - **AND** no model SHALL be resolved or invoked
 
+#### Scenario: Protected call header beside a mapping failure
+- **WHEN** a request carries a credential-bearing body header and also fails a mapping rule
+- **THEN** the response SHALL be the mapping failure's fixed invalid-request document, and no model SHALL be resolved or invoked
+
 #### Scenario: Protocol header in the body
 - **WHEN** a request carries a protocol header name such as `AI-Language-Model-Id` as a body-carried call header
 - **THEN** the request SHALL be accepted, because the HTTP contract retains that name in the body
 - **AND** the name SHALL NOT reach the selected backend
 
 #### Scenario: Reserved namespace in a different case
-- **WHEN** a request carries a provider-option namespace such as `Grafana`
-- **THEN** it SHALL be mapped like any other ordinary namespace, because namespace names are compared exactly
+- **WHEN** a request carries a call-level provider-option namespace such as `Gateway`
+- **THEN** it SHALL be mapped like any other ordinary namespace and SHALL NOT reach the selector, because namespace names are compared exactly
 
 ### Requirement: Ordinary namespace acceptance and protected body credential headers
 
@@ -247,11 +249,11 @@ The runtime SHALL refuse credential-bearing body headers that could select crede
 
 ### Requirement: Protected-header edge evidence and outer authentication isolation
 
-The credential-header refusal set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused. Outer authentication SHALL remain independent from body-carried provider call headers; unrelated outer HTTP headers SHALL NOT be forwarded automatically.
+The plugin host authenticates outer requests under gateway-plugin-host, and the Gateway refuses no outer header names of its own. The credential-header refusal set SHALL cover the platform credential and tenant headers the host delegates, and the native provider credential headers. Outer authentication SHALL remain independent from body-carried provider call headers; unrelated outer HTTP headers SHALL NOT be forwarded automatically.
 
 #### Scenario: Protected-header edge evidence and outer authentication isolation
-- **WHEN** the authenticated edge is driven with valid stack assertion and each candidate credential header plus an ordinary negative control
-- **THEN** the body mapper SHALL refuse every name the edge refused, without forwarding unrelated outer headers or coupling outer auth to body headers
+- **WHEN** a test sends each listed credential header name as a body call header, plus an ordinary header as a negative control
+- **THEN** the runtime SHALL refuse every listed name and accept the ordinary header, without forwarding unrelated outer headers or coupling outer auth to body headers
 
 ### Requirement: Concrete native option bypass checks without universal blacklist
 
@@ -263,27 +265,27 @@ Provider-option protections SHALL follow gateway-native-provider-options: actual
 
 ### Requirement: Protection processing order and fixed refusal privacy
 
-Native-specific checks SHALL fail before external provider I/O; schema, reserved-host and protected-body-header refusals SHALL retain their pre-resolution processing order. Provider-option and protected-header refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
+Native-specific checks SHALL fail before external provider I/O. Schema and mapping refusals SHALL precede the protected-header refusal, and all of them SHALL precede selection. Provider-option and protected-header refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
 
 #### Scenario: Protection processing order and fixed refusal privacy
-- **WHEN** a reserved host namespace or native bypass is detected
-- **THEN** host/schema/header refusals SHALL remain pre-resolution, native-specific checks SHALL precede external I/O and fixed documents SHALL echo no offending names or values
+- **WHEN** a protected call header or native bypass is detected
+- **THEN** schema, mapping and header refusals SHALL remain pre-resolution, native-specific checks SHALL precede external I/O and fixed documents SHALL echo no offending names or values
 
 ### Requirement: Resolution and bounded model invocation
-The handler SHALL select and invoke one logical model under authenticated request policy. Configured access SHALL resolve its catalog once; BYOK SHALL use request accounts without a catalog. Both SHALL retain logical identity and one bounded selection/execution deadline.
+The handler SHALL select and invoke one logical model through the execution runtime under authenticated request policy. Configured access SHALL resolve its catalog once; BYOK SHALL use request accounts without a catalog. Both SHALL retain logical identity and run selection and execution synchronously under the request context's deadline.
 
 #### Scenario: Selection and shared execution policy
 - **WHEN** a supported request enters host selection and invocation
-- **THEN** For a supported request, the handler SHALL select execution once under authenticated request policy and invoke the resulting logical model once.
+- **THEN** For a supported request, the runtime SHALL select execution once under authenticated request policy and invoke the resulting logical model once.
 - **AND** Configured selection SHALL resolve the exact catalog ID/alias; BYOK selection SHALL use only request provider/model/credentials.
 - **AND** Selection SHALL return a nonempty valid-UTF-8 logical identity and a non-nil V4 model.
 - **AND** Logical identity SHALL NOT substitute for native response identity, including when a native modelId equals it.
-- **AND** One request execution deadline SHALL begin immediately before host selection, after bounded protocol input validation, and SHALL cover selection/construction, logical invocation and all underlying credential attempts; streaming consumption SHALL use the same deadline.
-- **AND** Selection, invocation and attempt boundaries SHALL NOT reset or extend it.
-- **AND** An earlier request-context deadline SHALL remain effective.
-- **AND** Selection and invocation SHALL retain context cancellation, panic containment, buffered completion and bounded handler latency when work ignores cancellation.
-- **AND** Late selection completion SHALL NOT invoke a model and SHALL retain bounded request-owned cleanup.
-- **AND** A permanently blocked selection or native function may retain its worker; no exactly-once or guaranteed-zeroization claim SHALL be made.
+- **AND** The request context's deadline, set by the host, SHALL be the one execution deadline. It SHALL cover selection/construction, logical invocation and all underlying credential attempts, and streaming consumption SHALL use the same deadline.
+- **AND** The handler SHALL NOT add a deadline of its own, and selection, invocation and attempt boundaries SHALL NOT reset or extend the request deadline.
+- **AND** When the request context's deadline expires, the handler SHALL classify the outcome as a timeout; when the request context is canceled, it SHALL classify it as a cancellation.
+- **AND** Selection and invocation SHALL run on the request goroutine with panic containment; a result returned after the request context ended SHALL be discarded.
+- **AND** A selection returned after the request context ended SHALL NOT invoke a model.
+- **AND** A selector or native function that ignores cancellation SHALL hold its own request until it returns; no exactly-once or guaranteed-zeroization claim SHALL be made.
 
 #### Scenario: Supported execution
 - **WHEN** configured selection returns a valid model
@@ -298,24 +300,28 @@ The handler SHALL select and invoke one logical model under authenticated reques
 - **THEN** the handler SHALL return a safe error without invoking an invalid model
 
 #### Scenario: Cancellation or timeout
-- **WHEN** cancellation or the execution deadline becomes observable during selection or any attempt
-- **THEN** handler latency SHALL remain bounded and no later credential attempt SHALL begin
+- **WHEN** cancellation or the request deadline becomes observable during selection or any attempt
+- **THEN** no later credential attempt SHALL begin and the handler SHALL return the context outcome once the work returns
+
+#### Scenario: Request deadline is a timeout
+- **WHEN** the request context's deadline expires during a unary attempt
+- **THEN** the handler SHALL return the fixed timeout error, not the cancellation error
 
 #### Scenario: Selector consumes the execution budget
-- **WHEN** selection ignores cancellation or completes only after the shared deadline expires
-- **THEN** unary and streaming handler latency SHALL remain bounded, with a pre-commit JSON failure, zero model invocations and bounded cleanup of any late selection result
+- **WHEN** selection completes only after the request deadline expired
+- **THEN** unary and streaming requests SHALL receive a pre-commit timeout JSON failure with zero model invocations
+
+#### Scenario: Model returns after the deadline
+- **WHEN** `DoGenerate` returns a valid result only after the request deadline expired
+- **THEN** the handler SHALL return the fixed timeout error and SHALL NOT write the result
 
 #### Scenario: Selection leaves only a partial budget
-- **WHEN** selection consumes part of the configured execution duration before returning a credential-attempt model
+- **WHEN** selection consumes part of the time before the request deadline and returns a credential-attempt model
 - **THEN** logical invocation, every credential attempt and streaming consumption SHALL receive only the remaining time, without a fresh deadline
 
-### Requirement: Bounded unary invocation worker and provider-owned blockage
-
-A child goroutine with panic recovery and buffered completion SHALL bound handler latency when a model ignores cancellation; a permanently blocked model may retain that goroutine.
-
-#### Scenario: Bounded unary invocation worker and provider-owned blockage
-- **WHEN** a model ignores context cancellation and never completes
-- **THEN** panic-recovered buffered completion SHALL keep handler latency bounded, while the permanently blocked model may retain its child goroutine
+#### Scenario: Request without a deadline
+- **WHEN** the request context carries no deadline
+- **THEN** the handler SHALL run selection and invocation without a deadline of its own, and caller cancellation SHALL still end them
 
 ### Requirement: Fixed privacy-safe errors
 Every runtime error response SHALL retain fixed classified status, message, type, code, and `param: null` fields from protocol-owned definitions.
@@ -331,13 +337,13 @@ Every runtime error response SHALL retain fixed classified status, message, type
 - **AND** Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability.
 - **AND** Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
 - **AND** Arbitrary aggregate/configuration/cause trees and raw bodies/headers SHALL NOT be attached as diagnostic shortcuts. Gateway-produced native summary fields SHALL protect exact configured provider/exporter keys under gateway-attempt-failure-evidence, preserving unrelated BYOK echoes and source data.
-- **AND** Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within complete-response limits; they SHALL NOT change classification or retryability.
+- **AND** Optional native candidate-local summaries and observed configured or request-account identity MAY accompany the base error under gateway-attempt-failure-evidence, encoded once with the base error; they SHALL NOT change classification or retryability.
 - **AND** Host-owned BYOK validation and unsupported-operation failures SHALL use fixed approved messages without copying rejected values or private diagnostics.
 - **AND** Stopped or exhausted credential fallback SHALL retain existing fallback error propagation and safe runtime classification rather than use a blanket exhaustion status.
-- **AND** Request-only selections SHALL remain eligible for available event-local SSE native summaries. Their current missing unary/setup summary and overview capabilities SHALL be tracked under #317, not treated as a confidentiality policy.
+- **AND** Request-only selections SHALL remain eligible for available event-local SSE native summaries, and their unary/setup failures SHALL carry the request-account overview with candidate-local native summaries when at least one account was invoked.
 
 #### Scenario: Actionable credential shape failure
-- **WHEN** a credential entry is missing apiKey or a supplied provider array exceeds the account count
+- **WHEN** a credential entry is missing apiKey or the selected provider's array exceeds the account count
 - **THEN** the invalid-request response SHALL identify the known field/capability without copying the entry or value
 
 #### Scenario: Discovery unsupported for BYOK
@@ -346,7 +352,7 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 #### Scenario: Provider API failure
 - **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
-- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional native configured execution attribution SHALL follow gateway-attempt-failure-evidence
+- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional native configured or request-account execution attribution SHALL follow gateway-attempt-failure-evidence
 
 #### Scenario: Unknown model
 - **WHEN** configured catalog resolution reports an unknown public model
@@ -358,12 +364,11 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 #### Scenario: BYOK provider echoes request accounts
 - **WHEN** authenticated request-only selection receives a native failure containing request-account keys or identifiers before or after stream commitment
-- **THEN** fixed classified error fields SHALL remain unchanged, and existing SSE native summaries SHALL preserve unrelated BYOK echoes and protect exact configured provider/exporter-key matches independently of catalog attribution
-- **AND** absent BYOK unary/setup summaries and attempt overviews SHALL reflect today's missing capability, not a permanent output-suppression rule
+- **THEN** fixed classified error fields SHALL remain unchanged, and unary/setup overview summaries and SSE native summaries SHALL preserve unrelated BYOK echoes and protect exact configured provider/exporter-key matches independently of catalog attribution
 
 ### Requirement: Runtime error detail exclusions
 
-Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure projection. Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within existing complete-response limits; they SHALL NOT change classification or retryability. Summary protection SHALL follow gateway-attempt-failure-evidence.
+Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure projection. Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, encoded once with the base error; they SHALL NOT change classification or retryability. Summary protection SHALL follow gateway-attempt-failure-evidence.
 
 #### Scenario: Runtime error detail exclusions
 - **WHEN** a resolver or provider failure carries URL, credentials and metadata
@@ -413,11 +418,11 @@ A successful response SHALL contain ordered supported text, function-tool-call, 
 - **THEN** the metadata SHALL survive in its registered scope without adding those transport fields or consulting operator capture flags
 
 #### Scenario: Provider raw usage is present or absent
-- **WHEN** provider usage contains a valid in-limit object including provider-native nested values, an empty object, or no Raw bytes
+- **WHEN** provider usage contains a valid object of any size including provider-native nested values, an empty object, or no Raw bytes
 - **THEN** the unary response SHALL respectively include the object under `usage.raw` with its native keys, include `{}`, or omit the `raw` member without changing normalized counts
 
 #### Scenario: Supplied raw usage is invalid
-- **WHEN** provider `Usage.Raw` is nonempty but malformed JSON, JSON null, an array or scalar, or exceeds its input byte limit
+- **WHEN** provider `Usage.Raw` is nonempty but malformed JSON, JSON null, an array or scalar, or invalid UTF-8
 - **THEN** the handler SHALL emit the fixed internal-error document before HTTP success is committed, without serializing the raw data or returning normalized-only success
 
 ### Requirement: Unary warning active union fields and empty values
@@ -446,73 +451,11 @@ A present response with no representable fields SHALL emit an empty object; nil 
 
 ### Requirement: Unary raw identity required empties and raw usage
 
-Native unary identity SHALL remain in the raw server document and client-owned response body, not be advertised as surviving in typed Response identity fields. Required empty reasoning text and selected empty inline file data SHALL be retained. usage.raw SHALL be omitted when absent and contain a valid bounded supplied provider JSON object unchanged in meaning.
+Native unary identity SHALL remain in the raw server document and client-owned response body, not be advertised as surviving in typed Response identity fields. Required empty reasoning text and selected empty inline file data SHALL be retained. usage.raw SHALL be omitted when absent and contain a valid supplied provider JSON object unchanged in meaning.
 
 #### Scenario: Unary raw identity required empties and raw usage
 - **WHEN** a success contains empty reasoning, selected empty inline data and a valid raw usage object
 - **THEN** required empties and raw usage SHALL survive, while native identity SHALL remain raw-body-only rather than typed client identity
-
-### Requirement: Bounded preflight and standard success encoding
-
-Before output allocation, UTF-8 scanning or encoding, the handler SHALL reject content/warning/metadata cardinality or aggregate represented strings, original result/content metadata namespace key/value bytes and raw-usage bytes that cannot fit the configured unary budget using overflow-safe accounting. Accounting SHALL include native source ID/display, active warning fields, registered response identity and serialized timestamps alongside existing content/raw-finish/usage values.
-
-#### Scenario: Preflight rejects oversized provider values
-- **WHEN** content/warning count or aggregate represented bytes exceed the unary budget, or raw usage exceeds 1,048,576 bytes
-- **THEN** the result SHALL fail before allocating mapped slices, scanning UTF-8 or encoding JSON
-
-#### Scenario: Separate values exceed the aggregate budget
-- **WHEN** content, warnings and identity each individually fit but together exceed the unary budget
-- **THEN** the response SHALL fail before success commitment rather than granting each group a full independent budget
-
-#### Scenario: Represented values are malformed
-- **WHEN** an in-limit source/warning/identity field contains invalid UTF-8 or a nonzero timestamp cannot encode a registered date-time
-- **THEN** the response SHALL fail before HTTP 200 without substituting or reflecting invalid values
-
-#### Scenario: Escaping crosses the final boundary
-- **WHEN** raw bytes pass preflight but standard JSON escaping makes the encoded response exceed the limit
-- **THEN** the handler SHALL return the fixed internal error before committing HTTP 200
-
-#### Scenario: Raw UTF-8 and JSON escapes
-- **WHEN** in-limit provider raw usage contains invalid UTF-8 in an object key or nested value
-- **THEN** the handler SHALL reject it before JSON encoding and return the fixed internal error without committing HTTP 200
-- **WHEN** in-limit raw usage contains valid JSON with lone or paired escaped surrogates
-- **THEN** the handler SHALL preserve the raw JSON escapes, with success still subject to object and complete-response limits
-
-#### Scenario: Response byte boundary
-- **WHEN** the encoded response is below, exactly at, or above the configured limit
-- **THEN** only complete in-limit documents SHALL receive HTTP 200
-
-#### Scenario: Raw usage exactly meets its input cap
-- **WHEN** raw usage bytes, including JSON whitespace, are at or one byte above the smaller of 1,048,576 bytes and the configured unary response limit
-- **THEN** only the at-limit value SHALL reach JSON validation, and success SHALL still require the final complete response to fit the unary limit
-
-#### Scenario: Combined metadata exceeds budget
-- **WHEN** individually small metadata objects across multiple content parts and the result collectively exceed the unary budget
-- **THEN** the complete result SHALL fail before JSON parsing or encoding rather than returning partial or metadata-free success
-
-### Requirement: Aggregate unary warning and raw-usage preflight
-
-Warning cardinality SHALL use conservative minimum registered encoded sizes, including required empty values. Independent field/list checks SHALL NOT bypass the aggregate complete-response budget. The handler SHALL count raw-usage bytes before parsing/marshaling and reject raw usage longer than 1,048,576 bytes or the unary limit, including whitespace. After size preflight it SHALL validate original UTF-8 and any present raw as one JSON object.
-
-#### Scenario: Aggregate unary warning and raw-usage preflight
-- **WHEN** separately fitting warnings/content together exceed the budget or raw usage exceeds its whitespace-inclusive input cap
-- **THEN** aggregate overflow SHALL fail before success, with conservative warning cardinality and pre-parse raw byte accounting
-
-### Requirement: Private standard unary encoding and final byte bounds
-
-Standard encoding SHALL preserve valid raw JSON escapes, including lone and paired UTF-16 surrogates. The complete private DTO SHALL then encode through standard Go JSON and SHALL receive HTTP 200 only after the final bytes fit. Provider-domain JSON marshalers SHALL NOT control public output. Encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping; no value SHALL be truncated to fit.
-
-#### Scenario: Private standard unary encoding and final byte bounds
-- **WHEN** valid raw JSON has surrogate escapes and ordinary strings expand during escaping
-- **THEN** standard private DTO encoding SHALL preserve escapes and commit HTTP 200 only when complete bytes fit, without provider marshalers or truncation and with bounded encoding allocation
-
-### Requirement: Shared unary metadata budget and namespace validity
-
-Metadata SHALL share the result/content budget under gateway-provider-metadata, accounting original namespace bytes including whitespace and cardinality before scanning or allocation. Namespace UTF-8/object shape SHALL be checked in preflight, and standard JSON encoding SHALL reject malformed namespace syntax before HTTP 200, without projection within those bounds.
-
-#### Scenario: Shared unary metadata budget and namespace validity
-- **WHEN** many individually small namespace objects collectively exceed the response budget
-- **THEN** the whole result SHALL fail using original bytes/cardinality before scanning/allocation, without projection or metadata-free success
 
 ### Requirement: Compatibility evidence
 
@@ -533,29 +476,133 @@ The runtime SHALL replay every committed ProviderWire request golden without mod
 
 ### Requirement: Independent unary raw authority frontend evidence and fixture provenance
 
-Raw Go/HTTP tests and local schemas SHALL independently verify active union fields, identity presence, output order, invalid output, lifecycle and complete-byte bounds rather than treating permissive parsing as validation. Authenticated command and provider-neutral frontend assembly scenarios SHALL accompany the behavior change. Synthetic responses SHALL NOT be presented as recorded provider evidence, and authentic provider fixture inputs SHALL NOT be rewritten.
+Raw Go/HTTP tests and local schemas SHALL independently verify active union fields, identity presence, output order, invalid output, lifecycle and large-output acceptance rather than treating permissive parsing as validation. Authenticated command and provider-neutral frontend assembly scenarios SHALL accompany the behavior change. Synthetic responses SHALL NOT be presented as recorded provider evidence, and authentic provider fixture inputs SHALL NOT be rewritten.
 
 #### Scenario: Independent unary raw authority frontend evidence and fixture provenance
 - **WHEN** the pinned client accepts an output union permissively
-- **THEN** raw/schema/lifecycle/bounds tests SHALL independently verify it, authenticated command/frontend assembly evidence SHALL accompany behavior changes and synthetic responses SHALL NOT become recorded inputs
+- **THEN** raw/schema/lifecycle/large-output tests SHALL independently verify it, authenticated command/frontend assembly evidence SHALL accompany behavior changes and synthetic responses SHALL NOT become recorded inputs
 
-### Requirement: Host-safe ProviderWire error writer
-The ProviderWire package SHALL expose a non-fallible, unconfigured host error writer for fixed authentication, permission, internal and unsupported-BYOK-discovery failures. Caller messages, causes or arbitrary fields SHALL NOT cross that API.
+### Requirement: Closed host error categories and fixed document reuse
+Callers SHALL select only the closed permission, internal or unsupported-BYOK-discovery categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
+
+#### Scenario: Closed host error categories and fixed document reuse
+- **WHEN** host middleware selects permission rather than providing its own error message
+- **THEN** the writer SHALL encode the shared fixed public definitions without accepting caller-controlled fields, compiling schemas or attaching optional execution metadata
+
+#### Scenario: Unsupported discovery uses a closed category
+- **WHEN** an authenticated BYOK caller requests discovery
+- **THEN** the host SHALL select the fixed unsupported-discovery category without catalog access
+
+### Requirement: Host error status bytes and private API boundary
+
+Permission SHALL emit the package's exact fixed 403 document, internal SHALL emit the exact fixed 500 document, and an invalid category SHALL select that same internal document. The API SHALL not expose private DTOs or weaken the strict handler's existing failure bytes.
+
+#### Scenario: Host error status bytes and private API boundary
+- **WHEN** host middleware selects permission, internal or an invalid category
+- **THEN** permission SHALL use the exact fixed 403 and internal/invalid the exact fixed 500, with no exposed DTOs or weakened handler failure bytes
+
+### Requirement: Optional unary execution overview
+
+The handler SHALL use synchronized request-local observation to optionally enrich a valid unary result or classified invocation failure with a compact execution overview.
+
+#### Scenario: Optional unary execution overview policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Original primary validation SHALL apply before enrichment, and the enriched document SHALL be encoded once. A failure document whose enriched encoding fails SHALL fall back to its fixed base document and classification; original adaptation failures SHALL NOT replay generation. Configured candidate identity SHALL remain separate from native-summary eligibility; only explicit configured API keys SHALL supply summary protection; request credentials SHALL NOT be inventoried. Configured direct calls SHALL retain their existing invocation/cancellation ownership.
+
+#### Scenario: Valid result with no enrichment room
+- **WHEN** a valid native result would fit the former 8 MiB unary budget only without its overview
+- **THEN** the successful result SHALL be written with the overview and its native metadata intact
+
+#### Scenario: Owned cancellation and late native result
+- **WHEN** cancellation wins invocation ownership before a late native result
+- **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure
+
+### Requirement: Unsupported-functionality rejection classification
+When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence; a chain aggregate SHALL follow the gateway-execution-runtime aggregate rule.
+
+#### Scenario: Direct rejection
+- **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup
+- **THEN** the handler SHALL return the fixed invalid-request document and neither registered client SHALL retry the request
+
+#### Scenario: All candidates reject
+- **WHEN** every configured-fallback candidate returns the rejection
+- **THEN** the handler SHALL return the fixed invalid-request document
+
+#### Scenario: Operational failures keep existing classification
+- **WHEN** fallback attempts end with the rejection and a retryable 503, in either order
+- **THEN** the handler SHALL keep the existing 503 classification
+
+#### Scenario: Rejection next to an unknown error
+- **WHEN** fallback attempts end with the rejection and an error that has no other category, in either order
+- **THEN** the handler SHALL return the fixed internal-error document, because the unknown error is the most recent attempt failure that is not a refusal
+
+#### Scenario: API call error wrapping the sentinel
+- **WHEN** an API call error's cause wraps the sentinel
+- **THEN** the handler SHALL keep the existing API-call-error classification
+
+#### Scenario: Cancellation wins
+- **WHEN** the request is canceled after a candidate rejected
+- **THEN** the handler SHALL keep the existing cancellation classification
+
+### Requirement: Unary output validity without size accounting
+Before HTTP 200 the handler SHALL validate represented strings as UTF-8, warning and content discriminators, response timestamps, token ranges, tool lifecycle, metadata namespace names and object values, and raw usage as one JSON object. It SHALL NOT count, budget or preflight the size or cardinality of content, warnings, metadata, identity or raw usage; size is owned by gateway-resource-policy.
+
+#### Scenario: Large valid result succeeds
+- **WHEN** a valid result has more content parts, warnings or metadata namespaces, or longer strings, than the former 8 MiB unary budget could hold
+- **THEN** the handler SHALL return HTTP 200 with the complete document
+
+#### Scenario: Raw usage above the former cap
+- **WHEN** provider usage carries a valid raw JSON object above 1,048,576 bytes, including a whitespace-heavy object
+- **THEN** `usage.raw` SHALL contain that object with its native keys
+
+#### Scenario: Represented values are malformed
+- **WHEN** a source, warning or identity field contains invalid UTF-8, or a nonzero timestamp cannot encode a registered date-time
+- **THEN** the response SHALL fail before HTTP 200 without substituting or reflecting invalid values
+
+#### Scenario: Raw UTF-8 and JSON escapes
+- **WHEN** provider raw usage contains invalid UTF-8 in an object key or nested value
+- **THEN** the handler SHALL return the fixed internal error without committing HTTP 200
+- **WHEN** raw usage contains valid JSON with lone or paired escaped surrogates
+- **THEN** the handler SHALL preserve the raw JSON escapes
+
+#### Scenario: Invalid metadata namespace
+- **WHEN** a result or content metadata namespace has an invalid UTF-8 name, or a value that is not a valid UTF-8 JSON object
+- **THEN** the whole result SHALL fail before HTTP 200, without projection or metadata-free success
+
+### Requirement: Single unary success encoding
+The handler SHALL encode the complete private success DTO once through standard Go JSON, including any optional execution metadata, and SHALL write HTTP 200 only after that encoding succeeds. Valid raw JSON escapes SHALL be preserved, provider-domain JSON marshalers SHALL NOT control public output, and no value SHALL be truncated.
+
+#### Scenario: Encoding succeeds
+- **WHEN** a validated result and its optional overview encode successfully
+- **THEN** HTTP 200 SHALL carry exactly that one encoded document
+
+#### Scenario: Encoding fails
+- **WHEN** standard encoding of the success document fails, for example on malformed namespace JSON
+- **THEN** the handler SHALL return the fixed internal-error document, with its optional execution overview, before HTTP 200 and without replaying generation
+
+### Requirement: Single HTTP error encoding
+Each HTTP error document SHALL be encoded once together with its optional providerMetadata. When that encoding fails, the handler SHALL write the fixed base document for the same category. The document SHALL NOT be size-limited, and the optional fields SHALL NOT change status, type, code, message or retryability.
+
+#### Scenario: Large error overview
+- **WHEN** a classified failure carries an execution overview whose encoded document exceeds 64 KiB
+- **THEN** the complete document with the overview SHALL be written
+
+#### Scenario: Optional metadata cannot be encoded
+- **WHEN** encoding the error with its optional metadata fails
+- **THEN** the fixed base document with the same status and fields SHALL be written
+
+### Requirement: ProviderWire host contract error writer
+The ProviderWire package SHALL expose a non-fallible, unconfigured host error writer that implements the host contract's closed categories: permission, internal and unsupported-BYOK-discovery failures. Caller messages, causes or arbitrary fields SHALL NOT cross that API.
 
 #### Scenario: Authenticated host error policy
 - **WHEN** host middleware selects a closed error category
-- **THEN** The `ai-gateway/providerwire/v4` package SHALL expose a narrow host-composition error writer for failures outside the language-model handler, including service authentication, permission, and discovery failures.
+- **THEN** The `ai-gateway/providerwire/v4` package SHALL expose a narrow host-composition error writer for failures outside the language-model handler, including permission and discovery failures.
 - **AND** Construction SHALL be non-fallible and SHALL accept no configuration.
-- **AND** Callers SHALL select only closed authentication, permission, internal or unsupported-BYOK-discovery categories; they SHALL NOT supply public messages, causes, arbitrary status codes, error types, error codes, retryability, or byte limits.
+- **AND** Callers SHALL select only the closed permission, internal or unsupported-BYOK-discovery categories; they SHALL NOT supply public messages, causes, arbitrary status codes, error types, error codes, retryability, or byte limits.
 - **AND** The writer SHALL use the same protocol-owned public error definitions and typed HTTP encoder as the language-model handler, without optional execution metadata.
 - **AND** It SHALL perform no runtime schema compilation or validation; encoding SHALL use only fixed package-owned values.
-- **AND** Authentication SHALL emit the package's exact fixed 401 document, permission SHALL emit the exact fixed 403 document, internal SHALL emit the exact fixed 500 document, and an invalid category SHALL select that same internal document.
+- **AND** Permission SHALL emit the exact fixed 403 document, internal SHALL emit the exact fixed 500 document, and an invalid category SHALL select that same internal document.
 - **AND** The API SHALL not expose private DTOs or weaken the strict handler's existing failure bytes.
-
-#### Scenario: Host emits authentication failure
-- **WHEN** authenticated service middleware selects the closed authentication category
-- **THEN** the writer SHALL emit the exact fixed 401 authentication document owned by the protocol package
-- **AND** no host or verifier error text SHALL be accepted or copied
 
 #### Scenario: Host emits permission failure
 - **WHEN** host authorization selects the closed permission category
@@ -575,60 +622,18 @@ The ProviderWire package SHALL expose a non-fallible, unconfigured host error wr
 - **WHEN** authenticated BYOK discovery selects the closed unsupported category
 - **THEN** the writer SHALL emit the fixed HTTP 400 invalid-request discovery document without catalog access or caller-supplied prose
 
-### Requirement: Closed host error categories and fixed document reuse
-Callers SHALL select only closed authentication, permission, internal or unsupported-BYOK-discovery categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
+### Requirement: Fixed routing error documents
+Routing and gateway-control failures SHALL use fixed ProviderWire documents with `param: null`, not retryable, chosen from category and reason alone. Their messages SHALL never echo supplied model IDs, slugs, numbers or control names.
 
-#### Scenario: Closed host error categories and fixed document reuse
-- **WHEN** host middleware selects authentication rather than providing its own error message
-- **THEN** the writer SHALL encode the shared fixed public definitions without accepting caller-controlled fields, compiling schemas or attaching optional execution metadata
+#### Scenario: Routing documents
+- **WHEN** selection fails with each routing outcome
+- **THEN** the documents SHALL be:
+  - unsupported gateway control: HTTP 400, `invalid_request_error`, `invalid_request`, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"
+  - routing controls: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
+  - no candidates: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway.only excludes every candidate"
+  - attempt bound: HTTP 400, `invalid_request_error`, `invalid_request`, "routing exceeds the bound of 8 provider attempts"
+  - fallback model not found: HTTP 404, `model_not_found`, `model_not_found`, "a providerOptions.gateway.models entry is not an available model"
 
-#### Scenario: Unsupported discovery uses a closed category
-- **WHEN** an authenticated BYOK caller requests discovery
-- **THEN** the host SHALL select the fixed unsupported-discovery category without catalog access
-
-### Requirement: Host error status bytes and private API boundary
-
-Authentication SHALL emit the package's exact fixed 401 document, permission SHALL emit the exact fixed 403 document, internal SHALL emit the exact fixed 500 document, and an invalid category SHALL select that same internal document. The API SHALL not expose private DTOs or weaken the strict handler's existing failure bytes.
-
-#### Scenario: Host error status bytes and private API boundary
-- **WHEN** host middleware selects permission, internal or an invalid category
-- **THEN** permission SHALL use the exact fixed 403 and internal/invalid the exact fixed 500, with no exposed DTOs or weakened handler failure bytes
-
-### Requirement: Optional unary execution overview
-
-The handler SHALL use synchronized request-local observation to optionally enrich a valid unary result or classified invocation failure with a compact execution overview.
-
-#### Scenario: Optional unary execution overview policy
-- **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Configured candidate identity SHALL remain separate from native-summary eligibility; only explicit configured API keys SHALL supply summary protection; request credentials SHALL NOT be inventoried. Configured direct calls SHALL retain their existing invocation/cancellation ownership.
-
-#### Scenario: Valid result with no enrichment room
-- **WHEN** a native result fits but adding or relocating the overview exceeds the existing response bound
-- **THEN** the original successful result SHALL be written without metadata loss or a diagnostic-induced failure
-
-#### Scenario: Owned cancellation and late native result
-- **WHEN** cancellation wins invocation ownership before a late native result
-- **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure
-
-### Requirement: Unsupported-functionality rejection classification
-When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence.
-
-#### Scenario: Direct rejection
-- **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup
-- **THEN** the handler SHALL return the fixed invalid-request document and neither registered client SHALL retry the request
-
-#### Scenario: All candidates reject
-- **WHEN** every configured-fallback candidate returns the rejection
-- **THEN** the handler SHALL return the fixed invalid-request document
-
-#### Scenario: Operational failures keep existing classification
-- **WHEN** fallback attempts end with the rejection and a retryable 503, in either order
-- **THEN** the handler SHALL keep the existing 503 classification
-
-#### Scenario: API call error wrapping the sentinel
-- **WHEN** an API call error's cause wraps the sentinel
-- **THEN** the handler SHALL keep the existing API-call-error classification
-
-#### Scenario: Cancellation wins
-- **WHEN** the request is canceled after a candidate rejected
-- **THEN** the handler SHALL keep the existing cancellation classification
+#### Scenario: Client classification of routing documents
+- **WHEN** the pinned TypeScript client and the Go client receive each routing document
+- **THEN** each SHALL classify it with its existing invalid-request or model-not-found error category, as not retryable

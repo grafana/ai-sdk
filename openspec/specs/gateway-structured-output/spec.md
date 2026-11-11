@@ -2,7 +2,9 @@
 
 ## Purpose
 Define presence-aware JSON/schema request forwarding, native text transport and client-owned output validation through the Gateway.
+
 ## Requirements
+
 ### Requirement: Presence-aware structured request
 The provider contract and both Gateway clients SHALL distinguish absent, empty and nonempty names and normalize absent/empty descriptions to empty. JSON mode and opaque object schemas SHALL reach native adapters in unary and streaming calls. Explicit text format SHALL retain existing behavior. The Gateway SHALL preserve numeric and nested schema values without rewriting them.
 
@@ -25,7 +27,7 @@ The provider contract and both Gateway clients SHALL distinguish absent, empty a
 - **AND** TypeScript evidence SHALL compare its actual submitted values without claiming arbitrary unsafe-integer representation
 
 ### Requirement: Existing native and client output semantics
-The Gateway SHALL transport structured output using existing text response and stream codecs and preserve supported native warnings, metadata, usage and finish behavior. Each native adapter SHALL retain its registered schema conversion, validation and support behavior. High-level clients SHALL own final object parsing and validation.
+The Gateway SHALL transport structured output using existing text response and stream codecs and preserve supported native warnings, metadata, usage and finish behavior. Each native adapter SHALL retain its registered schema conversion, validation and support behavior. An `openai-compatible` backend SHALL receive JSON-schema response formats only when its provider enables `supportsStructuredOutputs`. High-level clients SHALL own final object parsing and validation.
 
 #### Scenario: Unary and streamed object
 - **WHEN** registered TypeScript and Go high-level output clients consume valid JSON text through unary or streaming generation
@@ -34,6 +36,26 @@ The Gateway SHALL transport structured output using existing text response and s
 #### Scenario: Invalid generated object
 - **WHEN** native text is not valid for the requested client schema
 - **THEN** final output validation SHALL fail in the client without Gateway repair or a fabricated provider success
+
+#### Scenario: Compatible backend with structured outputs enabled
+- **WHEN** a request with a response schema reaches an `openai-compatible` candidate whose provider sets `supportsStructuredOutputs: true`, unary or streaming, directly or through configured fallback
+- **THEN** the backend SHALL receive `response_format` of type `json_schema` carrying the schema and description, the name defaulting to `response` only when absent, and `strict` from the per-call compatible `strictJsonSchema` option, defaulting to `true`
+- **AND** the Gateway output SHALL carry no `responseFormat` unsupported warning
+- **AND** this SHALL hold through both the Go and TypeScript Gateway clients
+
+#### Scenario: Per-call strict override with structured outputs enabled
+- **WHEN** a request to a compatible candidate with `supportsStructuredOutputs: true` sets `strictJsonSchema: false` under its compatible provider-options namespace
+- **THEN** the backend SHALL receive `response_format.json_schema.strict` as `false`
+
+#### Scenario: Mixed compatible fallback candidates
+- **WHEN** a primary compatible candidate fails (503) before producing output and a serving fallback compatible candidate has the opposite `supportsStructuredOutputs` setting
+- **THEN** each backend request SHALL use `json_schema` when its own provider enables the setting and `json_object` otherwise
+- **AND** when the serving candidate enables the setting, the Gateway output SHALL carry no `responseFormat` unsupported warning
+
+#### Scenario: Compatible backend without structured outputs
+- **WHEN** a request with a response schema reaches an `openai-compatible` candidate whose provider does not enable `supportsStructuredOutputs`
+- **THEN** the backend SHALL receive `response_format` of type `json_object`
+- **AND** the Gateway output SHALL carry a `responseFormat` unsupported warning with details `JSON response format schema is only supported with structuredOutputs`, matching upstream
 
 ### Requirement: Safe malformed requests and native failures
 Malformed JSON and invalid response-format field/root shapes SHALL fail before provider invocation under existing request bounds. Schema object contents SHALL remain opaque; provider-invalid schema and provider errors SHALL follow existing safe error handling, retaining supported useful candidate-local native error fields. Diagnostics SHALL use the shared Gateway attempt-failure contract and its configured-credential policy; raw response bodies and request headers SHALL NOT be copied.
@@ -47,7 +69,7 @@ Malformed JSON and invalid response-format field/root shapes SHALL fail before p
 - **THEN** its useful supported error information SHALL reach both clients through existing error conversion
 
 ### Requirement: Mapped fallback and independent observation
-Structured output SHALL be eligible on configured fallback routes under existing native namespace interpretation, selection, cancellation and commitment rules. Selected failures SHALL identify the actual candidate and exhaustion SHALL retain available bounded candidate failure information through compact execution metadata in existing provider metadata/error-data carriers. Operator and consumer capture SHALL remain independently configured and SHALL NOT change admission or caller responses.
+Structured output SHALL be eligible on configured fallback routes under existing native namespace interpretation, selection, cancellation and commitment rules. Selected failures SHALL identify the actual candidate and exhaustion SHALL retain available candidate failure information through compact execution metadata in existing provider metadata/error-data carriers. Operator and consumer capture SHALL remain independently configured and SHALL NOT change admission or caller responses.
 
 #### Scenario: Native secondary succeeds
 - **WHEN** the primary fails eligibly before commitment and a native secondary accepts the structured request
@@ -59,15 +81,15 @@ Structured output SHALL be eligible on configured fallback routes under existing
 
 #### Scenario: Exhaustion and capture
 - **WHEN** all candidates fail or capture is independently enabled on either side
-- **THEN** scoped tests SHALL prove actual failure attribution and bounds, one logical observation, useful supported consumer capture, and unchanged caller output/error behavior
+- **THEN** scoped tests SHALL prove actual failure attribution, one logical observation, useful supported consumer capture, and unchanged caller output/error behavior
 
 #### Scenario: Optional attribution fits existing transport
-- **WHEN** a complete observed execution overview fits existing document/frame limits and the default Go client error-envelope limit for HTTP failures
-- **THEN** it SHALL identify actual ordered configured candidates without aggregate causes or fallback-intent serialization
-- **AND** incomplete or oversized enrichment SHALL be omitted without changing the original response or retry classification
+- **WHEN** a complete observed execution overview exists for a success or HTTP failure, including one above the former document, frame or Go client error-envelope limits
+- **THEN** it SHALL identify actual ordered configured candidates without aggregate causes or fallback-intent serialization, regardless of its encoded size
+- **AND** incomplete enrichment SHALL be omitted without changing the original response or retry classification
 
 #### Scenario: Native metadata collision and selected adaptation failure
-- **WHEN** native metadata contains the gateway namespace and enrichment fits
+- **WHEN** native metadata contains the gateway namespace and an overview is attached
 - **THEN** the original namespace SHALL be preserved under gateway.nativeMetadata
 - **AND** a local adaptation error after selection SHALL identify the selected execution without fabricating a native error summary or replaying the request
 

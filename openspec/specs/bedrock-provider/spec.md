@@ -299,7 +299,7 @@ When a non-streaming Converse response reports `stopReason: guardrail_intervened
 
 ### Requirement: Top-level Converse provider option pass-through
 
-The provider SHALL pass additional raw `amazonBedrock` properties to the Converse request top level. Absent/null `amazonBedrock` SHALL fall back to legacy `bedrock`; non-null modern options SHALL take complete precedence without merging. `reasoningConfig`, `additionalModelRequestFields`, and `serviceTier` SHALL be excluded from direct pass-through so specialized conversion remains authoritative.
+The provider SHALL pass additional raw `amazonBedrock` properties to the Converse request top level. Absent/null `amazonBedrock` SHALL fall back to legacy `bedrock`; non-null modern options SHALL take complete precedence without merging. `reasoningConfig`, `additionalModelRequestFields`, `serviceTier`, `structuredOutputMode`, and `requestMetadata` SHALL be excluded from direct pass-through so specialized conversion remains authoritative.
 
 #### Scenario: Guardrail configuration pass-through
 
@@ -472,7 +472,7 @@ For custom `provider.CallOptions.Reasoning` other than `none`, Anthropic Bedrock
 
 ### Requirement: Native structured output for supported Anthropic models
 
-For JSON with a schema, the provider SHALL select native `additionalModelRequestFields.output_config.format`, synthetic JSON tool, or JSON instruction using effective `structuredOutputMode`. Default `auto` native use SHALL require Anthropic family, reliable native support, and model capability, thinking, or explicit Anthropic family. Explicit `outputFormat` SHALL override the auto reliability gate for Anthropic schema responses.
+For JSON with a schema, the provider SHALL select native `output_config.format`, synthetic JSON tool, or JSON instruction by effective `structuredOutputMode`. `auto` SHALL use native output only for Anthropic models with reliable native support (strict-tool allowlist minus Sonnet 4.6, Haiku 4.5) and capability, thinking, or Anthropic family; `outputFormat` bypasses it. Outside `jsonTool`, unknown Claude IDs, and models lacking strict tools with caller tools, SHALL use the JSON instruction.
 
 #### Scenario: Native JSON output on supported Anthropic model
 
@@ -481,13 +481,29 @@ For JSON with a schema, the provider SHALL select native `additionalModelRequest
 
 #### Scenario: JSON-tool fallback on unsupported model
 
-- **WHEN** the model does not support native structured output, there are no caller tools, and `ResponseFormat.Type = json` with a schema
+- **WHEN** a non-Claude model, or a Claude model not routed to the JSON instruction, does not use native structured output, there are no caller tools, and `ResponseFormat.Type = json` with a schema
 - **THEN** the provider injects a synthetic tool named `json` with the schema as inputSchema, sets `toolChoice = required`, and translates the tool call into the final text in the response
 
 #### Scenario: Opus 4.7/4.8 structured output with user tools
 
 - **WHEN** Claude Opus 4.7 or 4.8 receives a JSON response schema, at least one user tool, and `auto` mode
 - **THEN** the provider keeps the user tools selectable, omits `output_config.format`, and injects the JSON schema instruction into the system prompt
+
+#### Scenario: Unknown Claude structured output uses instruction
+
+- **WHEN** an unknown, future major, or future minor Claude ID (including regional prefixes and explicit Anthropic family) receives a JSON response schema in `auto` mode, with or without thinking or user tools
+- **THEN** `output_config.format` is absent, no synthetic `json` tool or forced tool choice is sent, the JSON schema instruction is injected into the system prompt, and caller messages are unchanged
+- **AND** a Claude ID is unknown here when it lacks reliable native support and is not a known model with structured-output capability
+
+#### Scenario: Known Claude outside native auto routing keeps JSON tool
+
+- **WHEN** Haiku 5.5 or a legacy Claude model receives a JSON response schema in `auto` mode without user tools and, for Haiku 5.5, with or without thinking
+- **THEN** the synthetic `json` tool and required choice are emitted; legacy Claude with thinking uses native output
+
+#### Scenario: Explicit JSON tool on unknown Claude
+
+- **WHEN** an unknown Claude ID receives `structuredOutputMode = jsonTool`, with or without user tools
+- **THEN** the synthetic `json` tool and required choice are emitted instead of the JSON instruction
 
 #### Scenario: Thinking does not override native-output rejection
 
@@ -531,7 +547,7 @@ The Bedrock constructor SHALL allow `WithModelFamily` with the typed Anthropic f
 
 ### Requirement: Strict tools and effective Anthropic tool choice
 
-The Converse adapter SHALL keep strict-tool support independent of native JSON support. It SHALL omit `strict` with an unsupported warning when the model disallows either boolean value or when `strict:true` has an object schema lacking `additionalProperties:false` in any nested branch. Boolean schemas SHALL be accepted. Unsupported Anthropic web search/fetch provider tools SHALL be filtered with warnings; Anthropic provider-tool choices SHALL route through additional fields.
+The Converse adapter SHALL keep strict-tool support independent of native JSON support. It SHALL omit `strict` when the model disallows strict tools (warning only for `strict:true`), or with a warning when `strict:true` has an object schema lacking nested `additionalProperties:false`. Boolean schemas SHALL be accepted. Unsupported Anthropic web search/fetch provider tools SHALL be filtered with warnings; Anthropic provider-tool choices SHALL route through additional fields.
 
 #### Scenario: Separate Sonnet 4.6 strict and native gates
 
@@ -540,8 +556,9 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: Unsupported strict on newest models
 
-- **WHEN** an Opus 4.7/4.8, Opus 5, Fable 5, or Sonnet 5 tool requests `strict:false` or `strict:true`
-- **THEN** `strict` is omitted and an unsupported strict warning identifies the tool and value
+- **WHEN** a Claude model outside the strict-tool allowlist (legacy Claude, dated Claude 4, Opus 4.1/4.5/4.6, Sonnet 4.5/4.6, Haiku 4.5), such as Opus 4.7/4.8, Opus 5, Fable 5, Sonnet 5, Haiku 5.5, or an unknown Claude ID, requests `strict:false` or `strict:true`
+- **THEN** `strict` is omitted; `strict:true` adds an unsupported strict warning identifying the tool, while `strict:false` is omitted silently
+- **AND** non-Claude IDs and opaque profiles keep strict support
 
 #### Scenario: Incompatible nested strict schema
 
@@ -596,6 +613,20 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 - **WHEN** `amazon.nova-micro-v1:0` receives portable reasoning `high` without an explicit `reasoningConfig`
 - **THEN** no reasoning field is sent and an unsupported warning is returned; with an explicit config its fields are forwarded and merged
+
+### Requirement: Converse Nova 2 Lite high reasoning omits token limits
+
+When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixes and system inference-profile ARNs, resolves to `reasoningConfig.type: enabled` with effort `high`, `xhigh`, or `max`, the provider SHALL omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning. Explicit provider `reasoningConfig` fields SHALL take precedence over portable reasoning when resolving that combination. Lower efforts, other reasoning types, and other models SHALL keep the caller's token limit.
+
+#### Scenario: High Nova 2 Lite reasoning drops the token limit
+
+- **WHEN** `us.amazon.nova-2-lite-v1:0` receives `maxOutputTokens` with enabled reasoning at effort `high`, including portable `xhigh` or `max` coerced to `high`, or explicit provider `reasoningConfig` effort `high`, `xhigh`, or `max`
+- **THEN** unary and streaming requests omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning
+
+#### Scenario: Lower effort or other models keep the token limit
+
+- **WHEN** Nova 2 Lite resolves to effort `low` or `medium` or to non-enabled reasoning, or another model receives high reasoning
+- **THEN** `inferenceConfig.maxTokens` is preserved and no `maxOutputTokens` warning is returned
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
@@ -838,30 +869,61 @@ For Bedrock models identified as Anthropic with custom root reasoning other than
 
 ### Requirement: Converse adaptive effort mapping
 
-Adaptive reasoning SHALL map `minimal`/`low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max` in `additionalModelRequestFields.output_config.effort`. Changed level names SHALL emit a compatibility warning.
+When deriving adaptive effort without an explicit effort override, reasoning SHALL map `minimal`/`low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max` in `additionalModelRequestFields.output_config.effort`. Changed level names SHALL emit a compatibility warning only when that mapping supplies the effective effort.
 
 #### Scenario: Converse adaptive effort mapping
 
-- **WHEN** custom root reasoning is `minimal`, `low`, `medium`, `high`, or `xhigh` on an adaptive model
+- **WHEN** custom root reasoning is `minimal`, `low`, `medium`, `high`, or `xhigh` on an adaptive model without explicit effort
 - **THEN** effort SHALL be `low`, `low`, `medium`, `high`, or `max` respectively; only changed names SHALL warn
 
 ### Requirement: Converse explicit reasoning configuration merge
 
-For custom reasoning other than `none`, non-zero explicit `reasoningConfig` fields SHALL override derived fields; unspecified fields SHALL remain derived. Raw `budgetTokens:0` SHALL override to `thinking.budget_tokens=0`; a typed zero field with `omitempty` SHALL represent omission. Merged type `disabled` SHALL remove derived budget and effort.
+Explicit disabled config SHALL suppress custom reasoning before derivation. Otherwise explicit effort or budget SHALL take precedence over portable derivation, with no diagnostic for an overridden value. Missing type and controls SHALL retain capability-based defaults. Raw `budgetTokens:0` SHALL remain explicit; typed zero SHALL mean omission. Request preparation SHALL NOT mutate caller reasoning config, including provider-default calls.
 
 #### Scenario: Converse explicit reasoning configuration merge
 
 - **WHEN** root reasoning supplies a derived budget and raw config explicitly sets zero, or a typed config leaves budget zero
 - **THEN** raw zero SHALL override the budget while typed zero SHALL leave it derived; merged disabled thinking SHALL clear derived budget and effort
 
+#### Scenario: Disabled thinking suppresses unused diagnostics
+
+- **WHEN** custom root reasoning including `none`, `minimal`, `xhigh` or `max` is combined with explicit type `disabled`, budget and effort on models that accept disabled thinking
+- **THEN** the request SHALL omit thinking, budget and effort without warnings from the suppressed reasoning settings, and caller config SHALL remain unchanged
+
+#### Scenario: Explicit effort prevents portable mapping diagnostics
+
+- **WHEN** an adaptive Anthropic, Nova 2 Lite or OpenAI model receives portable `minimal`, `xhigh` or `max` with explicit effort `low`
+- **THEN** the request SHALL use `low` without portable mapping warnings, filling absent type with `adaptive` for Anthropic or `enabled` for Nova and retaining the output token limit for Nova low effort
+
+#### Scenario: Budget-only override retains enabled type and explicit zero
+
+- **WHEN** a budget-based Anthropic model receives custom reasoning with explicit budget only, including raw zero
+- **THEN** thinking SHALL be enabled with that budget, the output token limit SHALL increase by exactly that budget, and overridden budget derivation SHALL emit no diagnostic
+
+#### Scenario: Namespace precedence is preserved
+
+- **WHEN** explicit reasoning config is supplied under either modern or legacy namespace
+- **THEN** both SHALL resolve identically; non-null modern options SHALL take complete precedence and absent/null modern options SHALL fall back to legacy
+
+#### Scenario: Provider-default and repeated or concurrent calls preserve ownership
+
+- **WHEN** caller options are reused by sequential or concurrent calls, including omitted/provider-default reasoning and between-tools effort capping
+- **THEN** native requests and warnings SHALL remain deterministic and caller options SHALL remain unchanged
+- **AND** provider-default reasoning SHALL retain explicit controls without portable derivation or disabled-field cleanup
+
 ### Requirement: Converse none thinking and pinned deviation
 
-Anthropic root reasoning `none` SHALL replace explicit partial config with disabled thinking, except IDs containing `claude-sonnet-5-5`, which SHALL use `between_tools`. This intentional deviation from `@ai-sdk/amazon-bedrock` 5.0.99 is recorded in `test/conformance/upstream.yaml`: upstream disabled thinking omits `thinking`, allowing default-effort adaptive thinking.
+Anthropic root reasoning `none` SHALL replace partial config with disabled thinking. Sonnet 5.5 SHALL normalize disabled thinking to `between_tools`, with an unsupported warning for explicit disabled config. Provider-default calls SHALL preserve effort capped at high; custom reasoning SHALL clear budget and effort. Accepting explicit `between_tools` remains a Go extension recorded in `knownGaps`.
 
 #### Scenario: Converse none thinking and pinned deviation
 
 - **WHEN** root reasoning `none` accompanies partial provider config on Sonnet 5.5 and on another Anthropic model
 - **THEN** Sonnet 5.5 SHALL send between-tools thinking; the other model SHALL use disabled thinking with no derived budget or effort
+
+#### Scenario: Explicit disabled normalizes to the Sonnet 5.5 minimum
+
+- **WHEN** root reasoning `none` accompanies explicit type `disabled` on Sonnet 5.5
+- **THEN** the request SHALL send between-tools thinking with an unsupported warning, omit the budget and effort removed by custom portable reasoning
 
 ### Requirement: Converse auto native-output exclusions
 
@@ -978,3 +1040,41 @@ Bedrock Converse prompt-conversion errors whose registered upstream counterpart 
 #### Scenario: Warning sites unchanged
 - **WHEN** a request hits an existing Bedrock warning, such as separated system messages or unsupported tool-result file data
 - **THEN** the adapter SHALL keep warning and SHALL NOT return an error
+
+### Requirement: Converse request metadata
+
+The provider SHALL expose optional string-to-string request metadata as `BedrockOptions.RequestMetadata` and accept equivalent raw options. Both Converse APIs SHALL send it at the request top level, with nil omitted and empty maps retained. Selected raw metadata SHALL be validated before HTTP without exposing its contents in errors. Existing namespace precedence and duplicate raw member last-value semantics SHALL be preserved.
+
+#### Scenario: Typed and raw string metadata
+
+- **WHEN** a caller supplies string request metadata using typed or raw options in either supported namespace
+- **THEN** both generation and streaming requests include the same top-level requestMetadata object
+
+#### Scenario: Omitted and empty metadata
+
+- **WHEN** request metadata is absent or a typed map is nil
+- **THEN** requestMetadata is absent from the request
+- **AND** an explicitly empty map is instead serialized as an empty object
+
+#### Scenario: Modern namespace selects the entire option object
+
+- **WHEN** modern options are present with an empty metadata map or no metadata field and legacy options contain metadata
+- **THEN** the selected modern options determine metadata presence without merging legacy values
+- **AND** absent or null modern options instead permit legacy metadata
+
+#### Scenario: Malformed metadata fails locally
+
+- **WHEN** the selected raw requestMetadata is null, is not an object, or contains a non-string value including null
+- **THEN** generation and streaming fail before HTTP
+- **AND** the error names requestMetadata without exposing metadata keys or values
+
+#### Scenario: Ordinary JSON member matching
+
+- **WHEN** raw metadata uses a case-insensitive struct-field spelling or duplicate members
+- **THEN** decoding follows ordinary encoding/json struct-field matching, and the last duplicate field or record entry wins
+- **AND** valid typed metadata uses canonical requestMetadata spelling when emitted
+
+#### Scenario: SDK does not add service limits
+
+- **WHEN** a string record exceeds sixteen entries or contains keys or values longer than 256 characters
+- **THEN** the SDK SHALL preserve the record without adding entry-count or string-length validation beyond the registered upstream schema

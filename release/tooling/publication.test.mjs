@@ -34,7 +34,8 @@ function publisher() {
     return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
   };
   const options = { github: f.github, inventory: f.inventory, toolingRevision: base,
-    validate: async candidate => { validations.push(candidate.prNumber); return { baseSha: base }; }, fetchImpl: fetch };
+    validate: async candidate => { validations.push(candidate.prNumber); return { baseSha: base }; },
+    fetchImpl: fetch };
   const run = () => publishInventory(options);
   return { ...f, tags, releases, requests, validations, options, fetch, run };
 }
@@ -175,9 +176,77 @@ test('root publishes independently of blocked provider and unsupported Gateway',
     return {};
   };
   const report = await f.run();
-  assert.deepEqual(report.candidates.map(c => c.status), ['blocked', 'published', 'blocked']);
+  assert.deepEqual(Object.fromEntries(report.candidates.map(c => [c.component, c.status])),
+    { 'providers/bedrock': 'blocked', '.': 'published', 'ai-gateway': 'blocked' });
   assert.deepEqual(f.validations, ['providers/bedrock', '.']);
   assert.deepEqual([...f.releases.keys()], [f.candidate.tag]);
+});
+
+test('a combined release moves its labels once after every library publishes', async () => {
+  const f = publisher();
+  const openai = { ...f.candidate, component: 'providers/openai', version: '0.1.1',
+    tag: 'providers/openai/v0.1.1', name: 'providers/openai: v0.1.1', notes: '## 0.1.1 (2026-10-27)\n\n* Fix' };
+  f.inventory.candidates.push(openai);
+  let blocked = true;
+  f.options.validate = async candidate => {
+    f.validations.push(candidate.component);
+    if (candidate.component === 'providers/openai' && blocked) throw new Error('provider validation failed');
+    return {};
+  };
+  const statuses = report => Object.fromEntries(report.candidates.map(c => [c.component, c.status]));
+  let report = await f.run();
+  assert.deepEqual(statuses(report), { '.': 'published', 'providers/openai': 'blocked' });
+  assert.deepEqual([...f.releases.keys()], [f.candidate.tag]);
+  assert.equal(f.requests.some(r => r.path.includes('/labels')), false);
+  assert.deepEqual(f.candidate.pr.labels, [{ name: 'autorelease: pending' }]);
+  blocked = false;
+  f.requests.length = 0;
+  report = await f.run();
+  assert.deepEqual(statuses(report), { '.': 'recovered', 'providers/openai': 'published' });
+  assert.deepEqual(f.requests.map(r => `${r.method} ${r.path}`), [
+    'POST /repos/grafana/ai-sdk/git/refs', 'POST /repos/grafana/ai-sdk/releases',
+    'POST /repos/grafana/ai-sdk/issues/10/labels', 'DELETE /repos/grafana/ai-sdk/issues/10/labels/autorelease: pending',
+  ]);
+  assert.deepEqual(f.candidate.pr.labels, [{ name: 'autorelease: tagged' }]);
+});
+
+function coReleasedRelease(f) {
+  const library = (component, version) => ({ ...f.candidate, component, version,
+    tag: `${component}/v${version}`, name: `${component}: v${version}`, notes: `## ${version} (2026-10-27)\n\n* Fix` });
+  const bedrock = library('providers/bedrock', '0.1.0-alpha.1'), openai = library('providers/openai', '0.1.1');
+  f.inventory.candidates.splice(0, 0, bedrock, openai);
+  const requires = { 'providers/bedrock': ['providers/openai', '.'], 'providers/openai': ['.'], '.': [] };
+  return { bedrock, openai, requires };
+}
+
+test('co-released libraries publish prerequisites first', async () => {
+  const f = publisher();
+  const { requires } = coReleasedRelease(f);
+  f.options.validate = async candidate => ({ prerequisites: requires[candidate.component].map(component => ({
+    path: component === '.' ? 'github.com/grafana/ai-sdk' : `github.com/grafana/ai-sdk/${component}`, coReleased: true })) });
+  const report = await f.run();
+  assert.deepEqual(report.candidates.map(c => [c.component, c.status]), [
+    ['.', 'published'], ['providers/openai', 'published'], ['providers/bedrock', 'published']]);
+  assert.deepEqual([...f.releases.keys()], ['v0.1.0-alpha.2', 'providers/openai/v0.1.1', 'providers/bedrock/v0.1.0-alpha.1']);
+  assert.equal(f.requests.filter(r => r.path.endsWith('/labels')).length, 1, 'labels move once for the whole release');
+});
+
+test('a blocked co-released prerequisite blocks its dependents transitively', async () => {
+  const f = publisher();
+  const { requires } = coReleasedRelease(f);
+  requires['providers/bedrock'] = ['providers/openai'];
+  f.options.validate = async candidate => {
+    if (candidate.component === '.') throw new Error('root validation failed');
+    return { prerequisites: requires[candidate.component].map(component => ({
+      path: component === '.' ? 'github.com/grafana/ai-sdk' : `github.com/grafana/ai-sdk/${component}`, coReleased: true })) };
+  };
+  const report = await f.run();
+  assert.deepEqual(Object.fromEntries(report.candidates.map(c => [c.component, c.reason])), {
+    '.': 'root validation failed',
+    'providers/openai': 'co-released prerequisite . is blocked',
+    'providers/bedrock': 'co-released prerequisite providers/openai is blocked',
+  });
+  assert.deepEqual(f.requests, []);
 });
 
 test('ambiguous component claims cannot reach validation or writes', async () => {

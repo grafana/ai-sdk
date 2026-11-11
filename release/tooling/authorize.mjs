@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GitHub, setLogger } from 'release-please';
 import { readOnlyFetch } from './preview.mjs';
+import { PREFIX } from './requirements.mjs';
 import { discoverMerged, duplicateCandidates, REPO, SHA } from './merged-candidates.mjs';
 import { verifyMergedIdentity, successfulRun, readinessArtifact, downloadArtifact,
   assertUnpublished, sameCandidate, SOURCE_JOBS } from './authorization-evidence.mjs';
@@ -38,6 +39,27 @@ export async function recheckCandidate(github, candidate, { source, readiness, a
   assert.ok(['ahead', 'identical'].includes(comparison.status), 'merge no longer belongs to canonical main');
 }
 
+export function coReleasedPrerequisites(entry) {
+  return (entry.library?.prerequisites ?? []).filter(prerequisite => prerequisite.coReleased)
+    .map(({ path }) => path === PREFIX ? '.' : path.slice(PREFIX.length + 1));
+}
+
+export function blockDependents(entries) {
+  for (let changed = true; changed;) {
+    changed = false;
+    entries.forEach((entry, index) => {
+      if (entry.status !== 'approved') return;
+      const blocked = coReleasedPrerequisites(entry).find(component => entries.some(other =>
+        other.prNumber === entry.prNumber && other.component === component && other.status !== 'approved'));
+      if (blocked === undefined) return;
+      const { source, readiness, artifactId, library, ...identity } = entry;
+      entries[index] = { ...identity, status: 'blocked', reason: `co-released prerequisite ${blocked} is blocked` };
+      changed = true;
+    });
+  }
+  return entries;
+}
+
 export async function authorizeInventory(github, inventory, validate, toolingRevision, publicationState = assertUnpublished) {
   const report = { schemaVersion: 1, publicationEnabled: false, mainSha: inventory.mainSha,
     toolingRevision, candidates: [] };
@@ -66,6 +88,7 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
       report.candidates.push({ ...identity, status: 'blocked', reason: error.message });
     }
   }
+  blockDependents(report.candidates);
   return report;
 }
 

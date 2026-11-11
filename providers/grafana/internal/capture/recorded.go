@@ -19,6 +19,10 @@ func captureRecordedUI(ctx context.Context, model provider.LanguageModel, option
 	}
 	tools := make(aisdk.ToolSet, len(options.Tools))
 	for _, definition := range options.Tools {
+		if definition.Type == provider.ToolTypeProvider {
+			tools[definition.Name] = aisdk.Tool{Type: aisdk.UserToolProvider, ID: definition.ID, Args: definition.Args}
+			continue
+		}
 		if definition.Type != provider.ToolTypeFunction {
 			return errors.New("unsupported recorded tool")
 		}

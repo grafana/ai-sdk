@@ -7,15 +7,19 @@ Define configured fallback for mapped Gateway capabilities beneath one logical o
 ## Requirements
 
 ### Requirement: Ordered direct text routes
-The Gateway SHALL construct each public route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation SHALL begin at the primary and consider later candidates only in configured order; no prior winner, request value, health signal, or concurrent call SHALL reorder or skip candidates.
+The Gateway SHALL construct each public route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation without routing controls SHALL begin at the primary and consider later candidates only in configured order. Only the request's own routing controls under gateway-request-routing MAY filter, reorder or extend candidates; no prior winner, other request value, health signal, or concurrent call SHALL reorder or skip candidates.
 
 #### Scenario: Later call follows original order
 - **WHEN** one call is served by a fallback candidate and a later call uses the same canonical route
 - **THEN** the later call SHALL begin again with the configured primary
 
 #### Scenario: Client attempts to select a backend
-- **WHEN** a request carries an unrecognized or reserved provider/fallback selection control
-- **THEN** existing strict validation or host policy SHALL reject or ignore it according to its owning contract and SHALL NOT alter candidate order
+- **WHEN** a request carries a provider/fallback selection control other than `models`, `order` or `only`, or names a backend model ID or provider instance
+- **THEN** existing strict validation or host policy SHALL reject it according to its owning contract and SHALL NOT alter candidate order
+
+#### Scenario: Routing controls reorder one call
+- **WHEN** a request carries `order`, `only` or `models` for a configured route
+- **THEN** only that call's candidates SHALL follow gateway-request-routing, and later calls without controls SHALL begin again with the configured primary
 
 #### Scenario: Mapped capability does not change ordering
 - **WHEN** a supported function-tool, file, reasoning or ordinary-options request encounters eligible pre-commit failures in a three-candidate route
@@ -257,11 +261,15 @@ Each provider SHALL have `type: anthropic`, a non-empty `apiKeyEnv` environment-
 - **THEN** startup SHALL fail and YAML SHALL NOT offer a literal credential field
 
 ### Requirement: Direct candidate references exclude recursive routes
-A model route SHALL contain one required direct `primary` reference and zero or more ordered direct `fallback` references; each reference SHALL contain exactly a named provider instance and opaque backend model ID. References to public routes and nested fallback definitions SHALL not be representable, making self-reference and recursive route graphs invalid under strict decoding.
+A model route SHALL contain one required direct `primary` reference and zero or more ordered direct `fallback` references; each reference SHALL contain exactly a named provider instance and opaque backend model ID, plus an optional `serverFallbacks` policy (gateway-anthropic-server-fallbacks) that is not a reference. References to public routes and nested fallback definitions SHALL not be representable, making self-reference and recursive route graphs invalid under strict decoding.
 
 #### Scenario: Direct candidate references exclude recursive routes
 - **WHEN** a route attempts to reference a public route or nest a fallback inside a candidate
 - **THEN** strict decoding SHALL reject it rather than construct a recursive route graph
+
+#### Scenario: Policy does not create a distinct candidate
+- **WHEN** a route's fallback repeats the primary's provider/backend tuple with a different `serverFallbacks` policy
+- **THEN** startup SHALL fail with the existing repeated-candidate diagnostic, because the policy names server-side fallback models rather than public routes or candidates
 
 ### Requirement: Header-safe public route ID grammar
 Every canonical public ID and alias SHALL be 1-128 ASCII bytes and SHALL match `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`. This grammar SHALL be the only accepted model-ID surface for discovery and the `ai-language-model-id` header.

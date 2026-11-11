@@ -19,6 +19,7 @@ type converseInput struct {
 	InferenceConfig                   *inferenceConfig     `json:"inferenceConfig,omitempty"`
 	AdditionalModelRequestFields      map[string]any       `json:"additionalModelRequestFields,omitempty"`
 	AdditionalModelResponseFieldPaths []string             `json:"additionalModelResponseFieldPaths,omitempty"`
+	RequestMetadata                   map[string]string    `json:"requestMetadata,omitzero"`
 	ServiceTier                       *serviceTier         `json:"serviceTier,omitempty"`
 }
 
@@ -228,6 +229,10 @@ type inferenceConfig struct {
 	TopP          *float64 `json:"topP,omitempty"`
 	TopK          *int     `json:"topK,omitempty"`
 	StopSequences []string `json:"stopSequences,omitempty"`
+}
+
+func (c *inferenceConfig) empty() bool {
+	return c.MaxTokens == nil && c.Temperature == nil && c.TopP == nil && c.TopK == nil && len(c.StopSequences) == 0
 }
 
 // serviceTier optionally pins the Bedrock service tier (priority/standard).

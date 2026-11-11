@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
@@ -50,6 +51,9 @@ type Config struct {
 	PluginID string
 	Group    string
 	Version  string
+	// RouteDeadline, when positive, bounds each forwarded route call, as a
+	// platform route deadline does.
+	RouteDeadline time.Duration
 }
 
 type session struct {
@@ -241,6 +245,11 @@ func (h *Host) Handler(client clientv3.RouteClient) http.Handler {
 		}
 		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 		ctx = httpadapter.WithRouteInfo(types.WithAuthInfo(ctx, caller), info)
+		if h.config.RouteDeadline > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, h.config.RouteDeadline)
+			defer cancel()
+		}
 		forward(w, r.WithContext(ctx))
 	})
 }

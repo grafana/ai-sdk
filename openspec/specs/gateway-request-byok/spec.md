@@ -33,29 +33,39 @@ Authenticated BYOK SHALL use the shared engine's native provider/model selection
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
 
 ### Requirement: Request-only native consumption guards
-Request-only invocation SHALL retain shared consumption-backed guards before attempts. Valid bounded MCP/history, inert markers and unrelated namespaces SHALL survive; invalid consumed state, skills and native fallback SHALL fail without catalog inventories.
+Request-only invocation SHALL retain shared consumption-backed guards before attempts. Valid bounded MCP/history, bounded container skills, bounded container IDs, inert markers, unrelated namespaces and Anthropic server-side fallback SHALL survive; invalid consumed state and out-of-bounds skills or container IDs SHALL fail without catalog inventories.
 
 #### Scenario: Request-only consumption policy
 - **WHEN** native options and history reach the BYOK model
 - **THEN** BYOK invocation SHALL retain gateway-native-provider-options protections at the actual consuming namespace and scope without restoring catalog inventories.
-- **AND** Invalid consumed Anthropic MCP configuration/history, container skills and provider-side fallback controls SHALL fail before native I/O in both invocation modes.
-- **AND** Valid bounded MCP configuration and configured provider-executed history SHALL remain supported.
+- **AND** Invalid consumed Anthropic MCP configuration/history SHALL fail before native I/O in both invocation modes.
+- **AND** Container skills and container IDs SHALL follow gateway-anthropic-skills: BYOK SHALL apply only its static request bounds, and configured candidates SHALL also apply their own skills policy and refuse every caller container ID.
+- **AND** BYOK invocation SHALL forward Anthropic server-side fallback without a policy; configured invocation SHALL admit it only under gateway-anthropic-server-fallbacks candidate policy, which SHALL NOT apply to BYOK.
+- **AND** Valid bounded MCP configuration, bounded container skills and configured provider-executed history SHALL remain supported.
 - **AND** Harmless ignored fields and unrelated namespaces SHALL NOT be rejected by blanket spelling rules.
 
 #### Scenario: Consumed execution bypass is refused
-- **WHEN** an Anthropic BYOK request supplies invalid consumed MCP configuration/history, a container skill or a provider-side fallback control
+- **WHEN** an Anthropic BYOK request supplies invalid consumed MCP configuration/history, or container skills or a container ID outside the gateway-anthropic-skills static bounds
 - **THEN** it SHALL return the fixed invalid-request error without any credential attempt
 
 #### Scenario: Ordinary native fields survive
-- **WHEN** native options carry a safe container ID or ignored protected-looking fields in non-consuming scopes
+- **WHEN** BYOK native options carry a bounded container ID or ignored protected-looking fields in non-consuming scopes
 - **THEN** the request SHALL reach the adapter without changing its selected model, account or destination
+
+#### Scenario: Configured container ID is refused
+- **WHEN** a configured-account Anthropic candidate receives a non-empty container ID, with or without container skills
+- **THEN** that candidate SHALL fail with the fixed invalid-request error before its native request, under gateway-anthropic-skills
 
 #### Scenario: Valid MCP configuration and history survive
 - **WHEN** an Anthropic BYOK request supplies valid bounded MCP servers and corresponding provider-executed history
 - **THEN** the native adapter SHALL receive the MCP configuration and history without consulting configured accounts
 
+#### Scenario: Bounded container skills survive
+- **WHEN** an Anthropic BYOK request supplies bounded `anthropic` or `custom` container skills, with or without a bounded container ID
+- **THEN** the native adapter SHALL receive them without consulting configured skills policies or accounts
+
 ### Requirement: BYOK capture policy is independent of returned data
-Host authorization, explicit credential sources and request isolation SHALL remain intact. Operator capture SHALL be independent of returned values. Gateway-produced summaries SHALL apply gateway-attempt-failure-evidence's configured provider/exporter key policy while retaining BYOK-only echoes and catalog-independent eligibility. Missing BYOK observation SHALL remain an explicit capability gap.
+Host authorization, explicit credential sources and request isolation SHALL remain intact. Operator capture SHALL be independent of returned values. Gateway-produced summaries SHALL apply gateway-attempt-failure-evidence's configured provider/exporter key policy while retaining BYOK-only echoes and catalog-independent eligibility. BYOK attempts SHALL be captured request-locally in order and published under gateway-attempt-failure-evidence's request-account attribution.
 
 #### Scenario: BYOK privacy and attribution policy
 - **WHEN** the host processes request-only credentials and observes execution
@@ -65,19 +75,31 @@ Host authorization, explicit credential sources and request isolation SHALL rema
 - **AND** The host SHALL NOT synthesize diagnostics from an internal credential store or another request's state.
 - **AND** Supported provider/model identity, application content and native response values SHALL remain available under their existing contracts.
 - **AND** Configured execution attribution SHALL remain independent of logical BYOK observation.
-- **AND** Event-local native SSE summaries SHALL remain eligible without catalog-owned attribution. BYOK unary/setup summaries and attempt overviews are currently unavailable; #317 owns reusing existing SDK observation with honest request identity, not a new collector.
-- **AND** Independently registered SDK observers SHALL remain effective; original native metadata SHALL remain opaque and SHALL NOT establish configured provenance.
+- **AND** Event-local native SSE summaries SHALL remain eligible without catalog-owned attribution. The execution runtime SHALL capture BYOK account attempts in order through the same request-scoped observer as configured fallbacks, and SHALL publish them as a `gateway.execution` overview with the requested selector and native destination identity, without canonical, configured-instance, account or credential identity and without a new collector.
+- **AND** Observers registered on a model with `WithAttemptObserver` SHALL remain effective. The runtime's request-scoped capture SHALL replace a request-scoped observer that a caller placed on the request context, as it does for configured calls. Original native metadata SHALL remain opaque and SHALL NOT establish configured provenance.
 - **AND** Diagnostic messages SHALL use bounded approved capability names/schema paths and bounded indices/counts, never arbitrary rejected key names, values or serialized bodies.
 - **AND** Detailed public attempt evidence SHALL remain owned by its separate contract; this capability SHALL NOT introduce a second metadata/error protocol.
 
 #### Scenario: Provider echoes the rejected key
 - **WHEN** a fake provider rejection includes the selected dummy API key in authentication-related error material
-- **THEN** available native summaries SHALL retain that BYOK echo unless it exactly matches a configured provider/exporter key, without changing Gateway classification or account isolation
+- **THEN** native summaries in the overview and event-local errors SHALL retain that BYOK echo unless it exactly matches a configured provider/exporter key, without changing Gateway classification or account isolation
 - **AND** logger sensitive-field policy and metadata-only exporter exclusions SHALL be tested independently from caller output
 
 #### Scenario: Ordinary application text resembles a key
 - **WHEN** supported prompt/output text contains a key-looking string unrelated to authentication material
 - **THEN** the response SHALL preserve that content rather than apply token-pattern censorship
+
+#### Scenario: BYOK attempts are captured and published
+- **WHEN** a BYOK request's first selected-provider account fails and the second succeeds
+- **THEN** the request's capture SHALL hold a failed then a selected attempt, and the unary result or stream finish SHALL carry a `gateway.execution` overview listing them in that order with the first account's native summary
+
+#### Scenario: BYOK attempts are captured but not published
+- **WHEN** a BYOK request's captured attempts name a destination other than the requested native provider/model, or outnumber the supplied accounts
+- **THEN** the capture SHALL be sealed without publishing a `gateway.execution` overview, and the fixed response or error document SHALL remain unchanged
+
+#### Scenario: Model observers see BYOK attempts
+- **WHEN** a BYOK model's fallback chain carries a model-level attempt observer and the request runs
+- **THEN** that observer SHALL receive each account attempt, and the published overview SHALL list the same attempts in the same order
 
 ### Requirement: Evidence remains independent and provenance-correct
 Acceptance SHALL retain independent pinned-client/native-HTTP/service/SDK/race witnesses with honest proof boundaries. Synthetic credential tests SHALL NOT become recorded provider evidence; baseline/parity checks and deferred support SHALL remain explicit.
@@ -125,7 +147,7 @@ The BYOK engine SHALL select a supported native provider/model from request data
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
 
 ### Requirement: Vercel-shaped credential ingestion
-The host SHALL validate the complete call-level gateway.byok map with ordinary typed Go decoding, including unused accounts, canonical controls, required keys and provider/count policy. Only selected-provider accounts SHALL become eligible; request and native-header bounds SHALL remain shared.
+The host SHALL validate the complete call-level gateway.byok map with ordinary typed Go decoding, including unused accounts, canonical controls, required keys and the selected provider's account count. Only accounts of the selected provider and of the providers named by gateway-request-routing fallback models SHALL become eligible; request and native-header bounds SHALL remain shared.
 
 #### Scenario: Complete credential validation policy
 - **WHEN** call-level BYOK controls are decoded before execution
@@ -135,18 +157,18 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **AND** Unrelated additive account fields SHALL be ignored by ordinary Go decoding without applying them to native construction.
 - **AND** Optional null values SHALL follow ordinary Go string decoding.
 - **AND** Omitted/empty baseURL SHALL select the native default; omitted/empty organization/project SHALL remain unset without ambient defaults.
-- **AND** Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible.
+- **AND** Multiple supported provider entries SHALL be accepted and validated, but only the credentials of the header-selected provider and of providers named by `models` entries SHALL be eligible.
 - **AND** Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 - **AND** The entire supplied BYOK map SHALL be validated before execution, including unused entries.
 - **AND** Supported provider-map keys SHALL be exactly anthropic and openai.
-- **AND** Each decoded key SHALL be nonempty. The existing eight-account bound SHALL remain temporarily as execution policy, not JSON grammar; #394/#317 own its later disposition.
+- **AND** Each decoded key SHALL be nonempty. The shared provider attempt bound of 8 under gateway-resource-policy SHALL apply to the selected provider's array, and to the composed routed chain under gateway-request-routing, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
 - **AND** Decoding SHALL use provider-to-account maps and ordinary typed Go decoding without blanket unknown-field rejection.
-- **AND** The only accepted Gateway control SHALL be exactly lowercase byok, as emitted by the supported clients; BYOK and other case variants SHALL fail.
+- **AND** The accepted Gateway controls SHALL be byok plus the routing controls defined by gateway-request-routing, matched as ordinary Go decoding matches struct fields; the supported clients emit the lowercase names.
 - **AND** Account fields SHALL use the canonical client names apiKey, baseURL, organization and project.
 - **AND** Account struct fields SHALL retain standard Go case-insensitive matching; namespace/map keys and discriminator values SHALL NOT be normalized.
 - **AND** Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding.
 - **AND** Malformed earlier duplicate members MAY fail typed decoding even when a later member is valid; no JSON normalization layer SHALL be introduced.
-- **AND** The existing complete request bound SHALL govern BYOK input without separate subtree or per-field byte ceilings.
+- **AND** The platform request size under gateway-resource-policy SHALL govern BYOK input without separate subtree or per-field byte ceilings.
 - **AND** Native HTTP transport SHALL enforce outgoing header validity; request decoding SHALL NOT implement an additional credential/account-header grammar.
 - **AND** Existing protected call-header and native-option controls SHALL remain unchanged.
 
@@ -177,16 +199,18 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **THEN** validation SHALL reject the request before any native call
 
 #### Scenario: Account count
-- **WHEN** a supplied provider array contains 1 to 8 accounts
+- **WHEN** the selected provider's array contains 1 to 8 accounts
 - **THEN** otherwise valid input SHALL be accepted
-- **WHEN** a supplied array is empty or contains more than 8 accounts, including an unused provider
-- **THEN** the request SHALL fail before I/O without echoing the rejected value
+- **WHEN** an unused provider's array contains 9 or more otherwise valid accounts
+- **THEN** otherwise valid input SHALL be accepted and those accounts SHALL NOT be eligible
+- **WHEN** any supplied array is empty, or the selected provider's array contains more than 8 accounts
+- **THEN** the request SHALL fail with the fixed BYOK credentials invalid-request document before I/O, with zero native calls and without echoing the rejected value
 
 #### Scenario: Shared request bound
-- **WHEN** a BYOK request reaches the configured complete request byte limit
+- **WHEN** a BYOK request is above 1 MiB and within the host route message size
 - **THEN** otherwise valid input SHALL reach selection without a separate BYOK byte ceiling
-- **WHEN** that limit is exceeded by one byte
-- **THEN** the wire handler SHALL reject the request before selection
+- **WHEN** a BYOK request exceeds the host route message size
+- **THEN** the host SHALL reject it before selection, with zero native calls
 
 #### Scenario: Native header validity
 - **WHEN** a decoded account contains an invalid outgoing HTTP header value
@@ -196,14 +220,18 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **WHEN** the header selects OpenAI but only Anthropic credentials are supplied
 - **THEN** selection SHALL fail without changing provider or checking configured/environment keys
 
+#### Scenario: Fallback model provider accounts become eligible
+- **WHEN** the header selects anthropic/x, `models` is ["openai/y"], and byok supplies Anthropic and OpenAI accounts
+- **THEN** both providers' accounts SHALL be eligible, each only for its own provider's models, in array order
+
 ### Requirement: Unsupported controls fail explicitly
-Unsupported credentials, mappings and controls SHALL fail with non-secret diagnostics before I/O. Native options and headers SHALL NOT override the selected account, model or destination.
+Unsupported credentials, mappings and controls SHALL fail with non-secret diagnostics before I/O. Native options and headers SHALL NOT override the selected account, model or destination. Anthropic server-side fallback inside the selected account's native request is not an override; a hop SHALL be reported only as `servedModelId` under gateway-execution-overview.
 
 #### Scenario: Unsupported-control policy
 - **WHEN** BYOK input contains provider, mapping or routing controls
-- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models/order/only and providerTimeouts.byok remain unsupported pending separate routing delivery.
+- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models, order and only SHALL follow gateway-request-routing; every other Gateway control, including providerTimeouts, SHALL remain unsupported.
 - **AND** Nested gateway namespaces SHALL NOT be interpreted as credential controls.
-- **AND** Native options or body headers SHALL NOT override credential source, destination or the selected model.
+- **AND** Native options or body headers SHALL NOT override credential source, destination or the selected model. Anthropic server-side fallback executed by the provider within the selected account and destination SHALL NOT count as such an override.
 
 #### Scenario: Unsupported credential family or mapping
 - **WHEN** a request supplies a known but unsupported credential family or modelMappings
@@ -211,11 +239,20 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 
 #### Scenario: Canonical credential control
 - **WHEN** a request supplies BYOK or another case variant, alone or alongside canonical byok
-- **THEN** decoding SHALL fail before execution rather than accept an undocumented alias outside the capture boundary
+- **THEN** it SHALL decode as the byok control under ordinary Go decoding, with the last duplicate member winning
+- **AND** the call-level gateway namespace, not the member name, SHALL remain the capture boundary: the runtime SHALL remove it before any model, middleware or telemetry
 
 #### Scenario: Routing controls accompany valid BYOK
-- **WHEN** valid credentials accompany an unsupported gateway.order or gateway.providerTimeouts control
+- **WHEN** valid credentials accompany gateway.order, gateway.only or gateway.models
+- **THEN** the request SHALL be routed under gateway-request-routing
+
+#### Scenario: Unsupported control accompanies valid BYOK
+- **WHEN** valid credentials accompany gateway.sort, gateway.providerTimeouts or another unsupported control
 - **THEN** the request SHALL fail before I/O without suggesting that the control was applied
+
+#### Scenario: Server-side fallback is not an override
+- **WHEN** an Anthropic BYOK call to `anthropic/claude-fable-5` sends `fallbacks: [{model: claude-opus-4-8}]` and the provider reports a hop to `claude-opus-4-8`
+- **THEN** the native request SHALL use the selected account, destination and model `claude-fable-5`, and the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8`
 
 ### Requirement: Service-approved account destinations
 Account destinations SHALL use native defaults or exact provider-scoped host approval. Approval SHALL supply permission only, remain catalog-independent and retain service-owned transport and deployment boundaries.
@@ -278,33 +315,59 @@ Validated plain accounts SHALL feed explicit native construction without raw-JSO
 - **THEN** no later credential SHALL start, late results SHALL be cleaned up through bounded ownership/drain and no request credential SHALL be cached
 
 ### Requirement: Shared native execution protections
-Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history and inert markers SHALL survive; unsupported consumed execution controls SHALL fail before attempts without new field inventories or adapter changes.
+Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history, bounded container skills, request-only bounded container IDs and inert markers SHALL survive; unsupported consumed execution controls in the request SHALL fail before any account attempt in an all-Anthropic chain, otherwise before each Anthropic account's request, and those produced by per-attempt translation SHALL fail that account's attempt before its native request.
 
 #### Scenario: Native consumption policy
 - **WHEN** an Anthropic request-only model receives native options and history
-- **THEN** Configured and BYOK construction SHALL share the existing consumption-backed native-option checks.
-- **AND** Anthropic BYOK invocation SHALL validate consumed MCP configuration and provider-owned history under gateway-anthropic-mcp, and refuse container skills and native server-side fallback before credential attempts in both unary and streaming modes.
-- **AND** Valid MCP configuration/history and inert local markers SHALL retain their native semantics.
+- **THEN** Configured and BYOK construction SHALL share the existing consumption-backed native-option checks, applied to each candidate or account after per-attempt option translation; BYOK SHALL also apply them to the request before its first account attempt.
+- **AND** Anthropic BYOK invocation SHALL validate consumed MCP configuration and provider-owned history under gateway-anthropic-mcp, and validate container skills and container IDs against the gateway-anthropic-skills static bounds, before any account attempt when every composed destination is Anthropic, and otherwise on each Anthropic account before its native request, and again on each account after translation, in both unary and streaming modes.
+- **AND** Anthropic BYOK invocation SHALL forward native server-side fallback, an explicit chain (including repeated models) or `"default"`, from the request or from per-attempt translation, to each Anthropic account's native request without a policy, in both unary and streaming modes.
+- **AND** Configured candidate policies under gateway-anthropic-server-fallbacks SHALL NOT apply to BYOK, and no client control SHALL grant or apply one.
+- **AND** Valid MCP configuration/history, bounded container skills and inert local markers SHALL retain their native semantics.
 - **AND** These checks SHALL NOT introduce a provider-field inventory or change the native SDK adapters.
 
 #### Scenario: Native execution control is rejected
-- **WHEN** an Anthropic BYOK call supplies invalid consumed MCP configuration/history, container skills or native server-side fallback
-- **THEN** the call SHALL return the existing unsupported-request error without native I/O or credential fallback
+- **WHEN** an Anthropic BYOK call supplies invalid consumed MCP configuration/history, or out-of-bounds container skills or container ID
+- **THEN** the call SHALL return the existing unsupported-request error without native I/O or any account attempt, and no overview SHALL be published
+
+#### Scenario: Translated execution control is rejected
+- **WHEN** per-attempt translation adds invalid consumed MCP configuration, or out-of-bounds container skills or container ID, to an Anthropic BYOK account's options
+- **THEN** that account's attempt SHALL fail with the unsupported-request error before its native request
 
 #### Scenario: Valid MCP configuration and history
 - **WHEN** an Anthropic BYOK call supplies valid MCP configuration and matching provider-owned history
 - **THEN** the native request SHALL preserve them without changing the inference endpoint, model or credential
 
 #### Scenario: Harmless options are preserved
-- **WHEN** native options contain an ordinary container ID, inert local MCP markers or protected-looking fields in non-consuming namespaces
+- **WHEN** BYOK native options contain a bounded container ID, inert local MCP markers or protected-looking fields in non-consuming namespaces
 - **THEN** the adapter SHALL receive ordinary options without changing the selected model, account or destination
 
+#### Scenario: Server-side fallback is forwarded
+- **WHEN** an Anthropic BYOK call sends a chain, including one that repeats a model with different `thinking`, or sends `"default"`, in unary or streaming mode
+- **THEN** the selected account's native Anthropic request SHALL carry the fallbacks unchanged, with the explicit server-side fallback beta for a chain or the default beta for `"default"`, at the selected model and destination
+
+#### Scenario: Configured policy does not apply to BYOK
+- **WHEN** a configured candidate allows only `claude-opus-4-8` without `allowDefault`, and an Anthropic BYOK call sends a chain naming another model, or `"default"`
+- **THEN** the BYOK native request SHALL carry the fallbacks unchanged, as without that configured policy
+
+#### Scenario: Routed accounts forward server-side fallback
+- **WHEN** an Anthropic BYOK call sends a chain or `"default"` with `models: ["anthropic/y"]`, or with `models: ["openai/y"]`, in unary or streaming mode
+- **THEN** each attempted Anthropic account's native request SHALL carry the fallbacks unchanged with the matching beta, and an OpenAI account's request SHALL carry no server-side fallback
+
+#### Scenario: Translation adds server-side fallback
+- **WHEN** per-attempt translation adds fallbacks to an Anthropic BYOK account's options
+- **THEN** that account's native request SHALL carry the translated fallbacks with the matching beta
+
+#### Scenario: Configured candidate refuses a container ID
+- **WHEN** a configured Anthropic candidate's options, as supplied or after per-attempt translation, contain a non-empty container ID
+- **THEN** that candidate's attempt SHALL fail with the unsupported-request error before its native request, without echoing the ID
+
 ### Requirement: Ordered credentials reuse default fallback
-Ordered selected-provider accounts SHALL reuse the default fallback policy without a second retry layer. Attempts SHALL share the deadline and stop after cancellation or commitment; account failures SHALL retain safe native classification without substitution or exactly-once claims.
+Ordered request accounts, for the selected model and any routed fallback models, SHALL reuse the default fallback policy without a second retry layer. Attempts SHALL share the deadline and stop after cancellation or commitment; account failures SHALL retain safe native classification without substitution or exactly-once claims.
 
 #### Scenario: Credential fallback policy
 - **WHEN** a request-only model executes its ordered account candidates
-- **THEN** The host SHALL compose selected-provider credentials with the existing fallback module and its default decider, one request-scoped candidate per key for the same provider/model in array order.
+- **THEN** The host SHALL compose selected-provider credentials with the existing fallback module and its default decider, one request-scoped candidate per key in array order, for the selected provider/model and then for each routed fallback model under gateway-request-routing.
 - **AND** Each candidate SHALL be invoked at most once, with native SDK retries disabled and one shared execution deadline.
 - **AND** No BYOK-specific rejection decider or HTTP-rejection provenance gate SHALL be introduced.
 - **AND** Client SDKs SHALL NOT add an account-retry layer.
@@ -316,12 +379,16 @@ Ordered selected-provider accounts SHALL reuse the default fallback policy witho
 - **AND** Any first native stream part, including an error part, SHALL commit the candidate; later errors SHALL NOT trigger replay.
 - **AND** Stopped or exhausted attempts SHALL retain existing fallback error propagation and privacy-safe ProviderWire classification, without a blanket exhaustion status or exposure of raw joined errors.
 - **AND** Native account failures SHALL NOT become Gateway-authentication failures.
-- **AND** No configured account, another provider, another request's key or ambient credential SHALL become eligible.
+- **AND** No configured account, provider without a routed model, another request's key or ambient credential SHALL become eligible.
 - **AND** Unknown pre-commit failures may follow provider-side work; no exactly-once execution or charging guarantee SHALL be claimed.
 
 #### Scenario: Retryable failure advances
 - **WHEN** the first candidate returns a retryable API error such as a classified 429 or 503 before unary success or any stream part and the second succeeds
 - **THEN** the second candidate SHALL run once with the same provider/model and supported request content
+
+#### Scenario: Last account of a model fails before a fallback model
+- **WHEN** every account of the selected model fails eligibly and a routed fallback model has accounts
+- **THEN** the fallback model's first account SHALL run next with its own provider, model and key
 
 #### Scenario: Non-retryable authentication failure stops
 - **WHEN** the first candidate returns a non-retryable 401/403 API error

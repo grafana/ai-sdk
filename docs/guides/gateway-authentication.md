@@ -90,6 +90,12 @@ for Go and TypeScript examples.
 Model listing is not available in this mode, because your provider account
 decides which models exist.
 
+Anthropic agent skills, including your custom skills, and `container.id` work
+with your own key, because they belong to your account; see
+[Anthropic agent skills](../providers/grafana-gateway.md#anthropic-agent-skills).
+A custom skill or container exists in one Anthropic account, so if you list
+several accounts, a later account's attempt fails at the provider.
+
 ## Call from a Grafana service in Grafana Cloud
 
 Grafana services use the configured models with a Cloud access policy token.
@@ -132,7 +138,7 @@ The call still uses your service's models, and is made on the user's behalf.
 | `403 Forbidden` from Grafana | The token does not belong to the stack in the URL, or your role cannot use the app. |
 | `403` Gateway permission error | Your credential has no Gateway access, for example a Grafana service not yet allowed. |
 | `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
-| Request ends after 60 seconds | Grafana limits how long a request can run. Stream long responses. |
+| Request ends after 60 seconds | Grafana limits how long a request can run, including a streamed response. |
 
 Grafana answers some of these before the request reaches the Gateway, in its own
 error format rather than a Gateway error. The Go client reports them as

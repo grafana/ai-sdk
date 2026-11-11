@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,21 +31,16 @@ func (r *resolverStub) ResolveModel(context.Context, string) (catalog.ResolvedMo
 	return catalog.ResolvedModel{}, nil
 }
 
-func testLimits() Limits {
-	return Limits{
-		RequestBytes:        1 << 20,
-		UnaryResponseBytes:  1 << 20,
-		StreamParts:         1_000,
-		StreamFrameBytes:    1 << 20,
-		ModelDuration:       time.Second,
+func testLimits() execution.Limits {
+	return execution.Limits{
 		StreamIdleDuration:  time.Second,
 		StreamDrainDuration: time.Second,
 	}
 }
 
-func newTestHandler(t *testing.T, limits Limits) *handler {
+func newTestHandler(t *testing.T) *handler {
 	t.Helper()
-	created, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: testLimits()})
 	require.NoError(t, err)
 	h, ok := created.(*handler)
 	require.True(t, ok)
@@ -61,78 +56,24 @@ func validRequest(body string) *http.Request {
 	return req
 }
 
+func newWireHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return New(runtime)
+}
+
 func TestNew(t *testing.T) {
-	t.Run("valid immutable configuration", func(t *testing.T) {
-		limits := testLimits()
-		created, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
+	t.Run("valid configuration", func(t *testing.T) {
+		created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: testLimits()})
 		require.NoError(t, err)
-		h := created.(*handler)
-		require.NotNil(t, h.requestSchema)
-		limits.RequestBytes = 1
-		assert.Equal(t, int64(1<<20), h.limits.RequestBytes)
+		require.NotNil(t, created.(*handler).requestSchema)
 	})
 
-	t.Run("maximum fixed stream frame boundary", func(t *testing.T) {
-		largest := 0
-		for _, frame := range [][]byte{
-			canonicalEmptyStartFrame,
-			canonicalRateLimitStreamErrorFrame,
-			canonicalOverloadStreamErrorFrame,
-			canonicalDependencyStreamErrorFrame,
-			canonicalUpstreamStreamErrorFrame,
-			canonicalTimeoutStreamErrorFrame,
-			canonicalCancellationStreamErrorFrame,
-			canonicalInternalStreamErrorFrame,
-		} {
-			largest = max(largest, len(frame))
-		}
-		limits := testLimits()
-		limits.StreamFrameBytes = int64(largest)
-		_, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
-		require.NoError(t, err)
-		limits.StreamFrameBytes--
-		_, err = New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
+	t.Run("nil runtime", func(t *testing.T) {
+		_, err := New(nil)
 		require.Error(t, err)
-		limits.StreamFrameBytes = math.MaxInt64
-		_, err = New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
-		require.NoError(t, err)
-	})
-
-	t.Run("nil resolver", func(t *testing.T) {
-		_, err := New(Config{Limits: testLimits()})
-		require.Error(t, err)
-		var resolver *resolverStub
-		_, err = New(Config{Selector: CatalogSelector(resolver), Limits: testLimits()})
-		require.Error(t, err)
-	})
-
-	t.Run("invalid limits", func(t *testing.T) {
-		tests := []struct {
-			name   string
-			mutate func(*Limits)
-		}{
-			{name: "request zero", mutate: func(l *Limits) { l.RequestBytes = 0 }},
-			{name: "request negative", mutate: func(l *Limits) { l.RequestBytes = -1 }},
-			{name: "request overflow", mutate: func(l *Limits) { l.RequestBytes = math.MaxInt64 }},
-			{name: "response zero", mutate: func(l *Limits) { l.UnaryResponseBytes = 0 }},
-			{name: "response overflow", mutate: func(l *Limits) { l.UnaryResponseBytes = math.MaxInt64 }},
-			{name: "stream parts zero", mutate: func(l *Limits) { l.StreamParts = 0 }},
-			{name: "stream parts overflow", mutate: func(l *Limits) { l.StreamParts = int(^uint(0) >> 1) }},
-			{name: "stream frame zero", mutate: func(l *Limits) { l.StreamFrameBytes = 0 }},
-			{name: "stream frame fallback", mutate: func(l *Limits) { l.StreamFrameBytes = int64(len(canonicalTimeoutStreamErrorFrame) - 1) }},
-			{name: "duration zero", mutate: func(l *Limits) { l.ModelDuration = 0 }},
-			{name: "duration negative", mutate: func(l *Limits) { l.ModelDuration = -time.Second }},
-			{name: "idle zero", mutate: func(l *Limits) { l.StreamIdleDuration = 0 }},
-			{name: "drain zero", mutate: func(l *Limits) { l.StreamDrainDuration = 0 }},
-		}
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				limits := testLimits()
-				tc.mutate(&limits)
-				_, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
-				require.Error(t, err)
-			})
-		}
 	})
 }
 
@@ -161,7 +102,7 @@ func TestHandlerEnvelope(t *testing.T) {
 	}
 
 	resolver := &resolverStub{}
-	created, err := New(Config{Selector: CatalogSelector(resolver), Limits: testLimits()})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(resolver), Limits: testLimits()})
 	require.NoError(t, err)
 	h := created.(*handler)
 	for _, tc := range tests {
@@ -195,11 +136,10 @@ func TestHandlerEnvelope(t *testing.T) {
 }
 
 func TestHandlerBodyProcessing(t *testing.T) {
-	t.Run("byte boundary and close", func(t *testing.T) {
+	t.Run("host byte boundary and close", func(t *testing.T) {
 		base := `{"prompt":[]}`
-		limits := testLimits()
-		limits.RequestBytes = int64(len(base) + 1)
-		h := newTestHandler(t, limits)
+		limit := len(base) + 1
+		h := newTestHandler(t)
 		for _, tc := range []struct {
 			name    string
 			body    string
@@ -213,16 +153,21 @@ func TestHandlerBodyProcessing(t *testing.T) {
 				req := validRequest(tc.body)
 				body := &trackingReadCloser{Reader: bytes.NewBufferString(tc.body)}
 				req.Body = body
-				_, failure := h.validateRequest(req)
+				_, failure := h.validateRequest(withBodyLimit(req, limit))
 				assert.True(t, body.closed)
-				assert.Equal(t, tc.invalid, failure != nil)
-				assert.LessOrEqual(t, body.read, int(limits.RequestBytes+1))
+				if tc.invalid {
+					require.NotNil(t, failure)
+					assert.Equal(t, safeErrorCategory(0), failure.safe.category)
+				} else {
+					assert.Nil(t, failure)
+				}
+				assert.LessOrEqual(t, body.read, limit+1)
 			})
 		}
 	})
 
 	t.Run("invalid UTF-8 and JSON", func(t *testing.T) {
-		h := newTestHandler(t, testLimits())
+		h := newTestHandler(t)
 		bodies := [][]byte{
 			append([]byte(`{"prompt":[],"providerOptions":{"example":"`), append([]byte{0xff}, []byte(`"}}`)...)...),
 			[]byte(`{"prompt":[}`),
@@ -238,7 +183,7 @@ func TestHandlerBodyProcessing(t *testing.T) {
 	})
 
 	t.Run("body failures", func(t *testing.T) {
-		h := newTestHandler(t, testLimits())
+		h := newTestHandler(t)
 		for _, body := range []io.ReadCloser{
 			nil,
 			&failingReadCloser{readErr: errors.New("read secret")},
@@ -255,6 +200,11 @@ func TestHandlerBodyProcessing(t *testing.T) {
 			}
 		}
 	})
+}
+
+func withBodyLimit(r *http.Request, limit int) *http.Request {
+	r.Body = http.MaxBytesReader(nil, r.Body, int64(limit))
+	return r
 }
 
 type trackingReadCloser struct {
@@ -291,13 +241,13 @@ func TestRequestSelection_CatalogIndependent(t *testing.T) {
 		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
 			model := &recordingModel{}
 			var selections atomic.Int32
-			h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (Selection, error) {
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(_ context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 				selections.Add(1)
 				assert.Equal(t, "openai/native-model", id)
 				assert.JSONEq(t, `{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`, string(gateway))
 				assert.NotContains(t, options.ProviderOptions, "gateway")
 				assert.Contains(t, options.ProviderOptions, "openai")
-				return Selection{ID: id, Model: model}, nil
+				return execution.Selection{ID: id, Model: model}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"dummy-key"}]}},"openai":{"store":false}}}`)
@@ -326,17 +276,30 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		err     error
+		status  int
+		code    string
 		message string
 	}{
-		{name: "accounts", err: ErrInvalidBYOK, message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts"},
-		{name: "selector", err: ErrInvalidBYOKSelector, message: "BYOK requires a supported provider/model selector"},
-		{name: "controls", err: ErrUnsupportedGatewayControl, message: "unsupported gateway control; only gateway.byok is supported"},
+		{name: "accounts", err: execution.ErrInvalidBYOK, message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts"},
+		{name: "selector", err: execution.ErrInvalidBYOKSelector, message: "BYOK requires a supported provider/model selector"},
+		{name: "controls", err: execution.ErrUnsupportedGatewayControl, message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"},
+		{name: "routing controls", err: execution.ErrRoutingControls, message: "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"},
+		{name: "no candidates", err: execution.ErrNoRoutingCandidates, message: "providerOptions.gateway.only excludes every candidate"},
+		{name: "attempt bound", err: execution.ErrRoutingAttemptBound, message: "routing exceeds the bound of 8 provider attempts"},
+		{name: "fallback model", err: execution.ErrUnknownFallbackModel, status: http.StatusNotFound, code: "model_not_found", message: "a providerOptions.gateway.models entry is not an available model"},
 	} {
+		if tc.status == 0 {
+			tc.status, tc.code = http.StatusBadRequest, "invalid_request"
+		}
+		kind := "invalid_request_error"
+		if tc.code == "model_not_found" {
+			kind = tc.code
+		}
 		for _, streaming := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/streaming=%t", tc.name, streaming), func(t *testing.T) {
 				model := &recordingModel{}
-				h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
-					return Selection{ID: id, Model: model}, fmt.Errorf("private-key private-organization https://private.invalid: %w", tc.err)
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+					return execution.Selection{ID: id, Model: model}, fmt.Errorf("private-key private-organization https://private.invalid: %w", tc.err)
 				}})
 				require.NoError(t, err)
 				r := validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"private-key"}]}}}}`)
@@ -344,9 +307,9 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, r)
-				assert.Equal(t, http.StatusBadRequest, w.Code)
+				assert.Equal(t, tc.status, w.Code)
 				assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"invalid_request_error","param":null,"code":"invalid_request"}}`, tc.message), w.Body.String())
+				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":%q,"param":null,"code":%q}}`, tc.message, kind, tc.code), w.Body.String())
 				assert.Zero(t, model.callCount())
 			})
 		}
@@ -359,17 +322,15 @@ func TestRequestSelection_RequestByteLimit(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, delta := range []int{0, 1} {
 			t.Run(fmt.Sprintf("streaming=%t/bytes+%d", streaming, delta), func(t *testing.T) {
-				limits := testLimits()
-				limits.RequestBytes = int64(len(body))
 				model := &recordingModel{}
 				var selections atomic.Int32
-				h, err := New(Config{Limits: limits, Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (Selection, error) {
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 					selections.Add(1)
 					assert.Contains(t, string(gateway), key)
-					return Selection{ID: id, Model: model}, nil
+					return execution.Selection{ID: id, Model: model}, nil
 				}})
 				require.NoError(t, err)
-				r := validRequest(body + strings.Repeat(" ", delta))
+				r := withBodyLimit(validRequest(body+strings.Repeat(" ", delta)), len(body))
 				r.Header.Set(HeaderModelID, "openai/native-model")
 				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
 				w := httptest.NewRecorder()
@@ -389,40 +350,49 @@ func TestRequestSelection_RequestByteLimit(t *testing.T) {
 	}
 }
 
+func withRequestDeadline(t *testing.T, r *http.Request, duration time.Duration) *http.Request {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(r.Context(), duration)
+	t.Cleanup(cancel)
+	return r.WithContext(ctx)
+}
+
 func TestRequestSelection_Deadline(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
-		t.Run("late/"+strconv.FormatBool(streaming), func(t *testing.T) {
-			limits := testLimits()
-			limits.ModelDuration = 30 * time.Millisecond
-			model := &recordingModel{}
-			release, selected := make(chan struct{}), make(chan struct{})
-			h, err := New(Config{Limits: limits, Selector: func(_ context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
-				defer close(selected)
-				<-release
-				return Selection{ID: id, Model: model}, nil
-			}})
-			require.NoError(t, err)
-			r := validRequest(`{"prompt":[]}`)
-			r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
-			w := httptest.NewRecorder()
-			done := make(chan struct{})
-			go func() { defer close(done); h.ServeHTTP(w, r) }()
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-				close(release)
-				require.FailNow(t, "selection exceeded handler latency bound")
-			}
-			assert.Equal(t, http.StatusGatewayTimeout, w.Code)
-			assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
-			assert.Zero(t, model.callCount())
-			close(release)
-			<-selected
-			assert.Zero(t, model.callCount())
-		})
+		for _, tc := range []struct {
+			name   string
+			end    func(*testing.T, *http.Request) *http.Request
+			status int
+		}{
+			{name: "late/deadline", end: func(t *testing.T, r *http.Request) *http.Request {
+				return withRequestDeadline(t, r, 30*time.Millisecond)
+			}, status: http.StatusGatewayTimeout},
+			{name: "late/canceled", end: func(t *testing.T, r *http.Request) *http.Request {
+				ctx, cancel := context.WithCancel(r.Context())
+				time.AfterFunc(30*time.Millisecond, cancel)
+				t.Cleanup(cancel)
+				return r.WithContext(ctx)
+			}, status: statusClientClosedRequest},
+		} {
+			t.Run(tc.name+"/"+strconv.FormatBool(streaming), func(t *testing.T) {
+				model := &recordingModel{}
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+					<-ctx.Done()
+					return execution.Selection{ID: id, Model: model}, nil
+				}})
+				require.NoError(t, err)
+				r := validRequest(`{"prompt":[]}`)
+				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
+				r = tc.end(t, r)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				assert.Equal(t, tc.status, w.Code)
+				assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+				assert.Zero(t, model.callCount())
+			})
+		}
 		t.Run("shared/"+strconv.FormatBool(streaming), func(t *testing.T) {
-			limits := testLimits()
-			limits.ModelDuration = 150 * time.Millisecond
+			const requestDeadline = 500 * time.Millisecond
 			var selectionDeadline time.Time
 			model := &recordingModel{
 				generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
@@ -441,30 +411,60 @@ func TestRequestSelection_Deadline(t *testing.T) {
 					return &provider.StreamResult{Stream: parts}, nil
 				},
 			}
-			h, err := New(Config{Limits: limits, Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (Selection, error) {
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 				var ok bool
 				selectionDeadline, ok = ctx.Deadline()
 				assert.True(t, ok)
 				select {
 				case <-time.After(30 * time.Millisecond):
 				case <-ctx.Done():
-					return Selection{}, ctx.Err()
+					return execution.Selection{}, ctx.Err()
 				}
-				assert.LessOrEqual(t, time.Until(selectionDeadline), limits.ModelDuration-20*time.Millisecond)
-				return Selection{ID: id, Model: model, configured: &selectionExecution{candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "configured", Provider: model.Provider(), ModelID: model.ModelID()}}}}, nil
+				assert.LessOrEqual(t, time.Until(selectionDeadline), requestDeadline-20*time.Millisecond)
+				return execution.CatalogSelector(&recordingResolver{resolved: catalog.ResolvedModel{ID: id, Model: model, Candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "configured", Provider: model.Provider(), ModelID: model.ModelID()}}}})(ctx, id, options, nil)
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)
 			r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
-			ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
-			defer cancel()
+			r = withRequestDeadline(t, r, requestDeadline)
 			w := httptest.NewRecorder()
-			h.ServeHTTP(w, r.WithContext(ctx))
+			h.ServeHTTP(w, r)
 			assert.Equal(t, http.StatusOK, w.Code)
 			assert.Contains(t, w.Body.String(), `"providerInstance":"configured"`)
 			assert.Contains(t, w.Body.String(), `"outcome":"selected"`)
-			deadline, _ := ctx.Deadline()
-			assert.True(t, selectionDeadline.Before(deadline))
+			deadline, _ := r.Context().Deadline()
+			assert.Equal(t, deadline, selectionDeadline)
+		})
+		t.Run("no deadline/"+strconv.FormatBool(streaming), func(t *testing.T) {
+			deadlines := make(chan bool, 2)
+			model := &recordingModel{
+				generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+					_, ok := ctx.Deadline()
+					deadlines <- ok
+					return validGenerateResult(), nil
+				},
+				stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+					_, ok := ctx.Deadline()
+					deadlines <- ok
+					parts := make(chan provider.StreamPart, 1)
+					parts <- finishPart()
+					close(parts)
+					return &provider.StreamResult{Stream: parts}, nil
+				},
+			}
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+				_, ok := ctx.Deadline()
+				deadlines <- ok
+				return execution.Selection{ID: id, Model: model}, nil
+			}})
+			require.NoError(t, err)
+			r := validRequest(`{"prompt":[]}`)
+			r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			assert.Equal(t, http.StatusOK, w.Code)
+			assert.False(t, <-deadlines, "selection deadline")
+			assert.False(t, <-deadlines, "model deadline")
 		})
 	}
 }

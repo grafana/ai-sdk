@@ -1,0 +1,44 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { streamText } from "../../tools/node_modules/ai/src/index.ts";
+
+const fixtureDir = dirname(fileURLToPath(import.meta.url));
+
+for (const name of ["terminal", "next-segment"]) {
+  const caseDir = join(fixtureDir, name);
+  const chunks = readFileSync(join(caseDir, "input.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+
+  const model = {
+    specificationVersion: "v4",
+    provider: "test",
+    modelId: "test-model",
+    supportedUrls: {},
+    doStream: async () => ({
+      stream: new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(chunk);
+          controller.close();
+        },
+      }),
+    }),
+  };
+
+  const result = streamText({
+    model: model as never,
+    prompt: "test",
+    maxRetries: 0,
+    onError: () => {},
+  });
+  const output: string[] = [];
+  for await (const chunk of result.toUIMessageStream({
+    generateMessageId: () => "message-1",
+    onError: () => "provider error",
+  })) {
+    output.push(JSON.stringify(chunk));
+  }
+  writeFileSync(join(caseDir, "expected.jsonl"), `${output.join("\n")}\n`);
+}

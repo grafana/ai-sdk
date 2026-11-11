@@ -15,23 +15,20 @@ import (
 )
 
 func TestStreamingTools_OpenInputTermination(t *testing.T) {
-	for _, scenario := range []string{"cancel", "idle timeout", "total timeout", "write failure", "part budget", "premature EOF"} {
+	for _, scenario := range []string{"cancel", "idle timeout", "deadline timeout", "write failure", "premature EOF"} {
 		t.Run(scenario, func(t *testing.T) {
 			limits := testLimits()
-			limits.ModelDuration = time.Second
 			limits.StreamIdleDuration = time.Second
 			if scenario == "idle timeout" {
 				limits.StreamIdleDuration = 25 * time.Millisecond
 			}
-			if scenario == "total timeout" {
-				limits.ModelDuration = 25 * time.Millisecond
-			}
-			if scenario == "part budget" {
-				limits.StreamParts = 3
-			}
 			harness := newRuntimeHarness(t, limits)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			if scenario == "deadline timeout" {
+				ctx, cancel = context.WithTimeout(ctx, 25*time.Millisecond)
+				defer cancel()
+			}
 			producerDone := make(chan struct{})
 			handlerDone := make(chan struct{})
 			var modelContext context.Context
@@ -45,7 +42,7 @@ func TestStreamingTools_OpenInputTermination(t *testing.T) {
 					if scenario == "premature EOF" {
 						return
 					}
-					if scenario == "part budget" || scenario == "write failure" {
+					if scenario == "write failure" {
 						for i := 0; i < 8; i++ {
 							if ctx.Err() != nil {
 								break
@@ -61,9 +58,7 @@ func TestStreamingTools_OpenInputTermination(t *testing.T) {
 					if scenario == "cancel" {
 						<-handlerDone
 					}
-					if scenario != "part budget" {
-						parts <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "open", Delta: "late"}
-					}
+					parts <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "open", Delta: "late"}
 				}()
 				return &provider.StreamResult{Stream: parts}, nil
 			}
@@ -112,7 +107,6 @@ func TestStreamingTools_ConcurrentReadyCancellation(t *testing.T) {
 	for _, delta := range []string{"", "{}"} {
 		t.Run("delta="+delta, func(t *testing.T) {
 			limits := testLimits()
-			limits.ModelDuration = time.Second
 			limits.StreamIdleDuration = time.Second
 			harness := newRuntimeHarness(t, limits)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -265,10 +259,8 @@ func TestStreamingProviderTools_DeferredResultOnly(t *testing.T) {
 	requireStreamBodyMatchesSchema(t, output)
 }
 
-func TestStreamingProviderTools_HistoryDoesNotConsumeProviderPartBudget(t *testing.T) {
-	limits := testLimits()
-	limits.StreamParts = 3
-	harness := newRuntimeHarness(t, limits)
+func TestStreamingProviderTools_HistorySeedsDeferredResults(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(
 			provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "history-7", ToolName: "echo", Result: json.RawMessage(`"done"`)},
@@ -306,33 +298,35 @@ func TestStreamingProviderTools_PreviewsAndErrorsPreserveLifecycle(t *testing.T)
 	requireStreamBodyMatchesSchema(t, body)
 }
 
-func TestStreamingProviderTools_BoundedPreviewAndMetadata(t *testing.T) {
+func TestStreamingProviderTools_ManyPreviewsAndLargeMetadata(t *testing.T) {
+	large := strings.Repeat("secret", 1<<20)
 	for _, tc := range []struct {
-		name   string
-		limits Limits
-		parts  []provider.StreamPart
+		name  string
+		parts []provider.StreamPart
 	}{
-		{name: "preview exceeds provider part budget", limits: func() Limits { limits := testLimits(); limits.StreamParts = 3; return limits }(), parts: []provider.StreamPart{
+		{name: "previews", parts: []provider.StreamPart{
 			{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`},
 			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`0`), Preliminary: new(true)},
 			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`1`), Preliminary: new(true)},
 			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`2`)},
 			finishPart(),
 		}},
-		{name: "metadata exceeds frame budget", limits: testLimits(), parts: []provider.StreamPart{
-			{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + strings.Repeat("secret", int(testLimits().StreamFrameBytes)) + `"}`)}},
+		{name: "large metadata", parts: []provider.StreamPart{
+			{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "echo", Input: `{}`, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"` + large + `"}`)}},
 			finishPart(),
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			harness := newRuntimeHarness(t, tc.limits)
+			harness := newRuntimeHarness(t, testLimits())
 			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				return &provider.StreamResult{Stream: makeStream(tc.parts...)}, nil
 			}
 			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
-			assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
-			assert.NotContains(t, body, `"type":"finish"`)
-			assert.NotContains(t, body, "secret")
+			assert.NotContains(t, body, `"type":"error"`)
+			assert.Equal(t, 1, strings.Count(body, `"type":"finish"`))
+			if tc.name == "large metadata" {
+				assert.Contains(t, body, large)
+			}
 			requireStreamBodyMatchesSchema(t, body)
 		})
 	}
@@ -340,7 +334,6 @@ func TestStreamingProviderTools_BoundedPreviewAndMetadata(t *testing.T) {
 
 func TestStreamingProviderTools_CancelDuringPreliminaryResult(t *testing.T) {
 	limits := testLimits()
-	limits.ModelDuration = time.Second
 	limits.StreamIdleDuration = time.Second
 	harness := newRuntimeHarness(t, limits)
 	requestContext, cancel := context.WithCancel(context.Background())
@@ -497,7 +490,6 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"duplicate result", []provider.StreamPart{call, result, result}},
 		{"mismatched name", []provider.StreamPart{start, end, {Type: provider.PartToolCall, ToolCallID: "a", ToolName: "other", Input: "{}"}}},
 		{"open at finish", []provider.StreamPart{start, finishPart()}},
-		{"late metadata", []provider.StreamPart{call, {Type: provider.PartResponseMeta}}},
 		{"metadata after input start", []provider.StreamPart{start, {Type: provider.PartResponseMeta}, end, call}},
 		{"empty input id", []provider.StreamPart{{Type: provider.PartToolInputStart, ToolName: "f"}}},
 		{"empty input name", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a"}}},
@@ -517,6 +509,22 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 			assert.NotContains(t, body, `"type":"finish"`)
 		})
 	}
+}
+
+func TestStreamingTools_MetadataAfterClosedCall(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(
+			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}"},
+			provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_2"},
+			finishPart(),
+		)}, nil
+	}
+	body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	requireStreamBodyMatchesSchema(t, body)
+	assert.NotContains(t, body, `"type":"error"`)
+	assert.Less(t, strings.Index(body, `"type":"tool-call"`), strings.Index(body, `"id":"resp_2"`))
+	assert.Contains(t, body, `"type":"finish"`)
 }
 
 func TestStreamingTools_IndependentTextAndToolIDs(t *testing.T) {
@@ -582,7 +590,7 @@ func TestStreamingTools_InvalidUTF8(t *testing.T) {
 			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 			want := string(canonicalEmptyStartFrame)
 			if len(tc.parts) == 2 {
-				frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartToolInputStart, id: "a", toolName: "f"}, testLimits().StreamFrameBytes)
+				frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartToolInputStart, id: "a", toolName: "f"})
 				require.True(t, ok)
 				want += string(frame)
 			}
@@ -591,7 +599,7 @@ func TestStreamingTools_InvalidUTF8(t *testing.T) {
 	}
 }
 
-func TestStreamingTools_FrameBoundsAndNonterminalErrors(t *testing.T) {
+func TestStreamingTools_FrameEncodingAndNonterminalErrors(t *testing.T) {
 	for _, event := range []streamEvent{
 		{typeName: provider.PartToolInputStart, id: "a", toolName: "f"},
 		{typeName: provider.PartToolInputDelta, id: "a", delta: ""},
@@ -599,12 +607,8 @@ func TestStreamingTools_FrameBoundsAndNonterminalErrors(t *testing.T) {
 		{typeName: provider.PartToolResult, id: "a", toolName: "f", result: json.RawMessage(`{"text":"<>&"}`)},
 		{typeName: provider.PartToolResult, id: "a", toolName: "f", result: json.RawMessage(`false`), preliminary: new(true), metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"item-1"}`)}},
 	} {
-		frame, ok := encodeStreamFrame(event, 1<<20)
+		_, ok := encodeStreamFrame(event)
 		require.True(t, ok)
-		_, ok = encodeStreamFrame(event, int64(len(frame)))
-		assert.True(t, ok)
-		_, ok = encodeStreamFrame(event, int64(len(frame)-1))
-		assert.False(t, ok)
 	}
 	harness := newRuntimeHarness(t, testLimits())
 	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -621,4 +625,22 @@ func TestStreamingTools_FrameBoundsAndNonterminalErrors(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
 	assert.Contains(t, body, `"type":"finish"`)
 	requireStreamBodyMatchesSchema(t, body)
+}
+
+func TestStreamToolInputEncoding_Validity(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoding provider.ToolInputEncoding
+		ok       bool
+	}{
+		{"omitted", "", true},
+		{"json", provider.ToolInputEncodingJSON, true},
+		{"text", provider.ToolInputEncodingText, true},
+		{"unknown", provider.ToolInputEncoding("binary"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartToolInputStart, id: "call", toolName: "weather", inputEncoding: tc.encoding})
+			assert.Equal(t, tc.ok, ok)
+		})
+	}
 }

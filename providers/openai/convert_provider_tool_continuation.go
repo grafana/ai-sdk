@@ -12,23 +12,24 @@ import (
 )
 
 type inputConversionContext struct {
-	isReasoningModel        bool
-	store                   bool
-	providerOptionsName     string
-	hasConversation         bool
-	hasPreviousResponseID   bool
-	toolNameMapping         toolNameMapping
-	hasLocalShellTool       bool
-	hasShellTool            bool
-	hasApplyPatchTool       bool
-	hasComputerTool         bool
-	customProviderToolNames map[string]struct{}
-	outputSchemaToolNames   map[string]struct{}
-	processedApprovalIDs    map[string]struct{}
-	parallelResults         map[string]*parallelToolResultGroup
-	emittedParallelCalls    map[string]bool
-	emittedParallelResults  map[string]bool
-	programmaticToolCallIDs map[string]bool
+	isReasoningModel                     bool
+	store                                bool
+	providerOptionsName                  string
+	hasConversation                      bool
+	hasPreviousResponseID                bool
+	toolNameMapping                      toolNameMapping
+	hasLocalShellTool                    bool
+	hasShellTool                         bool
+	hasApplyPatchTool                    bool
+	hasComputerTool                      bool
+	customProviderToolNames              map[string]struct{}
+	outputSchemaToolNames                map[string]struct{}
+	processedApprovalIDs                 map[string]struct{}
+	parallelResults                      map[string]*parallelToolResultGroup
+	emittedParallelCalls                 map[string]bool
+	emittedParallelResults               map[string]bool
+	programmaticToolCallIDs              map[string]bool
+	configurationUpdateUnsupportedReason string
 }
 
 func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
@@ -260,7 +261,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		return group.output(ctx)
 	}
 	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied {
-		if ctx.outputOptions(part.Output).ApprovalID != "" {
+		if openAIPartOptionsFor(part.Output.ProviderOptions, providerName).ApprovalID != "" || ctx.outputOptions(part.Output).ApprovalID != "" {
 			return nil, nil, nil
 		}
 	}
@@ -571,9 +572,14 @@ func shellCallOutputItem(part provider.ContentPart) (*responses.ResponseInputIte
 		return nil, nil
 	}
 	var output struct {
-		Output *[]map[string]json.RawMessage `json:"output"`
+		MaxOutputLength json.RawMessage               `json:"maxOutputLength"`
+		Output          *[]map[string]json.RawMessage `json:"output"`
 	}
 	if err := json.Unmarshal(part.Output.JSON, &output); err != nil {
+		return nil, fmt.Errorf("openai: parsing shell output: %w", err)
+	}
+	maxOutputLength, err := optionalNumber(output.MaxOutputLength, "maxOutputLength")
+	if err != nil {
 		return nil, fmt.Errorf("openai: parsing shell output: %w", err)
 	}
 	if output.Output == nil {
@@ -614,11 +620,15 @@ func shellCallOutputItem(part provider.ContentPart) (*responses.ResponseInputIte
 		}
 		contents = append(contents, map[string]any{"stdout": stdout, "stderr": stderr, "outcome": convertedOutcome})
 	}
-	encoded, err := json.Marshal(map[string]any{
+	outputItem := map[string]any{
 		"type":    "shell_call_output",
 		"call_id": part.ToolCallID,
 		"output":  contents,
-	})
+	}
+	if maxOutputLength != nil {
+		outputItem["max_output_length"] = *maxOutputLength
+	}
+	encoded, err := json.Marshal(outputItem)
 	if err != nil {
 		return nil, fmt.Errorf("openai: marshaling shell output: %w", err)
 	}

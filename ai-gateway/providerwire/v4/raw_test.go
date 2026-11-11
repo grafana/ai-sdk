@@ -19,7 +19,8 @@ func TestProjectRawValue(t *testing.T) {
 		want   string
 		absent bool
 	}{
-		{name: "no value", raw: "", absent: true},
+		{name: "no value", raw: "", want: ""},
+		{name: "whitespace-only value", raw: " \n\t", want: ""},
 		{name: "invalid JSON", raw: `{"type":`, absent: true},
 		{name: "event without tools is unchanged", raw: `{"type":"content_block_delta","delta":{"text":"<b>"}}`, want: `{"type":"content_block_delta","delta":{"text":"<b>"}}`},
 		{name: "non-object value is unchanged", raw: `["tools",1]`, want: `["tools",1]`},
@@ -114,6 +115,7 @@ func TestRuntimeRawOutput(t *testing.T) {
 			{Type: provider.PartTextStart, ID: "a"},
 			// A native frame that was not valid JSON reaches the Gateway without a value.
 			{Type: provider.PartRaw},
+			{Type: provider.PartRaw, RawValue: json.RawMessage(" \n")},
 			// Adapters check JSON syntax only, so invalid UTF-8 can arrive.
 			{Type: provider.PartRaw, RawValue: json.RawMessage("{\"delta\":\"\xff\"}")},
 			{Type: provider.PartTextDelta, ID: "a", Delta: "hello"},
@@ -149,12 +151,10 @@ func TestRuntimeRawOutput(t *testing.T) {
 		}
 	})
 
-	t.Run("an oversized raw event ends the stream like any oversized frame", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamFrameBytes = int64(minimumStreamFrameBytes()) + 64
-		harness := newRuntimeHarness(t, limits)
+	t.Run("a raw event above 1 MiB is written whole", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		large := json.RawMessage(`{"text":"` + strings.Repeat("x", 2<<20) + `"}`)
 		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			large := json.RawMessage(`{"text":"` + strings.Repeat("x", int(limits.StreamFrameBytes)) + `"}`)
 			return &provider.StreamResult{Stream: makeStream(
 				provider.StreamPart{Type: provider.PartRaw, RawValue: large},
 				finishPart(),
@@ -163,9 +163,9 @@ func TestRuntimeRawOutput(t *testing.T) {
 		response := harness.serve(rawRequest(true, `,"includeRawChunks":true`))
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
-		assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
-		assert.NotContains(t, body, `"type":"raw"`)
-		assert.NotContains(t, body, `"type":"finish"`)
+		assert.Contains(t, body, `{"type":"raw","rawValue":`+string(large)+`}`)
+		assert.Contains(t, body, `"type":"finish"`)
+		assert.NotContains(t, body, `"code":"internal_error"`)
 	})
 }
 
@@ -192,10 +192,13 @@ func testRequestedRawParts(t *testing.T, parts []provider.StreamPart) {
 			raws = append(raws, string(event.RawValue))
 		}
 	}
-	assert.Equal(t, []string{"stream-start", "raw", "text-start", "text-delta", "raw", "text-end", "finish"}, types)
+	assert.Equal(t, []string{"stream-start", "raw", "text-start", "raw", "raw", "text-delta", "raw", "text-end", "finish"}, types)
 	assert.Equal(t, []string{
 		`{"response":{"tools":[{"headers":null,"server_url":"https://mcp.example/mcp","type":"mcp"}]},"type":"response.created"}`,
+		"",
+		"",
 		`{"type":"message_stop"}`,
 	}, raws)
+	assert.Equal(t, 2, strings.Count(body, `data: {"type":"raw"}`+"\n\n"))
 	assert.NotContains(t, body, "secret")
 }

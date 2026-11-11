@@ -42,14 +42,18 @@ export function nativeProxyEnvironment(proxyURL: string): Record<string, string>
   };
 }
 
-export async function startNativeProviderProxy(target: string, authority: "api.anthropic.com:443" | "api.openai.com:443" = "api.anthropic.com:443") {
+type NativeAuthority = "api.anthropic.com:443" | "api.openai.com:443";
+
+// startNativeProviderProxy forwards TLS CONNECT tunnels for each native
+// authority to its fake target, and refuses every other authority.
+export async function startNativeProviderProxy(targets: Partial<Record<NativeAuthority, string>>) {
   const context = createSecureContext({
     cert: readFileSync(nativeProxyCertificate),
     key: nativeProxyKey,
   });
   const sockets = new Set<TLSSocket>();
-  const forwarded = createServer((request, response) => {
-    const upstream = httpRequest(new URL(request.url ?? "/", target), {
+  const forwarders = new Map(Object.entries(targets).map(([name, url]) => [name, createServer((request, response) => {
+    const upstream = httpRequest(new URL(request.url ?? "/", url), {
       method: request.method, headers: request.headers,
     }, result => {
       response.writeHead(result.statusCode!, result.headers);
@@ -58,10 +62,11 @@ export async function startNativeProviderProxy(target: string, authority: "api.a
     upstream.on("error", () => response.destroy());
     response.on("close", () => upstream.destroy());
     request.pipe(upstream);
-  });
+  })]));
   const proxy = createServer((_request, response) => { response.writeHead(405).end(); });
   proxy.on("connect", (request, socket, head) => {
-    if (request.url !== authority) {
+    const forwarded = forwarders.get(request.url ?? "");
+    if (forwarded === undefined) {
       socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
       return;
     }
@@ -80,7 +85,7 @@ export async function startNativeProviderProxy(target: string, authority: "api.a
     url: `http://127.0.0.1:${address.port}`,
     async stop() {
       for (const socket of sockets) socket.destroy();
-      forwarded.closeAllConnections();
+      for (const forwarded of forwarders.values()) forwarded.closeAllConnections();
       proxy.closeAllConnections();
       await new Promise<void>(resolve => proxy.close(() => resolve()));
     },

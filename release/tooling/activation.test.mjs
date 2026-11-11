@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GitHub } from 'release-please';
+import { GitHub, Manifest } from 'release-please';
 import { readFileSync } from 'node:fs';
-import { fixture, base } from './authorization-fixture.mjs';
-import { SOURCE_JOBS } from './authorization-evidence.mjs';
+import { fixture, base, config } from './authorization-fixture.mjs';
+import { GATEWAY_PUBLICATION_JOBS, SOURCE_JOBS } from './authorization-evidence.mjs';
 import { activationContext, selectInventory, verifyProtections, waitForToolingCI, preparationTransport, prepareLibraries } from './activation.mjs';
+import { main as publicationGate, publicationCommit, requireSourceCI } from './gateway-publication-gate.mjs';
 
 const approval = { id: 1, updatedAt: '2026-10-22T00:00:00Z' };
 const env = { RELEASE_LIBRARY_MODE: 'root', GITHUB_REPOSITORY: 'grafana/ai-sdk',
@@ -122,50 +123,87 @@ test('preparation cannot publish, target Gateway, or advance unsigned commits', 
   assert.equal(writes, 1); assert.equal(checks, 1);
 });
 
-test('Renovate final rule selects only registered libraries and tagged prereleases', () => {
-  const config = JSON.parse(readFileSync(new URL('../../release-please-config.json', import.meta.url)));
+test('Renovate never proposes first-party requirement updates', () => {
   const renovate = JSON.parse(readFileSync(new URL('../../renovate.json', import.meta.url)));
-  const [lookup, rule] = renovate.packageRules.slice(-2);
-  assert.deepEqual(lookup.matchPackageNames, ['github.com/grafana/ai-sdk', 'github.com/grafana/ai-sdk/**']);
-  assert.equal(lookup.ignoreUnstable, false);
-  assert.deepEqual(rule.matchPackageNames, Object.keys(config.packages).filter(p => p !== 'ai-gateway').map(p => 'github.com/grafana/ai-sdk' + (p === '.' ? '' : '/' + p)));
-  const versions = new RegExp(lookup.allowedVersions.slice(1, -1));
-  assert.ok(versions.test('v0.1.0-alpha.2'));
-  assert.ok(versions.test('v1.2.3'));
-  assert.equal(versions.test('v0.0.0-20261001000000-123456abcdef'), false);
-  assert.deepEqual(rule.matchUpdateTypes, ['major', 'minor', 'patch']);
-  assert.equal(rule.automerge, false); assert.equal(rule.groupSlug, 'ai-sdk-first-party');
-  assert.equal(rule.enabled, true);
+  const firstParty = renovate.packageRules.filter(rule => rule.matchPackageNames?.some(name => name.startsWith('github.com/grafana/ai-sdk')));
+  assert.deepEqual(firstParty, [renovate.packageRules.at(-1)]);
+  assert.deepEqual(firstParty[0].matchPackageNames, ['github.com/grafana/ai-sdk', 'github.com/grafana/ai-sdk/**']);
+  assert.equal(firstParty[0].enabled, false);
+  assert.equal(firstParty[0].matchUpdateTypes, undefined);
 });
 
-test('pinned preparation skips pending components and Gateway without a global veto', async () => {
-  const { github } = fixture();
+
+const combined = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,
+  'ai-gateway': { ...config.packages['ai-gateway'], 'separate-pull-requests': true } } };
+
+const modules = {
+  'go.mod': 'module github.com/grafana/ai-sdk\n\ngo 1.27.3\n',
+  'providers/openai/go.mod': 'module github.com/grafana/ai-sdk/providers/openai\n\ngo 1.27.3\n\nrequire github.com/grafana/ai-sdk v0.1.0-alpha.1\n\nreplace github.com/grafana/ai-sdk => ../..\n',
+  'providers/bedrock/go.mod': 'module github.com/grafana/ai-sdk/providers/bedrock\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/grafana/ai-sdk v0.1.0-alpha.1 // indirect\n\tgithub.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1\n)\n',
+};
+
+function combinedFixture(settings = combined) {
+  const source = fixture();
+  const { github } = source;
+  github.getFileJson = async path => path === 'release-please-config.json' ? structuredClone(settings) : { '.': '0.1.0-alpha.1', 'providers/openai': '0.1.0-alpha.1' };
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
-  github.mergeCommitIterator = async function* () {
-    yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
-    yield { sha: 'f'.repeat(40), message: 'fix: provider change', files: ['providers/openai/model.go'] };
-    yield { sha: '1'.repeat(40), message: 'fix: gateway change', files: ['ai-gateway/main.go'] };
-  };
+  github.findFilesByFilenameAndRef = async (name, ref) => { assert.equal(name, 'go.mod'); assert.equal(ref, 'main'); return Object.keys(modules); };
+  github.getFileContentsOnBranch = async path => ({ parsedContent: modules[path] });
+  return source;
+}
+
+const libraryChanges = async function* () {
+  yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
+  yield { sha: 'f'.repeat(40), message: 'fix: provider change', files: ['providers/openai/model.go'] };
+  yield { sha: '1'.repeat(40), message: 'fix: logger change', files: ['middleware/logger/logger.go'] };
+  yield { sha: '2'.repeat(40), message: 'fix: gateway change', files: ['ai-gateway/main.go'] };
+};
+
+function mergedOnly(github) {
   const iterator = github.pullRequestIterator;
   github.pullRequestIterator = async function* (branch, state, ...args) {
     if (state === 'MERGED') yield* iterator(branch, state, ...args);
   };
-  const created = [];
-  github.createPullRequest = async pr => { created.push(pr); return { number: 999 }; };
+}
+
+test('preparation combines pending libraries and skips merged pending components and Gateway', async () => {
+  const { github } = combinedFixture();
+  github.mergeCommitIterator = libraryChanges;
+  mergedOnly(github);
+  const created = [], updates = [];
+  github.createPullRequest = async (pr, target, message, files) => { created.push(pr); updates.push(files); return { number: 999 }; };
   const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ component: 'providers/openai', prNumber: 999 }]);
+  assert.deepEqual(result, [{ components: ['middleware/logger', 'providers/openai'],
+    requirements: ['providers/bedrock/go.mod'], prNumber: 999 }]);
   assert.equal(created.length, 1);
-  assert.match(created[0].headBranchName, /components--providers\/openai$/);
+  const bedrock = updates[0].find(update => update.path === 'providers/bedrock/go.mod');
+  assert.equal(bedrock.updater.updateContent(modules['providers/bedrock/go.mod']),
+    modules['providers/bedrock/go.mod'].replace('openai v0.1.0-alpha.1', 'openai v0.1.0-alpha.2'));
+  assert.equal(created[0].headBranchName, 'release-please--branches--main');
+  assert.equal(created[0].title, 'chore: release main');
+  assert.match(created[0].body, /provider change[\s\S]*logger change|logger change[\s\S]*provider change/);
   assert.doesNotMatch(created[0].body, /gateway change|root change/);
   await assert.rejects(prepareLibraries(github, 'e'.repeat(40)), /advanced/);
 });
 
+test('a separately configured library keeps its own release pull request', async () => {
+  const settings = structuredClone(combined);
+  settings.packages['providers/openai']['separate-pull-requests'] = true;
+  const { github } = combinedFixture(settings);
+  github.mergeCommitIterator = libraryChanges;
+  mergedOnly(github);
+  const created = [];
+  github.createPullRequest = async pr => { created.push(pr); return { number: 900 + created.length }; };
+  const result = await prepareLibraries(github, base);
+  assert.deepEqual(result.map(entry => entry.components).sort(), [['middleware/logger'], ['providers/openai']]);
+  assert.deepEqual(result.find(entry => entry.components[0] === 'providers/openai').requirements, ['providers/bedrock/go.mod']);
+  assert.deepEqual(created.map(pr => pr.headBranchName).sort(), [
+    'release-please--branches--main', 'release-please--branches--main--components--providers/openai']);
+});
 
-test('pinned preparation refreshes an unchanged open release against the current base', async () => {
-  const { github } = fixture();
-  github.releaseIterator = async function* () {};
-  github.tagIterator = async function* () {};
+test('preparation refreshes an unchanged open release against the current base', async () => {
+  const { github } = combinedFixture();
   github.mergeCommitIterator = async function* () {
     yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
   };
@@ -189,7 +227,25 @@ test('pinned preparation refreshes an unchanged open release against the current
   github.pullRequestIterator = async function* (branch, state) { if (state === 'CLOSED') yield openPR; };
   await prepareLibraries(github, base);
   assert.equal(updated, 1, 'unchanged closed snoozed PR must stay snoozed');
+});
 
+test('preparation rejects candidate files outside the manifest and library changelogs', async () => {
+  const { github } = combinedFixture();
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
+  };
+  github.pullRequestIterator = async function* () {};
+  const original = Manifest.prototype.buildPullRequests;
+  Manifest.prototype.buildPullRequests = async function () {
+    const candidates = await original.call(this);
+    candidates[0].updates.push({ path: 'providers/openai/go.mod', createIfMissing: false, updater: { updateContent: () => '' } });
+    return candidates;
+  };
+  try {
+    await assert.rejects(prepareLibraries(github, base), /only update the manifest and library changelogs: providers\/openai\/go.mod/);
+  } finally {
+    Manifest.prototype.buildPullRequests = original;
+  }
 });
 
 
@@ -238,6 +294,7 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
   });
   const github = await GitHub.create({ owner: 'grafana', repo: 'ai-sdk', defaultBranch: 'main', fetch: transport });
   github.getFileJson = source.github.getFileJson;
+  github.findFilesByFilenameAndRef = async () => [];
   github.octokit.repos.getCommit = source.github.octokit.repos.getCommit;
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
@@ -247,10 +304,42 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
   };
   github.buildChangeSet = async updates => new Map(updates.map(update => [update.path, { content: 'generated content' }]));
   const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ component: '.', prNumber: 100 }]);
+  assert.deepEqual(result, [{ components: ['.'], requirements: [], prNumber: 100 }]);
   assert.deepEqual(replacement.labels, [{ name: 'autorelease: pending' }]);
   assert.equal(requests.some(r => r.method === 'PATCH' && r.path.endsWith('/pulls/99')), false);
   const label = requests.findIndex(r => r.method === 'POST' && r.path.endsWith('/issues/100/labels'));
   const unsnooze = requests.findIndex(r => r.method === 'DELETE');
   assert.ok(label >= 0 && unsnooze > label, 'retire old snooze only after labeling the replacement');
+});
+
+test('Gateway publication requires successful source and plugin validation jobs', async () => {
+  assert.deepEqual(GATEWAY_PUBLICATION_JOBS, [...SOURCE_JOBS, 'Validate AI Gateway plugin']);
+  const { github } = fixture();
+  const original = github.octokit.paginate;
+  let validation = null;
+  github.octokit.paginate = async (route, params) => {
+    const result = await original(route, params);
+    if (validation && /attempts/.test(route)) result.push({ ...result[0], name: 'Validate AI Gateway plugin', conclusion: validation });
+    return result;
+  };
+  const sha = 'c'.repeat(40);
+  await waitForToolingCI(github, sha, { attempts: 1 });
+  await assert.rejects(requireSourceCI(github, sha, { attempts: 1 }), /Validate AI Gateway plugin/);
+  for (const conclusion of ['failure', 'cancelled', 'skipped']) {
+    validation = conclusion;
+    await assert.rejects(requireSourceCI(github, sha, { attempts: 1 }), /must succeed/);
+  }
+  validation = 'success';
+  await requireSourceCI(github, sha, { attempts: 1 });
+});
+
+test('Gateway publication gate runs only for canonical main pushes', async () => {
+  const push = { GITHUB_REPOSITORY: 'grafana/ai-sdk', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: 'c'.repeat(40) };
+  assert.equal(publicationCommit(push), push.GITHUB_SHA);
+  for (const change of [{ GITHUB_REPOSITORY: 'fork/ai-sdk' }, { GITHUB_EVENT_NAME: 'pull_request' },
+    { GITHUB_EVENT_NAME: 'workflow_run' }, { GITHUB_REF: 'refs/tags/ai-gateway/v1.0.0' }, { GITHUB_SHA: 'main' }]) {
+    assert.throws(() => publicationCommit({ ...push, ...change }), { code: 'ERR_ASSERTION' }, JSON.stringify(change));
+  }
+  await assert.rejects(publicationGate(push), /Actions read credential/);
 });

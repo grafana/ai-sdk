@@ -13,8 +13,9 @@ client.
 - Grafana 13.3 or later.
 - The `appplugins.loadAppManifest`, `appplugins.registerAPIServer` and
   `grafana.useRouterMiddleware` feature toggles. The last one is experimental.
-- The plugin is not in the plugin catalog yet. Build it from this directory
-  and allow it as an unsigned plugin.
+- The plugin is published only to the dev plugin catalog for Grafana Cloud.
+  For other Grafana instances, build it from this directory and allow it as an
+  unsigned plugin.
 
 ## Install
 
@@ -33,12 +34,13 @@ client.
    allow_loading_unsigned_plugins = grafana-aigateway-app
 
    [plugin.grafana-aigateway-app]
-   config_file = /etc/grafana/aigateway/models.yaml
+   model_catalog = $__file{/etc/grafana/aigateway/models.yaml}
    access_mode = self-hosted
    anthropic_api_key = $__file{/run/secrets/anthropic-api-key}
    ```
 
-3. Create the model catalog in `config_file`, as described in the next section.
+3. Create the model catalog file that `model_catalog` reads, as described in
+   the next section.
 4. Restart Grafana and enable **Grafana AI Gateway** under
    **Administration > Plugins and data > Plugins**.
 
@@ -72,20 +74,98 @@ models:
 
 Each provider needs a `type` (`anthropic`, `openai` or `openai-compatible`)
 and an `apiKeyEnv`. An `openai-compatible` provider also needs a `baseURL`;
-the other types use it to replace the provider's default endpoint.
+the other types use it to replace the provider's default endpoint. Set
+`supportsStructuredOutputs: true` on an `openai-compatible` provider to send
+schema requests as JSON-schema response formats instead of JSON mode. It
+defaults to `false`, and setting it to `true` on other types fails at startup.
+Only enable it for backends you have verified support JSON-schema outputs.
 
 Each model needs a `name` and a `primary` provider and model. Applications
 select it by its ID, such as `balanced`, or by one of its `aliases`. When the
 primary model fails before it starts answering, the Gateway tries the
 `fallback` models in order.
 
+### Allow Anthropic server-side fallbacks
+
+Applications can ask Anthropic to retry a refused turn on another model with
+`providerOptions.anthropic.fallbacks`. The Gateway refuses that request unless
+the candidate that would send it allows it with `serverFallbacks`:
+
+```yaml
+    primary:
+      provider: anthropic
+      model: claude-opus-5
+      serverFallbacks:
+        models: [claude-opus-4-8]
+        allowDefault: true
+```
+
+`models` lists the fallback models an explicit chain may name; each may appear
+once in a request and must match exactly. `allowDefault: true` also allows
+`"default"`, which lets Anthropic choose the model, and its cost. The policy
+applies only to the `primary` or `fallback` entry that declares it, only
+`anthropic` providers accept it, and it must allow `"default"` or at least one
+model. Every entry that names the same provider and backend model must carry
+the same policy, in any route, for the reason given for skills below. Requests
+that bring their own provider keys are not limited by it.
+
+### Allow Anthropic agent skills
+
+Anthropic agent skills, such as `pptx`, are refused unless the primary or
+fallback entry lists them under `skills.allow`. Only `anthropic` providers can
+carry a skills policy:
+
+```yaml
+models:
+  documents:
+    name: Documents
+    primary:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      skills:
+        allow:
+          - type: anthropic
+            skillId: pptx
+          - type: custom
+            skillId: skill_01AbCdEf
+            versions: ["1759178010641129"]
+```
+
+- An `anthropic` skill is provided by Anthropic. A `custom` skill lives in the
+  provider account, and listing it shares it with every caller of that model;
+  there is no per-tenant scoping.
+- Without `versions`, only requests that omit the version are allowed. With
+  `versions`, the request must send one of them; `latest` is matched literally.
+- Every entry that names the same provider and backend model must carry the
+  same policy, in any route, because a call that combines routes tries that
+  backend model only once. To use different policies for one backend model,
+  declare a second provider with the same `apiKeyEnv`.
+- Calls on these models cannot send a `container.id`, with or without skills,
+  because containers belong to the provider account. Each call starts a fresh
+  container.
+
 Each key of the `[plugin.grafana-aigateway-app]` section reaches the Gateway as
 an environment variable named `GF_PLUGIN_<KEY>`, so `anthropic_api_key` becomes
 `GF_PLUGIN_ANTHROPIC_API_KEY`. Keep provider keys there and read them from a
 file with `$__file{}` or from Grafana's environment with `$__env{}`.
 
+The Gateway reads the catalog from the `model_catalog` setting, never from a
+file. `$__file{}` makes Grafana read the file when Grafana starts, so restart
+Grafana after you change it. Hosts that configure plugins through the
+environment set `GF_PLUGIN_MODEL_CATALOG` to the catalog YAML instead; if their
+settings cannot contain newlines, pass the catalog as single-line JSON, which is
+also valid YAML. If the file that `$__file{}` names is missing or unreadable,
+Grafana itself fails to start.
+
 The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.
+
+The Gateway serves requests only when Grafana gives it the platform signing
+keys, `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, to verify callers. Without them,
+it starts idle: it ignores its settings, serves nothing, and Grafana's log
+warns that plugin requests will be rejected. A Grafana Cloud stack's own Grafana
+runs the Gateway this way, because the platform serves the Gateway API
+elsewhere.
 
 ## Choose who can use it
 
@@ -103,18 +183,43 @@ something is wrong, it does not start, and Grafana's log says why.
 
 | Setting | Description |
 |---|---|
-| `config_file` | Path to the model catalog. Required. |
+| `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Required. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
-| `max_request_bytes` | Largest request body. Defaults to 1 MiB; raise it for large file inputs. |
-| `max_model_duration` | Longest model call. Defaults to `120s`; at least `30s`. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits
 
-- Grafana ends a request after 60 seconds, including a streamed response.
-- Grafana rejects some requests, such as those with an invalid token, before
-  they reach the Gateway. Those errors use Grafana's error format.
+Grafana rejects some requests before they reach the Gateway, such as those with
+an invalid token or a body that is too large. Those errors use Grafana's error
+format, not the Gateway's.
+
+| Limit | Set by |
+|---|---|
+| Request duration, including a streamed response: 60 seconds | Grafana's plugin route timeout |
+| Request size: 16 MiB | Grafana's plugin message size |
+| Requests running at once | Grafana |
+| Process memory | The container memory limit |
+| 8 provider attempts per request: a model's primary and fallbacks, or the provider keys a request brings for the selected provider | Gateway |
+| 16 MiB per provider response that is not streamed, after decompression | Gateway |
+| 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
+| 30 seconds without activity in a stream | Gateway |
+| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
+
+### Request duration
+
+A request ends at Grafana's route timeout, including every fallback attempt and
+a streamed response. The Gateway records a request that reaches the timeout as
+canceled in its logs and metrics. Set the plugin's termination grace period
+longer than the route timeout, so that requests in progress can finish.
+
+### Memory
+
+Each request holds its body and the provider response in memory, one event at a
+time for a streamed response. Encoding a response as JSON can need several times
+its size. Total memory grows with the number of requests running at once, which
+Grafana controls. Set `GOMEMLIMIT` to about 85–90% of the container memory
+limit, so that the Go runtime frees memory before the container runs out.
 
 ## Learn more
 
@@ -146,8 +251,8 @@ Then work from `ai-gateway/`:
 | After changing | Run |
 | --- | --- |
 | The frontend | `pnpm dev`, and keep it running. The page reloads on each change. |
-| The backend or `provisioning/aigateway/models.yaml` | `GOWORK=$PWD/../go.gateway.work mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
-| `provisioning/grafana.ini` | `docker compose restart grafana` |
+| The backend in `pkg/` | `mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
+| `provisioning/grafana.ini` or `provisioning/aigateway/models.yaml` | `docker compose restart grafana` |
 
 The Gateway refuses Grafana's anonymous sign-in. Create a service account token
 to call it:

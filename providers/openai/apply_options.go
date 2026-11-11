@@ -200,7 +200,7 @@ func applyProviderOptions(body *responses.ResponseNewParams, popts OpenAIRespons
 // applyIncludeAndReasoning populates the include array (logprobs, web search
 // sources, code interpreter outputs, encrypted reasoning) and the reasoning
 // effort/summary block for reasoning models.
-func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, store, webSearchSourcesIncludeSupported bool, defaultReasoningSummary string, caps modelCapabilities, br *buildResult) []provider.Warning {
+func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIResponsesOptions, resolvedEffort string, isReasoning, restrictLogprobs, store, webSearchSourcesIncludeSupported bool, defaultReasoningSummary string, br *buildResult) []provider.Warning {
 	var warnings []provider.Warning
 	includes := map[responses.ResponseIncludable]bool{}
 	for _, inc := range popts.Include {
@@ -217,7 +217,7 @@ func applyIncludeAndReasoning(body *responses.ResponseNewParams, popts OpenAIRes
 		}
 	}
 	logprobsInclude := responses.ResponseIncludableMessageOutputTextLogprobs
-	if isReasoning && caps.supportedReasoningEfforts != nil && (topLogprobs > 0 || includes[logprobsInclude]) {
+	if restrictLogprobs && (topLogprobs > 0 || includes[logprobsInclude]) {
 		delete(includes, logprobsInclude)
 		warnings = append(warnings, provider.Warning{
 			Type: provider.WarnUnsupported, Feature: "logprobs",

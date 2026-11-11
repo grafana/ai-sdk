@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"time"
 
@@ -26,6 +25,7 @@ func main() {
 		Mode              string                       `json:"mode"`
 		ModelID           string                       `json:"modelID"`
 		Options           provider.CallOptions         `json:"options"`
+		GatewayOptions    *grafana.GatewayOptions      `json:"gatewayOptions"`
 		Headers           map[string][]string          `json:"headers"`
 		AbortAfterParts   int                          `json:"abortAfterParts"`
 		AbortBefore       bool                         `json:"abortBefore"`
@@ -36,9 +36,15 @@ func main() {
 		Steps             int                          `json:"steps"`
 		Instructions      string                       `json:"instructions"`
 	}
-	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
+	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
 		return
+	}
+	if input.GatewayOptions != nil {
+		if input.Options.ProviderOptions == nil {
+			input.Options.ProviderOptions = provider.ProviderOptions{}
+		}
+		input.Options.ProviderOptions[input.GatewayOptions.ProviderKey()] = *input.GatewayOptions
 	}
 	if input.PreferBytes {
 		for messageIndex := range input.Options.Prompt {

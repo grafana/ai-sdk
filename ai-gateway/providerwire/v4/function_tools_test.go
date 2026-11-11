@@ -3,10 +3,12 @@ package v4
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
@@ -141,9 +143,9 @@ func TestMapFunctionTools_PreservesExplicitEmptyInputExamples(t *testing.T) {
 func TestUnaryFunctionOutput(t *testing.T) {
 	result := validGenerateResult()
 	result.Content = append(result.Content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{"city":"Rio"}`), ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"hidden"}`)}})
-	mapped, err := mapUnarySuccess(result, 1<<20)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `"input":"{\"city\":\"Rio\"}"`)
 	assert.Contains(t, string(body), `"providerMetadata":{"private":{"secret":"hidden"}}`)
@@ -157,9 +159,9 @@ func TestUnaryFunctionOutput(t *testing.T) {
 				yes := true
 				copyResult.Content[1].Dynamic = &yes
 			}
-			mapped, err := mapUnarySuccess(&copyResult, 1<<20)
+			mapped, err := mapUnarySuccess(&copyResult)
 			require.NoError(t, err)
-			body, ok := encodeUnarySuccess(mapped, 1<<20)
+			body, ok := marshalUnarySuccess(mapped)
 			require.True(t, ok)
 			assert.Contains(t, string(body), `"`+marker+`":true`)
 		})
@@ -182,7 +184,6 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 		{name: "opaque metadata does not grant ownership", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"mcp","toolName":"echo","input":{},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test"}]}}}`, pending: map[string]string{}, status: http.StatusOK},
 		{name: "duplicate historical call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{}},{"type":"tool-call","toolCallId":"call","toolName":"f","input":{}}]}]}`, status: http.StatusBadRequest},
 		{name: "mismatched history result", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerExecuted":true},{"type":"tool-result","toolCallId":"call","toolName":"other","output":{"type":"text","value":"result"}}]}]}`, status: http.StatusBadRequest},
-		{name: "reserved part options", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerOptions":{"gateway":{}}}]}]}`, status: http.StatusBadRequest},
 		{name: "nested output options", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"f","output":{"type":"json","value":false,"providerOptions":{"anthropic":{"private":true}}}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -194,9 +195,9 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 				return
 			}
 			opts := harness.model.receivedOptions()
-			pending, failure := unresolvedProviderCalls(opts.Prompt)
-			require.Nil(t, failure)
-			assert.Equal(t, tc.pending, pending)
+			pending, err := execution.RebuildToolHistory(opts.Prompt)
+			require.NoError(t, err)
+			assert.Equal(t, execution.ToolHistory(tc.pending), pending)
 			if tc.name == "provider continuation" {
 				parts := opts.Prompt[0].Content
 				assert.True(t, parts[0].ProviderExecuted)
@@ -206,32 +207,29 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 			}
 		})
 	}
-	t.Run("reserved namespace precedes MCP metadata", func(t *testing.T) {
-		harness := newRuntimeHarness(t, testLimits())
-		body := `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"gateway":{},"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`
-		response := harness.serve(validRequest(body))
-		assert.Equal(t, http.StatusBadRequest, response.Code)
-		assert.JSONEq(t, string(reservedProviderOptionsError), response.Body.String())
-		assert.Zero(t, harness.resolver.callCount())
-		assert.Zero(t, harness.model.callCount())
+	t.Run("gateway namespace beside MCP metadata", func(t *testing.T) {
+		const call = `{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{%s"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}`
+		pending := make([]execution.ToolHistory, 0, 2)
+		for _, extra := range []string{``, `"gateway":{"marker":true},`} {
+			harness := newRuntimeHarness(t, testLimits())
+			response := harness.serve(validRequest(`{"prompt":[{"role":"assistant","content":[` + fmt.Sprintf(call, extra) + `]}]}`))
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			opts := harness.model.receivedOptions()
+			calls, err := execution.RebuildToolHistory(opts.Prompt)
+			require.NoError(t, err)
+			pending = append(pending, calls)
+			if extra != "" {
+				assert.Contains(t, opts.Prompt[0].Content[0].ProviderOptions, "gateway")
+				assert.Contains(t, opts.Prompt[0].Content[0].ProviderOptions, "anthropic")
+			}
+		}
+		assert.Equal(t, pending[0], pending[1])
 	})
-}
-
-func TestUnresolvedProviderCalls_RejectsAmbiguousHistory(t *testing.T) {
-	for _, prompt := range [][]provider.Message{
-		{provider.NewAssistantMessage(provider.ToolCallPart("call", "echo", json.RawMessage(`{}`)), provider.ToolCallPart("call", "echo", json.RawMessage(`{}`)))},
-		{provider.NewAssistantMessage(provider.ToolCallPart("call", "echo", json.RawMessage(`{}`)), provider.ToolResultPart("call", "other", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "bad"}))},
-	} {
-		_, failure := unresolvedProviderCalls(prompt)
-		require.NotNil(t, failure)
-	}
 }
 
 func TestRuntimeFunctionTools_Boundaries(t *testing.T) {
 	for _, body := range []string{
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"args":{}}]}`,
-		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"gateway":{}}}]}`,
-		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"grafana":{"secret":"private"}}}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}]}]}`,
 		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"text"}}]}]}`,
 	} {
@@ -303,30 +301,26 @@ func TestRuntimeUnaryFunctionOutput_SupportsExecutionMarkers(t *testing.T) {
 	}
 }
 
-func TestUnaryFunctionOutput_CompleteBounds(t *testing.T) {
-	result := validGenerateResult()
-	result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "a", ToolName: "f", Input: json.RawMessage(strings.Repeat("\x00", 32))}}
-	mapped, err := mapUnarySuccess(result, 1<<20)
-	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
-	require.True(t, ok)
-	_, ok = encodeUnarySuccess(mapped, int64(len(body)))
-	assert.True(t, ok)
-	_, ok = encodeUnarySuccess(mapped, int64(len(body)-1))
-	assert.False(t, ok)
+func TestUnaryFunctionOutput_LargeValues(t *testing.T) {
+	large := strings.Repeat("x", 9<<20)
 	for _, field := range []string{"id", "name", "input"} {
-		copyResult := *result
-		copyResult.Content = append([]provider.GenerateContentPart(nil), result.Content...)
-		switch field {
-		case "id":
-			copyResult.Content[0].ToolCallID = strings.Repeat("x", 2048)
-		case "name":
-			copyResult.Content[0].ToolName = strings.Repeat("x", 2048)
-		case "input":
-			copyResult.Content[0].Input = json.RawMessage(strings.Repeat("x", 2048))
-		}
-		_, err := mapUnarySuccess(&copyResult, 1024)
-		assert.Error(t, err)
+		t.Run(field, func(t *testing.T) {
+			result := validGenerateResult()
+			result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "a", ToolName: "f", Input: json.RawMessage(`{}`)}}
+			switch field {
+			case "id":
+				result.Content[0].ToolCallID = large
+			case "name":
+				result.Content[0].ToolName = large
+			case "input":
+				result.Content[0].Input = json.RawMessage(`{"value":"` + large + `"}`)
+			}
+			mapped, err := mapUnarySuccess(result)
+			require.NoError(t, err)
+			body, ok := marshalUnarySuccess(mapped)
+			require.True(t, ok)
+			assert.Greater(t, len(body), 9<<20)
+		})
 	}
 }
 

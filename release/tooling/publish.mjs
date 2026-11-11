@@ -38,7 +38,10 @@ export async function main(args, env = process.env) {
     validate: libraryValidator(inventory, env.GH_READ_TOKEN),
     fetchImpl: async (url, options) => { await verifyProtections(github, approval, app); return fetch(url, options); } });
   console.log(JSON.stringify(report, null, 2));
-  if (mode === 'libraries') {
+  const { data: current } = await github.octokit.repos.getCommit({ ...REPO, ref: 'main' });
+  if (mode === 'libraries' && current.sha !== toolingRevision) {
+    console.log(`::notice::main advanced to ${current.sha}; the release run for that push prepares the next release pull request`);
+  } else if (mode === 'libraries') {
     const beforeWrite = async () => {
       assert.equal(diagnostics.length, 0, 'resolve commit parsing diagnostics before preparation writes');
       await verifyProtections(github, approval, app);

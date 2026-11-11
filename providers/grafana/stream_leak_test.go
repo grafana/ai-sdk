@@ -51,7 +51,7 @@ func TestModel_StreamAggregateGoroutineCleanup(t *testing.T) {
 					source = io.NopCloser(strings.NewReader(strings.Repeat(sseFrame(`{"type":"text-delta","id":"a","delta":"x"}`), 1024)))
 				}
 				body := &atomicBody{ReadCloser: source}
-				result, err := streamFromBody(t, body, nil).DoStream(ctx, provider.CallOptions{})
+				result, err := streamFromBody(t, body).DoStream(ctx, provider.CallOptions{})
 				require.NoError(t, err)
 				results = append(results, result)
 				bodies = append(bodies, body)

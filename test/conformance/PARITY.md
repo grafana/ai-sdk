@@ -46,4 +46,4 @@ Other records have their own homes:
 | AI Gateway | Go extension | mixed | `openspec/specs/gateway-*` and `grafana-gateway-client` specs, `ai-gateway/` tests |
 | Gateway provider conformance matrix | Conformance harness | mixed | `mise run test-conformance-gateway`, [gateway matrix guide](README.md#gateway-compatibility-matrix-required-for-merging) |
 | Baseline and fixture inventory | Conformance harness | automated | `mise run validate-parity-baseline`, `mise run parity-coverage` |
-| Published module dependencies | Conformance harness | automated | `mise run verify-module-resolution` |
+| Published module dependencies | Conformance harness | automated | `mise run verify-module-requirements`, post-publication verification in `scripts/release_consumer.py` |

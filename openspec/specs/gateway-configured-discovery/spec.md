@@ -79,7 +79,7 @@ Authorized route, candidate, provider-instance, provider and model identifiers S
 - **THEN** discovery SHALL retain that identifier without introducing account provisioning or a new policy engine
 
 ### Requirement: Atomic discovery resource and consistency limits
-Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics.
+Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 8 candidates per route (the shared provider attempt bound), 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics.
 
 #### Scenario: Server policy dimensions reach their boundaries
 - **WHEN** a configured catalog reaches an exact public-ID, candidate, alias or string ceiling

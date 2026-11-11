@@ -9,16 +9,16 @@ import (
 )
 
 // Summary projects an event-local failure without retaining its native data.
-func Summary(err error, sourceBytes int64) (failure *Failure) {
+func Summary(err error) (failure *Failure) {
 	defer func() {
 		if recover() != nil {
 			failure = nil
 		}
 	}()
-	return summarize(err, sourceBytes)
+	return summarize(err)
 }
 
-func summarize(err error, sourceBytes int64) *Failure {
+func summarize(err error) *Failure {
 	if err == nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func summarize(err error, sourceBytes int64) *Failure {
 		}
 	}
 	if api == nil {
-		message := boundedText(err.Error(), sourceBytes)
+		message := err.Error()
 		if message == "" {
 			return nil
 		}
@@ -50,15 +50,9 @@ func summarize(err error, sourceBytes int64) *Failure {
 	if len(api.Data) != 0 {
 		source = api.Data
 	} else if api.ResponseBody != "" {
-		if int64(len(api.ResponseBody)) > sourceBytes {
-			return availableFailure(failure)
-		}
 		source = []byte(api.ResponseBody)
 	}
 	if len(source) != 0 {
-		if int64(len(source)) > sourceBytes {
-			return availableFailure(failure)
-		}
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(source, &fields) != nil || fields == nil {
 			return availableFailure(failure)
@@ -72,10 +66,10 @@ func summarize(err error, sourceBytes int64) *Failure {
 		if raw, exists := fields["message"]; exists {
 			message = readString(raw)
 		}
-		failure.Type = boundedText(readString(fields["type"]), sourceBytes)
-		failure.Code = readCode(fields["code"], sourceBytes)
+		failure.Type = readString(fields["type"])
+		failure.Code = readCode(fields["code"])
 	}
-	failure.Message = boundedText(message, sourceBytes)
+	failure.Message = message
 	return availableFailure(failure)
 }
 
@@ -92,9 +86,9 @@ func readString(raw json.RawMessage) string {
 	return value
 }
 
-func readCode(raw json.RawMessage, sourceBytes int64) json.RawMessage {
+func readCode(raw json.RawMessage) json.RawMessage {
 	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || int64(len(raw)) > sourceBytes {
+	if len(raw) == 0 {
 		return nil
 	}
 	if raw[0] == '"' {
@@ -114,11 +108,4 @@ func readCode(raw json.RawMessage, sourceBytes int64) json.RawMessage {
 		return nil
 	}
 	return encoded
-}
-
-func boundedText(value string, sourceBytes int64) string {
-	if int64(len(value)) > sourceBytes {
-		return ""
-	}
-	return value
 }

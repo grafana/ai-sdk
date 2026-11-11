@@ -23,7 +23,9 @@ Schema validation protects shape, not authorization or intent.
 
 Use [tool approval](../guides/tool-approval.md) for destructive, external, or
 high-value actions. When approval state travels through a browser, sign it with
-`WithToolApprovalSecret` and verify it on resume.
+`WithToolApprovalSecret` and verify it on resume. Signing covers locally
+executed tools; provider-executed approvals are unsigned and go to the provider
+unchecked.
 
 Approval is not a substitute for authorization. Recheck current permissions and
 resource state immediately before execution, even after a user approved the
@@ -47,6 +49,9 @@ sensitive actions.
 - Avoid logging prompts, reasoning, tool payloads, files, and outputs by default.
 - Review provider retention and training settings for the selected service.
 - Consider where provider-executed tools and remote MCP servers send data.
+- On a shared provider account, an allowed custom Anthropic skill is available
+  to every caller of that model. The Gateway refuses caller container IDs on
+  its configured models for the same reason.
 - Apply retention and deletion policy to persisted `UIMessage` history.
 
 Redaction reduces accidental exposure but does not make unnecessary capture

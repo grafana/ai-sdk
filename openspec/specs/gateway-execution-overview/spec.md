@@ -12,7 +12,11 @@ The Gateway SHALL provide a pure projector for one invocation's ordered observed
 
 #### Scenario: Compact observed execution overview policy
 - **WHEN** an invocation is projected into an optional execution overview
-- **THEN** It SHALL include requested/canonical route identity once and each observed candidate's provider/backend model, optional configured instance, outcome and optional failure summary. It SHALL NOT emit unrun configured candidates, a selected index, timestamps, completion/replay claims, fallback-intent flags, raw diagnostic trees or disposition taxonomies. Only the last attempt SHALL be eligible for selected or canceled outcome. Selected SHALL mean accepted unary result or first stream part, not successful completion. Invalid, incomplete or mixed invocation observation SHALL omit the optional overview rather than invent attribution.
+- **THEN** It SHALL include the requested route identity once, the canonical route identity once when a catalog resolution supplied one, and each observed candidate's provider/backend model, optional configured instance, outcome and optional failure summary. It SHALL NOT emit unrun configured candidates, a selected index, timestamps, completion/replay claims, fallback-intent flags, raw diagnostic trees or disposition taxonomies. Only the last attempt SHALL be eligible for selected or canceled outcome. Selected SHALL mean accepted unary result or first stream part, not successful completion. Invalid, incomplete or mixed invocation observation SHALL omit the optional overview rather than invent attribution.
+- **AND** Configured overviews SHALL always include the canonical route identity. Overviews without a catalog resolution SHALL omit the canonical identity and configured instances rather than substitute the requested identity, a native identity or a credential-derived value.
+- **AND** The selected attempt, of a configured candidate or a request account alike, SHALL carry an optional served model identity only when its output reported an Anthropic server-side fallback hop: the `to.model` of the latest valid `anthropic.fallback` marker observed before that carrier is published, across all response segments of a stream. A marker whose `to.model` is empty or invalid UTF-8 SHALL be ignored. The attempt's provider/backend model SHALL remain the configured or requested destination. Failed and canceled attempts, outputs without a valid marker and native response model IDs SHALL NOT produce a served model identity. The routing summary SHALL NOT carry it.
+- **AND** Every carrier that publishes a selected attempt SHALL use the current served model identity: unary result metadata, unary invalid-output and mapping error metadata, each stream finish's metadata, committed stream error metadata, terminal stream errors after a wait ends (closed, deadline, canceled, idle timeout or invalid output) and the adapter-failure terminal stream error.
+- **AND** The owned namespace schema SHALL require the requested identity and attempts, SHALL accept an absent canonical identity, and SHALL accept an optional nonempty served model identity only on a selected attempt.
 
 #### Scenario: Earlier candidate fails and later candidate is selected
 - **WHEN** one invocation reports a failed primary followed by a selected secondary
@@ -26,13 +30,37 @@ The Gateway SHALL provide a pure projector for one invocation's ordered observed
 - **WHEN** fallback accepts an error part as the first stream part
 - **THEN** the overview SHALL report selection without a completion claim or a duplicated stream-error history
 
+#### Scenario: Invocation without catalog resolution
+- **WHEN** a request-account invocation for `openai/gpt-5` reports a failed then a selected native attempt
+- **THEN** the overview SHALL carry `requestedModelId` `openai/gpt-5`, no `canonicalModelId`, and two attempts with native provider `openai`, model `gpt-5`, no `providerInstance`, the first attempt's own failure summary and the second's selected outcome
+
+#### Scenario: Server-side fallback served the response
+- **WHEN** a selected configured Anthropic candidate for backend `claude-fable-5` returns output with an `anthropic.fallback` marker from `claude-fable-5` to `claude-opus-4-8`, and its native response model ID is `claude-fable-5`
+- **THEN** the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8` in unary result metadata and in stream finish metadata
+
+#### Scenario: Server-side fallback served a request-account response
+- **WHEN** a selected BYOK Anthropic account for `anthropic/claude-fable-5` returns output with an `anthropic.fallback` marker to `claude-opus-4-8`
+- **THEN** the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8`, with no canonical identity, and the overview SHALL still be published
+
+#### Scenario: Stream error after a server-side fallback hop
+- **WHEN** a selected stream emits an `anthropic.fallback` marker to `claude-opus-4-8`, then ends with a committed stream error part or a terminal wait error such as the idle timeout
+- **THEN** that error's metadata SHALL carry the selected attempt with `servedModelId` `claude-opus-4-8`
+
+#### Scenario: Server-side fallback in two response segments
+- **WHEN** a selected stream's first segment carries a marker to `claude-opus-4-8` and ends with a finish, and its second segment carries a marker to `claude-sonnet-5` and ends with a finish
+- **THEN** the first finish SHALL carry `servedModelId` `claude-opus-4-8` and the second SHALL carry `claude-sonnet-5`, and both SHALL carry the same `gateway.routing` summary as without the markers
+
+#### Scenario: No server-side fallback hop
+- **WHEN** a selected attempt's output contains no valid `anthropic.fallback` marker
+- **THEN** the attempt SHALL omit `servedModelId`, and existing overviews SHALL remain byte-identical
+
 ### Requirement: Small native failure summaries
 
 Candidate-local projection SHALL retain available native message, type, string-or-number code and native status.
 
 #### Scenario: Small native failure summaries policy
 - **WHEN** a candidate-local native failure is summarized
-- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
+- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed or unavailable diagnostics SHALL degrade optional fields without creating an error. Projection SHALL NOT take or apply a source byte limit; native body size is bounded by the outbound transport under gateway-resource-policy.
 
 #### Scenario: Original native failure survives cancellation
 - **WHEN** a canceled decision retains a candidate-native SourceErr
@@ -50,25 +78,9 @@ Candidate-local projection SHALL retain available native message, type, string-o
 - **WHEN** a native error supplies a large numeric code
 - **THEN** projection SHALL retain its numeric value without float conversion
 
-### Requirement: Best-effort metadata placement under existing envelope limits
-
-Metadata enrichment SHALL place the overview under gateway.execution and, when fitting, relocate the original native gateway value under gateway.nativeMetadata without merging it into trusted facts.
-
-#### Scenario: Best-effort metadata placement under existing envelope limits policy
-- **WHEN** an integrator attempts optional metadata enrichment
-- **THEN** Other namespaces SHALL remain opaque. The caller SHALL retain coherent existing source/read and complete-response or complete-frame limits, not an overview allocation, until the coordinated shared transport policy replaces them. Encoding/fit failure SHALL return the original provider metadata without truncation or a new error. When native relocation alone cannot fit, the primary response SHALL be preserved and the native namespace SHALL remain opaque. Namespace presence alone SHALL NOT establish Gateway provenance, routing authority or absence of attempts. Primary protocol encoding failures SHALL retain existing behavior.
-
-#### Scenario: Native namespace collides and enrichment fits
-- **WHEN** native metadata already has a gateway value and the enriched complete envelope fits
-- **THEN** the complete native value SHALL appear under nativeMetadata while execution facts remain separate and inputs remain unchanged
-
-#### Scenario: Relocation alone cannot fit
-- **WHEN** the original complete envelope fits but adding or relocating Gateway metadata does not
-- **THEN** enrichment SHALL preserve the original metadata and SHALL NOT fail the successful response or finish event
-
-#### Scenario: Enrichment cannot be encoded
-- **WHEN** optional overview assembly contains malformed data
-- **THEN** enrichment SHALL return the original metadata without changing existing content, error or finish behavior
+#### Scenario: Large native error body
+- **WHEN** a native error body or message exceeds the former 8 MiB source limit but is within the outbound bound
+- **THEN** projection SHALL still return its message, type, code and status
 
 ### Requirement: Dormant foundation and owned schema
 
@@ -77,3 +89,67 @@ The Gateway SHALL define and test a compact namespace schema independently of pr
 #### Scenario: Only the foundation is applied
 - **WHEN** this change is applied without the activation change
 - **THEN** existing runtime output SHALL remain unchanged while focused Go and strict TypeScript schema tests exercise the new projection
+
+### Requirement: Unconditional metadata placement
+Enrichment SHALL place the overview under `gateway.execution` and its routing summary under `gateway.routing`, and always relocate a native `gateway` value, complete, under `gateway.nativeMetadata`, without merging it into trusted facts. Other namespaces SHALL remain opaque. Enrichment SHALL have no size limit and SHALL be absent only when no overview exists or it cannot be encoded. Namespace presence SHALL NOT establish provenance, routing authority or absence of attempts.
+
+#### Scenario: Native namespace collides
+- **WHEN** native metadata already has a `gateway` value and an overview is attached
+- **THEN** the complete native value SHALL appear under `nativeMetadata` while execution and routing facts remain separate and inputs remain unchanged
+
+#### Scenario: Large relocated namespace
+- **WHEN** the native `gateway` value or the overview is larger than the former unary or frame budget
+- **THEN** relocation SHALL still happen and the complete enriched output SHALL be written
+
+#### Scenario: Enrichment cannot be encoded
+- **WHEN** optional overview assembly contains malformed data
+- **THEN** enrichment SHALL return no metadata, without truncation or a new error, and existing content, error or finish behavior SHALL remain unchanged
+
+#### Scenario: Routing travels with the overview
+- **WHEN** an overview is published on a unary result, a unary or setup error document, a stream finish or a committed stream error
+- **THEN** the same carrier SHALL contain `gateway.routing` projected from that overview, and SHALL contain neither when no overview is published
+
+### Requirement: Routing summary projection
+The routing summary SHALL project the published overview, grouping each attempt under the model its chain position was composed from. It SHALL use a subset of Vercel's documented `gateway.routing` field names: `originalModelId`, `canonicalSlug`, `resolvedProvider`, `finalProvider`, `modelAttemptCount`, `totalProviderAttemptCount` and `modelAttempts`. It SHALL add no attempt or outcome beyond the overview's.
+
+#### Scenario: Configured fallback model serves the call
+- **WHEN** a call requested alias `a`, its route `A` had one failed candidate, and `models` entry `b` resolved to route `B`, whose anthropic candidate was selected
+- **THEN** `originalModelId` SHALL be `a`, `canonicalSlug` SHALL be `A`, `resolvedProvider` SHALL be the first attempt's provider, and `finalProvider` SHALL be `anthropic`
+- **AND** `modelAttempts` SHALL list `A` with one unsuccessful provider attempt, then `B` with one successful provider attempt, and `totalProviderAttemptCount` SHALL be 2
+
+#### Scenario: Unrouted call
+- **WHEN** a configured call without routing controls publishes an overview
+- **THEN** `modelAttempts` SHALL contain exactly one entry for the requested route
+
+#### Scenario: All attempts fail
+- **WHEN** every invoked attempt failed or the last was canceled
+- **THEN** `finalProvider` SHALL be absent and every provider attempt SHALL have `success` false
+
+### Requirement: Routing model attempt fields
+Each `modelAttempts` entry SHALL contain `modelId`, `success`, `providerAttemptCount` and `providerAttempts`, plus `canonicalSlug` when the model came from catalog resolution. It SHALL appear only for models with at least one observed attempt. `modelId` SHALL be the requested ID or `models` entry as sent, and `canonicalSlug` its resolved public ID.
+
+#### Scenario: BYOK model attempts
+- **WHEN** a BYOK call's `anthropic/x` account fails and its `openai/y` fallback account is selected
+- **THEN** `modelAttempts` SHALL list `anthropic/x` then `openai/y`, each without `canonicalSlug`, and the top-level `canonicalSlug` SHALL be absent
+
+#### Scenario: Model never reached
+- **WHEN** a `models` entry was composed into the chain but the call committed before reaching it
+- **THEN** no `modelAttempts` entry SHALL describe it
+
+### Requirement: Routing provider attempt fields
+Each `providerAttempts` entry SHALL contain `provider` and `success`, plus `statusCode` when the attempt's failure summary has one. `success` SHALL mean the attempt was selected, not that a stream completed. The summary SHALL NOT contain timestamps, request or response IDs, costs, credential types, account indexes, unrun candidates or prose planning text.
+
+#### Scenario: Selected stream later errors
+- **WHEN** a stream's selected attempt later emits an error part
+- **THEN** its provider attempt SHALL still have `success` true, and the error SHALL remain in the stream's own error part
+
+#### Scenario: Failed attempt with native status
+- **WHEN** an attempt failed with a native 429 summary
+- **THEN** its provider attempt SHALL have `success` false and `statusCode` 429, and the full summary SHALL remain only in `gateway.execution`
+
+### Requirement: Routing summary validity
+The routing summary SHALL be published exactly when the overview is, on the same carrier. It SHALL never invent or reorder attempts, and SHALL describe the same attempts as `gateway.execution`.
+
+#### Scenario: Overview omitted
+- **WHEN** the observed attempts outnumber the attempts the call's chain expected
+- **THEN** neither `gateway.execution` nor `gateway.routing` SHALL be published

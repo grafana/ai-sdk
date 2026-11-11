@@ -8,17 +8,13 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const (
-	maxErrorResponseBytes     = 64 << 10
-	statusClientClosedRequest = 499
-)
+const statusClientClosedRequest = 499
 
 type errorType string
 type errorCode string
 
 const (
 	errorInvalidRequest errorType = "invalid_request_error"
-	errorAuthentication errorType = "authentication_error"
 	errorForbidden      errorType = "forbidden"
 	errorModelNotFound  errorType = "model_not_found"
 	errorRateLimit      errorType = "rate_limit_exceeded"
@@ -26,7 +22,6 @@ const (
 	errorDependency     errorType = "failed_dependency"
 
 	codeInvalidRequest errorCode = "invalid_request"
-	codeAuthentication errorCode = "authentication_error"
 	codeForbidden      errorCode = "forbidden"
 	codeModelNotFound  errorCode = "model_not_found"
 	codeRateLimit      errorCode = "rate_limit_exceeded"
@@ -36,6 +31,7 @@ const (
 	codeTimeout        errorCode = "timeout"
 	codeCancellation   errorCode = "canceled"
 	codeInternal       errorCode = "internal_error"
+	codeProviderStream errorCode = "provider_error"
 )
 
 type errorDefinition struct {
@@ -67,7 +63,7 @@ var publicErrors = [...]errorDefinition{
 	},
 	safeGatewayControl: {
 		status:  http.StatusBadRequest,
-		message: "unsupported gateway control; only gateway.byok is supported",
+		message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials",
 		kind:    errorInvalidRequest,
 		code:    codeInvalidRequest,
 	},
@@ -134,18 +130,17 @@ var publicErrors = [...]errorDefinition{
 		code:      codeInternal,
 		retryable: true,
 	},
-	safeAuthentication: {
-		status:    http.StatusUnauthorized,
-		message:   "authentication failed",
-		kind:      errorAuthentication,
-		code:      codeAuthentication,
-		retryable: false,
-	},
 	safePermission: {
 		status:    http.StatusForbidden,
 		message:   "forbidden",
 		kind:      errorForbidden,
 		code:      codeForbidden,
+		retryable: false,
+	},
+	safeProviderStream: {
+		message:   "provider stream error",
+		kind:      errorInternal,
+		code:      codeProviderStream,
 		retryable: false,
 	},
 }
@@ -176,7 +171,7 @@ func definitionForError(value safeError) errorDefinition {
 		return publicErrors[safeInternal]
 	}
 	definition := publicErrors[value.category]
-	if value.category == safeInvalidRequest {
+	if value.category == safeInvalidRequest || value.category == safeModelNotFound {
 		if message := requestFailureMessage(value.reason); message != "" {
 			definition.message = message
 		}
@@ -198,6 +193,14 @@ func requestFailureMessage(reason requestFailureReason) string {
 		return "reserved provider option namespace"
 	case policyProtectedCallHeader:
 		return "protected call header"
+	case routingControls:
+		return "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
+	case routingNoCandidates:
+		return "providerOptions.gateway.only excludes every candidate"
+	case routingAttemptBound:
+		return "routing exceeds the bound of 8 provider attempts"
+	case routingFallbackModel:
+		return "a providerOptions.gateway.models entry is not an available model"
 	default:
 		return ""
 	}
@@ -207,24 +210,23 @@ func (definition errorDefinition) fields() publicError {
 	return publicError{Message: definition.message, Type: definition.kind, Code: definition.code}
 }
 
-func encodeHTTPError(value safeError, metadata provider.ProviderMetadata, limit int64) (int, []byte) {
+func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, []byte) {
+	if value.category == safeProviderStream {
+		value = safeError{category: safeInternal}
+	}
 	definition := definitionForError(value)
-	response := errorResponse{Error: definition.fields()}
-	original, _ := json.Marshal(response)
-	if len(metadata) == 0 || int64(len(original)) > limit {
-		return definition.status, original
+	response := errorResponse{Error: definition.fields(), Metadata: metadata}
+	body, err := json.Marshal(response)
+	if err != nil {
+		response.Metadata = nil
+		body, _ = json.Marshal(response)
 	}
-	response.Metadata = metadata
-	enriched, err := json.Marshal(response)
-	if err != nil || int64(len(enriched)) > limit {
-		return definition.status, original
-	}
-	return definition.status, enriched
+	return definition.status, body
 }
 
 func streamErrorResponse(value safeError) errorResponse {
 	switch value.category {
-	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation:
+	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation, safeProviderStream:
 	default:
 		value = safeError{category: safeInternal}
 	}
@@ -243,37 +245,21 @@ func encodeErrorFrame(response errorResponse) ([]byte, error) {
 	return append(append([]byte("data: "), body...), '\n', '\n'), nil
 }
 
-func streamErrorFrameForSafeError(value safeError) []byte {
-	frame, _ := encodeErrorFrame(streamErrorResponse(value))
+func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure) []byte {
+	response := streamErrorResponse(value)
+	if len(metadata) != 0 || current != nil {
+		response.Error.Data = &errorData{Metadata: metadata, NativeError: current}
+		if frame, err := encodeErrorFrame(response); err == nil {
+			return frame
+		}
+		response.Error.Data = nil
+	}
+	frame, _ := encodeErrorFrame(response)
 	return frame
 }
 
-func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure, limit int64) ([]byte, bool) {
-	response := streamErrorResponse(value)
-	original, _ := encodeErrorFrame(response)
-	if int64(len(original)) > limit {
-		return nil, false
-	}
-	accepted := original
-	if current != nil {
-		response.Error.Data = &errorData{NativeError: current}
-		frame, err := encodeErrorFrame(response)
-		if err != nil || int64(len(frame)) > limit {
-			return original, true
-		}
-		accepted = frame
-	}
-	if len(metadata) != 0 {
-		response.Error.Data = &errorData{Metadata: metadata, NativeError: current}
-		if frame, err := encodeErrorFrame(response); err == nil && int64(len(frame)) <= limit {
-			accepted = frame
-		}
-	}
-	return accepted, true
-}
-
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata) {
-	status, body := encodeHTTPError(value, metadata, min(h.limits.UnaryResponseBytes, maxErrorResponseBytes))
+	status, body := encodeHTTPError(value, metadata)
 	writeErrorResponse(w, status, body)
 }
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,7 +31,6 @@ var (
 
 var (
 	canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	canonicalAuthenticationError = []byte(`{"error":{"message":"authentication failed","type":"authentication_error","param":null,"code":"authentication_error"}}`)
 	canonicalPermissionError     = []byte(`{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`)
 	canonicalModelNotFoundError  = []byte(`{"error":{"message":"model not found","type":"model_not_found","param":null,"code":"model_not_found"}}`)
 	canonicalRateLimitError      = []byte(`{"error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded"}}`)
@@ -50,6 +51,7 @@ var (
 )
 
 var (
+	canonicalEmptyStartFrame              = []byte("data: {\"type\":\"stream-start\",\"warnings\":[]}\n\n")
 	canonicalRateLimitStreamErrorFrame    = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"rate limit exceeded\",\"type\":\"rate_limit_exceeded\",\"param\":null,\"code\":\"rate_limit_exceeded\",\"statusCode\":429,\"retryable\":true}}\n\n")
 	canonicalOverloadStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"service overloaded\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"overloaded\",\"statusCode\":503,\"retryable\":true}}\n\n")
 	canonicalDependencyStreamErrorFrame   = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"failed dependency\",\"type\":\"failed_dependency\",\"param\":null,\"code\":\"failed_dependency\",\"statusCode\":424,\"retryable\":false}}\n\n")
@@ -57,6 +59,7 @@ var (
 	canonicalTimeoutStreamErrorFrame      = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request timed out\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"timeout\",\"statusCode\":504,\"retryable\":true}}\n\n")
 	canonicalCancellationStreamErrorFrame = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request canceled\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"canceled\",\"statusCode\":499,\"retryable\":false}}\n\n")
 	canonicalInternalStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"internal error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"internal_error\",\"statusCode\":500,\"retryable\":true}}\n\n")
+	canonicalProviderStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"provider stream error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"provider_error\",\"retryable\":false}}\n\n")
 )
 
 type wireSchemaValidator struct {
@@ -140,8 +143,9 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"raw","rawValue":{"type":"response.created","sequence_number":0}}`,
 		`{"type":"raw","rawValue":null}`,
 		`{"type":"raw","rawValue":["native",1]}`,
+		`{"type":"raw"}`,
 	}
-	for _, frame := range [][]byte{
+	statusBearing := [][]byte{
 		canonicalRateLimitStreamErrorFrame,
 		canonicalOverloadStreamErrorFrame,
 		canonicalDependencyStreamErrorFrame,
@@ -149,15 +153,16 @@ func TestStreamEventSchema(t *testing.T) {
 		canonicalTimeoutStreamErrorFrame,
 		canonicalCancellationStreamErrorFrame,
 		canonicalInternalStreamErrorFrame,
-	} {
-		valid = append(valid, string(frame[len("data: "):len(frame)-len("\n\n")]))
+	}
+	payload := func(frame []byte) string { return string(frame[len("data: ") : len(frame)-len("\n\n")]) }
+	for _, frame := range slices.Concat(statusBearing, [][]byte{canonicalProviderStreamErrorFrame}) {
+		valid = append(valid, payload(frame))
 	}
 	for _, document := range valid {
 		require.NoError(t, compiled.Validate(json.RawMessage(document)), document)
 	}
 	invalid := []string{
 		`{"type":"stream-start"}`,
-		`{"type":"raw"}`,
 		`{"type":"raw","rawValue":{},"extra":true}`,
 		`{"type":"stream-start","warnings":[{"type":"other"}]}`,
 		`{"type":"response-metadata","modelId":null}`,
@@ -177,6 +182,18 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"custom","kind":"example.kind","providerMetadata":null}`,
 		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":[]}}`,
 		`{"type":"custom","kind":"example.kind","id":"extra"}`,
+	}
+	providerStream := payload(canonicalProviderStreamErrorFrame)
+	invalid = append(invalid,
+		strings.Replace(providerStream, `"retryable":false`, `"statusCode":500,"retryable":false`, 1),
+		strings.Replace(providerStream, `"retryable":false`, `"statusCode":null,"retryable":false`, 1),
+		strings.Replace(providerStream, `"retryable":false`, `"retryable":true`, 1),
+		strings.Replace(providerStream, "provider stream error", "upstream failure", 1),
+		strings.Replace(providerStream, "internal_server_error", "failed_dependency", 1),
+	)
+	statusCodeMember := regexp.MustCompile(`"statusCode":\d+,`)
+	for _, frame := range statusBearing {
+		invalid = append(invalid, statusCodeMember.ReplaceAllString(payload(frame), ""))
 	}
 	for _, document := range invalid {
 		assert.Error(t, compiled.Validate(json.RawMessage(document)), document)
@@ -254,10 +271,40 @@ func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 			overview := execution.Project("alias", "public", []fallback.Attempt{
 				{Index: 1, Provider: "native", ModelID: "first", Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true},
 				{Index: 2, Provider: "native", ModelID: "second", Outcome: outcome},
-			}, nil, 4096)
+			}, nil)
 			require.NotNil(t, overview)
 			metadata := execution.Metadata(overview, provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"native":true},"null":null}`)})
 			require.NoError(t, compiled.Validate(metadata["gateway"]))
 		})
 	}
+	t.Run("served model", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			attempt execution.Attempt
+			valid   bool
+		}{
+			{"selected", execution.Attempt{Provider: "anthropic", ModelID: "claude-a", ServedModelID: "claude-b", Outcome: fallback.AttemptSelected}, true},
+			{"failed", execution.Attempt{Provider: "anthropic", ModelID: "claude-a", ServedModelID: "claude-b", Outcome: fallback.AttemptFailed}, false},
+			{"canceled", execution.Attempt{Provider: "anthropic", ModelID: "claude-a", ServedModelID: "claude-b", Outcome: fallback.AttemptCanceled}, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				metadata := execution.Metadata(&execution.Overview{RequestedModelID: "public", CanonicalModelID: "public", Attempts: []execution.Attempt{tc.attempt}}, nil)
+				err := compiled.Validate(metadata["gateway"])
+				if tc.valid {
+					require.NoError(t, err)
+					return
+				}
+				require.Error(t, err)
+			})
+		}
+		require.Error(t, compiled.Validate(json.RawMessage(`{"execution":{"requestedModelId":"public","attempts":[{"provider":"anthropic","modelId":"claude-a","servedModelId":"","outcome":"selected"}]}}`)))
+	})
+	t.Run("request accounts", func(t *testing.T) {
+		metadata := execution.Metadata(&execution.Overview{RequestedModelID: "openai/gpt-5", Attempts: []execution.Attempt{
+			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "overloaded", StatusCode: 503}},
+			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptSelected},
+		}}, nil)
+		assert.NotContains(t, string(metadata["gateway"]), "canonicalModelId")
+		require.NoError(t, compiled.Validate(metadata["gateway"]))
+	})
 }

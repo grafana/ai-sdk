@@ -294,6 +294,55 @@ func TestNewResponses_AssistantHistory(t *testing.T) {
 	}
 }
 
+func TestNewResponses_ReasoningPartsSharingItemID(t *testing.T) {
+	firstEncrypted, lastEncrypted := "enc_first", "enc_last"
+	for _, tc := range []struct {
+		name  string
+		store bool
+		want  []any
+	}{
+		{name: "stored", store: true, want: []any{map[string]any{"type": "item_reference", "id": "rs_1"}}},
+		{name: "unstored", want: []any{map[string]any{
+			"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted,
+			"summary": []any{
+				map[string]any{"type": "summary_text", "text": "first"},
+				map[string]any{"type": "summary_text", "text": "second"},
+			},
+		}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body []byte
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var err error
+				body, err = io.ReadAll(req.Body)
+				require.NoError(t, err)
+				return jsonHTTPResponse(req, http.StatusOK, responseWithoutOutput), nil
+			})}
+			model, err := NewResponses(t.Context(), "openai.gpt-5.6-luna",
+				Config{BaseURL: "https://provider.example.test/v1", SkipAuth: true},
+				option.WithHTTPClient(client), option.WithMaxRetries(0))
+			require.NoError(t, err)
+
+			reasoning := func(text string, encrypted *string) provider.ContentPart {
+				part := provider.ReasoningPart(text)
+				part.ProviderOptions = provider.BuildProviderOptions(openaiprovider.OpenAIPartOptions{ItemID: "rs_1", ReasoningEncryptedContent: encrypted})
+				return part
+			}
+			_, err = model.DoGenerate(t.Context(), provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewAssistantMessage(reasoning("first", &firstEncrypted), reasoning("second", &lastEncrypted))},
+				ProviderOptions: provider.BuildProviderOptions(openaiprovider.OpenAIResponsesOptions{Store: &tc.store}),
+			})
+			require.NoError(t, err)
+
+			var request struct {
+				Input []any `json:"input"`
+			}
+			require.NoError(t, json.Unmarshal(body, &request))
+			assert.Equal(t, tc.want, request.Input)
+		})
+	}
+}
+
 func TestNewResponses_DefaultRoutes(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -1,5 +1,4 @@
 import copy
-from contextlib import chdir
 import hashlib
 import io
 import json
@@ -12,7 +11,6 @@ from unittest.mock import patch
 import zipfile
 
 import release_authorization as authorization
-import release_consumer
 import release_readiness as readiness
 
 
@@ -27,7 +25,7 @@ class MergedAuthorizationTest(unittest.TestCase):
         self.git("init", "-q")
         self.git("config", "user.email", "test@example.com")
         self.git("config", "user.name", "Test")
-        self.config = {"packages": {".": {}, "providers/openai": {"component": "providers/openai"}}}
+        self.config = {"separate-pull-requests": True, "packages": {".": {}, "providers/openai": {"component": "providers/openai"}}}
         Path(readiness.MANIFEST).write_text('{".": "0.1.0-alpha.1"}')
         Path("release-please-config.json").write_text(json.dumps(self.config))
         Path(".github/workflows").mkdir(parents=True)
@@ -53,7 +51,7 @@ class MergedAuthorizationTest(unittest.TestCase):
                    "head": {"sha": self.head, "ref": "release-please--branches--main", "repo": repo},
                    "base": {"sha": self.base, "ref": "main", "repo": repo}}
         with patch.dict(os.environ, {"GITHUB_RUN_ID": "200", "GITHUB_RUN_ATTEMPT": "1"}):
-            self.record = readiness.readiness_record(self.pr, ".", "0.1.0-alpha.2")
+            self.record = readiness.readiness_record(self.pr, {".": "0.1.0-alpha.2"})
         self.git("checkout", "--detach", self.base)
         self.git("merge", "--squash", self.head)
         self.git("commit", "-qm", "squash")
@@ -77,7 +75,9 @@ class MergedAuthorizationTest(unittest.TestCase):
         for name in ["../library-readiness.json", "/library-readiness.json", "other.json"]:
             with self.subTest(name=name), self.assertRaises(ValueError):
                 authorization.read_record(self.archive(name=name))
-        for record in [dict(self.record, schemaVersion=2), dict(self.record, unknown=True),
+        for record in [dict(self.record, schemaVersion=1), dict(self.record, unknown=True),
+                       dict(self.record, components={}), dict(self.record, components={".": "not a version"}),
+                       dict(self.record, components=[".", "0.1.0"]),
                        dict(self.record, baseSha="main"), dict(self.record, runAttempt=None),
                        dict(self.record, bodyDigest="x" * 65536)]:
             with self.subTest(record=list(record)), self.assertRaises(ValueError):
@@ -87,8 +87,9 @@ class MergedAuthorizationTest(unittest.TestCase):
 
     def test_actual_squash_tree_matches_successful_pr_test_merge(self):
         self.assertNotEqual(self.record["mergeSha"], self.merge)
-        component, parent, roots = authorization.verify_merged(self.candidate, self.pr, self.record)
-        self.assertEqual((component, parent, roots), (".", self.base, set(self.config["packages"])))
+        component, parent, components, versions = authorization.verify_merged(self.candidate, self.pr, self.record)
+        self.assertEqual((component, parent, components), (".", self.base, ["."]))
+        self.assertEqual(versions[readiness.PREFIX], "v0.1.0-alpha.2")
         self.git("checkout", "-qb", "later-main")
         Path("later.md").write_text("later unrelated merge")
         self.git("add", ".")
@@ -135,40 +136,81 @@ class MergedAuthorizationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "squash parent"):
             authorization.verify_merged(self.candidate, self.pr, self.record)
 
-    def test_trusted_policy_path_cannot_be_replaced_by_candidate(self):
-        trusted = Path(__file__).resolve().parent.parent
-        graph = json.dumps({"Path": readiness.PREFIX, "Main": True})
-        with patch.object(readiness, "run", return_value=graph), \
-             patch.object(release_consumer, "verify_consumer") as consumer, \
-             patch.object(readiness.subprocess, "run") as execute:
-            readiness.verify_library(".", self.base, set(self.config["packages"]), tooling_root=trusted)
-        self.assertEqual(execute.call_args.args[0], ["bash", str(trusted / "scripts/module-policy.sh"), "standalone", "."])
-        self.assertEqual(consumer.call_args.kwargs["tooling_root"], trusted)
 
+class CombinedAuthorizationTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.previous = Path.cwd()
+        os.chdir(self.temp.name)
+        self.addCleanup(os.chdir, self.previous)
+        git = self.git
+        git("init", "-q")
+        git("config", "user.email", "test@example.com")
+        git("config", "user.name", "Test")
+        self.config = {"separate-pull-requests": False, "packages": {
+            ".": {}, "providers/openai": {"component": "providers/openai"},
+            "ai-gateway": {"component": "ai-gateway", "separate-pull-requests": True}}}
+        Path(readiness.MANIFEST).write_text(json.dumps({".": "0.1.0", "providers/openai": "0.1.0"}))
+        Path("release-please-config.json").write_text(json.dumps(self.config))
+        Path(".github/workflows").mkdir(parents=True)
+        Path(".github/workflows/release-readiness.yml").write_text("name: readiness\n")
+        git("add", ".")
+        git("commit", "-qm", "base")
+        self.base = git("rev-parse", "HEAD")
+        git("checkout", "-qb", "release")
+        self.after = {".": "0.2.0", "providers/openai": "0.1.1"}
+        self.notes = {".": "## 0.2.0 (2026-10-27)\n\n* root", "providers/openai": "## 0.1.1 (2026-10-27)\n\n* openai"}
+        Path(readiness.MANIFEST).write_text(json.dumps(self.after))
+        Path("CHANGELOG.md").write_text("# Changelog\n\n" + self.notes["."] + "\n")
+        Path("providers/openai").mkdir(parents=True)
+        Path("providers/openai/CHANGELOG.md").write_text("# Changelog\n\n" + self.notes["providers/openai"] + "\n")
+        git("add", ".")
+        git("commit", "-qm", "candidate")
+        self.head = git("rev-parse", "HEAD")
+        git("checkout", "--detach", self.base)
+        git("merge", "--no-ff", "-m", "test merge", self.head)
+        repo = {"id": readiness.REPOSITORY_ID, "full_name": "grafana/ai-sdk"}
+        body = ("Header\n---\n\n\n<details><summary>0.2.0</summary>\n\n" + self.notes["."] + "\n</details>\n\n"
+                "<details><summary>providers/openai: 0.1.1</summary>\n\n" + self.notes["providers/openai"] + "\n</details>\n\n---\nFooter")
+        self.pr = {"number": 11, "state": "open", "draft": False, "title": readiness.COMBINED_TITLE, "body": body,
+                   "user": {"id": readiness.RELEASE_BOT_ID, "login": readiness.RELEASE_APP, "type": "Bot"},
+                   "head": {"sha": self.head, "ref": readiness.LIBRARY_BRANCH, "repo": repo},
+                   "base": {"sha": self.base, "ref": "main", "repo": repo}}
+        with patch.dict(os.environ, {"GITHUB_RUN_ID": "200", "GITHUB_RUN_ATTEMPT": "1"}):
+            self.record = readiness.readiness_record(self.pr, dict(self.after))
+        git("checkout", "--detach", self.base)
+        git("merge", "--squash", self.head)
+        git("commit", "-qm", "squash")
+        self.merge = git("rev-parse", "HEAD")
+        self.pr.update(state="closed", merged=True, merge_commit_sha=self.merge)
 
-class SelectedRootIntegrationTest(unittest.TestCase):
-    @unittest.skipUnless(os.environ.get("RELEASE_AUTHORIZATION_INTEGRATION") == "1", "explicit clean-cache root consumer integration")
-    def test_root_consumer_passes_with_unready_downstream_source(self):
-        trusted = Path(__file__).resolve().parent.parent
-        with tempfile.TemporaryDirectory() as directory:
-            checkout = Path(directory, "candidate")
-            subprocess.run(["git", "worktree", "add", "--detach", str(checkout), "HEAD"], cwd=trusted, check=True, capture_output=True)
-            try:
-                with chdir(checkout):
-                    for root in ["providers/openai", "providers/bedrock"]:
-                        Path(root, "broken_authorization_test.go").write_text("package broken\nfunc Broken(\n")
-                    subprocess.run(["git", "add", "."], check=True)
-                    subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                                    "commit", "-qm", "broken downstream fixture"], check=True)
-                    parent = readiness.run("git", "rev-parse", "HEAD")
-                    config = json.loads(Path("release-please-config.json").read_text())
-                    with patch.object(readiness.subprocess, "run", wraps=subprocess.run) as execute:
-                        readiness.verify_library(".", parent, set(config["packages"]), tooling_root=trusted)
-                    selections = [call.args[0][-1] for call in execute.call_args_list if "standalone" in call.args[0]]
-                    self.assertEqual(selections, ["."])
-                    readiness.verify_clean_checkout()
-            finally:
-                subprocess.run(["git", "worktree", "remove", "--force", str(checkout)], cwd=trusted, check=True, capture_output=True)
+    def git(self, *args):
+        return subprocess.check_output(["git", "-c", "commit.gpgsign=false", *args], text=True, stderr=subprocess.PIPE).strip()
+
+    def candidate(self, component):
+        tag = ("" if component == "." else component + "/") + "v" + self.after[component]
+        return {"mergeSha": self.merge, "parents": [self.base], "treeSha": self.record["treeSha"],
+                "component": component, "version": self.after[component], "tag": tag,
+                "notes": self.notes[component], "config": self.config}
+
+    def test_each_released_component_is_authorized_from_one_record(self):
+        for component in [".", "providers/openai"]:
+            with self.subTest(component=component):
+                result = authorization.verify_merged(self.candidate(component), self.pr, self.record)
+                self.assertEqual(result[:3], (component, self.base, [".", "providers/openai"]))
+                self.assertEqual(result[3], readiness.expected_versions(self.after, self.config))
+
+    def test_combined_candidate_must_match_the_validated_release(self):
+        for name, edit, message in [
+            ("component outside release", lambda c, r: c.update(component="providers/bedrock"), "component/version"),
+            ("record components", lambda c, r: r.update(components={".": "0.2.0"}), "validated candidate differs: components"),
+            ("notes", lambda c, r: c.update(notes="edited"), "frozen notes"),
+        ]:
+            candidate, record = self.candidate("providers/openai"), copy.deepcopy(self.record)
+            edit(candidate, record)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, message):
+                authorization.verify_merged(candidate, self.pr, record)
 
 
 if __name__ == "__main__":
