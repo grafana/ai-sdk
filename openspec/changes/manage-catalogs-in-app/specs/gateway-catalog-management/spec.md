@@ -79,7 +79,7 @@ An update SHALL omit the secure value of every provider whose stored key the wri
 - **THEN** the update SHALL carry `remove` for the stored key under the old name, and `create` under a new name
 
 ### Requirement: Platform errors as returned
-When the platform refuses a read or write, the page SHALL show the message the platform returned, including admission refusals, and SHALL keep the form's input. The page SHALL refuse locally only input a request body can't express, such as duplicate provider names or model IDs. It SHALL NOT repeat admission's checks.
+When the platform refuses a read or write, the page SHALL show the message the platform returned, including admission refusals, and SHALL keep the form's input. The page SHALL refuse locally only input a request body can't express, such as duplicate provider names or model IDs, and a stored provider whose type changed without a new key. It SHALL NOT repeat admission's checks.
 
 #### Scenario: Admission refuses a catalog
 - **WHEN** admission refuses a create or update
