@@ -47,7 +47,7 @@ for ((attempt = 0; attempt < startup_attempts; attempt++)); do
 done
 curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become healthy"
 
-pnpm exec playwright install chromium ${CI:+--with-deps}
+pnpm exec playwright install chromium
 pnpm e2e
 if "${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' | grep -q "$catalog_key_sentinel"; then
   fail "the plugin logged a catalog key"
