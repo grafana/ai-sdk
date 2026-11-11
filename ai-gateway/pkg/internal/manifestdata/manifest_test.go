@@ -1,9 +1,11 @@
 package manifestdata
 
 import (
+	"maps"
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/grafana/grafana-app-sdk/app"
@@ -12,7 +14,7 @@ import (
 	"k8s.io/kube-openapi/pkg/spec3"
 )
 
-func TestManifest_DeclaresGatewayRoutesAndTheCatalogKind(t *testing.T) {
+func TestManifest_DeclaresGatewayRoutesAndKinds(t *testing.T) {
 	data := LocalManifest().ManifestData
 	require.NotNil(t, data)
 	assert.Equal(t, "aigateway", data.AppName)
@@ -24,53 +26,102 @@ func TestManifest_DeclaresGatewayRoutesAndTheCatalogKind(t *testing.T) {
 	version := data.Versions[0]
 	assert.Equal(t, "v1alpha1", version.Name)
 	assert.True(t, version.Served)
-	require.Len(t, version.Kinds, 1)
-	kind := version.Kinds[0]
-	assert.Equal(t, "ModelCatalog", kind.Kind)
-	assert.Equal(t, "ModelCatalogs", kind.Plural)
-	assert.Equal(t, "Namespaced", kind.Scope)
-	require.NotNil(t, kind.FolderScoped)
-	assert.False(t, *kind.FolderScoped)
-	assert.False(t, kind.Conversion)
-	require.Len(t, kind.SecureValues, 1)
-	assert.Equal(t, "*", kind.SecureValues[0].Key)
-	require.NotNil(t, kind.Admission)
-	assert.Nil(t, kind.Admission.Mutation)
-	require.NotNil(t, kind.Admission.Validation)
-	assert.Equal(t, []app.AdmissionOperation{app.AdmissionOperationCreate, app.AdmissionOperationUpdate}, kind.Admission.Validation.Operations)
 	assert.Equal(t, map[string][]string{
 		"/namespaces/{namespace}/config":         {http.MethodGet},
 		"/namespaces/{namespace}/language-model": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
+	require.Len(t, version.Kinds, 2)
+	for _, tc := range []struct {
+		kind   string
+		plural string
+		secure []string
+	}{
+		{kind: "ModelCatalog", plural: "ModelCatalogs", secure: []string{"*"}},
+		{kind: "Middleware", plural: "Middlewares"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			kind := manifestKind(t, version, tc.kind)
+			assert.Equal(t, tc.plural, kind.Plural)
+			assert.Equal(t, "Namespaced", kind.Scope)
+			require.NotNil(t, kind.FolderScoped)
+			assert.False(t, *kind.FolderScoped)
+			assert.False(t, kind.Conversion)
+			var secure []string
+			for _, value := range kind.SecureValues {
+				secure = append(secure, value.Key)
+			}
+			assert.Equal(t, tc.secure, secure)
+			require.NotNil(t, kind.Admission)
+			assert.Nil(t, kind.Admission.Mutation)
+			require.NotNil(t, kind.Admission.Validation)
+			assert.Equal(t, []app.AdmissionOperation{app.AdmissionOperationCreate, app.AdmissionOperationUpdate}, kind.Admission.Validation.Operations)
+		})
+	}
 }
 
-func TestManifest_CatalogRoles(t *testing.T) {
+func TestManifest_MiddlewareSchema(t *testing.T) {
+	kind := manifestKind(t, LocalManifest().ManifestData.Versions[0], "Middleware")
+	require.NotNil(t, kind.Schema)
+	components, err := kind.Schema.AsOpenAPI3()
+	require.NoError(t, err)
+	root := components.Schemas["Middleware"]
+	require.NotNil(t, root)
+	assert.ElementsMatch(t, []string{"spec"}, slices.Collect(maps.Keys(root.Value.Properties)), "no secure values")
+	spec := components.Schemas["spec"]
+	require.NotNil(t, spec)
+	assert.ElementsMatch(t, []string{"type", "enabled"}, spec.Value.Required)
+	require.NotNil(t, spec.Value.AdditionalProperties.Has)
+	assert.False(t, *spec.Value.AdditionalProperties.Has)
+	assert.ElementsMatch(t, []string{"type", "enabled", "config"}, slices.Collect(maps.Keys(spec.Value.Properties)))
+	assert.True(t, spec.Value.Properties["type"].Value.Type.Is("string"))
+	assert.True(t, spec.Value.Properties["enabled"].Value.Type.Is("boolean"))
+	config := spec.Value.Properties["config"].Value
+	assert.True(t, config.Type.Is("object"))
+	assert.Empty(t, config.Properties)
+	require.NotNil(t, config.AdditionalProperties.Has, "config is an open object")
+	assert.True(t, *config.AdditionalProperties.Has)
+	assert.Nil(t, config.AdditionalProperties.Schema)
+}
+
+func TestManifest_Roles(t *testing.T) {
 	data := LocalManifest().ManifestData
 	rolePattern := regexp.MustCompile(`^` + data.AppName + `:[a-z0-9]+$`)
-	permissionSets := map[string]string{}
+	role := func(title, description, kind, permissionSet string) app.ManifestRole {
+		return app.ManifestRole{Title: title, Description: description, Kinds: []app.ManifestRoleKind{{Kind: kind, PermissionSet: &permissionSet}}, Routes: []string{}}
+	}
+	assert.Equal(t, map[string]app.ManifestRole{
+		"aigateway:catalogreader":    role("Model catalog reader", "Read AI Gateway model catalogs", "ModelCatalog", app.ManifestRolePermissionSetViewer),
+		"aigateway:catalogwriter":    role("Model catalog writer", "Create, update and delete AI Gateway model catalogs", "ModelCatalog", app.ManifestRolePermissionSetEditor),
+		"aigateway:middlewarereader": role("Middleware reader", "Read AI Gateway tenant extension configuration", "Middleware", app.ManifestRolePermissionSetViewer),
+		"aigateway:middlewarewriter": role("Middleware writer", "Create, update and delete AI Gateway tenant extension configuration", "Middleware", app.ManifestRolePermissionSetEditor),
+	}, data.Roles)
 	fixedIDs := []string{}
-	for name, role := range data.Roles {
+	for name := range data.Roles {
 		assert.Regexp(t, rolePattern, name)
-		require.Len(t, role.Kinds, 1)
-		assert.Equal(t, "ModelCatalog", role.Kinds[0].Kind)
-		assert.Empty(t, role.Kinds[0].Verbs)
-		require.NotNil(t, role.Kinds[0].PermissionSet)
-		permissionSets[name] = *role.Kinds[0].PermissionSet
 		fixedIDs = append(fixedIDs, "fixed:"+data.Group+":"+name)
 	}
-	assert.Equal(t, map[string]string{
-		"aigateway:catalogreader": app.ManifestRolePermissionSetViewer,
-		"aigateway:catalogwriter": app.ManifestRolePermissionSetEditor,
-	}, permissionSets)
 	assert.ElementsMatch(t, []string{
 		"fixed:aigateway.ext.grafana.app:aigateway:catalogreader",
 		"fixed:aigateway.ext.grafana.app:aigateway:catalogwriter",
+		"fixed:aigateway.ext.grafana.app:aigateway:middlewarereader",
+		"fixed:aigateway.ext.grafana.app:aigateway:middlewarewriter",
 	}, fixedIDs)
 	require.NotNil(t, data.RoleBindings)
-	assert.Equal(t, []string{"aigateway:catalogreader"}, data.RoleBindings.Viewer)
+	assert.Equal(t, []string{"aigateway:catalogreader", "aigateway:middlewarereader"}, data.RoleBindings.Viewer)
 	assert.Empty(t, data.RoleBindings.Editor)
-	assert.Equal(t, []string{"aigateway:catalogwriter"}, data.RoleBindings.Admin)
+	assert.Equal(t, []string{"aigateway:catalogwriter", "aigateway:middlewarewriter"}, data.RoleBindings.Admin)
 	assert.Empty(t, data.RoleBindings.Additional)
+}
+
+func manifestKind(t *testing.T, version app.ManifestVersion, name string) app.ManifestVersionKind {
+	t.Helper()
+	for _, kind := range version.Kinds {
+		if kind.Kind == name {
+			return kind
+		}
+	}
+	require.Failf(t, "kind not declared", "%s", name)
+	return app.ManifestVersionKind{}
 }
 
 func TestManifest_GeneratorMatchesRuntimeVersion(t *testing.T) {

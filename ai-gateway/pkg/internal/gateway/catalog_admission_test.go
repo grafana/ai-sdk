@@ -78,8 +78,11 @@ func TestProvider_ManagesTheManifestKinds(t *testing.T) {
 			application, ok := built.(*simple.App)
 			require.True(t, ok)
 			require.NoError(t, application.ValidateManifest(*data))
-			require.Len(t, application.ManagedKinds(), 1)
-			assert.Equal(t, "ModelCatalog", application.ManagedKinds()[0].Kind())
+			var kinds []string
+			for _, kind := range application.ManagedKinds() {
+				kinds = append(kinds, kind.Kind())
+			}
+			assert.ElementsMatch(t, []string{"ModelCatalog", "Middleware"}, kinds)
 		})
 	}
 }

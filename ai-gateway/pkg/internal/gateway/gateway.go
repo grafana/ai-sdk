@@ -26,10 +26,12 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
+	middlewarev1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/middleware/v1alpha1"
 	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/tenantconfig"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -64,6 +66,7 @@ type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
 	sinks         sinks
+	kinds         []simple.AppManagedKind
 }
 
 // New validates settings and constructs every Gateway dependency before any
@@ -79,10 +82,11 @@ func New(options Options) (*Gateway, error) {
 	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory); err != nil {
 		return nil, err
 	}
+	kinds := managedKinds(options.Extensions)
 	lookupEnv := options.LookupEnv
 	keys, err := gatewayauth.SigningKeys(lookupEnv)
 	if errors.Is(err, gatewayauth.ErrNoSigningKeys) {
-		return newIdle(lookupEnv)
+		return newIdle(lookupEnv, kinds)
 	}
 	if err != nil {
 		return nil, err
@@ -134,7 +138,7 @@ func New(options Options) (*Gateway, error) {
 		sinks.close()
 		return nil, err
 	}
-	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks}, nil
+	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, kinds: kinds}, nil
 }
 
 func validateProviderEndpoints(file config.File) error {
@@ -258,11 +262,11 @@ func newLanguageHandler(config execution.Config) (http.Handler, error) {
 
 // newIdle returns the idle Gateway. It refuses to start when unverified
 // requests are requested instead, since the plugin host would then serve them.
-func newIdle(lookupEnv config.LookupEnv) (*Gateway, error) {
+func newIdle(lookupEnv config.LookupEnv, kinds []simple.AppManagedKind) (*Gateway, error) {
 	if skip, _ := lookupEnv(plugin.EnvVarInsecureSkipAuthentication); skip == insecureSkipAuthenticationEnabled {
 		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens; %s is not supported", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS, plugin.EnvVarInsecureSkipAuthentication)
 	}
-	return &Gateway{}, nil
+	return &Gateway{kinds: kinds}, nil
 }
 
 // Idle reports whether the Gateway started without platform signing keys.
@@ -281,14 +285,18 @@ func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 // manifest kinds with their admission validators.
 func (g *Gateway) Provider() app.Provider {
 	return simple.NewAppProvider(manifestdata.LocalManifest(), nil, func(cfg app.Config) (app.App, error) {
-		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds()})
+		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: g.kinds})
 	})
 }
 
-// managedKinds lists every manifest kind with its admission validator. No
+// managedKinds lists every manifest kind with its admission validator. The
+// Middleware validator accepts the tenant extensions among definitions. No
 // kind has a reconciler or watcher, so the app starts no informers.
-func managedKinds() []simple.AppManagedKind {
-	return []simple.AppManagedKind{{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}}}
+func managedKinds(definitions []extension.Definition) []simple.AppManagedKind {
+	return []simple.AppManagedKind{
+		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}},
+		{Kind: middlewarev1alpha1.Kind(), Validator: tenantconfig.NewValidator(definitions)},
+	}
 }
 
 // Close flushes Agent Observability and attempt records concurrently for at
