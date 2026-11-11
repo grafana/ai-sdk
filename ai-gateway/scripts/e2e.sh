@@ -31,5 +31,5 @@ for ((attempt = 0; attempt < startup_attempts; attempt++)); do
 done
 curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become healthy"
 
-pnpm exec playwright install chromium ${CI:+--with-deps}
+pnpm exec playwright install chromium
 pnpm e2e
