@@ -174,9 +174,28 @@ A refused connection and a failed DNS resolution of a custom endpoint SHALL fail
 - **WHEN** a model's primary endpoint is refused and its fallback fails with `503`
 - **THEN** the call SHALL fail with the egress refused document, because retrying cannot succeed until the catalog or policy changes
 
+#### Scenario: Client cancels after a refused attempt
+- **WHEN** a model's primary endpoint is refused and the caller cancels while the fallback runs
+- **THEN** the call SHALL fail with the cancellation category, not egress refused
+
 #### Scenario: Unresolvable host
 - **WHEN** a custom endpoint host has no DNS records
 - **THEN** the attempt SHALL fail with the same fixed refusal error as a refused address
+
+### Requirement: Connection errors name no address
+A connection, TLS handshake or response read of a custom endpoint that fails after the policy permitted it SHALL fail with a fixed connection error, or a fixed timeout error that classifies as timeout. Neither SHALL carry the Gateway's address, a resolved address or certificate names. A cancellation SHALL stay a cancellation.
+
+#### Scenario: Endpoint resets the TLS handshake
+- **WHEN** a permitted endpoint resets the connection during the handshake or while streaming
+- **THEN** the overview and any stream error SHALL carry the fixed connection error, and no IP address
+
+#### Scenario: Certificate for another name
+- **WHEN** a permitted endpoint presents a certificate that does not name its host
+- **THEN** the attempt SHALL fail with the fixed connection error, without the certificate's names
+
+#### Scenario: Endpoint stalls its response headers
+- **WHEN** a permitted endpoint does not send headers within the response-header timeout
+- **THEN** the attempt SHALL fail with the fixed timeout error and the timeout category
 
 ### Requirement: Custom endpoint documentation
 `ai-gateway/README.md` SHALL describe custom stack-catalog endpoints: HTTPS only, the refused ranges, connect-time checks, that proxies are not used, the two settings with their format and precedence, the egress refused error, that hostname allow entries trust that name's DNS, that deny hostname entries are a convenience and prefixes the boundary, and that ports are unrestricted, so deny prefixes are how operators stop port scanning.

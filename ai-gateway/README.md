@@ -176,6 +176,9 @@ Gateway, so the Gateway refuses endpoints that would reach its own network:
 - A refused or unresolvable endpoint gets a `424` `failed_dependency` error,
   "provider endpoint refused by the egress policy or not resolvable", without
   a request. It names no host or address. A model's fallbacks are still tried.
+  Other connection, TLS and read failures of custom endpoints are reported as
+  "provider connection failed" or "provider connection timed out", without
+  addresses or certificate names.
 - Providers without a `baseURL` use their native endpoint and the proxy
   settings, as before. The `model_catalog` setting's endpoints aren't checked.
 
@@ -195,7 +198,9 @@ domain, which matches its subdomains only.
 - Ports aren't restricted, so a catalog can reach any port on a permitted
   host, and response timing can show whether a port is open. Deny the
   prefixes of public addresses that catalogs must not reach, such as your own
-  services.
+  services, cluster addresses from public IPv6 ranges, or a DNS64
+  network-specific prefix (only `64:ff9b::/96` is checked as the IPv4 address
+  it embeds).
 - An invalid entry stops the Gateway from starting. A changed setting applies
   after a restart; stored catalogs that it now refuses fail their calls.
 - An endpoint's certificate must be trusted by the system roots or

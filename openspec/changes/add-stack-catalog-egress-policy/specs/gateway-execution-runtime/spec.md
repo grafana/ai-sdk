@@ -13,7 +13,7 @@ Every failure SHALL have one closed category: invalid request, BYOK credentials,
 
 #### Scenario: Egress refusal
 - **WHEN** invocation or setup fails because the egress policy refused a custom stack-catalog endpoint or its host did not resolve
-- **THEN** the category SHALL be egress refused, before the provider status and transport mappings
+- **THEN** the category SHALL be egress refused, after cancellation and timeout and before the provider status and transport mappings
 
 #### Scenario: Routing selection errors
 - **WHEN** selection fails with malformed routing controls, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
