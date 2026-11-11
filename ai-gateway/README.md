@@ -85,6 +85,41 @@ select it by its ID, such as `balanced`, or by one of its `aliases`. When the
 primary model fails before it starts answering, the Gateway tries the
 `fallback` models in order.
 
+### Allow Anthropic agent skills
+
+Anthropic agent skills, such as `pptx`, are refused unless the primary or
+fallback entry lists them under `skills.allow`. Only `anthropic` providers can
+carry a skills policy:
+
+```yaml
+models:
+  documents:
+    name: Documents
+    primary:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      skills:
+        allow:
+          - type: anthropic
+            skillId: pptx
+          - type: custom
+            skillId: skill_01AbCdEf
+            versions: ["1759178010641129"]
+```
+
+- An `anthropic` skill is provided by Anthropic. A `custom` skill lives in the
+  provider account, and listing it shares it with every caller of that model;
+  there is no per-tenant scoping.
+- Without `versions`, only requests that omit the version are allowed. With
+  `versions`, the request must send one of them; `latest` is matched literally.
+- Every entry that names the same provider and backend model must carry the
+  same policy, in any route, because a call that combines routes tries that
+  backend model only once. To use different policies for one backend model,
+  declare a second provider with the same `apiKeyEnv`.
+- Calls on these models cannot send a `container.id`, with or without skills,
+  because containers belong to the provider account. Each call starts a fresh
+  container.
+
 Each key of the `[plugin.grafana-aigateway-app]` section reaches the Gateway as
 an environment variable named `GF_PLUGIN_<KEY>`, so `anthropic_api_key` becomes
 `GF_PLUGIN_ANTHROPIC_API_KEY`. Keep provider keys there and read them from a
@@ -142,6 +177,10 @@ secure:
   anthropic: { create: "<provider key>" }
 ```
 
+Reads return `secure.anthropic.name: inline-<generated>` in place of the key.
+Grafana creates that secret for the catalog and owns it there: replacing a key
+deletes the old secret, and deleting the catalog deletes its secrets.
+
 - `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
   `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
   can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
@@ -155,6 +194,9 @@ secure:
 - This needs the Grafana version and feature toggles in
   [Requirements](#requirements). Grafana Cloud doesn't store secure values for
   plugin resources yet, so catalogs with keys are refused there.
+- Catalog models can't list [agent skills](#allow-anthropic-agent-skills)
+  yet, so they refuse every skill
+  ([#781](https://github.com/grafana/ai-sdk/issues/781)).
 
 ## Settings
 

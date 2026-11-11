@@ -153,6 +153,7 @@ Grafana `v13.3.0` (released 2026-10-27) is the first tag containing: kinds and m
 - [The full API server changes route behavior] → the route spec runs on both builds; a difference blocks the change.
 - [A future generator enforces `[a-z0-9]+` role names] → the manifest test fails on upgrade; renaming roles then needs a migration decision.
 - [Pruning or schema behavior differs between Grafana versions] → `baseURL` is in the schema, so admission sees it either way; the e2e asserts the refusal on both images.
+- [The generated `secure` schema is not structural, so Grafana serves `ModelCatalog` without pruning or defaulting today] → validation and admission still run, so keeping the unsupported fields in the schema is defensive now and load-bearing if pruning ever applies.
 - [Admission fails closed while the plugin is down or idle] → writes fail, deletes work; documented.
 - [Shape messages echo spec identifiers into plugin logs through the SDK's admission log] → identifiers are tenant configuration, not secrets; values of secure fields never enter a message.
 - [#757 maps `Parse` errors] → its `catalog configuration` category must use a fixed message and must not forward these messages.

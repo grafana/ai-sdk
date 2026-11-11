@@ -90,6 +90,12 @@ for Go and TypeScript examples.
 Model listing is not available in this mode, because your provider account
 decides which models exist.
 
+Anthropic agent skills, including your custom skills, and `container.id` work
+with your own key, because they belong to your account; see
+[Anthropic agent skills](../providers/grafana-gateway.md#anthropic-agent-skills).
+A custom skill or container exists in one Anthropic account, so if you list
+several accounts, a later account's attempt fails at the provider.
+
 ## Call from a Grafana service in Grafana Cloud
 
 Grafana services use the configured models with a Cloud access policy token.
