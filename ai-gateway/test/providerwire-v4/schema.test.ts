@@ -92,6 +92,7 @@ describe("Gateway execution metadata schema", () => {
       { provider: "openai", modelId: "gpt-5", outcome: "failed", error: { message: "overloaded", statusCode: 503 } },
       { provider: "openai", modelId: "gpt-5", outcome: "selected" },
     ] } }],
+    ["served model on the selected attempt", { execution: { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "claude-b", outcome: "selected" }] } }],
     ["routing summary", { ...namespace, routing }],
     ["routing without a selected attempt", { ...namespace, routing: { ...routing, finalProvider: undefined, modelAttempts: [{ ...routing.modelAttempts[0] }] } }],
     ["request-account routing without canonical slugs", { ...namespace, routing: { ...routing, canonicalSlug: undefined, modelAttempts: [{ modelId: "openai/gpt-5", success: true, providerAttemptCount: 1, providerAttempts: [{ provider: "openai", success: true }] }] } }],
@@ -113,6 +114,9 @@ describe("Gateway execution metadata schema", () => {
     ["raw details", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: { details: {} } }] }],
     ["empty error", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: {} }] }],
     ["attempt disposition", { ...namespace.execution, attempts: { state: "over-limit", count: 17 } }],
+    ["served model on a failed attempt", { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "claude-b", outcome: "failed" }] }],
+    ["served model on a canceled attempt", { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "claude-b", outcome: "canceled" }] }],
+    ["empty served model", { ...namespace.execution, attempts: [{ provider: "anthropic", modelId: "claude-a", servedModelId: "", outcome: "selected" }] }],
   ] as const) {
     it(`rejects ${name}`, () => {
       assert.equal(validateGatewayMetadata({ ...namespace, execution }), false);

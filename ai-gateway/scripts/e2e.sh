@@ -9,6 +9,7 @@ grafana_url=http://localhost:3000
 startup_attempts=90
 catalog_key_sentinel=e2e-catalog-sentinel-key
 middleware_config_sentinel=e2e-middleware-sentinel-value
+dump_lines=200
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -16,10 +17,24 @@ fail() { echo "$*" >&2; exit 1; }
 cd "$gateway"
 compose=(docker compose -f docker-compose.yaml -f docker-compose.e2e.yaml)
 
+# dump_failure prints, for the whole run, the plugin's log lines and Grafana's
+# lines about catalog storage and admission, each bounded, then Grafana's last
+# lines.
+dump_failure() {
+  local log
+  log=$("${compose[@]}" logs --no-color grafana 2>&1) || true
+  echo "--- plugin log (logger=plugin.grafana-aigateway-app, first $dump_lines lines)"
+  grep 'logger=plugin.grafana-aigateway-app' <<<"$log" | head -n "$dump_lines" || true
+  echo "--- catalog storage and admission (first $dump_lines lines)"
+  grep -v 'logger=plugin.grafana-aigateway-app' <<<"$log" | grep -i -E 'modelcatalog|admission|securevalue|inline secure|apistore' | head -n "$dump_lines" || true
+  echo "--- Grafana log (last $dump_lines lines)"
+  tail -n "$dump_lines" <<<"$log"
+}
+
 stop() {
   local status=$?
   if [[ $status -ne 0 ]]; then
-    "${compose[@]}" logs grafana | tail -n 200 || true
+    dump_failure
   fi
   "${compose[@]}" down --volumes || true
   exit "$status"
@@ -33,7 +48,7 @@ for ((attempt = 0; attempt < startup_attempts; attempt++)); do
 done
 curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become healthy"
 
-pnpm exec playwright install chromium ${CI:+--with-deps}
+pnpm exec playwright install chromium
 pnpm e2e
 plugin_logs=$("${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' || true)
 # The sentinel checks below inspect these lines, so they must not be empty:

@@ -59,8 +59,7 @@ func (s Selection) Attempts(err error) []Attempt {
 	if s.capture == nil {
 		return nil
 	}
-	entered, attempts := s.capture.observed()
-	overview := s.capture.project(entered, attempts, err)
+	overview := s.capture.current(err)
 	if overview == nil {
 		return nil
 	}
