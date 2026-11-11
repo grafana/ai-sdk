@@ -3,7 +3,9 @@
 # create-plugin Grafana environment, with the end-to-end overrides, their fake
 # provider and a proxy for the native provider endpoints, then stops the
 # environment. The proxy's certificate is generated for each run and removed
-# with the environment.
+# with the environment; the fake provider also presents it on its TLS
+# listener, the custom stack-catalog endpoint that the e2e-only egress allow
+# entry permits.
 set -euo pipefail
 
 gateway=$(git rev-parse --show-toplevel)/ai-gateway
@@ -33,7 +35,7 @@ trap stop EXIT
 
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 1 \
   -subj "/CN=AI Gateway end-to-end native provider" \
-  -addext "subjectAltName=DNS:api.anthropic.com,DNS:api.openai.com" \
+  -addext "subjectAltName=DNS:api.anthropic.com,DNS:api.openai.com,DNS:fake-anthropic,DNS:egress-refused,DNS:egress-denied" \
   -addext "basicConstraints=critical,CA:TRUE" \
   -addext "keyUsage=critical,digitalSignature,keyCertSign" \
   -addext "extendedKeyUsage=serverAuth" \

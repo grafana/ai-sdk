@@ -2,6 +2,8 @@ services:
   grafana:
     environment:
       GF_PLUGIN_GRAFANA_AIGATEWAY_APP_MODEL_CATALOG: $$__file{/etc/grafana/provisioning/aigateway/models.e2e.yaml}
+      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_STACK_CATALOG_EGRESS_ALLOW: fake-anthropic,egress-denied
+      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_STACK_CATALOG_EGRESS_DENY: egress-denied
       HTTPS_PROXY: http://native-proxy:8443
       NO_PROXY: localhost,127.0.0.1,fake-anthropic,native-proxy
       SSL_CERT_FILE: /etc/native-proxy/cert.pem
@@ -15,6 +17,12 @@ services:
     command: ['node', '/srv/fake-anthropic.mjs']
     volumes:
       - ./tests/fake-anthropic.mjs:/srv/fake-anthropic.mjs:ro
+      - ${E2E_NATIVE_PROXY_CERTIFICATES:?run the end-to-end tests through scripts/e2e.sh}:/etc/native-proxy:ro
+    networks:
+      default:
+        aliases:
+          - egress-refused
+          - egress-denied
   native-proxy:
     image: node:24-alpine
     command: ['node', '/srv/native-proxy.mjs']
