@@ -54,8 +54,8 @@
 
 ## 11. Integration checks
 
-- [ ] 11.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test`, `test-ai-gateway`, `test-integration`, `test-providerwire-v4`, `test-ai-gateway-frontend`, `verify-ai-gateway-boundary`, `verify-module-requirements`, `release-check`, `lint-docs`, `generate-ai-gateway-kinds` with a clean tree, and the end-to-end type checks; verify all pass, and record the checks only CI can run.
-- [ ] 11.2 Run `openspec validate --strict` on `gateway-extensions`, `gateway-plugin-host` and `gateway-caller-access`; verify they pass.
+- [x] 11.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test`, `test-ai-gateway`, `test-integration`, `test-providerwire-v4`, `test-ai-gateway-frontend`, `verify-ai-gateway-boundary`, `verify-module-requirements`, `release-check`, `lint-docs`, `generate-ai-gateway-kinds` with a clean tree, and the end-to-end type checks; verify all pass, and record the checks only CI can run.
+- [x] 11.2 Run `openspec validate --strict` on `gateway-extensions`, `gateway-plugin-host` and `gateway-caller-access`; verify they pass.
 
 ## Workflow follow-up
 
