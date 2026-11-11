@@ -188,7 +188,9 @@ describe('pages/CatalogEdit', () => {
   });
 
   test('shows a failed load as returned', async () => {
-    jest.mocked(getModelCatalog).mockRejectedValue({ status: 404, data: { message: 'modelcatalogs "team" not found' } });
+    jest
+      .mocked(getModelCatalog)
+      .mockRejectedValue({ status: 404, data: { message: 'modelcatalogs "team" not found' } });
     signInAs(OrgRole.Viewer, READ_ONLY);
     renderAt(`${APP}/catalogs/edit/team`);
 
