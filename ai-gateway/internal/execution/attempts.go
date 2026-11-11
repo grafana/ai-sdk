@@ -22,6 +22,8 @@ type attemptCapture struct {
 	entered  bool
 	sealed   bool
 	attempts []fallback.Attempt
+	served   string
+	overview *Overview
 }
 
 // newAttemptCapture prepares the capture for selected. Every selection is
@@ -85,7 +87,24 @@ func (a *attemptCapture) discard() {
 // projects as success. Attempts observed afterwards are ignored.
 func (a *attemptCapture) view(err error) View {
 	entered, attempts := a.seal()
-	return View{Overview: a.project(entered, attempts, err), redactor: a.redactor}
+	overview := a.project(entered, attempts, err)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.overview = overview
+	a.applyServed()
+	return View{Overview: overview, redactor: a.redactor}
+}
+
+// current returns the attempts so far, projected for err like the published
+// overview, including the model that served the selected output, without
+// sealing the capture or publishing an overview.
+func (a *attemptCapture) current(err error) *Overview {
+	entered, attempts := a.observed()
+	overview := a.project(entered, attempts, err)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	markServed(overview, a.served)
+	return overview
 }
 
 // project returns the overview of attempts for an outcome that failed with
@@ -116,6 +135,28 @@ func (a *attemptCapture) project(entered bool, attempts []fallback.Attempt, err 
 		}
 	}
 	return overview
+}
+
+// serve records the model that served the selected output. It updates the
+// published overview in place, so every later carrier of the view reports it,
+// without changing the attempts.
+func (a *attemptCapture) serve(model string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.served = model
+	a.applyServed()
+}
+
+func (a *attemptCapture) applyServed() { markServed(a.overview, a.served) }
+
+// markServed records served on overview's selected attempt, when there is one.
+func markServed(overview *Overview, served string) {
+	if overview == nil || served == "" {
+		return
+	}
+	if last := &overview.Attempts[len(overview.Attempts)-1]; last.Outcome == fallback.AttemptSelected {
+		last.ServedModelID = served
+	}
 }
 
 // View is the execution evidence an adapter may encode for one call.
