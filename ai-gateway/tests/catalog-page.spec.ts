@@ -184,7 +184,8 @@ test.describe('model catalog page', () => {
     expect(await page.locator('body').innerText()).not.toContain(key);
     await watch.notFetched(key);
     await page.getByRole('link', { name: 'Cancel' }).click();
-    await expect(page.getByRole('textbox', { name: 'Catalog name' })).toHaveCount(0);
+    await expect(page.getByText('Providers, keys and models this stack serves')).toBeVisible();
+    await expect(page.locator('#catalog-name')).toHaveCount(0);
     await watch.nowhere(key);
   });
 
