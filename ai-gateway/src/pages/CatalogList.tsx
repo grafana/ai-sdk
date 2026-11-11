@@ -8,6 +8,7 @@ import { deleteModelCatalog, errorMessage, listModelCatalogs } from '../api/mode
 import { editCatalogURL, prefixRoute, ROUTES } from '../constants';
 import { ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { catalogPermissions } from '../permissions';
+import { NoCatalogAccess } from '../components/NoCatalogAccess/NoCatalogAccess';
 
 interface CatalogRow {
   name: string;
@@ -23,15 +24,6 @@ function catalogRow(catalog: ModelCatalog): CatalogRow {
       .join(', '),
     models: Object.keys(catalog.spec.models ?? {}).join(', '),
   };
-}
-
-/** NoCatalogAccess explains that the user can't read catalogs. */
-export function NoCatalogAccess() {
-  return (
-    <Alert severity="info" title="You can't view model catalogs">
-      Reading model catalogs needs the Model catalog reader role, which Viewers, Editors and Admins have by default.
-    </Alert>
-  );
 }
 
 function CatalogList() {

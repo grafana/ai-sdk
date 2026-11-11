@@ -1,10 +1,8 @@
 import type { APIRequestContext, Page, Request, Response } from '@playwright/test';
 import { test, expect, BROWSER_ROLES } from './fixtures';
-import { API_GROUP, API_VERSION, ROUTES } from '../src/constants';
-import pluginJson from '../src/plugin.json';
+import { API_GROUP, API_VERSION, prefixRoute, ROUTES } from '../src/constants';
 
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;
-const APP = `/a/${pluginJson.id}`;
 const SENTINEL = 'e2e-catalog-sentinel-key';
 const ADMISSION_REFUSAL = 'admission hook for ModelCatalog denied the request';
 
@@ -205,7 +203,7 @@ test.describe('model catalog page', () => {
       const { name } = await createStored(accounts.Admin);
       const page = await pageAs(role);
 
-      await page.goto(`${APP}/${ROUTES.Catalogs}`);
+      await page.goto(prefixRoute(ROUTES.Catalogs));
       await expect(page.getByRole('link', { name })).toBeVisible();
       await expect(page.getByRole('link', { name: 'New catalog' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: `Delete ${name}` })).toHaveCount(0);
@@ -217,7 +215,7 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Reset' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Add provider' })).toHaveCount(0);
 
-      await page.goto(`${APP}/${ROUTES.NewCatalog}`);
+      await page.goto(prefixRoute(ROUTES.NewCatalog));
       await expect(page.getByText("You can't create model catalogs")).toBeVisible();
       await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
     });

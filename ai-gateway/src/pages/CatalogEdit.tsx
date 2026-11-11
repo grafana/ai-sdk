@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PluginPage } from '@grafana/runtime';
 import { Alert, Button, LinkButton, LoadingPlaceholder, Stack } from '@grafana/ui';
-import { NoCatalogAccess } from './CatalogList';
 import { createModelCatalog, errorMessage, getModelCatalog, updateModelCatalog } from '../api/modelCatalogs';
 import { CatalogForm } from '../components/CatalogForm/CatalogForm';
+import { NoCatalogAccess } from '../components/NoCatalogAccess/NoCatalogAccess';
 import {
   CatalogForm as CatalogFormState,
   formFromSpec,
@@ -30,7 +30,7 @@ interface Props {
  * CatalogEditor creates a catalog, or shows and edits the named one. Without
  * the write action for the operation it shows the catalog read-only.
  */
-export function CatalogEditor({ name }: Props) {
+function CatalogEditor({ name }: Props) {
   const creating = name === undefined;
   const permissions = catalogPermissions();
   const readOnly = creating ? !permissions.create : !permissions.update;
