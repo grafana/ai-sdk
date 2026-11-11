@@ -10,12 +10,11 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 	"github.com/grafana/ai-sdk/provider"
 )
 
 var _ extension.RequestTransformer = transformer{}
-
-func ptr[T any](value T) *T { return &value }
 
 func newTransformer(t *testing.T, definition extension.Definition, config string) extension.RequestTransformer {
 	t.Helper()
@@ -67,9 +66,9 @@ func TestInstructions(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prompt := append([]provider.Message(nil), tc.prompt...)
-			result := transform(t, instructions, provider.CallOptions{Prompt: prompt, Temperature: ptr(0.5)})
+			result := transform(t, instructions, provider.CallOptions{Prompt: prompt, Temperature: new(0.5)})
 			assert.Equal(t, tc.want, result.Prompt)
-			assert.Equal(t, ptr(0.5), result.Temperature, "other parameters are kept")
+			assert.Equal(t, new(0.5), result.Temperature, "other parameters are kept")
 			assert.Equal(t, tc.prompt, prompt, "the call's prompt is not mutated")
 		})
 	}
@@ -87,46 +86,46 @@ func TestSettings(t *testing.T) {
 			name:   "fills unset fields",
 			config: all,
 			check: func(t *testing.T, result provider.CallOptions) {
-				assert.Equal(t, ptr(0.7), result.Temperature)
-				assert.Equal(t, ptr(0.9), result.TopP)
-				assert.Equal(t, ptr(40), result.TopK)
-				assert.Equal(t, ptr(1024), result.MaxOutputTokens)
+				assert.Equal(t, new(0.7), result.Temperature)
+				assert.Equal(t, new(0.9), result.TopP)
+				assert.Equal(t, new(40), result.TopK)
+				assert.Equal(t, new(1024), result.MaxOutputTokens)
 				assert.Equal(t, []string{"a", "b", "c"}, result.StopSequences)
-				assert.Equal(t, ptr(9007199254740993), result.Seed, "integers are exact")
-				assert.Equal(t, ptr(0.1), result.PresencePenalty)
-				assert.Equal(t, ptr(0.2), result.FrequencyPenalty)
+				assert.Equal(t, new(9007199254740993), result.Seed, "integers are exact")
+				assert.Equal(t, new(0.1), result.PresencePenalty)
+				assert.Equal(t, new(0.2), result.FrequencyPenalty)
 			},
 		},
 		{
 			name:   "call values take precedence",
 			config: all,
-			params: provider.CallOptions{Temperature: ptr(0.0), TopP: ptr(0.5), TopK: ptr(1), MaxOutputTokens: ptr(16), StopSequences: []string{}, Seed: ptr(0), PresencePenalty: ptr(0.0), FrequencyPenalty: ptr(0.0)},
+			params: provider.CallOptions{Temperature: new(0.0), TopP: new(0.5), TopK: new(1), MaxOutputTokens: new(16), StopSequences: []string{}, Seed: new(0), PresencePenalty: new(0.0), FrequencyPenalty: new(0.0)},
 			check: func(t *testing.T, result provider.CallOptions) {
-				assert.Equal(t, ptr(0.0), result.Temperature, "a call's 0 is kept")
-				assert.Equal(t, ptr(0.5), result.TopP)
-				assert.Equal(t, ptr(1), result.TopK)
-				assert.Equal(t, ptr(16), result.MaxOutputTokens)
+				assert.Equal(t, new(0.0), result.Temperature, "a call's 0 is kept")
+				assert.Equal(t, new(0.5), result.TopP)
+				assert.Equal(t, new(1), result.TopK)
+				assert.Equal(t, new(16), result.MaxOutputTokens)
 				assert.Equal(t, []string{}, result.StopSequences, "a call's empty stop sequences are kept")
-				assert.Equal(t, ptr(0), result.Seed)
-				assert.Equal(t, ptr(0.0), result.PresencePenalty)
-				assert.Equal(t, ptr(0.0), result.FrequencyPenalty)
+				assert.Equal(t, new(0), result.Seed)
+				assert.Equal(t, new(0.0), result.PresencePenalty)
+				assert.Equal(t, new(0.0), result.FrequencyPenalty)
 			},
 		},
 		{
 			name:   "integers written with a fraction or an exponent",
 			config: `{"maxOutputTokens":1.0,"topK":4e1,"seed":-9.223372036854775808e18}`,
 			check: func(t *testing.T, result provider.CallOptions) {
-				assert.Equal(t, ptr(1), result.MaxOutputTokens)
-				assert.Equal(t, ptr(40), result.TopK)
-				assert.Equal(t, ptr(-9223372036854775808), result.Seed)
+				assert.Equal(t, new(1), result.MaxOutputTokens)
+				assert.Equal(t, new(40), result.TopK)
+				assert.Equal(t, new(-9223372036854775808), result.Seed)
 			},
 		},
 		{
 			name:   "only configured fields",
 			config: `{"temperature":0.7}`,
-			params: provider.CallOptions{MaxOutputTokens: ptr(16)},
+			params: provider.CallOptions{MaxOutputTokens: new(16)},
 			check: func(t *testing.T, result provider.CallOptions) {
-				assert.Equal(t, provider.CallOptions{Temperature: ptr(0.7), MaxOutputTokens: ptr(16)}, result)
+				assert.Equal(t, provider.CallOptions{Temperature: new(0.7), MaxOutputTokens: new(16)}, result)
 			},
 		},
 		{
@@ -195,5 +194,37 @@ func TestFactories_RefuseUndecodableConfiguration(t *testing.T) {
 		assert.NotContains(t, err.Error(), "e2e-sentinel")
 		assert.NotContains(t, err.Error(), "1e30")
 		assert.NotContains(t, err.Error(), "1e400")
+	}
+}
+
+func TestSettings_FactoryAcceptsWhatAdmissionAccepts(t *testing.T) {
+	for _, tc := range []struct {
+		config   string
+		accepted bool
+	}{
+		{config: `{"temperature":1.7976931348623157e308}`, accepted: true},
+		{config: `{"presencePenalty":-1.7976931348623157e308}`, accepted: true},
+		{config: `{"temperature":-0}`, accepted: true},
+		{config: `{"temperature":1e-400}`, accepted: true},
+		{config: `{"topK":-0}`, accepted: true},
+		{config: `{"maxOutputTokens":1.0,"topK":4e1}`, accepted: true},
+		{config: `{"seed":-9.223372036854775808e18}`, accepted: true},
+		{config: `{"seed":9223372036854775807}`, accepted: true},
+		{config: `{"temperature":1e400}`},
+		{config: `{"temperature":1.7976931348623158e308}`},
+		{config: `{"frequencyPenalty":-1e400}`},
+		{config: `{"seed":9223372036854775808}`},
+		{config: `{"topK":4.5e0}`},
+	} {
+		t.Run(tc.config, func(t *testing.T) {
+			admitted := extensionhost.CheckConfig(settingsDefinition(), json.RawMessage(tc.config))
+			if !tc.accepted {
+				assert.Error(t, admitted)
+				return
+			}
+			require.NoError(t, admitted)
+			_, err := settingsDefinition().New(json.RawMessage(tc.config), extension.Dependencies{})
+			assert.NoError(t, err)
+		})
 	}
 }

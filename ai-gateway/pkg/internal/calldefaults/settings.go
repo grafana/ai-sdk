@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math/big"
 	"slices"
-	"strconv"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
@@ -15,14 +14,14 @@ import (
 var errSettingsConfig = errors.New("calldefaults: the default-settings configuration does not decode")
 
 type settingsConfig struct {
-	Temperature      *json.Number `json:"temperature"`
-	TopP             *json.Number `json:"topP"`
+	Temperature      *float64     `json:"temperature"`
+	TopP             *float64     `json:"topP"`
 	TopK             *json.Number `json:"topK"`
 	MaxOutputTokens  *json.Number `json:"maxOutputTokens"`
 	StopSequences    []string     `json:"stopSequences"`
 	Seed             *json.Number `json:"seed"`
-	PresencePenalty  *json.Number `json:"presencePenalty"`
-	FrequencyPenalty *json.Number `json:"frequencyPenalty"`
+	PresencePenalty  *float64     `json:"presencePenalty"`
+	FrequencyPenalty *float64     `json:"frequencyPenalty"`
 }
 
 func settingsDefinition() extension.Definition {
@@ -37,42 +36,24 @@ func newSettings(config json.RawMessage, _ extension.Dependencies) (any, error) 
 	if err := json.Unmarshal(config, &decoded); err != nil {
 		return nil, errSettingsConfig
 	}
-	options := middleware.DefaultSettingsOptions{StopSequences: slices.Clip(decoded.StopSequences)}
-	for target, value := range map[**float64]*json.Number{
-		&options.Temperature:      decoded.Temperature,
-		&options.TopP:             decoded.TopP,
-		&options.PresencePenalty:  decoded.PresencePenalty,
-		&options.FrequencyPenalty: decoded.FrequencyPenalty,
-	} {
-		converted, err := floatOf(value)
-		if err != nil {
-			return nil, err
-		}
-		*target = converted
+	options := middleware.DefaultSettingsOptions{
+		Temperature:      decoded.Temperature,
+		TopP:             decoded.TopP,
+		PresencePenalty:  decoded.PresencePenalty,
+		FrequencyPenalty: decoded.FrequencyPenalty,
+		StopSequences:    slices.Clip(decoded.StopSequences),
 	}
-	for target, value := range map[**int]*json.Number{
-		&options.TopK:            decoded.TopK,
-		&options.MaxOutputTokens: decoded.MaxOutputTokens,
-		&options.Seed:            decoded.Seed,
-	} {
-		converted, err := intOf(value)
-		if err != nil {
-			return nil, err
-		}
-		*target = converted
+	var err error
+	if options.TopK, err = intOf(decoded.TopK); err != nil {
+		return nil, err
+	}
+	if options.MaxOutputTokens, err = intOf(decoded.MaxOutputTokens); err != nil {
+		return nil, err
+	}
+	if options.Seed, err = intOf(decoded.Seed); err != nil {
+		return nil, err
 	}
 	return transformer{middleware: middleware.DefaultSettings(options)}, nil
-}
-
-func floatOf(number *json.Number) (*float64, error) {
-	if number == nil {
-		return nil, nil
-	}
-	value, err := strconv.ParseFloat(number.String(), 64)
-	if err != nil {
-		return nil, errSettingsConfig
-	}
-	return &value, nil
 }
 
 // intOf converts an integer the schema accepted, which may be written with a
