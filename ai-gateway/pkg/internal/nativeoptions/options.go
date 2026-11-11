@@ -39,69 +39,23 @@ func (m Model) DoStream(ctx context.Context, options provider.CallOptions) (*pro
 	return m.LanguageModel.DoStream(ctx, options)
 }
 
-// AnthropicFallbackPolicy bounds Anthropic server-side fallback
-// (providerOptions.anthropic.fallbacks). The zero value refuses every active
-// fallback.
-type AnthropicFallbackPolicy struct {
-	models       map[string]struct{}
-	allowDefault bool
-	unrestricted bool
+// Anthropic returns the validator for one Anthropic candidate under policy.
+// It refuses, before native I/O, server-side fallbacks and container options
+// the policy does not admit and invalid MCP configuration or history.
+func Anthropic(policy AnthropicPolicy) func(provider.CallOptions) error {
+	return func(options provider.CallOptions) error { return validateAnthropic(policy, options) }
 }
 
-// NewAnthropicFallbackPolicy returns the policy of one configured candidate: an
-// explicit chain may name only models, each at most once, compared exactly,
-// and "default" requires allowDefault.
-func NewAnthropicFallbackPolicy(models []string, allowDefault bool) AnthropicFallbackPolicy {
-	allowed := make(map[string]struct{}, len(models))
-	for _, model := range models {
-		allowed[model] = struct{}{}
-	}
-	return AnthropicFallbackPolicy{models: allowed, allowDefault: allowDefault}
-}
-
-// UnrestrictedAnthropicFallbacks returns the request-account policy, which
-// forwards any chain and "default" as the native adapter does, because the
-// caller's own account pays.
-func UnrestrictedAnthropicFallbacks() AnthropicFallbackPolicy {
-	return AnthropicFallbackPolicy{unrestricted: true}
-}
-
-func (p AnthropicFallbackPolicy) admits(fallbacks *anthropicprovider.FallbackConfig) bool {
-	if fallbacks == nil || p.unrestricted {
-		return true
-	}
-	if fallbacks.Default {
-		return p.allowDefault
-	}
-	seen := make(map[string]struct{}, len(fallbacks.Chain))
-	for _, entry := range fallbacks.Chain {
-		if _, allowed := p.models[entry.Model]; !allowed {
-			return false
-		}
-		if _, repeated := seen[entry.Model]; repeated {
-			return false
-		}
-		seen[entry.Model] = struct{}{}
-	}
-	return true
-}
-
-// Anthropic returns the validator of the Anthropic options a native attempt
-// consumes. It refuses container skills, server-side fallback outside policy,
-// invalid MCP configuration and MCP history of unconfigured servers.
-func Anthropic(policy AnthropicFallbackPolicy) func(provider.CallOptions) error {
-	return func(options provider.CallOptions) error {
-		return validateAnthropic(options, policy)
-	}
-}
-
-func validateAnthropic(options provider.CallOptions, policy AnthropicFallbackPolicy) error {
+func validateAnthropic(policy AnthropicPolicy, options provider.CallOptions) error {
 	call, _, err := provider.ResolveOption[anthropicprovider.AnthropicOptions](options.ProviderOptions, "anthropic")
 	if err != nil {
 		return catalog.ErrUnsupportedRequest
 	}
-	if (call.Container != nil && len(call.Container.Skills) > 0) || !policy.admits(call.Fallbacks) {
+	if !policy.Fallbacks.admits(call.Fallbacks) {
 		return catalog.ErrUnsupportedRequest
+	}
+	if err := policy.validateContainer(call.Container); err != nil {
+		return err
 	}
 	servers, err := validateAnthropicMCPServers(call.MCPServers)
 	if err != nil {

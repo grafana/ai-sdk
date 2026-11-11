@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-var anthropicOptions = nativeoptions.Anthropic(nativeoptions.UnrestrictedAnthropicFallbacks())
+var anthropicOptions = nativeoptions.Anthropic(nativeoptions.RequestAccountAnthropicPolicy())
 
 // Groups returns one routing group per destination, keyed by its selector,
 // with one candidate per account. Accounts are never treated as repeated

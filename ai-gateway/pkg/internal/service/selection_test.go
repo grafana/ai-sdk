@@ -303,7 +303,7 @@ func TestBYOKSelection_RejectedBeforeAttemptsHasNoOverview(t *testing.T) {
 				calls.Add(1)
 				return nil, fmt.Errorf("unexpected native call")
 			})}
-			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"}]}},"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`
+			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"}]}},"anthropic":{"container":{"skills":[` + manySkills(21) + `]}}}}`
 			response := serveBYOK(t, client, "anthropic/native-model", body, streaming)
 			assert.Equal(t, http.StatusBadRequest, response.Code)
 			assert.Zero(t, calls.Load())

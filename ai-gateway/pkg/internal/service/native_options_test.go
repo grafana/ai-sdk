@@ -36,7 +36,10 @@ func TestBYOKSelection_NativeOptionGuards(t *testing.T) {
 		}{
 			{"MCP servers", mcpOptions, `[]`, "mcp_servers", "", true},
 			{"invalid MCP destination", `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`, `[]`, "", "", false},
-			{"container skills", `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`, `[]`, "", "", false},
+			{"malformed custom skill", `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`, `[]`, "", "", false},
+			{"bounded custom skill", `{"anthropic":{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":"skill_01external"}}]}}}`, `[]`, "skill_01external", "", true},
+			{"too many skills", `{"anthropic":{"container":{"skills":[` + manySkills(21) + `]}}}`, `[]`, "", "", false},
+			{"over-long container ID", `{"anthropic":{"container":{"id":"` + strings.Repeat("c", 129) + `"}}}`, `[]`, "", "", false},
 			{"server-side fallback default", `{"anthropic":{"fallbacks":"default"}}`, `[]`, `"fallbacks":"default"`, defaultFallbackBeta, true},
 			{"server-side fallback chain outside any configured policy", `{"anthropic":{"fallbacks":[{"model":"claude-unconfigured"},{"model":"claude-unconfigured"}]}}`, `[]`, `"fallbacks":[{"model":"claude-unconfigured"},{"model":"claude-unconfigured"}]`, explicitFallbackBeta, true},
 			{"unconfigured MCP history", `{}`, mcpHistory, "", "", false},
@@ -98,9 +101,9 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 			}{
 				{
 					name: "anthropic caller and tool scopes", backend: "anthropic",
-					body: `{"maxOutputTokens":64,"providerOptions":{"anthropic":{"container":{"id":"supplied-container"},"unknown":{},"model":"ignored"},"other":{"model":"ignored"}},"tools":[{"type":"function","name":"lookup","inputSchema":{},"providerOptions":{"anthropic":{"eagerInputStreaming":false,"allowedCallers":[],"unknown":{}}}}],"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"text","value":"done"},"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}}]}]}`,
+					body: `{"maxOutputTokens":64,"providerOptions":{"anthropic":{"unknown":{},"model":"ignored"},"other":{"model":"ignored"}},"tools":[{"type":"function","name":"lookup","inputSchema":{},"providerOptions":{"anthropic":{"eagerInputStreaming":false,"allowedCallers":[],"unknown":{}}}}],"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"text","value":"done"},"providerOptions":{"anthropic":{"caller":{"type":"direct"}}}}]}]}`,
 					check: func(t *testing.T, body map[string]any) {
-						assert.Equal(t, "supplied-container", body["container"].(map[string]any)["id"])
+						assert.NotContains(t, body, "container")
 						tool := body["tools"].([]any)[0].(map[string]any)
 						assert.NotContains(t, tool, "eager_input_streaming")
 						assert.Equal(t, []any{}, tool["allowed_callers"])
@@ -268,35 +271,40 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 }
 
 func TestNativeOptions_BypassAndOrdinaryControls(t *testing.T) {
+	skillPolicy := &config.SkillsPolicy{Allow: []config.AllowedSkill{{Type: config.SkillAnthropic, SkillID: "skill"}}}
 	for _, configuredFallback := range []bool{false, true} {
 		for _, streaming := range []bool{false, true} {
 			for _, tc := range []struct {
 				name, backend, body string
 				denied              bool
+				skills              *config.SkillsPolicy
 			}{
-				{"MCP configuration case alias", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"MCPServers":[{"type":"url","url":"https://other.example","name":"server"}]}}}`, false},
-				{"skills", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, true},
-				{"fallback", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":"default"}}}`, true},
-				{"unconfigured MCP history type alias", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, true},
-				{"inert local-call MCP marker", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, false},
-				{"inert MCP result metadata", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"json","value":{}},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"server"}}}]}]}`, false},
-				{"noop execution", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[],"container":null,"fallbacks":null,"mcp_servers":[{"ordinary":true}]}}}`, false},
-				{"compaction", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"summary","providerOptions":{"anthropic":{"type":"compaction"}}}]}]}`, false},
-				{"irrelevant namespace", "anthropic", `{"prompt":[],"providerOptions":{"openaiCompatible":{"role":"tool","model":"ignored","content":[]}}}`, false},
-				{"model", "openai-compatible", `{"prompt":[],"providerOptions":{"my-vllm":{"model":"other"}}}`, true},
-				{"camel model", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"model":"other"}}}`, true},
-				{"format", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"response_format":{"type":"json_object"}}}}`, true},
-				{"legacy tools", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"functions":[]}}}`, true},
-				{"message role", "openai-compatible", `{"prompt":[{"role":"system","content":"system","providerOptions":{"openaiCompatible":{"role":"tool"}}}]}`, true},
-				{"single user role", "openai-compatible", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"role":"tool"}}}]}]}`, true},
-				{"user content type", "openai-compatible", `{"prompt":[{"role":"user","content":[{"type":"text","text":"one","providerOptions":{"openaiCompatible":{"type":"image_url"}}},{"type":"text","text":"two"}]}]}`, true},
-				{"assistant call", "openai-compatible", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"openaiCompatible":{"function":{"name":"other","arguments":"{}"}}}}]}]}`, true},
-				{"native precedence", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"messages":[],"tools":[],"tool_choice":"required","stream":true,"stream_options":{}},"openaiCompatible":{"model":"ignored"}}}`, false},
-				{"ignored scope", "openai-compatible", `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"role":"tool","type":"ordinary"}}}]}]}`, false},
-				{"case significant", "openai-compatible", `{"prompt":[],"providerOptions":{"MyVllm":{"model":"ignored"},"myVllm":{"Model":"ordinary","baseURL":"https://other.example"}}}`, false},
+				{"MCP configuration case alias", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"MCPServers":[{"type":"url","url":"https://other.example","name":"server"}]}}}`, false, nil},
+				{"skills", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, true, nil},
+				{"allowed skills", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, false, skillPolicy},
+				{"container ID", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"id":"container_01"}}}}`, true, skillPolicy},
+				{"allowed skills with container ID", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"container":{"id":"container_01","skills":[{"type":"anthropic","skillId":"skill"}]}}}}`, true, skillPolicy},
+				{"fallback", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":"default"}}}`, true, nil},
+				{"unconfigured MCP history type alias", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, true, nil},
+				{"inert local-call MCP marker", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"Type":"mcp-tool-use","serverName":"server"}}}]}]}`, false, nil},
+				{"inert MCP result metadata", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"json","value":{}},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"server"}}}]}]}`, false, nil},
+				{"noop execution", "anthropic", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[],"container":null,"fallbacks":null,"mcp_servers":[{"ordinary":true}]}}}`, false, nil},
+				{"compaction", "anthropic", `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"summary","providerOptions":{"anthropic":{"type":"compaction"}}}]}]}`, false, nil},
+				{"irrelevant namespace", "anthropic", `{"prompt":[],"providerOptions":{"openaiCompatible":{"role":"tool","model":"ignored","content":[]}}}`, false, nil},
+				{"model", "openai-compatible", `{"prompt":[],"providerOptions":{"my-vllm":{"model":"other"}}}`, true, nil},
+				{"camel model", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"model":"other"}}}`, true, nil},
+				{"format", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"response_format":{"type":"json_object"}}}}`, true, nil},
+				{"legacy tools", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"functions":[]}}}`, true, nil},
+				{"message role", "openai-compatible", `{"prompt":[{"role":"system","content":"system","providerOptions":{"openaiCompatible":{"role":"tool"}}}]}`, true, nil},
+				{"single user role", "openai-compatible", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"role":"tool"}}}]}]}`, true, nil},
+				{"user content type", "openai-compatible", `{"prompt":[{"role":"user","content":[{"type":"text","text":"one","providerOptions":{"openaiCompatible":{"type":"image_url"}}},{"type":"text","text":"two"}]}]}`, true, nil},
+				{"assistant call", "openai-compatible", `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"openaiCompatible":{"function":{"name":"other","arguments":"{}"}}}}]}]}`, true, nil},
+				{"native precedence", "openai-compatible", `{"prompt":[],"providerOptions":{"myVllm":{"messages":[],"tools":[],"tool_choice":"required","stream":true,"stream_options":{}},"openaiCompatible":{"model":"ignored"}}}`, false, nil},
+				{"ignored scope", "openai-compatible", `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"hi","providerOptions":{"openaiCompatible":{"role":"tool","type":"ordinary"}}}]}]}`, false, nil},
+				{"case significant", "openai-compatible", `{"prompt":[],"providerOptions":{"MyVllm":{"model":"ignored"},"myVllm":{"Model":"ordinary","baseURL":"https://other.example"}}}`, false, nil},
 			} {
 				t.Run(fmt.Sprintf("%s/stream=%t/fallback=%t", tc.name, streaming, configuredFallback), func(t *testing.T) {
-					response, requests := nativeOptionsRequest(t, tc.backend, tc.body, streaming, configuredFallback)
+					response, requests := nativeOptionsRequestWithProviders(t, tc.backend, tc.body, streaming, configuredFallback, tc.skills, nil)
 					if tc.denied {
 						assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
 						assert.Empty(t, requests)
@@ -487,7 +495,7 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 				handler.ServeHTTP(response, request)
 				status := http.StatusOK
 				if tc.denied {
-					status = http.StatusBadRequest
+					status = http.StatusServiceUnavailable
 				}
 				require.Equal(t, status, response.Code, response.Body.String())
 				assert.EqualValues(t, 1, compatibleCalls.Load())
@@ -504,10 +512,10 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 
 func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configuredFallback bool, factories ...ModelFactory) (*httptest.ResponseRecorder, []map[string]any) {
 	t.Helper()
-	return nativeOptionsRequestWithProviders(t, backend, body, streaming, configuredFallback, nil, factories...)
+	return nativeOptionsRequestWithProviders(t, backend, body, streaming, configuredFallback, nil, nil, factories...)
 }
 
-func nativeOptionsRequestWithProviders(t *testing.T, backend, body string, streaming, configuredFallback bool, configure func(map[string]config.ResolvedProvider), factories ...ModelFactory) (*httptest.ResponseRecorder, []map[string]any) {
+func nativeOptionsRequestWithProviders(t *testing.T, backend, body string, streaming, configuredFallback bool, skills *config.SkillsPolicy, configure func(map[string]config.ResolvedProvider), factories ...ModelFactory) (*httptest.ResponseRecorder, []map[string]any) {
 	t.Helper()
 	var mu sync.Mutex
 	var requests []map[string]any
@@ -534,10 +542,10 @@ func nativeOptionsRequestWithProviders(t *testing.T, backend, body string, strea
 	if len(factories) > 0 {
 		factory = factories[0]
 	}
-	model := config.Model{Name: "Public", Primary: config.Primary{Provider: "native", Model: "backend"}}
+	model := config.Model{Name: "Public", Primary: config.Primary{Provider: "native", Model: "backend", Skills: skills}}
 	if configuredFallback {
 		model.Primary.Provider = "primary"
-		model.Fallback = []config.Primary{{Provider: "native", Model: "backend"}}
+		model.Fallback = []config.Primary{{Provider: "native", Model: "backend", Skills: skills}}
 	}
 	providers := map[string]config.ResolvedProvider{
 		"native":  {Type: backend, APIKey: "native-key", BaseURL: server.URL, ProviderName: "my-vllm.chat"},
@@ -665,4 +673,12 @@ func mustMarshal(t *testing.T, value any) []byte {
 	encoded, err := json.Marshal(value)
 	require.NoError(t, err)
 	return encoded
+}
+
+func manySkills(n int) string {
+	skills := make([]string, n)
+	for i := range skills {
+		skills[i] = fmt.Sprintf(`{"type":"anthropic","skillId":"skill-%d"}`, i)
+	}
+	return strings.Join(skills, ",")
 }

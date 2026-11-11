@@ -49,12 +49,15 @@ type Model struct {
 }
 
 // Primary maps one public model to a named provider and backend model ID.
-// ServerFallbacks optionally allows Anthropic server-side fallback for this
-// candidate only; without it the candidate refuses server-side fallback.
 type Primary struct {
-	Provider        string           `yaml:"provider"`
-	Model           string           `yaml:"model"`
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
+	// ServerFallbacks allows Anthropic server-side fallback for this
+	// candidate. Without it, the candidate refuses server-side fallback.
 	ServerFallbacks *ServerFallbacks `yaml:"serverFallbacks,omitempty"`
+	// Skills lists the Anthropic container skills callers of this candidate
+	// may request. Without it, the candidate refuses every skill.
+	Skills *SkillsPolicy `yaml:"skills,omitempty"`
 }
 
 // ServerFallbacks is the operator policy for Anthropic server-side fallback
@@ -64,11 +67,6 @@ type Primary struct {
 type ServerFallbacks struct {
 	Models       []string `yaml:"models,omitempty"`
 	AllowDefault bool     `yaml:"allowDefault,omitempty"`
-}
-
-type candidateKey struct {
-	provider string
-	model    string
 }
 
 // ResolvedProvider contains one startup-resolved provider secret.
@@ -188,10 +186,15 @@ func (file File) Validate() error {
 		if strings.TrimSpace(model.Primary.Model) == "" {
 			return fmt.Errorf("config: models.%s.primary.model is required", id)
 		}
-		if err := validateServerFallbacks(fmt.Sprintf("models.%s.primary", id), model.Primary.ServerFallbacks, file.Providers[model.Primary.Provider].Type); err != nil {
+		path := fmt.Sprintf("models.%s.primary", id)
+		providerType := file.Providers[model.Primary.Provider].Type
+		if err := validateServerFallbacks(path, model.Primary.ServerFallbacks, providerType); err != nil {
 			return err
 		}
-		seenCandidates := map[candidateKey]struct{}{{model.Primary.Provider, model.Primary.Model}: {}}
+		if err := validateSkillsPolicy(path, model.Primary.Skills, providerType); err != nil {
+			return err
+		}
+		seenCandidates := map[candidateKey]struct{}{keyOf(model.Primary): {}}
 		for index, candidate := range model.Fallback {
 			if strings.TrimSpace(candidate.Provider) == "" || strings.TrimSpace(candidate.Model) == "" {
 				return fmt.Errorf("config: models.%s.fallback[%d] requires provider and model", id, index)
@@ -199,12 +202,16 @@ func (file File) Validate() error {
 			if _, ok := file.Providers[candidate.Provider]; !ok {
 				return fmt.Errorf("config: models.%s.fallback[%d] references unknown provider", id, index)
 			}
-			key := candidateKey{candidate.Provider, candidate.Model}
-			if _, exists := seenCandidates[key]; exists {
+			if _, exists := seenCandidates[keyOf(candidate)]; exists {
 				return fmt.Errorf("config: models.%s.fallback[%d] repeats a candidate", id, index)
 			}
-			seenCandidates[key] = struct{}{}
-			if err := validateServerFallbacks(fmt.Sprintf("models.%s.fallback[%d]", id, index), candidate.ServerFallbacks, file.Providers[candidate.Provider].Type); err != nil {
+			seenCandidates[keyOf(candidate)] = struct{}{}
+			path := fmt.Sprintf("models.%s.fallback[%d]", id, index)
+			providerType := file.Providers[candidate.Provider].Type
+			if err := validateServerFallbacks(path, candidate.ServerFallbacks, providerType); err != nil {
+				return err
+			}
+			if err := validateSkillsPolicy(path, candidate.Skills, providerType); err != nil {
 				return err
 			}
 		}
@@ -212,6 +219,9 @@ func (file File) Validate() error {
 			return fmt.Errorf("config: public model ID %q collides with %s", id, existing)
 		}
 		publicIDs[id] = "canonical model"
+	}
+	if err := file.validateSkillsPolicyPerDestination(); err != nil {
+		return err
 	}
 	for id, model := range file.Models {
 		seenAliases := make(map[string]struct{}, len(model.Aliases))

@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/providers/anthropic"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
@@ -81,7 +82,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			switch providerConfig.Type {
 			case "anthropic":
 				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-				validateOptions = nativeoptions.Anthropic(serverFallbackPolicy(descriptor.ServerFallbacks))
+				validateOptions = nativeoptions.Anthropic(anthropicPolicy(descriptor))
 				target.Type = execution.TargetAnthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
@@ -153,15 +154,6 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 	return &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}, nil
 }
 
-// serverFallbackPolicy returns the native policy of a candidate's configured
-// server fallbacks; an absent policy refuses them.
-func serverFallbackPolicy(policy *config.ServerFallbacks) nativeoptions.AnthropicFallbackPolicy {
-	if policy == nil {
-		return nativeoptions.AnthropicFallbackPolicy{}
-	}
-	return nativeoptions.NewAnthropicFallbackPolicy(policy.Models, policy.AllowDefault)
-}
-
 // composeCandidates returns the only candidate, or an ordered fallback chain
 // over candidates whose physical attempts are recorded against descriptors.
 func composeCandidates(candidates []provider.LanguageModel, descriptors []config.Primary, sink *PhysicalAttemptSink) (provider.LanguageModel, error) {
@@ -184,4 +176,22 @@ func identityModelFactory(canonicalID string, lower provider.LanguageModel) (pro
 		ProviderID: "grafana",
 		ModelID:    canonicalID,
 	}), nil
+}
+
+// anthropicPolicy converts a configured candidate's skills and server-side
+// fallback policies. Configured candidates never admit container IDs, and an
+// absent policy refuses every skill or every active server-side fallback.
+func anthropicPolicy(descriptor config.Primary) nativeoptions.AnthropicPolicy {
+	var policy nativeoptions.AnthropicPolicy
+	if fallbacks := descriptor.ServerFallbacks; fallbacks != nil {
+		policy.Fallbacks = nativeoptions.NewAnthropicFallbackPolicy(fallbacks.Models, fallbacks.AllowDefault)
+	}
+	if skills := descriptor.Skills; skills != nil {
+		grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
+		for _, entry := range skills.Allow {
+			grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+		}
+		policy.Skills = nativeoptions.AllowlistedAnthropicSkills(grants)
+	}
+	return policy
 }

@@ -223,6 +223,123 @@ func TestRoutedSelection_CandidateNativeOptions(t *testing.T) {
 	}
 }
 
+const (
+	routedPlainHost  = "plain.anthropic.test"
+	routedSkillsHost = "skills.anthropic.test"
+	routedBusyHost   = "busy.anthropic.test"
+)
+
+func routedSkillsCatalog(t *testing.T, client *http.Client) *Catalog {
+	t.Helper()
+	pptx := func(versions ...string) *config.SkillsPolicy {
+		return &config.SkillsPolicy{Allow: []config.AllowedSkill{{Type: config.SkillAnthropic, SkillID: "pptx", Versions: versions}, {Type: config.SkillCustom, SkillID: "skill_01abc"}}}
+	}
+	reordered := &config.SkillsPolicy{Allow: []config.AllowedSkill{{Type: config.SkillCustom, SkillID: "skill_01abc"}, {Type: config.SkillAnthropic, SkillID: "pptx", Versions: []string{"2", "1"}}}}
+	file := config.File{
+		Providers: map[string]config.Provider{"plain": {Type: "anthropic", APIKeyEnv: "KEY"}, "skills": {Type: "anthropic", APIKeyEnv: "KEY"}, "busy": {Type: "anthropic", APIKeyEnv: "KEY"}, "shared": {Type: "anthropic", APIKeyEnv: "KEY"}},
+		Models: map[string]config.Model{
+			"grafana/plain":    {Name: "Plain", Primary: config.Primary{Provider: "plain", Model: "claude"}},
+			"grafana/other":    {Name: "Other", Primary: config.Primary{Provider: "plain", Model: "claude-other"}},
+			"grafana/skills":   {Name: "Skills", Primary: config.Primary{Provider: "skills", Model: "claude", Skills: pptx()}},
+			"grafana/busy":     {Name: "Busy", Primary: config.Primary{Provider: "busy", Model: "claude", Skills: pptx()}},
+			"grafana/shared-a": {Name: "Shared A", Primary: config.Primary{Provider: "shared", Model: "claude", Skills: pptx("1", "2")}},
+			"grafana/shared-b": {Name: "Shared B", Primary: config.Primary{Provider: "shared", Model: "claude", Skills: reordered}},
+		},
+	}
+	require.NoError(t, file.Validate())
+	providers := map[string]config.ResolvedProvider{
+		"plain":  {Type: "anthropic", APIKey: "configured-plain", BaseURL: "https://" + routedPlainHost},
+		"skills": {Type: "anthropic", APIKey: "configured-skills", BaseURL: "https://" + routedSkillsHost},
+		"busy":   {Type: "anthropic", APIKey: "configured-busy", BaseURL: "https://" + routedBusyHost},
+		"shared": {Type: "anthropic", APIKey: "configured-shared", BaseURL: "https://" + routedSkillsHost},
+	}
+	created, err := BuildCatalog(file, providers, client, identityModelFactory)
+	require.NoError(t, err)
+	return created
+}
+
+func TestRoutedSelection_CandidateSkillsPolicy(t *testing.T) {
+	skills := func(raw string) provider.CallOptions {
+		return providerOptionsCall("anthropic", `{"container":{"skills":[`+raw+`]}}`)
+	}
+	listed := skills(`{"type":"anthropic","skillId":"pptx"}`)
+	unlisted := skills(`{"type":"anthropic","skillId":"xlsx"}`)
+
+	t.Run("unpolicied route falls through to a policied route", func(t *testing.T) {
+		server := &nativeServer{}
+		overview, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/skills"]}`, listed)
+		require.NoError(t, err)
+		requests := server.requests()
+		require.Equal(t, []string{routedSkillsHost}, hosts(requests))
+		assert.Contains(t, requests[0].body, `"skill_id":"pptx"`)
+		require.NotNil(t, overview)
+		require.Len(t, overview.Attempts, 2)
+		assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
+		assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
+	})
+
+	t.Run("unpolicied routes only refuse", func(t *testing.T) {
+		server := &nativeServer{}
+		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/other"]}`, listed)
+		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+		assert.Equal(t, execution.CategoryInvalidRequest, execution.ClassifyProvider(err))
+		assert.Empty(t, server.requests())
+	})
+
+	t.Run("a policied routed outage after a refusal is the real failure", func(t *testing.T) {
+		server := &nativeServer{failing: map[string]bool{routedBusyHost: true}}
+		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/busy"]}`, listed)
+		require.Error(t, err)
+		assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
+		assert.Equal(t, []string{routedBusyHost}, hosts(server.requests()))
+	})
+
+	t.Run("shared destination with equal policies is attempted once", func(t *testing.T) {
+		for _, route := range []struct{ model, gateway string }{
+			{"grafana/shared-a", `{"models":["grafana/shared-b"]}`},
+			{"grafana/shared-b", `{"models":["grafana/shared-a"]}`},
+		} {
+			t.Run(route.model, func(t *testing.T) {
+				server := &nativeServer{}
+				selector := NewSelector(routedSkillsCatalog(t, server.client()), nil)
+				_, err := routedCall(t, selector, route.model, route.gateway, skills(`{"type":"anthropic","skillId":"pptx","version":"2"}`))
+				require.NoError(t, err)
+				requests := server.requests()
+				require.Len(t, requests, 1)
+				assert.Contains(t, requests[0].body, `"skill_id":"pptx"`)
+
+				_, err = routedCall(t, selector, route.model, route.gateway, unlisted)
+				require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+				assert.Len(t, server.requests(), 1)
+			})
+		}
+	})
+
+	t.Run("differing policies on a shared destination fail catalog validation", func(t *testing.T) {
+		_, err := config.ParseModelCatalog(`providers:
+  skills:
+    type: anthropic
+    apiKeyEnv: ANTHROPIC_API_KEY
+models:
+  grafana/shared-a:
+    name: Shared A
+    primary:
+      provider: skills
+      model: claude-shared
+      skills:
+        allow:
+          - type: anthropic
+            skillId: pptx
+  grafana/shared-b:
+    name: Shared B
+    primary:
+      provider: skills
+      model: claude-shared
+`)
+		require.EqualError(t, err, "config: models.grafana/shared-b.primary.skills differs from models.grafana/shared-a.primary.skills for the same provider and model")
+	})
+}
+
 func TestRoutedSelection_SharesStartupCandidates(t *testing.T) {
 	var constructed atomic.Int32
 	file := config.File{
@@ -513,7 +630,7 @@ func TestRoutedSelection_BYOKNativeOptions(t *testing.T) {
 		name, options, field, beta string
 		forwarded                  bool
 	}{
-		{name: "skills", options: `{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`},
+		{name: "malformed custom skill", options: `{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`},
 		{name: "server-side fallback chain", options: `{"fallbacks":[{"model":"claude-any"}]}`, field: `"fallbacks":[{"model":"claude-any"}]`, beta: explicitFallbackBeta, forwarded: true},
 		{name: "server-side fallback default", options: `{"fallbacks":"default"}`, field: `"fallbacks":"default"`, beta: defaultFallbackBeta, forwarded: true},
 	} {
@@ -565,6 +682,17 @@ func TestRoutedSelection_BYOKNativeOptions(t *testing.T) {
 			assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
 		})
 	}
+	t.Run("all-Anthropic chain admits a bounded custom skill", func(t *testing.T) {
+		server := &nativeServer{}
+		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+		bounded := providerOptionsCall("anthropic", `{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":"skill_01routed"}}]}}`)
+		_, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["anthropic/y"]}`, bounded)
+		require.NoError(t, err)
+		requests := server.requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "dummy-a1", requests[0].key)
+		assert.Contains(t, requests[0].body, `"skill_id":"skill_01routed"`)
+	})
 }
 
 func TestRoutedSelection_ServerCaptureIndependence(t *testing.T) {

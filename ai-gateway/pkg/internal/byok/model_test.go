@@ -657,7 +657,10 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 		}{
 			{name: "MCP servers", options: mcpOptions, nativeField: "mcp_servers", allowed: true},
 			{name: "invalid MCP destination", options: `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`},
-			{name: "container skills", options: `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`},
+			{name: "malformed custom skill", options: `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`},
+			{name: "too many skills", options: `{"anthropic":{"container":{"skills":[` + distinctSkills(21) + `]}}}`},
+			{name: "over-long container ID", options: `{"anthropic":{"container":{"id":"` + strings.Repeat("c", 129) + `"}}}`},
+			{name: "bounded custom skill with container ID", options: `{"anthropic":{"container":{"id":"container_01","skills":[{"type":"custom","providerReference":{"anthropic":"skill_01external"}}]}}}`, nativeField: "skill_01external", allowed: true},
 			{name: "native fallback default", options: `{"anthropic":{"fallbacks":"default"}}`, nativeField: `"fallbacks":"default"`, beta: "server-side-fallback-2026-07-01", allowed: true},
 			{name: "native fallback chain with a repeated model", options: `{"anthropic":{"fallbacks":[{"model":"claude-any"},{"model":"claude-any","thinking":{"type":"disabled"}}]}}`, nativeField: `"fallbacks":[{"model":"claude-any"},{"model":"claude-any","thinking":{"type":"disabled"}}]`, beta: "server-side-fallback-2026-06-01", allowed: true},
 			{name: "unconfigured MCP history", options: `{}`, mcpHistory: true, providerExecuted: true},
@@ -703,4 +706,12 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 			})
 		}
 	}
+}
+
+func distinctSkills(n int) string {
+	skills := make([]string, n)
+	for i := range skills {
+		skills[i] = fmt.Sprintf(`{"type":"anthropic","skillId":"skill-%d"}`, i)
+	}
+	return strings.Join(skills, ",")
 }

@@ -126,7 +126,7 @@ func TestAnthropic_ServerFallbackPolicy(t *testing.T) {
 		{"unrestricted still checks MCP history", UnrestrictedAnthropicFallbacks(), `{"fallbacks":"default"}`, unconfiguredMCPHistory, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := Anthropic(tc.policy)(call(tc.options, tc.prompt))
+			err := Anthropic(AnthropicPolicy{Fallbacks: tc.policy})(call(tc.options, tc.prompt))
 			if tc.allowed {
 				assert.NoError(t, err)
 				return
@@ -138,7 +138,7 @@ func TestAnthropic_ServerFallbackPolicy(t *testing.T) {
 		models := []string{"claude-b"}
 		policy := NewAnthropicFallbackPolicy(models, false)
 		models[0] = "claude-z"
-		assert.NoError(t, Anthropic(policy)(call(`{"fallbacks":[{"model":"claude-b"}]}`, "")))
-		assert.ErrorIs(t, Anthropic(policy)(call(`{"fallbacks":[{"model":"claude-z"}]}`, "")), catalog.ErrUnsupportedRequest)
+		assert.NoError(t, Anthropic(AnthropicPolicy{Fallbacks: policy})(call(`{"fallbacks":[{"model":"claude-b"}]}`, "")))
+		assert.ErrorIs(t, Anthropic(AnthropicPolicy{Fallbacks: policy})(call(`{"fallbacks":[{"model":"claude-z"}]}`, "")), catalog.ErrUnsupportedRequest)
 	})
 }
