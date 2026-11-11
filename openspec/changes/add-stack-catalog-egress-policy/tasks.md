@@ -34,4 +34,4 @@
 
 ## 7. Integration checks
 
-- [ ] 7.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-providerwire-v4`, `test-integration`, `verify-ai-gateway-boundary`, `lint-docs` and `openspec validate add-stack-catalog-egress-policy --strict`, with `GOFLAGS=-buildvcs=false`.
+- [x] 7.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-providerwire-v4`, `test-integration`, `verify-ai-gateway-boundary`, `lint-docs` and `openspec validate add-stack-catalog-egress-policy --strict`, with `GOFLAGS=-buildvcs=false`.
