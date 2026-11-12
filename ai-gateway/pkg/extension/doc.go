@@ -21,8 +21,7 @@
 //  1. [Admitter] across extensions in name order, with request information
 //     only. The first [ErrDenied] ends the call.
 //  2. [RequestTransformer] with tenant-scope extensions first, then
-//     operator-scope extensions, each by ascending [Definition.Priority] and
-//     then by name. Each transform receives the parameters the previous one
+//     operator-scope extensions, each in name order. Each transform receives the parameters the previous one
 //     returned; the host refuses parameters that add a protected call header
 //     or the call-level "gateway" provider-option namespace.
 //  3. [RequestInspector] in name order, on exactly the parameters the model

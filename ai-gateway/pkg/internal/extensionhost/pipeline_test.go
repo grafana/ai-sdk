@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -157,12 +156,10 @@ func TestPipeline_TransformOrder(t *testing.T) {
 		}
 	}
 	h := newHarness(t,
-		define("o1", &recorder{transform: appendSystem("o1")}, priority(0)),
-		define("t2", &recorder{transform: appendSystem("t2")}, tenant(5)),
-		define("t1", &recorder{transform: appendSystem("t1")}, tenant(5)),
-		define("o0", &recorder{transform: appendSystem("o0")}, priority(-1)),
-		define("omin", &recorder{transform: appendSystem("omin")}, priority(math.MinInt)),
-		define("omax", &recorder{transform: appendSystem("omax")}, priority(math.MaxInt)),
+		define("o1", &recorder{transform: appendSystem("o1")}),
+		define("t2", &recorder{transform: appendSystem("t2")}, tenant),
+		define("t1", &recorder{transform: appendSystem("t1")}, tenant),
+		define("o0", &recorder{transform: appendSystem("o0")}),
 	)
 	_, err := h.compose(t, extension.SourceOperatorCatalog).DoGenerate(t.Context(), provider.CallOptions{})
 	require.NoError(t, err)
@@ -170,7 +167,7 @@ func TestPipeline_TransformOrder(t *testing.T) {
 	for _, message := range h.model.received[0].Prompt {
 		order = append(order, message.Content[0].Text)
 	}
-	assert.Equal(t, []string{"t1", "t2", "omin", "o0", "o1", "omax"}, order)
+	assert.Equal(t, []string{"t1", "t2", "o0", "o1"}, order)
 }
 
 func TestPipeline_InspectRequestSeesTheModelParams(t *testing.T) {

@@ -57,7 +57,6 @@ type Definition struct {
 	Name             string
 	Scope            Scope
 	Keys             []KeyOwnership // nil: both; the only applicability filter
-	Priority         int            // ascending, transforms only
 	FailurePolicy    FailurePolicy
 	ConfigSchema     schema.Schema  // zero: only an empty configuration
 	Secrets          []string       // operator entry supplies <name>Env
@@ -192,9 +191,11 @@ The production composer becomes `observers.Compose(selection with Model = pipeli
 
 ### Ordering, filtering and the cached lists
 
-At startup the host builds, for each key ownership (`operator`, `customer`), the applicable instances in three precomputed orders: gates, inspectors and observers by name; transforms by scope (tenant first), priority and name. Applicability is key ownership alone: an extension applies when `Keys` is empty or contains the call's ownership. Per call, the pipeline picks the lists for `selection.Source.Keys()`, so any source other than `operator-catalog`, including ones added later, uses the customer lists. An unknown source is refused by the observer composer before any phase runs. When no extension applies, the composer returns the selected model unchanged, so calls without extensions behave exactly as before. #765 adds the config revision to this key.
+At startup the host builds, for each key ownership (`operator`, `customer`), the applicable instances in three precomputed orders: gates, inspectors and observers by name; transforms by scope (tenant first), then name. Applicability is key ownership alone: an extension applies when `Keys` is empty or contains the call's ownership. Per call, the pipeline picks the lists for `selection.Source.Keys()`, so any source other than `operator-catalog`, including ones added later, uses the customer lists. An unknown source is refused by the observer composer before any phase runs. When no extension applies, the composer returns the selected model unchanged, so calls without extensions behave exactly as before. #765 adds the config revision to this key.
 
 Alternative: a second filter by source. Rejected: every source has exactly one ownership, so a source filter could only narrow `Keys`, would need its own consistency rule, and would tie extensions to a source list that grows. `Call.Source` stays as an informational label.
+
+Alternative: a numeric transform priority. Rejected: the planned transforms don't depend on each other's order, and name order within a scope is deterministic and needs no extra field.
 
 ### Request phases and the policy re-check
 
@@ -257,7 +258,7 @@ A tenant definition enabled by default is built once at startup with an empty co
 | Acceptance | Evidence |
 |---|---|
 | Phase order; instance without phases fails | `extensionhost` table tests with a recording extension per phase combination, unary and stream; startup test with a phase-less instance. |
-| Transform order; gates and inspectors stop at the first deny | Ordering tests over mixed scopes, priorities and names; denial at each position asserts which phases ran. |
+| Transform order; gates and inspectors stop at the first deny | Ordering tests over mixed scopes and names; denial at each position asserts which phases ran. |
 | `InspectRequest` sees the final params | Transform adds a system message and a header; the inspector's params equal the fake model's received options. |
 | `InspectResponse` abort before and after commitment, unary and stream | Pipeline tests, plus ProviderWire handler tests: unary permission document with no result; committed stream with two deltas, one permission error event, end. |
 | Shared per-call state | Admit stores a value, observe reads it; concurrent calls under `-race` see only their own. |
