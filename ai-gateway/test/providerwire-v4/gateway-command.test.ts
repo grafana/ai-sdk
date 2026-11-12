@@ -571,7 +571,7 @@ describe("stack-catalog routes through the authenticated command", () => {
           const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
           assert.equal(go.error?.statusCode, status, `${baseURL} ${mode}`);
           assert.equal(go.error.isRetryable, false);
-          assert.match(JSON.stringify(go.error), message);
+          assert.match(go.error.message, message);
           for (const exported of [JSON.stringify(failure.cause?.data ?? null), JSON.stringify(go.error)]) {
             assert.equal(exported.includes(`:${port}`), false);
             assert.equal(exported.includes("request-only-key"), false);

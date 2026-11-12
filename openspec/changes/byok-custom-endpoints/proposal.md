@@ -2,7 +2,7 @@
 
 ## Why
 
-Request accounts (BYOK) and stack catalogs both let a customer choose where the Gateway connects, but they follow different rules for it. A stack-catalog provider may set any `https` `baseURL` under the egress policy. It is checked without DNS at admission, connects through the egress client, and gets bare egress errors. A request account's `baseURL` must equal its provider's native endpoint or appear on a service-approved list. Production passes no list, so BYOK is native-only, and the approval parameter is dead code. One concern should have one rule: a request account's `baseURL` should behave exactly like a stack-catalog provider's.
+Request accounts (BYOK) and stack catalogs both let a customer choose where the Gateway connects, but they follow different rules for it. A stack-catalog provider may set any `https` `baseURL` under the egress policy. It is checked without DNS at admission, connects through the egress client, and gets bare egress errors. A request account's `baseURL` must equal its provider's native endpoint or appear on a service-approved list. Production passes no list, so BYOK is native-only, and the approval parameter is dead code. One concern should have one rule: a request account's `baseURL` should follow the same rule as a stack-catalog provider's.
 
 ## What Changes
 
@@ -15,7 +15,7 @@ Request accounts (BYOK) and stack catalogs both let a customer choose where the 
 - **One rule, shared code:**
   - the static endpoint check moves from `stackcatalog` to `outbound`;
   - the bare-egress-error wrapper moves from `service` to `outbound`;
-  - a two-client value chooses the egress client for every model with a `baseURL`.
+  - a two-client value chooses the egress client for every model with a custom `baseURL`.
 
   Stack catalogs and BYOK use all three, so the rule can't drift.
 - **Removed:** the BYOK service-approved destination list (`approvedBaseURLs`) and its requirement.
@@ -36,13 +36,14 @@ None.
   - construction uses policy-admitted endpoints;
   - the service-approved destination requirement is removed.
 - `gateway-stack-catalog-egress`:
+  - HTTPS only covers request accounts, and a native-default `baseURL` is out of the policy's scope;
   - the scope adds request accounts;
   - the static checks apply at BYOK decode;
   - the settings are renamed;
   - the documentation and evidence requirements cover BYOK.
 - `gateway-model-catalog-kind`: a stack provider's `baseURL` equal to its type's native default skips the egress static checks and counts as unset.
 - `gateway-provider-configuration`: BYOK construction may use the account's policy-admitted `baseURL`, and OpenAI Responses models use the egress client for it.
-- `gateway-resource-policy`: request accounts with a `baseURL` use the egress client under the same bounds.
+- `gateway-resource-policy`: request accounts with a custom `baseURL` use the egress client under the same bounds.
 
 ## Impact
 

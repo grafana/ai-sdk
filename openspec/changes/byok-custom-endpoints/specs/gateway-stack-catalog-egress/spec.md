@@ -19,7 +19,7 @@ A custom endpoint of a stack catalog or a request account SHALL use the `https` 
 The egress policy SHALL govern every connection for a custom endpoint: a stack-catalog provider's or request account's `baseURL` other than its type's native default. It SHALL NOT govern the operator catalog, or stack-catalog providers and request accounts without one, which use their type's native endpoint through the shared model HTTP client.
 
 #### Scenario: Custom stack-catalog endpoint
-- **WHEN** a stack-catalog call selects a provider with `baseURL`
+- **WHEN** a stack-catalog call selects a provider with a custom `baseURL`
 - **THEN** its connections SHALL be checked by the egress policy
 
 #### Scenario: Native endpoint in a stack catalog
@@ -35,7 +35,7 @@ The egress policy SHALL govern every connection for a custom endpoint: a stack-c
 - **THEN** it SHALL count as unset: it SHALL use the shared model HTTP client and its proxy settings, and the egress lists SHALL NOT apply to it
 
 #### Scenario: Custom request account endpoint
-- **WHEN** a BYOK call's account sets `baseURL`
+- **WHEN** a BYOK call's account sets a custom `baseURL`
 - **THEN** its connections SHALL be checked by the egress policy, as for a stack-catalog provider
 
 ### Requirement: Static endpoint checks
