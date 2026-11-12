@@ -6,7 +6,7 @@
 An extension definition SHALL declare a name, a scope of `operator` or `tenant`, a failure policy of `fail-closed` or `skip`, and a factory. It MAY declare key ownerships, a transform priority, a JSON Schema for its configuration, secret names and whether it is enabled by default. Names SHALL be 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit.
 
 #### Scenario: Invalid definition
-- **WHEN** a definition has an invalid name, an unknown scope or failure policy, no factory, a configuration schema that does not compile, or an invalid or repeated secret name
+- **WHEN** a definition has an invalid name, an unknown scope or failure policy, an unknown or repeated key ownership, no factory, a configuration schema that does not compile, or an invalid or repeated secret name
 - **THEN** startup SHALL fail before any request is served, naming the extension and the invalid field
 
 #### Scenario: Duplicate names

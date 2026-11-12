@@ -206,8 +206,12 @@ func TestExtensionPipeline_UnobservedSourceRunsNoPhase(t *testing.T) {
 		calls++
 		return &provider.GenerateResult{}, nil
 	}}
-	for _, source := range []extension.Source{"", extension.SourceStackCatalog} {
-		t.Run(string(source), func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source extension.Source
+	}{{name: "empty", source: ""}, {name: "stack-catalog", source: extension.SourceStackCatalog}} {
+		source := tc.source
+		t.Run(tc.name, func(t *testing.T) {
 			recorder := &pipelineRecorder{}
 			observed, host := newExtensionRuntime(t, func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 				return execution.Selection{ID: id, Model: lower, Source: source}, nil
