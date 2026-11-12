@@ -177,7 +177,7 @@ Upstream is `mergeObjects(settings, params)`. A defined call value wins. Nested 
 | 7 | Validation of defaults | none in the middleware; upstream checks a call's `maxOutputTokens` (integer ≥ 1) and `seed` (integer) only in `prepareLanguageModelCallOptions`, which defaults bypass | admission: `maxOutputTokens` ≥ 1, integers in int64 range, at least one field | intentional deviation, Gateway-owned. Recorded in `gateway-tenant-call-defaults` |
 | 8 | Allowed fields | also `responseFormat`, `tools`, `toolChoice`, `headers`, `providerOptions`, and at runtime any key | only the eight sampling and limit fields | intentional deviation, Gateway-owned (issue #766). Recorded in `gateway-tenant-call-defaults` |
 | 9 | Headers merge | one level, per key; call wins | `mergeMaps`, the same | parity in the library; tenants can't set headers |
-| 10 | Provider options merge | recursive deep merge across provider namespaces and nested keys | root `DefaultSettings` merges per provider key only, so the call's whole namespace replaces the default's. The root spec says "no deep merge", and no known gap is recorded | root-library divergence, unreachable from the tenant schema. Unrecorded, so see the draft `upstream-sync` issue under Follow-ups |
+| 10 | Provider options merge | recursive deep merge across provider namespaces and nested keys | root `DefaultSettings` merges per provider key only, so the call's whole namespace replaces the default's. The root spec says "no deep merge", and no known gap is recorded | root-library divergence, unreachable from the tenant schema. Unrecorded; tracked in [#791](https://github.com/grafana/ai-sdk/issues/791) |
 | 11 | `responseFormat` | objects deep-merged, so a call's `{type: text}` keeps a default `schema` | replaced | same as 10 |
 | 12 | Call `tools: []` | call's empty array wins | ProviderWire drops an empty list, so a default would apply | same as 10, at the wire |
 | 13 | `reasoning` | not in the pinned settings type | supported by root `DefaultSettings` | Go-only addition in the library, not exposed to tenants |
@@ -271,7 +271,7 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 
 1. **`defaultInstructions` shape:** `messages: [{content}]`. It matches `middleware.DefaultInstructions(...provider.Message)` and upstream's array form. The guide shows the one-message case first.
 2. **Bounds:** only `maxOutputTokens` ≥ 1, the int64 ranges, non-empty messages and content, and at least one setting. No `temperature` or `topP` ranges.
-3. **Root-library divergences:** no root-library change in this change. The `upstream-sync` issue is drafted below and filed by the maintainers.
+3. **Root-library divergences:** no root-library change in this change. The `upstream-sync` issue is [#791](https://github.com/grafana/ai-sdk/issues/791).
 4. **Trace hygiene:** `trace: 'off'` as a worker-scoped override in the `accounts` fixture. Verified locally: with `trace: 'on'` forced in a scratch configuration, a test using the `accounts` test object wrote no trace, and a test using the base fixtures wrote one whose network log contained the scratch bearer token.
 
 ## Shipped reads
@@ -288,9 +288,9 @@ The shipped tenant extensions apply to every call, so the shipped Gateway reads 
 
   The same steps go into the PR body.
 - Stack-catalog coverage when #757 lands. No code change is expected, because `Sources` is nil.
-- The `upstream-sync` issue below, filed by the maintainers after approval.
+- Root `DefaultSettings` alignment: [#791](https://github.com/grafana/ai-sdk/issues/791).
 
-### Draft `upstream-sync` issue
+### `upstream-sync` issue, filed as [#791](https://github.com/grafana/ai-sdk/issues/791)
 
 **Title:** `fix(middleware): align DefaultSettings merging with upstream defaultSettingsMiddleware`
 

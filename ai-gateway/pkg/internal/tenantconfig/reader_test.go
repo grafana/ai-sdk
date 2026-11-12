@@ -1,9 +1,11 @@
 package tenantconfig
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -32,11 +34,19 @@ const (
 
 func newTestReader(t *testing.T, handler http.HandlerFunc) *Reader {
 	t.Helper()
+	reader, _ := newLoggedTestReader(t, handler)
+	return reader
+}
+
+// newLoggedTestReader is newTestReader with the reader's log records.
+func newLoggedTestReader(t *testing.T, handler http.HandlerFunc) (*Reader, *bytes.Buffer) {
+	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	reader, err := NewReader(rest.Config{Host: server.URL})
+	logs := &bytes.Buffer{}
+	reader, err := NewReader(rest.Config{Host: server.URL}, slog.New(slog.NewJSONHandler(logs, nil)))
 	require.NoError(t, err)
-	return reader
+	return reader, logs
 }
 
 func writeList(w http.ResponseWriter, body string) {
@@ -163,6 +173,59 @@ func TestReader_Failures(t *testing.T) {
 	})
 }
 
+func TestReader_LogsWhyAResponseIsInvalid(t *testing.T) {
+	respond := func(contentType, body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			if contentType == "" {
+				w.Header()["Content-Type"] = nil
+			} else {
+				w.Header().Set("Content-Type", contentType)
+			}
+			_, _ = io.WriteString(w, body)
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		handler   http.HandlerFunc
+		reason    string
+		mediaType string
+	}{
+		{name: "html", handler: respond("text/html; charset=utf-8; x="+readerSentinel, "<html>"+readerSentinel+"</html>"), reason: "decode", mediaType: "text/html"},
+		{name: "kind", handler: respond("application/json;as=Table;g="+readerSentinel, `{"kind":"`+readerSentinel+`","items":[]}`), reason: "kind", mediaType: "application/json"},
+		{name: "no kind", handler: respond("application/json", `{"items":[{"metadata":{"name":"`+readerSentinel+`"}}]}`), reason: "kind", mediaType: "application/json"},
+		{name: "item", handler: respond("application/json", `{"kind":"MiddlewareList","items":[{"spec":"`+readerSentinel+`"}]}`), reason: "item", mediaType: "application/json"},
+		{name: "size", handler: respond("application/json", `{"kind":"MiddlewareList","items":[],"pad":"`+strings.Repeat(readerSentinel, maxListBytes/len(readerSentinel)+1)+`"}`), reason: "size", mediaType: "application/json"},
+		{name: "pages", handler: respond("application/json", `{"kind":"MiddlewareList","metadata":{"continue":"`+readerSentinel+`"},"items":[]}`), reason: "pages", mediaType: "application/json"},
+		{name: "no content type", handler: respond("", readerSentinel), reason: "decode", mediaType: "none"},
+		{name: "malformed content type", handler: respond(readerSentinel+"; ;", readerSentinel), reason: "decode", mediaType: "invalid"},
+		{name: "long media type", handler: respond("application/"+strings.Repeat("x", maxMediaTypeBytes), readerSentinel), reason: "decode", mediaType: "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader, logs := newLoggedTestReader(t, tc.handler)
+			_, err := reader.Read(context.Background(), "stacks-1")
+			require.ErrorIs(t, err, extensionhost.ErrReadInvalid)
+			var record map[string]any
+			require.NoError(t, json.Unmarshal(logs.Bytes(), &record), logs.String())
+			assert.Equal(t, "gateway tenant configuration response invalid", record["msg"])
+			assert.Equal(t, "stacks-1", record["namespace"])
+			assert.Equal(t, tc.reason, record["reason"])
+			assert.Equal(t, tc.mediaType, record["content_type"])
+			assert.NotContains(t, logs.String(), readerSentinel)
+		})
+	}
+
+	t.Run("no record for other failures or success", func(t *testing.T) {
+		for _, handler := range []http.HandlerFunc{
+			func(w http.ResponseWriter, _ *http.Request) { http.Error(w, readerSentinel, http.StatusForbidden) },
+			func(w http.ResponseWriter, _ *http.Request) { writeList(w, `{"kind":"MiddlewareList","items":[]}`) },
+		} {
+			reader, logs := newLoggedTestReader(t, handler)
+			_, _ = reader.Read(context.Background(), "stacks-1")
+			assert.Empty(t, logs.String())
+		}
+	})
+}
+
 // exchanges records the token exchange requests a test host receives.
 type exchanges struct {
 	mu       sync.Mutex
@@ -220,7 +283,7 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 		k8s.RemoteServiceTarget{Host: server.URL, Audiences: []string{manifest.Group}},
 	)
 	require.NoError(t, err)
-	reader, err := NewReader(*kubeConfig)
+	reader, err := NewReader(*kubeConfig, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
 	first, err := reader.Read(context.Background(), "stacks-1")

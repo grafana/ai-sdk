@@ -337,7 +337,9 @@ counts denials and failures by extension, phase and event, including phase
 `result` (`success` or `failed`), and
 `grafana_ai_gateway_tenant_config_unimplemented_types_total` counts enabled
 resources of types the build doesn't implement. Read failures are logged with
-the namespace and a fixed class, such as `refused` or `timeout`. Extension instances
+the namespace and a fixed class, such as `refused` or `timeout`. A successful
+response the Gateway can't use is also logged with a fixed reason (`decode`,
+`kind`, `size`, `item` or `pages`) and its media type, never its content. Extension instances
 that implement `Close` are closed within the Gateway's final one-second flush,
 after in-flight observations finish.
 
