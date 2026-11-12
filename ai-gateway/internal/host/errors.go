@@ -13,6 +13,9 @@ const (
 	ErrorInternal
 	// ErrorBYOKDiscovery reports that catalog discovery is unsupported for BYOK.
 	ErrorBYOKDiscovery
+	// ErrorCatalogConfiguration reports a stored stack catalog that fails its
+	// checks or lacks a provider key.
+	ErrorCatalogConfiguration
 )
 
 // ErrorWriter writes an adapter's fixed document for a host failure. A

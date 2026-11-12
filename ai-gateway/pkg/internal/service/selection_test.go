@@ -48,7 +48,7 @@ func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, er
 }
 
 func byokSelector(client *http.Client, factory ModelFactory) execution.RequestSelector {
-	return NewSelector(&accountCatalogSpy{}, &BYOKOptions{Client: client, Factory: factory})
+	return NewSelector(&accountCatalogSpy{}, &BYOKOptions{Client: client, Factory: factory}, nil)
 }
 
 func TestSelector_AccessModes(t *testing.T) {
@@ -108,7 +108,7 @@ func TestSelector_AccessModes(t *testing.T) {
 				if tc.byok {
 					byokOptions = &BYOKOptions{Client: client, Factory: factory}
 				}
-				wire, err := newWireHandler(execution.Config{Selector: NewSelector(configured, byokOptions), Limits: serviceTestLimits()})
+				wire, err := newWireHandler(execution.Config{Selector: NewSelector(configured, byokOptions, nil), Limits: serviceTestLimits()})
 				require.NoError(t, err)
 				handler := wire
 				var headers http.Header
@@ -144,7 +144,7 @@ func TestSelector_AccessModes(t *testing.T) {
 }
 
 func TestNewSelector_RequiresResolver(t *testing.T) {
-	assert.Nil(t, NewSelector(nil, nil))
+	assert.Nil(t, NewSelector(nil, nil, nil))
 }
 
 func TestBYOKSelection_NativeSummariesAndAttempts(t *testing.T) {
@@ -463,8 +463,12 @@ func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.Ac
 	if mode == gatewayauth.AccessModeCloud {
 		policy.InternalServices = []string{testInternalService}
 	}
+	decide := policy.Decide
+	if access == gatewayauth.CatalogAccounts {
+		service, identity, decide = "front-door", "user:u1", policy.DecideCatalog
+	}
 	writer := providerv4.NewHostErrorWriter()
-	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.WriteHostError(w, host.ErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
+	protected := gatewayauth.AccessMiddleware(decide, func(w http.ResponseWriter) { writer.WriteHostError(w, host.ErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		protected.ServeHTTP(w, request.WithContext(verifiedContext(request.Context(), service, identity, testNamespace)))
 	}), http.Header{}

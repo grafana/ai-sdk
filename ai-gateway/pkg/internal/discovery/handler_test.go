@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
@@ -31,6 +32,7 @@ const (
 	internalDocument    = `{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`
 	permissionDocument  = `{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`
 	byokDocument        = `{"error":{"message":"catalog discovery is unsupported for BYOK","type":"invalid_request_error","param":null,"code":"invalid_request"}}`
+	catalogDocument     = `{"error":{"message":"model catalog is invalid or missing a provider key","type":"failed_dependency","param":null,"code":"failed_dependency"}}`
 )
 
 type authInfo struct {
@@ -41,17 +43,22 @@ type authInfo struct {
 func (info authInfo) GetExtra() map[string][]string { return info.extra }
 
 // withAccess serves next to a caller with the given account access. Any
-// access other than configured or BYOK serves next without a verified caller.
+// access other than configured, BYOK or catalog serves next without a
+// verified caller.
 func withAccess(access gatewayauth.AccountAccess, next http.Handler) http.Handler {
-	if access != gatewayauth.ConfiguredAccounts && access != gatewayauth.RequestBYOK {
+	if access != gatewayauth.ConfiguredAccounts && access != gatewayauth.RequestBYOK && access != gatewayauth.CatalogAccounts {
 		return next
 	}
 	service, identity := testInternalService, ""
-	if access == gatewayauth.RequestBYOK {
+	if access != gatewayauth.ConfiguredAccounts {
 		service, identity = "front-door", "user:u1"
 	}
 	policy := gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeCloud, InternalServices: []string{testInternalService}}
-	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTeapot) }, func(context.Context, gatewayauth.Caller) {}, next)
+	decide := policy.Decide
+	if access == gatewayauth.CatalogAccounts {
+		decide = policy.DecideCatalog
+	}
+	protected := gatewayauth.AccessMiddleware(decide, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTeapot) }, func(context.Context, gatewayauth.Caller) {}, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		var claims authn.Claims[authn.AccessTokenClaims]
 		claims.Rest.Namespace = testNamespace
@@ -71,7 +78,7 @@ func serve(ctx context.Context, handler http.Handler, access gatewayauth.Account
 }
 
 func newTestHandler(lister catalog.ModelLister) http.Handler {
-	return New(lister, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	return New(lister, nil, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
 }
 
 type testLister struct {
@@ -129,6 +136,30 @@ func TestHandler_ConfiguredCallerGetsTheProjection(t *testing.T) {
 	assert.Equal(t, `{"models":[]}`, empty.Body.String())
 }
 
+func TestHandler_CatalogCallerGetsTheStackCatalog(t *testing.T) {
+	configured := &testLister{models: []catalog.ModelInfo{configuredInfo()}}
+	stack := &testLister{models: []catalog.ModelInfo{{ID: "stack", Name: "Stack"}}}
+	handler := New(configured, stack, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+
+	response := serve(context.Background(), handler, gatewayauth.CatalogAccounts)
+	assert.Equal(t, http.StatusOK, response.Code)
+	expected, err := providerv4.DiscoveryProjection{}.ProjectDiscovery(stack.models)
+	require.NoError(t, err)
+	assert.Equal(t, string(expected), response.Body.String())
+	assert.Zero(t, configured.calls.Load())
+
+	response = serve(context.Background(), handler, gatewayauth.ConfiguredAccounts)
+	assert.Contains(t, response.Body.String(), `"id":"public"`)
+	assert.Equal(t, int32(1), stack.calls.Load())
+}
+
+func TestHandler_CatalogConfigurationFailure(t *testing.T) {
+	stack := &testLister{err: fmt.Errorf("wrapped: %w", execution.ErrCatalogConfiguration)}
+	response := serve(context.Background(), New(&testLister{}, stack, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter()), gatewayauth.CatalogAccounts)
+	assert.Equal(t, http.StatusFailedDependency, response.Code)
+	assert.Equal(t, catalogDocument, response.Body.String())
+}
+
 func TestHandler_AccessDecision(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -161,7 +192,7 @@ func TestHandler_ListingAndProjectionFailures(t *testing.T) {
 		{"projection panic", &testLister{}, failingProjection{panic: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := New(tc.lister, tc.projection, providerv4.NewHostErrorWriter())
+			handler := New(tc.lister, nil, tc.projection, providerv4.NewHostErrorWriter())
 			response := serve(context.Background(), handler, gatewayauth.ConfiguredAccounts)
 			assert.Equal(t, http.StatusInternalServerError, response.Code)
 			assert.Equal(t, internalDocument, response.Body.String())

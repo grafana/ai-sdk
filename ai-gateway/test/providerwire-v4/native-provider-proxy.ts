@@ -42,15 +42,18 @@ export function nativeProxyEnvironment(proxyURL: string): Record<string, string>
   };
 }
 
-type NativeAuthority = "api.anthropic.com:443" | "api.openai.com:443";
+export type NativeAuthority = "api.anthropic.com:443" | "api.openai.com:443";
+
+// NativeProxyOptions sets the certificate the proxy presents for the native
+// authorities and the address it listens on. The defaults are the committed
+// test fixture and a loopback port.
+export type NativeProxyOptions = { cert: string | Buffer; key: string | Buffer; host: string; port: number };
 
 // startNativeProviderProxy forwards TLS CONNECT tunnels for each native
 // authority to its fake target, and refuses every other authority.
-export async function startNativeProviderProxy(targets: Partial<Record<NativeAuthority, string>>) {
-  const context = createSecureContext({
-    cert: readFileSync(nativeProxyCertificate),
-    key: nativeProxyKey,
-  });
+export async function startNativeProviderProxy(targets: Partial<Record<NativeAuthority, string>>, options?: NativeProxyOptions) {
+  const { cert, key, host, port } = options ?? { cert: readFileSync(nativeProxyCertificate), key: nativeProxyKey, host: "127.0.0.1", port: 0 };
+  const context = createSecureContext({ cert, key });
   const sockets = new Set<TLSSocket>();
   const forwarders = new Map(Object.entries(targets).map(([name, url]) => [name, createServer((request, response) => {
     const upstream = httpRequest(new URL(request.url ?? "/", url), {
@@ -78,11 +81,11 @@ export async function startNativeProviderProxy(targets: Partial<Record<NativeAut
     secure.on("close", () => sockets.delete(secure));
     forwarded.emit("connection", secure);
   });
-  await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>(resolve => proxy.listen(port, host, resolve));
   const address = proxy.address();
   if (!address || typeof address === "string") throw new Error("native proxy did not bind TCP");
   return {
-    url: `http://127.0.0.1:${address.port}`,
+    url: `http://${host}:${address.port}`,
     async stop() {
       for (const socket of sockets) socket.destroy();
       for (const forwarded of forwarders.values()) forwarded.closeAllConnections();

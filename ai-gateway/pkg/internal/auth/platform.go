@@ -17,6 +17,10 @@ const (
 	// DirectCallerServiceKey is the AuthInfo extra holding the signed service
 	// identity of the first actor, the service that called the plugin host.
 	DirectCallerServiceKey = "aigateway.directCallerService"
+	// ServiceChainKey is the AuthInfo extra that is present when the verified
+	// actor chain holds only services: its innermost actor is not a signed-in
+	// identity, such as a user, a service account or an anonymous viewer.
+	ServiceChainKey = "aigateway.serviceChain"
 )
 
 // ErrNoSigningKeys reports that neither signing key source is configured.
@@ -117,9 +121,13 @@ func (a platformAuthenticator) Authenticate(ctx context.Context, provider authn.
 	if err != nil {
 		return nil, fmt.Errorf("gateway auth: verifying access token: %w", err)
 	}
-	info := platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(*claims)}
+	info := platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(*claims), serviceChain: true}
 	if actor := claims.Rest.Actor; actor != nil {
 		info.directCaller = actor.ServiceIdentity
+		for actor.Actor != nil {
+			actor = actor.Actor
+		}
+		info.serviceChain = actor.Type == ""
 	}
 	return info, nil
 }
@@ -127,12 +135,16 @@ func (a platformAuthenticator) Authenticate(ctx context.Context, provider authn.
 type platformAuthInfo struct {
 	types.AuthInfo
 	directCaller string
+	serviceChain bool
 }
 
 func (info platformAuthInfo) GetExtra() map[string][]string {
 	result := info.AuthInfo.GetExtra()
 	if info.directCaller != "" {
 		result[DirectCallerServiceKey] = []string{info.directCaller}
+	}
+	if info.serviceChain {
+		result[ServiceChainKey] = []string{"true"}
 	}
 	return result
 }

@@ -69,7 +69,7 @@ func newAdapterHarness(t *testing.T) *adapterHarness {
 	unwrapped := func(_ string, lower provider.LanguageModel) (provider.LanguageModel, error) { return lower, nil }
 	models, err := service.BuildCatalog(file, providers, client, unwrapped)
 	require.NoError(t, err)
-	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(models, &service.BYOKOptions{Client: client, Factory: unwrapped}), Limits: execution.DefaultLimits})
+	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(models, &service.BYOKOptions{Client: client, Factory: unwrapped}, nil), Limits: execution.DefaultLimits})
 	require.NoError(t, err)
 	language, err := providerv4.New(runtime)
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func newAdapterHarness(t *testing.T) *adapterHarness {
 		options.Headers = map[string]string{"X-Target": string(target.Type) + "/" + target.ModelID}
 		return options, nil
 	}
-	routes := append(productionRoutes(discovery.New(models, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter()), language), route{
+	routes := append(productionRoutes(discovery.New(models, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter()), language), route{
 		method: http.MethodPost, path: testAdapterPath, label: testAdapterLabel,
 		handler: testadapter.New(runtime, translator), errors: testadapter.HostErrors{},
 	})

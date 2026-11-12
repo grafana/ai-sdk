@@ -163,7 +163,7 @@ func providerOptionsCall(namespace, raw string) provider.CallOptions {
 func TestTranslation_HeterogeneousConfiguredChain(t *testing.T) {
 	server := &nativeServer{failing: map[string]bool{translationAnthropicHost: true}}
 	client := server.client()
-	selector := NewSelector(translationCatalog(t, client), nil)
+	selector := NewSelector(translationCatalog(t, client), nil, nil)
 	require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/chain", translator: markTranslation}))
 
 	requests := server.requests()
@@ -197,7 +197,7 @@ func TestTranslation_HeterogeneousConfiguredChainRefusesContainerID(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}
-			selector := NewSelector(translationCatalog(t, server.client()), nil)
+			selector := NewSelector(translationCatalog(t, server.client()), nil, nil)
 			require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/chain", options: tc.options, translator: tc.translator}))
 			requests := server.requests()
 			require.Len(t, requests, 1)
@@ -245,7 +245,7 @@ func TestTranslation_FailuresStopBeforeProviderContact(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}
-			configured := NewSelector(translationCatalog(t, server.client()), nil)
+			configured := NewSelector(translationCatalog(t, server.client()), nil, nil)
 			err := runTranslation(t, configured, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/chain", translator: tc.translator})
 			require.ErrorIs(t, err, execution.ErrTranslation)
 			assert.Equal(t, execution.CategoryInternal, execution.ClassifyProvider(err))
@@ -273,7 +273,7 @@ func TestTranslation_AnthropicNativeValidation(t *testing.T) {
 		t.Run(route.name, func(t *testing.T) {
 			server := &nativeServer{}
 			factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-			selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory})
+			selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory}, nil)
 
 			valid := route.call
 			valid.translator = markTranslation
@@ -403,7 +403,7 @@ func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
 		}
 	}
 	server := &nativeServer{}
-	selector := NewSelector(translationCatalog(t, server.client()), nil)
+	selector := NewSelector(translationCatalog(t, server.client()), nil, nil)
 	require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/local", translator: write(`{"translatedField":"compatible"}`)}))
 	requests := server.requests()
 	require.Len(t, requests, 1)
@@ -416,7 +416,7 @@ func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
 
 	t.Run("default provider name", func(t *testing.T) {
 		server := &nativeServer{}
-		selector := NewSelector(translationCatalog(t, server.client()), nil)
+		selector := NewSelector(translationCatalog(t, server.client()), nil, nil)
 		var seen execution.Target
 		translator := func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
 			seen = target
@@ -433,7 +433,7 @@ func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
 func TestTranslation_ConcurrentCallsAreIsolated(t *testing.T) {
 	server := &nativeServer{}
 	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-	selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory})
+	selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory}, nil)
 	runtime, err := execution.New(execution.Config{Selector: selector, Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	configured, byok := callerContext(t, gatewayauth.ConfiguredAccounts), callerContext(t, gatewayauth.RequestBYOK)

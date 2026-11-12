@@ -3,6 +3,7 @@ package gateway
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -87,12 +88,23 @@ func TestProductionRoutes_MatchTheManifest(t *testing.T) {
 		}
 	}
 	routed := map[string]struct{}{}
+	labels := map[string]string{}
 	for _, entry := range productionRoutes(http.NotFoundHandler(), http.NotFoundHandler()) {
 		routed[entry.method+" /namespaces/{namespace}"+entry.path] = struct{}{}
+		labels[entry.method+" "+entry.path] = entry.label
+		assert.Equal(t, strings.HasPrefix(entry.path, "/modelcatalogs/"), entry.catalog, entry.path)
 	}
 	assert.Equal(t, declared, routed)
 	assert.Equal(t, map[string]struct{}{
-		"GET /namespaces/{namespace}/config":          {},
-		"POST /namespaces/{namespace}/language-model": {},
+		"GET /namespaces/{namespace}/config":                               {},
+		"POST /namespaces/{namespace}/language-model":                      {},
+		"GET /namespaces/{namespace}/modelcatalogs/{name}/config":          {},
+		"POST /namespaces/{namespace}/modelcatalogs/{name}/language-model": {},
 	}, routed)
+	assert.Equal(t, map[string]string{
+		"GET /config":                               "config",
+		"POST /language-model":                      "language_model",
+		"GET /modelcatalogs/{name}/config":          "catalog_config",
+		"POST /modelcatalogs/{name}/language-model": "catalog_language_model",
+	}, labels)
 }

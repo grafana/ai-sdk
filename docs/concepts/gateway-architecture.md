@@ -41,6 +41,7 @@ flowchart LR
       runtime[Execution runtime]
       select[Account-access selection]
       catalog[Public model catalog]
+      stack[Stack catalog from the route's ModelCatalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
       compose[Request routing: models, order, only]
       logical[Logical model observation]
@@ -61,6 +62,8 @@ flowchart LR
   catalog -->|no routing controls| routing
   catalog -->|routing controls| compose
   select -->|Cloud| byok
+  select -->|catalog route| stack
+  stack --> compose
   byok -->|routing controls| compose
   compose --> routing
   runtime -->|then observes the selection| logical
@@ -84,11 +87,18 @@ selection or provider work, and is labeled `unmatched`.
 
 The manifest also declares one kind, `ModelCatalog`. Grafana stores catalog
 objects and their provider keys itself, and asks the plugin's admission
-validator to accept or refuse each create and update. A stack-catalog selection,
-`SelectStackCatalog`, can build a stored catalog's models for one request, but
-no route calls it yet, so stored catalogs do not reach discovery or selection.
-Without the `model_catalog` setting the operator catalog is empty: discovery
-lists no configured models and every configured model ID is not found.
+validator to accept or refuse each create and update. Each catalog also has two
+routes, `GET .../modelcatalogs/{name}/config` and
+`POST .../modelcatalogs/{name}/language-model`, in the same route table.
+Grafana reads the catalog as the caller, runs the route's declared access check
+(`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
+and only then decrypts the catalog's keys and passes the object, its resource
+version and the keys with the call. The Gateway checks that this parent is the
+catalog the path names before anything else, then decides catalog access. Its
+selector builds that catalog's models for the call with `SelectStackCatalog`,
+and discovery lists it without building models. Without the `model_catalog`
+setting the operator catalog is empty: the namespace routes list no configured
+models and every configured model ID is not found.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery
@@ -329,9 +339,9 @@ catalog keys, but is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The plugin backend serves two account paths through one selector and one runtime.
-The access decision chooses the path from the `access_mode` and the verified
-token, not from a caller choosing a different model name:
+The plugin backend serves three account paths through one selector and one
+runtime. The access decision chooses the path from the route, the `access_mode`
+and the verified token, not from a caller choosing a different model name:
 
 - **Configured:** callers granted configured access use configured models and
   server-held provider credentials. In `self-hosted` mode this is any verified
@@ -347,11 +357,18 @@ token, not from a caller choosing a different model name:
   at each attempt position, which the BYOK execution overview is checked
   against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
+- **Catalog:** on a `ModelCatalog`'s routes, any verified user, service account
+  or service acting alone whose token covers the namespace gets catalog access,
+  whatever the `access_mode`; Grafana's declared checks decide who may invoke.
+  The selector uses only that catalog and the keys Grafana decrypted for the
+  call, checks the catalog again on every call, builds only the candidates the
+  call's chain attempts, and refuses `gateway.byok`. It never reaches the
+  configured catalog, server-held keys or request accounts.
 
 See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).
-`Decide` refuses a token whose namespace does not cover the route namespace, so
-a caller cannot reach another namespace's account path. Source and synthetic
+`Decide` and `DecideCatalog` refuse a token whose namespace does not cover the
+route namespace, so a caller cannot reach another namespace's account path. Source and synthetic
 tests establish service wiring, not production network isolation or live-provider
 acceptance.
 Reusable middleware supports policy hooks, but this plugin backend does not install

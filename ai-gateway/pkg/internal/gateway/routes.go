@@ -13,22 +13,28 @@ import (
 )
 
 const (
-	routeConfig        = "config"
-	routeLanguageModel = "language_model"
-	routeUnmatched     = "unmatched"
+	routeConfig               = "config"
+	routeLanguageModel        = "language_model"
+	routeCatalogConfig        = "catalog_config"
+	routeCatalogLanguageModel = "catalog_language_model"
+	routeUnmatched            = "unmatched"
+	catalogRoutePrefix        = "/modelcatalogs/{" + catalogNameValue + "}"
 )
 
 var errInvalidRoute = errors.New("gateway: invalid route table")
 
 // route registers one adapter operation. Path is relative to [RoutePrefix].
 // Every route gets the access decision and request telemetry under its label,
-// and refused callers get errors' permission document.
+// and refused callers get errors' permission document. A catalog route serves
+// the `ModelCatalog` its path names, after the parent check, with catalog
+// access.
 type route struct {
 	method  string
 	path    string
 	label   string
 	handler http.Handler
 	errors  host.ErrorWriter
+	catalog bool
 }
 
 // RoutePrefix returns the path prefix of the plugin's namespaced routes,
@@ -38,12 +44,16 @@ func RoutePrefix() string {
 	return "/apis/" + data.Group + "/" + data.PreferredVersion + "/namespaces/{namespace}"
 }
 
-// productionRoutes is the route table the committed manifest declares.
+// productionRoutes is the route table the committed manifest declares. The
+// namespace and catalog routes share the discovery and language handlers,
+// which serve each caller by its account access.
 func productionRoutes(discovery, language http.Handler) []route {
 	errorWriter := providerv4.NewHostErrorWriter()
 	return []route{
 		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
 		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
+		{method: http.MethodGet, path: catalogRoutePrefix + "/config", label: routeCatalogConfig, handler: discovery, errors: errorWriter, catalog: true},
+		{method: http.MethodPost, path: catalogRoutePrefix + "/language-model", label: routeCatalogLanguageModel, handler: languageModelPath(language), errors: errorWriter, catalog: true},
 	}
 }
 
@@ -80,7 +90,15 @@ func registerRoutes(policy gatewayauth.AccessPolicy, telemetry *service.Telemetr
 	for _, entry := range routes {
 		refuse := func(w http.ResponseWriter) { entry.errors.WriteHostError(w, host.ErrorPermission) }
 		pattern := entry.method + " " + RoutePrefix() + entry.path
-		mux.Handle(pattern, gatewayauth.AccessMiddleware(policy, refuse, telemetry.ObserveAccess, entry.handler))
+		decide := gatewayauth.Decider(policy.Decide)
+		if entry.catalog {
+			decide = policy.DecideCatalog
+		}
+		handler := gatewayauth.AccessMiddleware(decide, refuse, telemetry.ObserveAccess, entry.handler)
+		if entry.catalog {
+			handler = parentCatalog(entry.errors, handler)
+		}
+		mux.Handle(pattern, handler)
 		labels[pattern] = entry.label
 		if entry.method == http.MethodGet {
 			mux.HandleFunc(http.MethodHead+" "+RoutePrefix()+entry.path, func(w http.ResponseWriter, _ *http.Request) {

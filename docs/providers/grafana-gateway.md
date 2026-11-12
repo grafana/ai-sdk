@@ -44,6 +44,13 @@ the stream idle limit bound it.
 Use your Gateway URL as the base URL. The Gateway's overview page in Grafana
 shows it, for example
 `https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123`.
+To use a stack's own stored model catalog instead, append its route:
+`.../namespaces/stacks-123/modelcatalogs/<name>`. Discovery and calls then use
+that catalog's models and keys. Grafana answers a caller without access with
+`403`, and a missing catalog with `404`, as Kubernetes `Status` documents; the
+client reports them as a `*provider.APICallError` with that status, not as a
+`*grafana.GatewayError`. See
+[Call a stored catalog](../../ai-gateway/README.md#call-a-stored-catalog).
 Then choose the constructor for your credential:
 
 - `NewWithServiceAccountToken` for a Grafana service account token.

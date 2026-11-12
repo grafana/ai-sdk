@@ -1,15 +1,30 @@
 // Deterministic Anthropic Messages stand-in for the end-to-end suite. It is
-// test infrastructure, not provider evidence: every call returns the same
-// fixed text, unary or streamed.
+// test infrastructure, not provider evidence. A call through a configured
+// endpoint returns the same fixed text, unary or streamed. A call to the
+// native endpoint, which arrives through the native proxy, answers with the
+// first characters of the SHA-256 of the API key it received and the backend
+// model, so tests can check which key and model reached the provider without
+// the key appearing anywhere.
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
 const port = Number(process.env.PORT ?? 8080);
 const model = 'fake-model';
-const text = ['fake ', 'stream'];
+const fixedText = ['fake ', 'stream'];
+const nativeHost = 'api.anthropic.com';
+const keyDigestLength = 12;
 
-const usage = { input_tokens: 1, output_tokens: text.length };
+function replyText(request, body) {
+  if (request.headers.host !== nativeHost) {
+    return fixedText;
+  }
+  const key = String(request.headers['x-api-key'] ?? '');
+  const digest = createHash('sha256').update(key).digest('hex').slice(0, keyDigestLength);
+  return [`native ${digest} `, String(body.model)];
+}
 
-function unary(response) {
+function unary(response, text) {
+  const usage = { input_tokens: 1, output_tokens: text.length };
   response.writeHead(200, { 'Content-Type': 'application/json' });
   response.end(
     JSON.stringify({
@@ -25,7 +40,7 @@ function unary(response) {
   );
 }
 
-function stream(response) {
+function stream(response, text) {
   response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
   const event = (name, data) => response.write(`event: ${name}\ndata: ${JSON.stringify({ type: name, ...data })}\n\n`);
   event('message_start', {
@@ -68,10 +83,11 @@ createServer((request, response) => {
       response.writeHead(400).end();
       return;
     }
+    const text = replyText(request, body);
     if (body.stream === true) {
-      stream(response);
+      stream(response, text);
     } else {
-      unary(response);
+      unary(response, text);
     }
   });
 }).listen(port);
