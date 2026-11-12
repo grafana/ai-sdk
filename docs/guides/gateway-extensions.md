@@ -69,8 +69,8 @@ For each call, the Gateway runs the phases in this order:
 - Admit and both inspectors run in name order and stop at the first
   `ErrDenied`. The caller gets the Gateway's fixed permission error; your error
   text never reaches it.
-- Transforms run tenant extensions first, then operator extensions, each by
-  ascending `Priority`, then by name. The Gateway refuses a transform that adds
+- Transforms run tenant extensions first, then operator extensions, each in
+  name order. The Gateway refuses a transform that adds
   a credential-bearing header or the `gateway` provider-option namespace.
 - Response parts are the same for unary and streaming calls. A streamed part
   carries its delta; a unary part carries the complete text. A unary abort
