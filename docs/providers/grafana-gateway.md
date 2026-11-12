@@ -48,7 +48,8 @@ Then choose the constructor for your credential:
 
 - `NewWithServiceAccountToken` for a Grafana service account token.
 - `NewWithTokenExchange` for a Grafana service with a Cloud access policy
-  token. Add `WithOnBehalfOf` to a call's context to make it on behalf of a
+  token, or an App Platform app with the token exchange Grafana gives its
+  backend. Add `WithOnBehalfOf` to a call's context to make it on behalf of a
   user.
 - `NewWithAccessToken` for an access token you obtain and refresh yourself.
 

@@ -173,11 +173,15 @@ elsewhere.
 
 - **`self-hosted`:** every user and service account that can use the app gets
   the configured models. Requests that bring their own provider keys are
-  refused. To limit access, restrict the app with role-based access control,
-  or give access only to service accounts.
+  refused. Using the app takes the `plugins.app:access` permission on scope
+  `plugins:id:grafana-aigateway-app`, which the Viewer role has by default. To
+  limit access, grant that permission with role-based access control only to
+  the users and service accounts that need it.
 - **`cloud`:** for Grafana Cloud. Only the Grafana services listed in
-  `access_internal_services` get the configured models. Every other user and
-  service account brings its own provider key with each request.
+  `access_internal_services` get the configured models. Each entry is the
+  service identity a caller presents, the `serviceIdentity` claim of its access
+  token, matched exactly. Every other user and service account brings its own
+  provider key with each request.
 
 ## Settings
 
@@ -185,7 +189,7 @@ elsewhere.
 |---|---|
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Required. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
-| `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
+| `access_internal_services` | Comma-separated service identities of the Grafana services that get the configured models in `cloud` mode. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits
