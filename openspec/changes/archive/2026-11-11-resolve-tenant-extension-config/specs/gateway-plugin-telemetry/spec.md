@@ -21,7 +21,7 @@ When a running Gateway builds its app, it SHALL emit one informational log recor
 - **THEN** the plugin log SHALL contain one record stating that the plugin has API access, and no credential
 
 ### Requirement: Tenant configuration failure events
-A stored configuration that fails its schema, and a factory that fails or panics for a namespace, SHALL be counted as an extension event with the extension's name, phase `configure` and event `failed`. The Gateway SHALL log one warning with the extension, namespace, failure policy and a fixed class, and no configuration value or error text.
+A stored configuration that fails its schema, and a decoder that fails or panics for a namespace, SHALL be counted as an extension event with the extension's name, phase `configure` and event `failed`. The Gateway SHALL log one warning with the extension, namespace, failure policy and a fixed class, and no configuration value or error text.
 
 #### Scenario: Invalid stored configuration
 - **WHEN** a namespace's stored configuration for an extension fails its schema, and the stored values contain a sentinel
