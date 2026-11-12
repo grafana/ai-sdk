@@ -1609,7 +1609,7 @@ func TestBuildParams_ProviderOptions(t *testing.T) {
 		body, _ := buildBody(t, "gpt-5.6", provider.CallOptions{
 			Prompt: []provider.Message{provider.UserText("hi")},
 			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
-				PromptCacheOptions: &PromptCacheOptions{Mode: "explicit", TTL: "30m"},
+				PromptCacheOptions: &PromptCacheOptions{Mode: "explicit", TTL: PromptCacheTTL30m},
 				ReasoningEffort:    "max",
 				ReasoningMode:      "pro",
 				ReasoningContext:   "all_turns",

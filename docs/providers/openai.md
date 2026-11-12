@@ -78,6 +78,21 @@ Not every option applies to every model. Provider options cover conversation
 IDs, response continuation, reasoning, storage, metadata, service tier, tool
 controls, text verbosity, and other Responses settings.
 
+## Prewarm a prompt cache
+
+For supported models, prewarm a stable prompt prefix before a later request
+needs it. Set `PromptCacheOptions.Prewarm` to a pointer to `true` and choose a
+`PromptCacheTTL` constant; use per-part `PromptCacheBreakpoint.TTL` when a
+particular prefix needs its own cache lifetime. See
+[`PromptCacheOptions`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/openai#PromptCacheOptions)
+for the request controls. When migrating existing code, convert string variables
+with `openai.PromptCacheTTL(value)`; string literals remain valid.
+
+Use the provider's `DoGenerate` or `DoStream` for prewarming. A successful
+prewarm response can have no content; inspect its usage to confirm cache writes.
+Raw usage retains the provider's TTL-specific cache-write breakdown. The
+Bedrock Mantle adapter shares these options and response handling.
+
 ## Choose conversation storage behavior
 
 The Responses API can reference stored response items or resend prior content
