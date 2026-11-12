@@ -17,9 +17,9 @@ const maxEgressEntries = 256
 const domainWildcard = "*."
 
 var (
-	// errEndpointHost reports an endpoint host that is neither an IP address
+	// ErrEndpointHost reports an endpoint host that is neither an IP address
 	// nor a DNS name, such as a numeric form a resolver may read as IPv4.
-	errEndpointHost = errors.New("gateway outbound: endpoint host must be a DNS name or an IP address")
+	ErrEndpointHost = errors.New("gateway outbound: endpoint host must be a DNS name or an IP address")
 
 	errEgressEntry      = errors.New("gateway outbound: egress entries must be IP addresses, canonical CIDR prefixes, hostnames or *. domains")
 	errEgressDuplicate  = errors.New("gateway outbound: egress entries must be unique")
@@ -147,7 +147,7 @@ func (policy EgressPolicy) CheckHost(host string) error {
 		return nil
 	}
 	if !validHostname(normalizeHost(host)) {
-		return errEndpointHost
+		return ErrEndpointHost
 	}
 	if policy.Deny.matchesHost(host) {
 		return execution.ErrEgressRefused

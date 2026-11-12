@@ -236,7 +236,7 @@ func TestSelectStackCatalog_NativeEndpointsWithCatalogKeys(t *testing.T) {
 		return nil, fmt.Errorf("request not sent")
 	})}
 	for _, modelID := range []string{"same", "fast"} {
-		selected, err := SelectStackCatalog(testStackCatalog(), modelID, nil, StackCatalogOptions{Client: client, EgressClient: http.DefaultClient})
+		selected, err := SelectStackCatalog(testStackCatalog(), modelID, nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: http.DefaultClient}})
 		require.NoError(t, err)
 		_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)})
 		require.ErrorContains(t, err, "request not sent")
@@ -249,7 +249,7 @@ func TestSelectStackCatalog_NativeEndpointsWithCatalogKeys(t *testing.T) {
 
 	_, err := SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{})
 	require.Error(t, err)
-	_, err = SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{Client: client})
+	_, err = SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client}})
 	require.Error(t, err)
 }
 
@@ -268,7 +268,7 @@ func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
 		wg.Go(func() {
 			stack := testStackCatalog()
 			stack.Keys = resource.DecryptedSecureValues{"claude": resource.RawSecureValue(fmt.Sprintf("catalog-%d-key", i%2)), "gpt": "gpt-catalog-key"}
-			selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Client: client, EgressClient: http.DefaultClient})
+			selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: http.DefaultClient}})
 			if !assert.NoError(t, err) {
 				return
 			}
@@ -284,7 +284,7 @@ func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
 
 func TestNewSelector_CatalogAccess(t *testing.T) {
 	operator := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{"backend-primary": {}, "backend-secondary": {}})
-	selector := NewSelector(operator, nil, &StackCatalogOptions{Client: http.DefaultClient, EgressClient: http.DefaultClient})
+	selector := NewSelector(operator, nil, &StackCatalogOptions{Clients: outbound.ModelClients{Shared: http.DefaultClient, Egress: http.DefaultClient}})
 	ctx := callerContext(t, gatewayauth.ConfiguredAccounts)
 	catalogCtx := callerContext(t, gatewayauth.CatalogAccounts)
 	for _, tc := range []struct {
@@ -364,7 +364,7 @@ func TestSelectStackCatalog_RefusesOperatorPolicedAnthropicOptions(t *testing.T)
 					sent++
 					return nil, fmt.Errorf("request not sent")
 				})}
-				selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Client: client, EgressClient: client})
+				selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}})
 				require.NoError(t, err)
 				options := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
 				_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16), ProviderOptions: options})

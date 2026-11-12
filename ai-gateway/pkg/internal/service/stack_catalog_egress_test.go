@@ -77,7 +77,7 @@ func (recorder *recordingClient) requests() []*http.Request {
 
 func TestSelectStackCatalog_CustomEndpointsUseTheEgressClient(t *testing.T) {
 	shared, egress := &recordingClient{}, &recordingClient{}
-	options := StackCatalogOptions{Client: shared.client(), EgressClient: egress.client()}
+	options := StackCatalogOptions{Clients: outbound.ModelClients{Shared: shared.client(), Egress: egress.client()}}
 	for _, id := range []string{"balanced", "local-only"} {
 		selected, err := SelectStackCatalog(customEndpointCatalog(), id, nil, options)
 		require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestSelectStackCatalog_EgressErrorsAreBare(t *testing.T) {
 						return err
 					}
 					require.ErrorIs(t, call(raw), tc.want, "the provider keeps the sentinel in its error chain")
-					assert.Equal(t, tc.want, call(egressCandidate{LanguageModel: raw}), "the candidate drops the request URL")
+					assert.Equal(t, tc.want, call(outbound.EgressModel(raw)), "the candidate drops the request URL")
 				})
 			}
 		}
@@ -223,7 +223,7 @@ func (builds *recordedConfigs) build(providerConfig config.ResolvedProvider, des
 		return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	}}
 	if providerConfig.BaseURL != "" {
-		return egressCandidate{LanguageModel: model}, nil
+		return outbound.EgressModel(model), nil
 	}
 	return model, nil
 }

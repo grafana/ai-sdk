@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
@@ -19,8 +18,6 @@ const (
 	providerAnthropic  = "anthropic"
 	providerOpenAI     = "openai"
 	providerCompatible = "openai-compatible"
-
-	endpointScheme = "https"
 )
 
 // Parse validates a stack catalog spec whose providers have the secure keys
@@ -66,20 +63,18 @@ func checkEndpoints(file config.File, policy outbound.EgressPolicy) error {
 		if provider.BaseURL == "" {
 			continue
 		}
-		parsed, err := outbound.ValidateEndpoint(provider.BaseURL)
-		if err != nil {
+		endpoint, err := outbound.CheckEndpoint(provider.BaseURL, policy)
+		switch {
+		case errors.Is(err, outbound.ErrEndpointForm):
 			return fmt.Errorf("modelcatalog: providers.%s.baseURL must be an absolute URL without userinfo, query or fragment", name)
-		}
-		if !strings.EqualFold(parsed.Scheme, endpointScheme) {
+		case errors.Is(err, outbound.ErrEndpointScheme):
 			return fmt.Errorf("modelcatalog: providers.%s.baseURL must use https", name)
-		}
-		switch err := policy.CheckHost(parsed.Hostname()); {
 		case errors.Is(err, execution.ErrEgressRefused):
 			return fmt.Errorf("modelcatalog: providers.%s.baseURL is refused by the egress policy", name)
 		case err != nil:
 			return fmt.Errorf("modelcatalog: providers.%s.baseURL host must be a DNS name or an IP address", name)
 		}
-		provider.BaseURL = parsed.String()
+		provider.BaseURL = endpoint
 		file.Providers[name] = provider
 	}
 	return nil

@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -63,7 +64,7 @@ func stackAnthropicClient(failPrimary bool) *http.Client {
 
 func stackSelector(stack StackCatalog, client *http.Client) execution.RequestSelector {
 	return func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
-		return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: client, EgressClient: client})
+		return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}})
 	}
 }
 
@@ -179,7 +180,7 @@ func TestStackCatalogSelection_WritesNoPhysicalAttemptRecords(t *testing.T) {
 	stack := stackObservedCatalog("team-catalog", "stack-model")
 	runtime, err := execution.New(execution.Config{Limits: serviceTestLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 		if id == "stack-model" {
-			return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: stackAnthropicClient(true), EgressClient: http.DefaultClient})
+			return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Clients: outbound.ModelClients{Shared: stackAnthropicClient(true), Egress: http.DefaultClient}})
 		}
 		return NewSelector(operator, nil, nil)(ctx, id, options, gateway)
 	}})

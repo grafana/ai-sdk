@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 
 	"github.com/grafana/grafana-app-sdk/resource"
@@ -50,12 +49,9 @@ func StackCatalogFromContext(ctx context.Context) (StackCatalog, bool) {
 
 // StackCatalogOptions configures stack-catalog selection.
 type StackCatalogOptions struct {
-	// Client is the shared model HTTP client, for providers on their native
-	// endpoint.
-	Client *http.Client
-	// EgressClient is the egress client, for providers with a custom
-	// endpoint.
-	EgressClient *http.Client
+	// Clients are the shared model client, for providers on their native
+	// endpoint, and the egress client, for providers with a custom endpoint.
+	Clients outbound.ModelClients
 	// Egress is the policy custom endpoints are checked against.
 	Egress outbound.EgressPolicy
 }
@@ -73,47 +69,17 @@ type candidateBuilder func(providerConfig config.ResolvedProvider, descriptor co
 // endpoint connects through the egress client and reports its egress errors
 // without the request URL.
 func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, options StackCatalogOptions) (execution.Selection, error) {
-	if options.Client == nil || options.EgressClient == nil {
+	if options.Clients.Shared == nil || options.Clients.Egress == nil {
 		return execution.Selection{}, fmt.Errorf("gateway service: model and egress HTTP clients are required")
 	}
 	return selectStackCatalog(stack, modelID, gateway, options.Egress, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
-		client := options.Client
-		if providerConfig.BaseURL != "" {
-			client = options.EgressClient
-		}
+		client, custom := options.Clients.For(providerConfig.BaseURL)
 		candidate, _, err := newCandidate(providerConfig, descriptor, nativeoptions.AnthropicPolicy{}, client, nativemodel.NewAnthropic)
-		if err != nil || providerConfig.BaseURL == "" {
+		if err != nil || !custom {
 			return candidate, err
 		}
-		return egressCandidate{LanguageModel: candidate}, nil
+		return outbound.EgressModel(candidate), nil
 	})
-}
-
-// egressCandidate reports an egress refusal, connection failure or timeout
-// of its model as the bare [execution.ErrEgressRefused],
-// [execution.ErrEgressConnection] or [execution.ErrEgressTimeout], without the
-// request URL that HTTP client and provider errors wrap around it.
-type egressCandidate struct {
-	provider.LanguageModel
-}
-
-func (candidate egressCandidate) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
-	result, err := candidate.LanguageModel.DoGenerate(ctx, options)
-	return result, bareEgressError(err)
-}
-
-func (candidate egressCandidate) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-	result, err := candidate.LanguageModel.DoStream(ctx, options)
-	return result, bareEgressError(err)
-}
-
-func bareEgressError(err error) error {
-	for _, sentinel := range []error{execution.ErrEgressRefused, execution.ErrEgressTimeout, execution.ErrEgressConnection} {
-		if errors.Is(err, sentinel) {
-			return sentinel
-		}
-	}
-	return err
 }
 
 func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, policy outbound.EgressPolicy, build candidateBuilder) (execution.Selection, error) {
