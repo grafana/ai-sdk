@@ -201,7 +201,7 @@ test.describe('Middleware with the shipped types', () => {
     expect(settings.status(), await settings.text()).toBe(201);
 
     expect((await stored(accounts.Admin, INSTRUCTIONS)).object.spec.defaultInstructions).toEqual(INSTRUCTIONS_MEMBER);
-    expect((await stored(accounts.Admin, SETTINGS)).text).toContain(`"seed":${SEED}`);
+    expect((await stored(accounts.Admin, SETTINGS)).text).toMatch(new RegExp(`"seed":\\s*${SEED}\\b`));
 
     for (const role of ['Viewer', 'Editor'] as const) {
       const { object } = await stored(accounts[role], INSTRUCTIONS);
