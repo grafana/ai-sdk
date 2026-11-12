@@ -5,6 +5,7 @@
 - [ ] 1.1 Move the per-URL endpoint check from `stackcatalog.checkEndpoints` to `outbound.CheckEndpoint` with exported sentinels, and keep `stackcatalog`'s field-path messages byte-identical; verify with a `CheckEndpoint` table and the unchanged `TestParse_RefusesEndpoints`.
 - [ ] 1.2 Move `service.egressCandidate` to `outbound.EgressModel`, and add `outbound.ModelClients` with `For(baseURL)`; verify with the moved bare-error test over the three provider types and a `For` table.
 - [ ] 1.3 Switch `StackCatalogOptions` to `Clients outbound.ModelClients` and use `For` and `EgressModel` in `SelectStackCatalog`; verify with the existing stack-catalog service and gateway tests.
+- [ ] 1.4 Count a `baseURL` equal to its type's native default as unset in `CheckEndpoint`, with `nativemodel.DefaultBaseURL`, for stack catalogs; verify with a `CheckEndpoint` table, a stack `Parse` case and a deny entry for the native host that doesn't refuse it.
 
 ## 2. Settings
 

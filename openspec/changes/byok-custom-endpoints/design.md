@@ -37,7 +37,9 @@
 
 ### Shared code: everything lives in `outbound`
 
-- `outbound.CheckEndpoint(raw string, policy EgressPolicy) (string, error)`: the current `checkEndpoints` body for one URL. It returns the normalized URL, or one of these sentinels:
+- `outbound.CheckEndpoint(raw, native string, policy EgressPolicy) (string, error)`: the current `checkEndpoints` body for one URL. `native` is the provider type's native default (`nativemodel.DefaultBaseURL(type)`, empty for `openai-compatible`). It returns:
+  - `""` when the normalized URL equals the native default (scheme and host compared case-insensitively, a trailing `/` ignored). The provider then counts as having no `baseURL`, before the scheme and policy checks, so a deny entry can't refuse the native endpoint;
+  - otherwise the normalized URL, or one of these sentinels:
   - `ErrEndpointForm` (`ValidateEndpoint` failure);
   - `ErrEndpointScheme` (not `https`);
   - `ErrEndpointHost` (the unexported `errEndpointHost`, exported);
@@ -47,7 +49,7 @@
   - `stackcatalog` maps the sentinels to its field-path messages, which stay byte-identical.
   - `byok` maps every sentinel to `ErrInvalidRequest` with a fixed reason that never contains the URL.
 - `outbound.EgressModel(model provider.LanguageModel) provider.LanguageModel`: today's `service.egressCandidate` and `bareEgressError`, moved unchanged.
-- `outbound.ModelClients{Shared, Egress *http.Client}` and `For(baseURL string) (client *http.Client, custom bool)`. This is the single rule: a non-empty `baseURL` is custom and gets the egress client. Callers wrap the model with `EgressModel` when `custom`.
+- `outbound.ModelClients{Shared, Egress *http.Client}` and `For(baseURL string) (client *http.Client, custom bool)`. This is the single rule: a non-empty `baseURL` that `CheckEndpoint` returned is custom and gets the egress client. Callers wrap the model with `EgressModel` when `custom`. The native comparison lives in `CheckEndpoint`, next to `For`, because it must also skip the policy.
 - `service.StackCatalogOptions` and `service.BYOKOptions` each hold a `Clients outbound.ModelClients` and an `Egress outbound.EgressPolicy`. `StackCatalogOptions.Client` and `EgressClient` go away.
 - Alternatives considered:
   - `byok` importing `stackcatalog`: that pulls the kind types into BYOK, and the field-path messages don't fit request controls.
@@ -86,9 +88,9 @@ Who can fix it decides the class. A BYOK caller fixes its own request (400), and
 
 They haven't been released, and once released the stack-only names would outlive the rule they describe. The capability keeps its name `gateway-stack-catalog-egress`; its Purpose is updated to cover request accounts.
 
-### Same client rule, including the native URL
+### The native default counts as unset
 
-An account that sends `baseURL: https://api.openai.com/v1` now connects through the egress client, not the shared client. That is the stack rule verbatim: a set `baseURL` is custom. The native endpoints are public, so the policy permits them. The only difference is the proxy: such accounts don't use `HTTPS_PROXY`.
+A `baseURL` equal, after normalization, to its type's native default counts as unset for both sources. It uses the shared client and its proxy, and the egress lists don't apply. That keeps BYOK callers who send the native URL explicitly working in proxy-only deployments, as they do today. It's one comparison in `CheckEndpoint`, tested for both sources. For stack catalogs it is a small change: an explicit native URL used the egress client before and now uses the shared client, like a provider without `baseURL`.
 
 ## Test plan
 
@@ -101,12 +103,13 @@ An account that sends `baseURL: https://api.openai.com/v1` now connects through 
 | Shared rule | `outbound.CheckEndpoint` and `ModelClients.For` tables. The existing `stackcatalog` messages are unchanged (`TestParse_RefusesEndpoints`). |
 | Settings rename | Settings tests for the new keys; the old keys are ignored, as removed settings are. |
 | Cross-language | `test/providerwire-v4` `startCloudGateway`: both clients get 400 for a refused literal and 424 for a refused loopback name, with zero connections. |
+| Native default counts as unset | `CheckEndpoint` table (exact, case, trailing slash, other path, other port). Stack `Parse` and BYOK decode each store `""` for it, and both service paths pick the shared client with recording clients, also under a deny entry for the native host. |
 | Not covered by e2e | Playwright runs `self-hosted`, where users and service accounts get configured access and `byok` is refused. A BYOK e2e needs a second Grafana in `cloud` mode: another compose service, settings and a Playwright project. The plugin-protocol suite already runs the built plugin in cloud mode with both clients, which is the same path below Grafana's route handler, and Grafana treats `byok` as request body. |
 
 ## Risks / Trade-offs
 
 - **[Who can trigger egress widens]** In cloud mode, any user or service account can now make the Gateway connect to any permitted public host and port. Before, only stack-catalog writers (Admins) could. Mitigations: the same policy and operator deny prefixes, the attempt bound of 8, and Grafana's request limits. The README states it.
-- **[Proxy-only deployments]** Accounts with a `baseURL` can't connect there, including an explicit native URL that works today. The native default without `baseURL` still uses the proxy. Documented.
+- **[Proxy-only deployments]** Accounts and stack providers with a custom `baseURL` can't connect there; the native default, set or not, keeps the proxy. Documented.
 - **[Hostile endpoints echo request keys into overviews]** The caller owns those keys; redaction of request keys is #771's decision.
 - **[#771 refactor in flight]** It may touch `service` selection and options; this change merges `nrbrd/758-stack-catalog-routes` when it lands and rebuilds the options on top.
 
@@ -114,12 +117,10 @@ An account that sends `baseURL: https://api.openai.com/v1` now connects through 
 
 No data migration. The settings rename takes effect before release; operators who tried the branch's `stack_catalog_egress_*` keys must rename them. Rolling back restores native-only BYOK; accounts that used custom endpoints then fail at decode with the BYOK credentials document.
 
-## Open Questions
+## Decisions recorded at review
 
-Each has a recommendation; the specs and tasks follow it.
-
-1. **Setting names:** rename to `custom_endpoint_allow` and `custom_endpoint_deny` (recommended, while unreleased), or keep the `stack_catalog_egress_*` names.
-2. **Explicit native URL:** apply the stack rule verbatim, so any set `baseURL` uses the egress client (recommended; one rule). Alternatively, treat a URL equal to the type's native default as unset for both sources, which keeps the proxy for it.
-3. **Decode refusal document:** keep the fixed BYOK credentials 400 (recommended; no new reason or document). Alternatively, add a closed reason with a message naming `baseURL` and the egress policy, which needs a new ProviderWire message.
-4. **BYOK e2e:** no second Grafana; rely on the plugin-protocol suite in cloud mode (recommended). Alternatively, add a cloud-mode Grafana service and Playwright project.
-5. **Opt-in for BYOK custom endpoints:** none (recommended; the decision was the same rule, and operators can deny prefixes). Alternatively, a setting that keeps BYOK native-only by default.
+1. Settings renamed to `custom_endpoint_allow` and `custom_endpoint_deny`.
+2. A `baseURL` equal to its type's native default, after normalization, counts as unset for both sources and keeps the shared client and proxy.
+3. The decode refusal keeps the fixed BYOK credentials 400.
+4. No BYOK e2e: Playwright runs `self-hosted`, which has no BYOK path. The cloud-mode plugin-protocol suite with both clients is the evidence, and the gap is recorded here.
+5. No opt-in setting; the README security note states the widened set of callers.

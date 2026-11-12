@@ -82,8 +82,8 @@ A request account's `baseURL` SHALL behave exactly like a stack-catalog provider
 - **THEN** that attempt SHALL fail with the egress refused error and receive no request, and a later account SHALL still be tried
 
 #### Scenario: Explicit native endpoint
-- **WHEN** an OpenAI account sets `baseURL: https://api.openai.com/v1`
-- **THEN** the call SHALL be accepted and SHALL connect through the egress client, without a proxy
+- **WHEN** an OpenAI account sets `baseURL: https://api.openai.com/v1` or `https://API.openai.com/v1/`
+- **THEN** the account SHALL count as having no `baseURL`: it SHALL reach the native endpoint through the shared model HTTP client and its proxy settings, and no egress list entry SHALL refuse it
 
 #### Scenario: Account without an endpoint
 - **WHEN** an account omits `baseURL`

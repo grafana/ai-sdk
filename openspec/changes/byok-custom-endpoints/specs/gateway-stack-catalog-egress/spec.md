@@ -15,6 +15,10 @@ The egress policy SHALL govern every connection made for a stack-catalog provide
 - **WHEN** the operator catalog has a provider with `baseURL: http://10.0.0.5:8080` and a stack catalog has a custom endpoint
 - **THEN** operator-catalog calls SHALL keep reaching `http://10.0.0.5:8080`, and startup validation of operator endpoints SHALL be unchanged
 
+#### Scenario: Explicit native endpoint
+- **WHEN** a stack-catalog provider or a request account sets a `baseURL` equal, after normalization, to its type's native default
+- **THEN** it SHALL count as unset: it SHALL use the shared model HTTP client and its proxy settings, and the egress lists SHALL NOT apply to it
+
 #### Scenario: Custom request account endpoint
 - **WHEN** a BYOK call's account sets `baseURL`
 - **THEN** its connections SHALL be checked by the egress policy, as for a stack-catalog provider

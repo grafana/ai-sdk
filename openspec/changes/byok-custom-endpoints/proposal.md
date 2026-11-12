@@ -11,7 +11,7 @@ Request accounts (BYOK) and stack catalogs both let a customer choose where the 
   - A refused one fails before any provider request:
     - at decode with the existing BYOK credentials document (400) when the URL form, the scheme, the host or a deny entry refuses it without DNS;
     - when connecting with the egress refused document (424) when the resolved address is refused.
-  - An account with an explicit `baseURL`, including the native one, connects through the egress client. That client uses no proxy, so deployments whose only egress is a proxy can't reach it.
+  - An account with a custom `baseURL` connects through the egress client, which uses no proxy. A `baseURL` equal to the native default counts as unset, for request accounts and stack providers alike, so it keeps the shared client and the proxy.
 - **One rule, shared code:**
   - the static endpoint check moves from `stackcatalog` to `outbound`;
   - the bare-egress-error wrapper moves from `service` to `outbound`;
