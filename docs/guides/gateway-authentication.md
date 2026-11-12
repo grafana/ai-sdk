@@ -25,7 +25,17 @@ https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<names
 ```
 
 The namespace is `stacks-<stack ID>` in Grafana Cloud and usually `default` in
-self-hosted Grafana. Use the whole URL as the client base URL.
+self-hosted Grafana.
+
+The base URL you give the client depends on its credential:
+
+| Client | Base URL |
+|---|---|
+| Service account token or your own access token | The whole Gateway URL, including `/namespaces/<namespace>` |
+| Token exchange (`NewWithTokenExchange`) | The Gateway API root, without the namespace: `https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1` |
+
+A token-exchange client adds the namespace of each call itself, so it can call
+several stacks. It refuses a base URL that includes `/namespaces/`.
 
 ## Use the configured models in self-hosted Grafana
 
@@ -101,27 +111,82 @@ several accounts, a later account's attempt fails at the provider.
 
 Grafana services use the configured models with a Cloud access policy token.
 Once your service is [allowed](#get-your-service-allowed-in-grafana-cloud),
-create a client that exchanges your token for one the Gateway accepts:
+create a client that exchanges your token for one the Gateway accepts. You
+need:
+
+- **Access policy token**: your service's Cloud access policy token. Its
+  access policy must allow the audience `aigateway.ext.grafana.app`, the
+  Gateway's API group.
+- **Token exchange URL**: the token exchange endpoint your service uses for
+  Grafana Cloud.
+- **Gateway API root**: `https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1`,
+  [without the namespace](#find-your-gateway-url).
+- **Stack namespace**: `stacks-<stack ID>` of the stack you call.
+- **Trusted certificate authority**, when your service calls Grafana inside
+  its network: an HTTP client that trusts the certificate authority that signs
+  Grafana's certificate. The client uses it for the token exchange too.
 
 ```go
 client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
 	CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
 	TokenExchangeURL: tokenExchangeURL,
 	Namespace:        "stacks-123",
-	Audience:         "grafana-aigateway-app",
-	BaseURL:          "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
+	Audience:         "aigateway.ext.grafana.app",
+	BaseURL:          "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1",
+	HTTPClient:       httpClient,
 })
 ```
 
-Set `Namespace` to the stack you call. The client renews exchanged tokens before
-they expire; you rotate the access policy token itself. Model aliases, discovery
-and fallback work as described in the [provider guide](../providers/grafana-gateway.md).
+With `Namespace` set, every call goes to that stack. The client renews
+exchanged tokens before they expire; you rotate the access policy token itself.
+Model aliases, discovery and fallback work as described in the
+[provider guide](../providers/grafana-gateway.md).
+
+`grafana` is also accepted as the audience, but a token for `grafana` works
+with every Grafana API; the API group limits it to the Gateway. If you
+exchange tokens yourself and use `NewWithAccessToken`, an exchange with a
+system access policy also needs the `X-Org-ID` and `X-Realms` headers, which
+the Go client sends for you.
+
+### Call several stacks
+
+A service that serves several stacks uses one client for all of them. Leave
+`Namespace` empty and select the stack of each call in its context:
+
+```go
+client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
+	CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
+	TokenExchangeURL: tokenExchangeURL,
+	Audience:         "aigateway.ext.grafana.app",
+	BaseURL:          "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1",
+})
+if err != nil {
+	return err
+}
+model, err := client.LanguageModel("grafana/assistant")
+if err != nil {
+	return err
+}
+ctx = grafana.WithNamespace(ctx, stackNamespace)
+result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.UserText("Summarize this incident.")))
+```
+
+The client exchanges and caches a token per stack, and never sends one stack's
+token to another. A call fails before it is sent when it has no namespace, or
+when its namespace differs from a `Namespace` you configured. Service account
+and access token clients belong to one stack and refuse a call namespace.
+
+If your access policy can exchange tokens for every stack, set `Namespace` to
+`*`: the client then exchanges one token for all stacks, and each call still
+selects the stack it goes to. Calls on behalf of a user need a token for their
+own stack, so they are refused with `*`.
 
 This flow needs the Go client. The Vercel client cannot exchange tokens.
 
 ### Call on behalf of a user
 
-When a request is made for a user, pass their token in the call context. Use
+When a request is made for a user, pass their token in the call context, with
+the namespace of their stack if the client serves several. Use
 the user's Grafana ID token, or the access token your plugin received for them
 (see [Call from an App Platform app](#call-from-an-app-platform-app)):
 
@@ -159,17 +224,17 @@ credentials the app SDK uses. Grafana's API is at `GF_API_ACCESS_ROUTER_URL`:
 client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
 	CAPToken:         os.Getenv("GF_API_ACCESS_CAP_TOKEN"),
 	TokenExchangeURL: os.Getenv("GF_API_ACCESS_TOKEN_EXCHANGE_URL"),
-	Namespace:        namespace,
 	Audience:         "grafana",
-	BaseURL:          os.Getenv("GF_API_ACCESS_ROUTER_URL") + "/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/" + namespace,
+	BaseURL:          os.Getenv("GF_API_ACCESS_ROUTER_URL") + "/apis/aigateway.ext.grafana.app/v1alpha1",
 })
 ```
 
-Set `Namespace` to the namespace you call, such as the one of the request you
-are serving. In self-hosted Grafana, set `Audience` to `grafana`, the audience
-Grafana's API accepts. In Grafana Cloud, set it to the Gateway's plugin ID,
-`grafana-aigateway-app`, or its API group, `aigateway.ext.grafana.app`; your
-app's access policy must allow that audience.
+Select the namespace of each call with `grafana.WithNamespace`, such as the
+namespace of the request you are serving, as described in
+[Call several stacks](#call-several-stacks). In self-hosted Grafana, set
+`Audience` to `grafana`, the audience Grafana's API accepts. In Grafana Cloud,
+set it to the Gateway's API group, `aigateway.ext.grafana.app`; your app's
+access policy must allow that audience.
 
 To call on behalf of the user, pass the access token of the request your
 handler is serving, which authlib's `types.AuthInfoFrom` returns, as described in
@@ -180,6 +245,7 @@ info, ok := types.AuthInfoFrom(ctx)
 if !ok {
 	return errors.New("no caller")
 }
+ctx = grafana.WithNamespace(ctx, namespace)
 ctx = grafana.WithOnBehalfOf(ctx, info.GetAccessToken())
 ```
 

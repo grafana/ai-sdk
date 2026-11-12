@@ -144,12 +144,16 @@ type credentialRequest struct {
 	IdentityType types.IdentityType `json:"identityType"`
 	UID          string             `json:"uid"`
 	Subject      string             `json:"subject"`
+	Namespace    string             `json:"namespace"`
 }
 
 func credential(ctx context.Context, host *platformhost.Host, namespace string, body io.Reader) (string, error) {
 	var request credentialRequest
 	if err := json.NewDecoder(body).Decode(&request); err != nil {
 		return "", err
+	}
+	if request.Namespace != "" {
+		namespace = request.Namespace
 	}
 	switch request.Kind {
 	case credentialService:

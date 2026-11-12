@@ -49,8 +49,10 @@ Then choose the constructor for your credential:
 - `NewWithServiceAccountToken` for a Grafana service account token.
 - `NewWithTokenExchange` for a Grafana service with a Cloud access policy
   token, or an App Platform app with the token exchange Grafana gives its
-  backend. Add `WithOnBehalfOf` to a call's context to make it on behalf of a
-  user.
+  backend. It takes the Gateway API root, the URL without
+  `/namespaces/<namespace>`, so one client can call several stacks: add
+  `WithNamespace` to a call's context to select its stack, and
+  `WithOnBehalfOf` to make it on behalf of a user.
 - `NewWithAccessToken` for an access token you obtain and refresh yourself.
 
 ```go

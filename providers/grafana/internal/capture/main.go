@@ -20,6 +20,7 @@ func main() {
 		AccessToken       string                       `json:"accessToken"`
 		ServiceAccount    string                       `json:"serviceAccountToken"`
 		OnBehalfOf        string                       `json:"onBehalfOf"`
+		NamespaceCalls    []namespaceCall              `json:"namespaceCalls"`
 		TokenExchange     *grafana.TokenExchangeConfig `json:"tokenExchange"`
 		Decisions         []bool                       `json:"decisions"`
 		Mode              string                       `json:"mode"`
@@ -99,6 +100,10 @@ func main() {
 	}
 	if err != nil {
 		emitError(err)
+		return
+	}
+	if input.Mode == "namespaces" {
+		captureNamespaces(ctx, client, input.ModelID, input.Options, input.NamespaceCalls)
 		return
 	}
 	if input.Mode == "discovery" {
@@ -287,6 +292,49 @@ func main() {
 		metadata[i] = part.ProviderMetadata
 	}
 	emit(map[string]any{"result": result, "contentMetadata": metadata})
+}
+
+type namespaceCall struct {
+	Namespace  string `json:"namespace"`
+	OnBehalfOf string `json:"onBehalfOf"`
+}
+
+// captureNamespaces runs discovery, a unary call and a streamed call for each
+// call namespace through one provider, as a service serving several stacks does.
+func captureNamespaces(ctx context.Context, client *grafana.Provider, modelID string, opts provider.CallOptions, calls []namespaceCall) {
+	model, err := client.LanguageModel(modelID)
+	if err != nil {
+		emitError(err)
+		return
+	}
+	results := make([]map[string]any, 0, len(calls))
+	for _, call := range calls {
+		callCtx := grafana.WithNamespace(ctx, call.Namespace)
+		if call.OnBehalfOf != "" {
+			callCtx = grafana.WithOnBehalfOf(callCtx, call.OnBehalfOf)
+		}
+		models, err := client.ListModels(callCtx)
+		if err != nil {
+			emitError(err)
+			return
+		}
+		generated, err := model.DoGenerate(callCtx, opts)
+		if err != nil {
+			emitError(err)
+			return
+		}
+		streamed, err := model.DoStream(callCtx, opts)
+		if err != nil {
+			emitError(err)
+			return
+		}
+		parts := make([]provider.StreamPart, 0)
+		for part := range streamed.Stream {
+			parts = append(parts, part)
+		}
+		results = append(results, map[string]any{"namespace": call.Namespace, "models": models, "content": generated.Content, "parts": parts})
+	}
+	emit(map[string]any{"namespaceCalls": results})
 }
 
 func emitError(err error) {
