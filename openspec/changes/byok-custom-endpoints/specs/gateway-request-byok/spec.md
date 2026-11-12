@@ -67,7 +67,7 @@ Validated plain accounts SHALL feed explicit native construction without raw-JSO
 ## ADDED Requirements
 
 ### Requirement: Request account endpoints
-A request account's `baseURL` SHALL behave exactly like a stack-catalog provider's. Decoding SHALL apply the same static endpoint checks, without DNS, to every supplied account, including unused providers. A failure SHALL be the BYOK credentials category before any provider request, without echoing the URL. An account with `baseURL` SHALL connect through the egress client and get bare egress errors; an account without it SHALL use its provider's native default.
+A request account's `baseURL` SHALL behave like a stack-catalog provider's. Decoding SHALL apply the same static endpoint checks, without DNS, to every supplied account, including unused providers. A failure SHALL be the BYOK credentials category before any provider request, without echoing the URL. An account with a custom `baseURL`, one other than its provider's native default, SHALL connect through the egress client and get bare egress errors; others SHALL use the native default.
 
 #### Scenario: Public https endpoint
 - **WHEN** an Anthropic account sets `baseURL: https://anthropic-proxy.example.com` and the policy permits its resolved addresses

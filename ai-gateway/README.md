@@ -248,8 +248,8 @@ would reach the Gateway's own network:
   "provider connection failed" or "provider connection timed out", without
   addresses or certificate names.
 - Providers and accounts without a `baseURL`, or with exactly their provider's
-  own endpoint such as `https://api.openai.com/v1` (ignoring case and a
-  trailing `/`), use the native endpoint and the proxy settings, as before.
+  own endpoint such as `https://api.openai.com/v1` (ignoring the case of the
+  scheme and host, and a trailing `/`), use the native endpoint and the proxy settings, as before.
   Any other form, such as an added `:443` or path, is a custom endpoint. The `model_catalog` setting's endpoints aren't
   checked.
 

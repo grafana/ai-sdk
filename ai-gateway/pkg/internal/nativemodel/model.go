@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	AnthropicBaseURL = "https://api.anthropic.com"
-	OpenAIBaseURL    = "https://api.openai.com/v1"
+	anthropicBaseURL = "https://api.anthropic.com"
+	openAIBaseURL    = "https://api.openai.com/v1"
 )
 
 // DefaultBaseURL returns the native endpoint of a provider type, or "" for a
@@ -22,9 +22,9 @@ const (
 func DefaultBaseURL(providerType string) string {
 	switch providerType {
 	case "anthropic":
-		return AnthropicBaseURL
+		return anthropicBaseURL
 	case "openai":
-		return OpenAIBaseURL
+		return openAIBaseURL
 	}
 	return ""
 }
@@ -39,7 +39,7 @@ type Config struct {
 func NewAnthropic(config Config, modelID string, client *http.Client) provider.LanguageModel {
 	baseURL := config.BaseURL
 	if baseURL == "" {
-		baseURL = AnthropicBaseURL
+		baseURL = anthropicBaseURL
 	}
 	return anthropicprovider.New(config.APIKey, modelID, anthropicprovider.WithRequestOptions(
 		anthropicoption.WithBaseURL(baseURL),
@@ -51,7 +51,7 @@ func NewAnthropic(config Config, modelID string, client *http.Client) provider.L
 func NewOpenAI(config Config, modelID string, client *http.Client) provider.LanguageModel {
 	baseURL := config.BaseURL
 	if baseURL == "" {
-		baseURL = OpenAIBaseURL
+		baseURL = openAIBaseURL
 	}
 	options := []openaioption.RequestOption{
 		openaioption.WithAPIKey(config.APIKey),

@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// ErrEgressRefused reports a provider connection that the stack-catalog
+// ErrEgressRefused reports a provider connection that the custom-endpoint
 // egress policy refused, or whose host did not resolve. It carries no
 // endpoint, host or address.
 var ErrEgressRefused = errors.New("execution: provider endpoint refused by the egress policy or not resolvable")
@@ -52,7 +52,7 @@ const (
 	// CategoryCatalogConfiguration is a stored stack catalog that fails its
 	// checks or lacks a provider key.
 	CategoryCatalogConfiguration
-	// CategoryEgressRefused is a provider connection the stack-catalog egress
+	// CategoryEgressRefused is a provider connection the custom-endpoint egress
 	// policy refused, or whose host did not resolve.
 	CategoryEgressRefused
 )

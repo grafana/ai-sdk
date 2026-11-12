@@ -216,6 +216,7 @@ func TestNew_ClientChoice(t *testing.T) {
 				return
 			}
 			assert.Equal(t, []int{1, 0}, []int{shared, egress})
+			assert.NotSame(t, execution.ErrEgressRefused, err, "a native endpoint's model is not wrapped")
 		})
 	}
 }

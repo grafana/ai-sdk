@@ -103,7 +103,9 @@ func TestSelectStackCatalog_NativeDefaultUsesTheSharedClient(t *testing.T) {
 	native := "https://api.anthropic.com"
 	stack := customEndpointCatalog()
 	stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", BaseURL: &native}
-	selected, err := SelectStackCatalog(stack, "balanced", stackGateway(`{"only":["anthropic"]}`), StackCatalogOptions{Clients: outbound.ModelClients{Shared: shared.client(), Egress: egress.client()}})
+	deny, err := outbound.ParseEgressList("api.anthropic.com")
+	require.NoError(t, err)
+	selected, err := SelectStackCatalog(stack, "balanced", stackGateway(`{"only":["anthropic"]}`), StackCatalogOptions{Clients: outbound.ModelClients{Shared: shared.client(), Egress: egress.client()}, Egress: outbound.EgressPolicy{Deny: deny}})
 	require.NoError(t, err)
 	_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)})
 	require.Error(t, err)

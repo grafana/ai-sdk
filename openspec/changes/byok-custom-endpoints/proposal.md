@@ -40,6 +40,7 @@ None.
   - the static checks apply at BYOK decode;
   - the settings are renamed;
   - the documentation and evidence requirements cover BYOK.
+- `gateway-model-catalog-kind`: a stack provider's `baseURL` equal to its type's native default skips the egress static checks and counts as unset.
 - `gateway-provider-configuration`: BYOK construction may use the account's policy-admitted `baseURL`, and OpenAI Responses models use the egress client for it.
 - `gateway-resource-policy`: request accounts with a `baseURL` use the egress client under the same bounds.
 

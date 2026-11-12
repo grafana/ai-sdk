@@ -553,7 +553,10 @@ describe("stack-catalog routes through the authenticated command", () => {
     const port = (listener.address() as { port: number }).port;
     try {
       const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "byok-refused" }] }];
-      for (const [baseURL, status, retryable] of [[`https://127.0.0.1:${port}`, 400, false], [`https://localhost:${port}`, 424, false]] as const) {
+      for (const [baseURL, status, message] of [
+        [`https://127.0.0.1:${port}`, 400, /providerOptions\.gateway\.byok requires supported provider arrays with valid accounts/],
+        [`https://localhost:${port}`, 424, /provider endpoint refused by the egress policy or not resolvable/],
+      ] as const) {
         const options: LanguageModelV4CallOptions = { prompt, maxOutputTokens: 32, providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key", baseURL }] } } } };
         const model = createGateway({ baseURL: gateway.baseURL, apiKey: TEST_TOKEN })(BYOK_MODEL);
         for (const mode of ["generate", "stream"] as const) {
@@ -563,10 +566,12 @@ describe("stack-catalog routes through the authenticated command", () => {
             else await collectGatewayStream((await model.doStream(options)).stream);
           } catch (error) { failure = error; }
           assert.equal(failure?.statusCode, status, `${baseURL} ${mode}`);
-          assert.equal(failure.isRetryable, retryable);
+          assert.equal(failure.isRetryable, false);
+          assert.match(failure.message, message);
           const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
           assert.equal(go.error?.statusCode, status, `${baseURL} ${mode}`);
-          assert.equal(go.error.isRetryable, retryable);
+          assert.equal(go.error.isRetryable, false);
+          assert.match(JSON.stringify(go.error), message);
           for (const exported of [JSON.stringify(failure.cause?.data ?? null), JSON.stringify(go.error)]) {
             assert.equal(exported.includes(`:${port}`), false);
             assert.equal(exported.includes("request-only-key"), false);

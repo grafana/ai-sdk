@@ -1,7 +1,22 @@
 ## MODIFIED Requirements
 
+### Requirement: HTTPS only
+A custom endpoint of a stack catalog or a request account SHALL use the `https` scheme. Stack-catalog admission, every stack-catalog request and BYOK decoding SHALL refuse any other scheme, and the egress client SHALL send no request whose URL is not `https`. No setting SHALL permit plain HTTP.
+
+#### Scenario: Plain HTTP endpoint
+- **WHEN** a writer saves a catalog provider with `baseURL: http://llm.example.com`
+- **THEN** the write SHALL be refused, and no key SHALL be sent anywhere
+
+#### Scenario: Plain HTTP request account endpoint
+- **WHEN** a BYOK account sets `baseURL: http://llm.example.com`
+- **THEN** decoding SHALL fail with the BYOK credentials category, and no key SHALL be sent anywhere
+
+#### Scenario: Plain HTTP reaches the client
+- **WHEN** a request URL with the `http` scheme reaches the egress client
+- **THEN** it SHALL fail with the egress refusal, with zero connections
+
 ### Requirement: Egress policy scope
-The egress policy SHALL govern every connection made for a stack-catalog provider or a request account that sets `baseURL`. It SHALL NOT govern the operator catalog, or stack-catalog providers and request accounts without `baseURL`, which use their type's native endpoint through the shared model HTTP client.
+The egress policy SHALL govern every connection for a custom endpoint: a stack-catalog provider's or request account's `baseURL` other than its type's native default. It SHALL NOT govern the operator catalog, or stack-catalog providers and request accounts without one, which use their type's native endpoint through the shared model HTTP client.
 
 #### Scenario: Custom stack-catalog endpoint
 - **WHEN** a stack-catalog call selects a provider with `baseURL`

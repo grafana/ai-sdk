@@ -20,7 +20,7 @@ Startup provider-instance and candidate-policy configuration, secret resolution,
 - **THEN** BYOK admission SHALL be decided without that policy, under the BYOK rules of gateway-anthropic-skills
 
 ### Requirement: OpenAI Responses shared bounded transport
-OpenAI Responses models SHALL use the shared model HTTP client, or the egress client for a stack-catalog or request-account `baseURL`, and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
+OpenAI Responses models SHALL use the shared model HTTP client, or the egress client for a custom stack-catalog or request-account `baseURL`, and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
 
 #### Scenario: OpenAI Responses shared bounded transport
 - **WHEN** an OpenAI backend redirects, stalls its response headers, exceeds the byte bound in a unary response, or streams more than 16 MiB
