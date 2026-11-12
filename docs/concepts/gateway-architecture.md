@@ -121,7 +121,8 @@ the app provider that receives the host's API access configuration, the
 lifecycle events and the final flush, so another Go module can build a
 Gateway distribution without repeating or missing any of them. A distribution
 passes its [extensions](../guides/gateway-extensions.md) in `Options`; the
-shipped backend passes none.
+shipped backend passes `DefaultExtensions()`, the `default-instructions` and
+`default-settings` tenant extensions.
 
 **Other inbound protocols are not wired into this plugin backend.** In particular,
 `/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
