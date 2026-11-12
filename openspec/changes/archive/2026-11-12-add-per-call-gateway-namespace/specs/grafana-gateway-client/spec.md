@@ -54,19 +54,29 @@ Concurrent token exchanges SHALL be shared only between calls with the same exch
 - **WHEN** several calls with the same namespace and subject exchange concurrently
 - **THEN** they SHALL share one exchange
 
-## MODIFIED Requirements
-
-### Requirement: Exchange and token constructor defaults and immutability
-
-Token exchange SHALL require CAP token, token-exchange URL and audience, with no default audience. Its namespace SHALL be optional and, when set, SHALL be a DNS label or the wildcard `*`. Direct access-token authentication SHALL require a non-empty access token, and service-account authentication SHALL require a non-empty service-account token. Construction SHALL not discover credentials, endpoints or namespaces from ambient environment variables. Constructors SHALL preserve immutable client/header configuration and refusal to follow redirects, for Gateway requests and token exchanges alike.
-
-#### Scenario: Exchange and token constructor defaults and immutability
-- **WHEN** token-exchange construction omits audience, or valid construction is followed by caller code mutating its header map
-- **THEN** construction without an audience SHALL fail before I/O, and valid client/header configuration SHALL remain immutable with redirects refused
+### Requirement: Token-exchange configured namespace
+The token-exchange namespace SHALL be optional and, when set, SHALL be a DNS label or the wildcard `*`.
 
 #### Scenario: Configured namespace is invalid
 - **WHEN** token-exchange construction receives a namespace that is neither a DNS label nor `*`
 - **THEN** construction SHALL fail before I/O
+
+### Requirement: Base URL shape per credential flow
+For a platform-hosted Gateway, the service-account and access-token base URL SHALL be the namespaced ProviderWire API prefix, `/apis/<group>/<version>/namespaces/<namespace>` on the platform origin. The token-exchange base URL SHALL be the Gateway API root, `/apis/<group>/<version>`, and the client SHALL append `/namespaces/<namespace>` for each call's resolved namespace.
+
+#### Scenario: Token-exchange request is emitted
+- **WHEN** a token-exchange provider with base URL `https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1` invokes `DoGenerate` for resolved namespace `stacks-1`
+- **THEN** the request SHALL be `POST https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/language-model`, and discovery SHALL use `.../namespaces/stacks-1/config`
+
+## MODIFIED Requirements
+
+### Requirement: Exchange and token constructor defaults and immutability
+
+Token exchange SHALL require CAP token, token-exchange URL and audience, with no default audience. Direct access-token authentication SHALL require a non-empty access token, and service-account authentication SHALL require a non-empty service-account token. Construction SHALL not discover credentials, endpoints or namespaces from ambient environment variables. Constructors SHALL preserve immutable client/header configuration and refuse redirects, including on token exchanges.
+
+#### Scenario: Exchange and token constructor defaults and immutability
+- **WHEN** token-exchange construction omits audience, or valid construction is followed by caller code mutating its header map
+- **THEN** construction without an audience SHALL fail before I/O, and valid client/header configuration SHALL remain immutable with redirects refused
 
 #### Scenario: Caller trusts a private certificate authority
 - **WHEN** token-exchange construction receives an HTTP client whose transport trusts a private certificate authority
@@ -74,7 +84,7 @@ Token exchange SHALL require CAP token, token-exchange URL and audience, with no
 
 ### Requirement: Exact ProviderWire routes and protected headers
 
-For a platform-hosted Gateway, the service-account and access-token base URL SHALL be the ProviderWire API prefix, `/apis/<group>/<version>/namespaces/<namespace>` on the platform origin. The token-exchange base URL SHALL be the Gateway API root, `/apis/<group>/<version>`, and the client SHALL append `/namespaces/<namespace>` for each call's resolved namespace. The client SHALL append exactly `/config` for discovery and `/language-model` for calls to that prefix without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
+The client SHALL append exactly `/config` for discovery and `/language-model` for calls to the namespaced ProviderWire API prefix, without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
 
 #### Scenario: Header ownership applies to every authentication flow
 - **WHEN** constructor or call-level authentication headers are supplied
@@ -87,10 +97,6 @@ For a platform-hosted Gateway, the service-account and access-token base URL SHA
 #### Scenario: Streaming request is emitted
 - **WHEN** `DoStream` is invoked
 - **THEN** the request SHALL use the same method, route, model, and specification headers with streaming `true` and SSE accept type
-
-#### Scenario: Token-exchange request is emitted
-- **WHEN** a token-exchange provider with base URL `https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1` invokes `DoGenerate` for resolved namespace `stacks-1`
-- **THEN** the request SHALL be `POST https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/language-model`, and discovery SHALL use `.../namespaces/stacks-1/config`
 
 #### Scenario: Header names collide
 - **WHEN** configured or call-level headers attempt to set client-owned headers and are not rejected by the authentication reserved-header rule
