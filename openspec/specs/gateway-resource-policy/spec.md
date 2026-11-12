@@ -6,7 +6,7 @@ Assign every Gateway resource limit to one owner (the plugin host for request si
 ## Requirements
 
 ### Requirement: Outbound model transport bounds
-Every Gateway-constructed model SHALL use the shared model HTTP client, except a stack-catalog provider with `baseURL`, which SHALL use the egress client. Both clients SHALL reject redirects and wait at most 10 seconds for response headers. Each SHALL fail a non-`text/event-stream` response once its decompressed body exceeds 16 MiB, and SHALL NOT bound the bytes of a `text/event-stream` response, which the execution time bounds end. No bound SHALL be an operator setting.
+Every Gateway-constructed model SHALL use the shared model HTTP client, except one with a custom `baseURL` of a stack catalog or request account, which SHALL use the egress client. Both SHALL reject redirects and wait at most 10 seconds for response headers. Each SHALL fail a non-`text/event-stream` response once its decompressed body exceeds 16 MiB, and SHALL NOT bound the bytes of a `text/event-stream` response, which the execution time bounds end. No bound SHALL be an operator setting.
 
 #### Scenario: Decompressed bytes are counted
 - **WHEN** a provider returns a gzip-encoded body under 16 MiB compressed whose decompressed size exceeds 16 MiB

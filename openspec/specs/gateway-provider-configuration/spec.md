@@ -6,7 +6,7 @@ Define how the authenticated Gateway command configures named provider instances
 ## Requirements
 
 ### Requirement: Configured provider state cannot influence BYOK
-All startup provider-instance and candidate-policy configuration, secret resolution, custom endpoints and account-bound models SHALL belong exclusively to configured-account access. BYOK provider construction SHALL use supported built-in adapters, fixed native destinations and supplied request credentials without consulting that configuration or ambient SDK credentials. Credential-independent transport/lifecycle infrastructure SHALL remain reusable without shared mutable authentication state.
+Startup provider-instance and candidate-policy configuration, secret resolution, configured endpoints and account-bound models SHALL belong only to configured-account access. BYOK construction SHALL use built-in adapters, native destinations or the account's policy-admitted baseURL, and request credentials, without that configuration or ambient SDK credentials. Credential-independent transport infrastructure SHALL stay reusable without shared mutable authentication state.
 
 #### Scenario: Configured provider of the same type exists
 - **WHEN** an OpenAI BYOK request arrives and an OpenAI instance has a configured custom endpoint and key
@@ -234,7 +234,7 @@ Returned native modelId SHALL NOT be replaced with canonical route identity. Sec
 - **THEN** output SHALL retain native modelId rather than canonical replacement while secrets and another tenant state remain protected
 
 ### Requirement: OpenAI Responses shared bounded transport
-OpenAI Responses models SHALL use the shared model HTTP client, or the egress client for a stack-catalog `baseURL`, and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
+OpenAI Responses models SHALL use the shared model HTTP client, or the egress client for a custom stack-catalog or request-account `baseURL`, and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
 
 #### Scenario: OpenAI Responses shared bounded transport
 - **WHEN** an OpenAI backend redirects, stalls its response headers, exceeds the byte bound in a unary response, or streams more than 16 MiB

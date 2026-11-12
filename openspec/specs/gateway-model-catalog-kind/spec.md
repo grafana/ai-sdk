@@ -154,7 +154,7 @@ A stored `ModelCatalog` SHALL be discoverable and invocable only through its own
 - **THEN** its namespace routes SHALL list and invoke the operator catalog exactly as without it, and the catalog's routes SHALL list and invoke only the catalog
 
 ### Requirement: Endpoint and compatibility fields
-The kind schema SHALL keep `baseURL`, `providerName` and `supportsStructuredOutputs`, so pruning cannot drop them before admission. Admission SHALL apply the operator catalog's rules to them: `openai-compatible` requires `baseURL`, and only it may set the other two. A `baseURL` SHALL pass the operator endpoint form checks and the egress static checks.
+The kind schema SHALL keep `baseURL`, `providerName` and `supportsStructuredOutputs`, so pruning cannot drop them before admission. Admission SHALL apply the operator catalog's rules to them: `openai-compatible` requires `baseURL`, and only it may set the other two. A `baseURL` SHALL pass the operator endpoint form checks, and a custom one, other than its type's native default, the egress static checks.
 
 #### Scenario: Custom Anthropic endpoint
 - **WHEN** an `anthropic` provider sets `baseURL: https://anthropic-proxy.example.com`
@@ -175,3 +175,7 @@ The kind schema SHALL keep `baseURL`, `providerName` and `supportsStructuredOutp
 #### Scenario: Endpoint with credentials or a query
 - **WHEN** a `baseURL` carries userinfo, a query or a fragment
 - **THEN** the write SHALL be refused, and the reason SHALL NOT echo the URL
+
+#### Scenario: Native default endpoint
+- **WHEN** an `openai` provider sets `baseURL: https://api.openai.com/v1` and the deny list holds `api.openai.com`
+- **THEN** the write SHALL be accepted, and the provider SHALL count as having no `baseURL`
