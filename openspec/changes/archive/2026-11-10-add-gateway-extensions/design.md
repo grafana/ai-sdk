@@ -56,8 +56,7 @@ const (FailClosed FailurePolicy = "fail-closed"; FailSkip FailurePolicy = "skip"
 type Definition struct {
 	Name             string
 	Scope            Scope
-	Keys             []KeyOwnership // nil: both
-	Sources          []Source       // nil: every source whose ownership is in Keys
+	Keys             []KeyOwnership // nil: both; the only applicability filter
 	Priority         int            // ascending, transforms only
 	FailurePolicy    FailurePolicy
 	ConfigSchema     schema.Schema  // zero: only an empty configuration
@@ -84,7 +83,7 @@ const (
 type Call struct {
 	Namespace     string
 	Keys          KeyOwnership
-	Source        Source
+	Source        Source // informational; the set may grow
 	Caller        CallerType
 	CorrelationID string
 	Model         string // selection ID: canonical ID, or the BYOK selector
@@ -193,7 +192,9 @@ The production composer becomes `observers.Compose(selection with Model = pipeli
 
 ### Ordering, filtering and the cached lists
 
-At startup the host builds, for each of the three sources, the applicable instances in three precomputed orders: gates, inspectors and observers by name; transforms by scope (tenant first), priority and name. Applicability is ownership (`source.Keys()` in `Keys`) and, when set, `Sources`. A definition whose `Sources` include a source outside its `Keys` fails registration. Per call, the pipeline picks the lists for `selection.Source`; an unknown source is a composer error, as for the observers. When no extension applies, the composer returns the selected model unchanged, so calls without extensions behave exactly as before. #765 adds the config revision to this key.
+At startup the host builds, for each key ownership (`operator`, `customer`), the applicable instances in three precomputed orders: gates, inspectors and observers by name; transforms by scope (tenant first), priority and name. Applicability is key ownership alone: an extension applies when `Keys` is empty or contains the call's ownership. Per call, the pipeline picks the lists for `selection.Source.Keys()`, so any source other than `operator-catalog`, including ones added later, uses the customer lists. An unknown source is refused by the observer composer before any phase runs. When no extension applies, the composer returns the selected model unchanged, so calls without extensions behave exactly as before. #765 adds the config revision to this key.
+
+Alternative: a second filter by source. Rejected: every source has exactly one ownership, so a source filter could only narrow `Keys`, would need its own consistency rule, and would tie extensions to a source list that grows. `Call.Source` stays as an informational label.
 
 ### Request phases and the policy re-check
 
@@ -249,7 +250,7 @@ Enabled instances are built in `New` after secrets are resolved, before the hand
 
 ### Tenant extensions in this change
 
-A tenant definition enabled by default is built once at startup with an empty configuration and applies everywhere its ownership and sources allow. #765 replaces this with per-namespace resolution.
+A tenant definition enabled by default is built once at startup with an empty configuration and applies everywhere its key ownership allows. #765 replaces this with per-namespace resolution.
 
 ## Test plan
 
@@ -265,7 +266,7 @@ A tenant definition enabled by default is built once at startup with an empty co
 | `ErrDenied` returns the permission document, no fallback | Gateway handler test over a two-candidate configured model: zero provider calls; output denial after a failed primary: two calls. Overview assertions for both. |
 | Panic containment | Panics in factory, each phase and close; startup fails or the call follows the policy; other concurrent calls succeed. |
 | Mandatory and secret-safe startup | `config` and `gateway.New` tables: disabled, unconfigured, invalid config, missing secret, unknown or tenant mandatory; messages contain no values; an idle host still fails invalid registration. |
-| Ownership and source filtering | Operator-owned extension on BYOK runs nothing; undeclared runs on configured, routed and BYOK; `Sources` narrows, including with `SourceStackCatalog`. |
+| Key ownership filtering | Operator-owned extension on BYOK runs nothing; undeclared runs on configured, routed and BYOK; customer-owned runs on BYOK, stack-catalog and a source not yet named; an unobserved source runs no phase. |
 | Routed and BYOK get the pipeline | Production-composition test (as in #761's identity test) with one extension: phases run once per call for configured, alias, routed and BYOK, unary and stream. |
 | Denied outcome in observers | Root middleware tests for `IsDenied` and nil; Gateway observer test: `status="denied"` series, no `error` series, log `ai_sdk.outcome="denied"`. |
 | Extension metrics and logs | Counter and log tests per event; no error text or values. |
@@ -301,4 +302,4 @@ None: without extensions, behavior and bytes are unchanged, and the shipped buil
 
 - **Collector registration.** Factories will run once per namespace configuration revision. A factory that registers collectors through `Dependencies.Registerer` collides on its second run, so #765 needs either idempotent registration (handling `prometheus.AlreadyRegisteredError`) or a process-level setup step separate from per-configuration construction.
 - **Close on eviction.** Instances built per namespace configuration must be closed when their cache entry is evicted or replaced, not only at shutdown, and close must not race in-flight calls or observations still holding the instance.
-- **Cache key.** The ordered lists add the configuration revision to the source key.
+- **Cache key.** The ordered lists add the configuration revision to the key-ownership key.
