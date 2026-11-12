@@ -936,3 +936,21 @@ func keys(record map[string]any) []string {
 	}
 	return names
 }
+
+func TestTenantCache_ConnectedAfterShutdown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		h := newHarnessWith(t, func(config *Config) {
+			config.RequestInfo = func(ctx context.Context) extension.Call {
+				namespace, _ := ctx.Value(namespaceKey{}).(string)
+				return extension.Call{Namespace: namespace}
+			}
+		}, configurable(t, "t1", &journal{}))
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		h.host.Close(ctx)
+		h.host.ConnectTenants(reader)
+		require.ErrorIs(t, h.generate(t, "a"), extension.ErrUnavailable, "a cache connected after shutdown starts closed")
+		assert.Zero(t, reader.readCount())
+	})
+}

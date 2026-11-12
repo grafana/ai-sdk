@@ -79,6 +79,7 @@ type Host struct {
 	unimplementedTypes prometheus.Counter
 	observations       observations
 	closeOnce          sync.Once
+	closed             atomic.Bool
 	cacheConfig        TenantCacheConfig
 	cache              atomic.Pointer[tenantCache]
 }
@@ -260,7 +261,7 @@ func decode(definition extension.Definition, configuration json.RawMessage) (any
 		return nil, "", nil
 	}
 	if definition.Decode == nil {
-		return configuration, "", nil
+		return slices.Clone(configuration), "", nil
 	}
 	var decoded any
 	err := contain(func() (err error) {
@@ -339,6 +340,10 @@ func (h *Host) ConnectTenants(reader TenantReader) {
 	cache := newTenantCache(h, reader)
 	if !h.cache.CompareAndSwap(nil, cache) {
 		cache.cancel()
+		return
+	}
+	if h.closed.Load() {
+		cache.close(context.Background())
 	}
 }
 
@@ -385,6 +390,7 @@ func (h *Host) Close(ctx context.Context) {
 }
 
 func (h *Host) close(ctx context.Context) {
+	h.closed.Store(true)
 	if cache := h.cache.Load(); cache != nil {
 		cache.close(ctx)
 	}

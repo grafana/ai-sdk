@@ -126,7 +126,11 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*namespace
 				return nil, ctx.Err()
 			}
 			c.mu.Lock()
-			if entry.evicted || entry.config == nil {
+			if c.closed {
+				c.mu.Unlock()
+				return nil, errTenantsClosed
+			}
+			if entry.config == nil {
 				c.mu.Unlock()
 				continue
 			}
