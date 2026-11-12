@@ -1,0 +1,11 @@
+{
+  "text": "{\"series\":\"temp\",\"values\":[-3,4]}",
+  "output": {
+    "series": "temp",
+    "values": [
+      -3,
+      4
+    ]
+  },
+  "outputError": null
+}

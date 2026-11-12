@@ -1562,3 +1562,43 @@ func TestStreamText_EffectiveToolChoiceOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamText_PartialOutputInitialArrayMinus(t *testing.T) {
+	out, err := output.Object[any](mustSchema(t, `{"type":"object"}`))
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name   string
+		deltas []string
+	}{
+		{"split minus", []string{`{"series":"temp","values":[`, `-`, `3,`, `4]}`}},
+		{"initial chunk ends in minus", []string{`{"series":"temp","values":[-`, `3,`, `4]}`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := make(chan provider.StreamPart, len(tc.deltas)+3)
+			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+			for _, delta := range tc.deltas {
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: delta}
+			}
+			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+			ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+			close(ch)
+			model := &testModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: ch}, nil
+			}}
+			result := aisdk.StreamText(t.Context(), model,
+				aisdk.WithModelMessages(provider.UserText("test")), aisdk.WithOutput(out))
+			for range result.FullStream() {
+			}
+			var partials []json.RawMessage
+			for partial := range result.PartialOutputStream() {
+				partials = append(partials, partial)
+			}
+			wants := []string{`{"series":"temp","values":[]}`, `{"series":"temp","values":[-3]}`, `{"series":"temp","values":[-3,4]}`}
+			require.Len(t, partials, len(wants))
+			for i, want := range wants {
+				assert.JSONEq(t, want, string(partials[i]))
+			}
+			require.NoError(t, result.OutputError())
+		})
+	}
+}
