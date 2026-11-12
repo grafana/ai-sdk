@@ -220,8 +220,10 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 
 ### Custom endpoints
 
-A stack chooses its catalog's endpoints, but the requests leave from the
-Gateway, so the Gateway refuses endpoints that would reach its own network:
+A stack chooses its catalog's endpoints, and in `cloud` mode a caller that
+brings its own keys chooses each account's `baseURL`. The requests leave from
+the Gateway either way, so both follow one rule, which refuses endpoints that
+would reach the Gateway's own network:
 
 - A `baseURL` must be `https`. The host must be a DNS name or an IP address;
   numeric forms such as `2130706433` are refused.
@@ -229,27 +231,32 @@ Gateway, so the Gateway refuses endpoints that would reach its own network:
   Gateway connects to. A name that resolves, or later re-resolves, to a
   loopback, private, link-local, shared (`100.64.0.0/10`), multicast,
   documentation or other non-public IPv4 or IPv6 address is refused, including
-  IPv4 addresses inside IPv6. Writes refuse such addresses when they are
-  written as IP literals.
+  IPv4 addresses inside IPv6. Catalog writes and calls with request accounts
+  refuse such addresses when they are written as IP literals.
 - These connections never use `HTTPS_PROXY` or another proxy, because a proxy
   would hide the address from the check. If your Grafana reaches the internet
   only through a proxy, custom endpoints can't connect.
 - Redirects aren't followed, and the response limits in [Limits](#limits)
   apply.
+- A request account whose `baseURL` fails these checks without a DNS lookup,
+  such as `http`, a refused IP literal or a denied host, gets the fixed `400`
+  BYOK credentials error before any request.
 - A refused or unresolvable endpoint gets a `424` `failed_dependency` error,
   "provider endpoint refused by the egress policy or not resolvable", without
   a request. It names no host or address. A model's fallbacks are still tried.
   Other connection, TLS and read failures of custom endpoints are reported as
   "provider connection failed" or "provider connection timed out", without
   addresses or certificate names.
-- Providers without a `baseURL` use their native endpoint and the proxy
-  settings, as before. The `model_catalog` setting's endpoints aren't checked.
+- Providers and accounts without a `baseURL`, or with their provider's own
+  endpoint such as `https://api.openai.com/v1`, use the native endpoint and
+  the proxy settings, as before. The `model_catalog` setting's endpoints aren't
+  checked.
 
 Two settings adjust the policy. Each takes comma-separated entries: an IP
 address, a CIDR prefix such as `10.20.0.0/16`, a hostname, or `*.` and a
 domain, which matches its subdomains only.
 
-- `custom_endpoint_allow` lets catalogs reach matching destinations
+- `custom_endpoint_allow` lets catalogs and request accounts reach matching destinations
   that are otherwise refused, such as a model server on your private network.
   It doesn't limit other public endpoints. Unspecified (`0.0.0.0`, `::`) and
   multicast addresses stay refused. A hostname entry trusts whatever that name
@@ -258,8 +265,11 @@ domain, which matches its subdomains only.
   are also allowed. Deny by prefix: a denied hostname is a convenience, not a
   boundary, because the same address stays reachable through its IP or
   another name.
-- Ports aren't restricted, so a catalog can reach any port on a permitted
-  host, and response timing can show whether a port is open. Deny the
+- In `cloud` mode any user or service account can make the Gateway connect to
+  a permitted endpoint, not only the Admins who write catalogs.
+- Ports aren't restricted, so a catalog or a request account can reach any
+  port on a permitted host, and response timing can show whether a port is
+  open. Deny the
   prefixes of public addresses that catalogs must not reach, such as your own
   services, cluster addresses from public IPv6 ranges, or a DNS64
   network-specific prefix (only `64:ff9b::/96` is checked as the IPv4 address
@@ -307,8 +317,8 @@ so they need no other change.
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
-| `custom_endpoint_allow` | Comma-separated destinations that stored catalogs' custom endpoints may reach despite the built-in refusal; see [Custom endpoints](#custom-endpoints). |
-| `custom_endpoint_deny` | Comma-separated destinations that stored catalogs' custom endpoints may never reach; see [Custom endpoints](#custom-endpoints). |
+| `custom_endpoint_allow` | Comma-separated destinations that custom endpoints of stored catalogs and request accounts may reach despite the built-in refusal; see [Custom endpoints](#custom-endpoints). |
+| `custom_endpoint_deny` | Comma-separated destinations that custom endpoints of stored catalogs and request accounts may never reach; see [Custom endpoints](#custom-endpoints). |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits

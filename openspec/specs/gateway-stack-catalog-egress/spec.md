@@ -1,7 +1,7 @@
 # gateway-stack-catalog-egress Specification
 
 ## Purpose
-Keeps a customer-chosen stack-catalog provider endpoint from reaching internal or non-public destinations from the Gateway, while letting stacks use public HTTPS endpoints and operators adjust the policy.
+Keeps a customer-chosen endpoint, a stack-catalog provider's or a request account's, from reaching internal or non-public destinations from the Gateway, while letting customers use public HTTPS endpoints and operators adjust the policy.
 
 ## Requirements
 
