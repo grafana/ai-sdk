@@ -1,6 +1,7 @@
 package tenantconfig
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,11 +44,15 @@ type invalidReason string
 const (
 	// invalidDecode is a body that is not a JSON list object.
 	invalidDecode invalidReason = "decode"
-	// invalidKind is a JSON object whose kind is not the list kind.
+	// invalidKind is a JSON object whose kind names no list, such as a
+	// Status.
 	invalidKind invalidReason = "kind"
+	// invalidItems is a JSON object without an items array.
+	invalidItems invalidReason = "items"
 	// invalidSize is a response beyond the byte bound.
 	invalidSize invalidReason = "size"
-	// invalidItem is a listed item without a name.
+	// invalidItem is a listed item without a name, or of another group or
+	// version.
 	invalidItem invalidReason = "item"
 	// invalidPages is a list that continues beyond the page bound.
 	invalidPages invalidReason = "pages"
@@ -59,17 +64,25 @@ const (
 	mediaTypeInvalid = "invalid"
 )
 
-// listKind is the kind of a Middleware list response. A successful response
-// of any other kind is invalid, never a namespace without resources.
-var listKind = middlewarev1alpha1.Kind().Kind() + "List"
+// listKindSuffix ends the kind of every list response.
+const listKindSuffix = "List"
 
 // Reader lists a namespace's Middleware resources through the platform API
 // with the credentials of the kubeconfig it was built from. It decodes each
-// spec.config as the JSON the platform stores, so numbers keep their literal.
+// spec as the JSON the platform stores, so numbers keep their literal.
+//
+// The request path identifies the resource, so the reader does not trust the
+// platform's list kind label, which Grafana may set to another kind of the
+// same group. A successful response is a list when it is a JSON object with
+// an items array, null or an array, and a kind that is empty or ends in
+// "List"; anything else, such as a Status, is invalid, never a namespace
+// without resources. Each item must have a name, and an apiVersion, when it
+// has one, of the Middleware group and version.
 type Reader struct {
-	client   rest.Interface
-	resource string
-	logger   *slog.Logger
+	client     rest.Interface
+	resource   string
+	apiVersion string
+	logger     *slog.Logger
 }
 
 var _ extensionhost.TenantReader = (*Reader)(nil)
@@ -90,7 +103,7 @@ func NewReader(kubeConfig rest.Config, logger *slog.Logger) (*Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tenant configuration: building the API client: %w", err)
 	}
-	return &Reader{client: client, resource: gvr.Resource, logger: logger}, nil
+	return &Reader{client: client, resource: gvr.Resource, apiVersion: groupVersion.String(), logger: logger}, nil
 }
 
 type mediaTypeKey struct{}
@@ -128,12 +141,13 @@ type list struct {
 	Metadata struct {
 		Continue string `json:"continue"`
 	} `json:"metadata"`
-	Items []json.RawMessage `json:"items"`
+	Items json.RawMessage `json:"items"`
 }
 
 // storedResource is one listed Middleware resource, with its spec kept raw.
 type storedResource struct {
-	Metadata struct {
+	APIVersion string `json:"apiVersion"`
+	Metadata   struct {
 		Name string `json:"name"`
 	} `json:"metadata"`
 	Spec json.RawMessage `json:"spec"`
@@ -144,10 +158,13 @@ type storedResource struct {
 // that can't be decoded, or that sets any other member, is an invalid
 // resource, so its extension applies its failure policy. It errs only when
 // the item is not an object with a name, which makes the whole list invalid.
-func resourceFrom(raw json.RawMessage) (extensionhost.TenantResource, error) {
+func resourceFrom(raw json.RawMessage, apiVersion string) (extensionhost.TenantResource, error) {
 	var stored storedResource
 	if err := json.Unmarshal(raw, &stored); err != nil || stored.Metadata.Name == "" {
 		return extensionhost.TenantResource{}, errors.New("tenant configuration: a listed item has no name")
+	}
+	if stored.APIVersion != "" && stored.APIVersion != apiVersion {
+		return extensionhost.TenantResource{}, errors.New("tenant configuration: a listed item has another group or version")
 	}
 	invalid := extensionhost.TenantResource{Name: stored.Metadata.Name, Invalid: true}
 	spec, err := DecodeSpec(stored.Spec)
@@ -177,12 +194,12 @@ func (r *Reader) read(ctx context.Context, namespace string) ([]extensionhost.Te
 	remaining := int64(maxListBytes)
 	next := ""
 	for range maxListPages {
-		page, reason, err := r.page(ctx, namespace, next, &remaining)
+		page, items, reason, err := r.page(ctx, namespace, next, &remaining)
 		if err != nil {
 			return nil, reason, err
 		}
-		for _, item := range page.Items {
-			resource, err := resourceFrom(item)
+		for _, item := range items {
+			resource, err := resourceFrom(item, r.apiVersion)
 			if err != nil {
 				return nil, invalidItem, extensionhost.ErrReadInvalid
 			}
@@ -197,32 +214,36 @@ func (r *Reader) read(ctx context.Context, namespace string) ([]extensionhost.Te
 	return nil, invalidPages, extensionhost.ErrReadInvalid
 }
 
-func (r *Reader) page(ctx context.Context, namespace, next string, remaining *int64) (list, invalidReason, error) {
+func (r *Reader) page(ctx context.Context, namespace, next string, remaining *int64) (list, []json.RawMessage, invalidReason, error) {
 	request := r.client.Get().Namespace(namespace).Resource(r.resource).Param("limit", strconv.Itoa(listPageSize))
 	if next != "" {
 		request = request.Param("continue", next)
 	}
 	body, err := request.Stream(ctx)
 	if err != nil {
-		return list{}, "", classify(ctx, err)
+		return list{}, nil, "", classify(ctx, err)
 	}
 	defer func() { _ = body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(body, *remaining+1))
 	if err != nil {
-		return list{}, "", classify(ctx, err)
+		return list{}, nil, "", classify(ctx, err)
 	}
 	if int64(len(raw)) > *remaining {
-		return list{}, invalidSize, extensionhost.ErrReadInvalid
+		return list{}, nil, invalidSize, extensionhost.ErrReadInvalid
 	}
 	*remaining -= int64(len(raw))
 	var decoded list
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return list{}, invalidDecode, extensionhost.ErrReadInvalid
+	if err := json.Unmarshal(raw, &decoded); err != nil || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+		return list{}, nil, invalidDecode, extensionhost.ErrReadInvalid
 	}
-	if decoded.Kind != listKind {
-		return list{}, invalidKind, extensionhost.ErrReadInvalid
+	if decoded.Kind != "" && !strings.HasSuffix(decoded.Kind, listKindSuffix) {
+		return list{}, nil, invalidKind, extensionhost.ErrReadInvalid
 	}
-	return decoded, "", nil
+	var items []json.RawMessage
+	if len(decoded.Items) == 0 || json.Unmarshal(decoded.Items, &items) != nil {
+		return list{}, nil, invalidItems, extensionhost.ErrReadInvalid
+	}
+	return decoded, items, "", nil
 }
 
 // classify maps a read error to its sentinel, dropping the error's text,

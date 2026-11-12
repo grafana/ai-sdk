@@ -101,18 +101,6 @@ test.describe('Middleware', () => {
     expect(await permissions(accounts.Admin)).toEqual(expect.arrayContaining([read, ...writes]));
   });
 
-  test("an Admin's list is a JSON MiddlewareList, as the Gateway's reader requires", async ({ accounts }) => {
-    const response = await accounts.Admin.get(MIDDLEWARES);
-    expect(response.status()).toBe(200);
-    const mediaType = (response.headers()['content-type'] ?? 'none').split(';')[0].trim();
-    const body = await response.text();
-    let kind: unknown = 'not JSON';
-    try {
-      kind = JSON.parse(body).kind ?? 'missing';
-    } catch {}
-    expect({ mediaType, kind }).toEqual({ mediaType: 'application/json', kind: 'MiddlewareList' });
-  });
-
   test('Viewers and Editors read, and their creates are refused', async ({ accounts }) => {
     for (const role of ['Viewer', 'Editor'] as const) {
       expect((await accounts[role].get(MIDDLEWARES)).status()).toBe(200);
@@ -193,6 +181,30 @@ test.describe('Middleware with the shipped types', () => {
     expect(refused.status(), await refused.text()).toBeGreaterThanOrEqual(400);
     expect((await accounts.Admin.get(`${MIDDLEWARES}/${SETTINGS}`)).status()).toBe(404);
     expect((await create(accounts.Admin, inFolder)).status()).toBe(201);
+    await remove(accounts.Admin, SETTINGS);
+  });
+
+  test("an Admin's list has the shape the Gateway's reader relies on", async ({ accounts }) => {
+    const created = await create(
+      accounts.Admin,
+      middleware(SETTINGS, SETTINGS, { defaultSettings: { temperature: 0.25 } })
+    );
+    expect(created.status(), await created.text()).toBe(201);
+    const response = await accounts.Admin.get(MIDDLEWARES);
+    expect(response.status()).toBe(200);
+    const mediaType = (response.headers()['content-type'] ?? 'none').split(';')[0].trim();
+    const listed = await response.json();
+    const items: Array<{ kind?: string; apiVersion?: string; metadata?: { name?: string } }> = listed.items;
+    console.log(
+      'Middleware list labels:',
+      JSON.stringify({ kind: listed.kind, items: items.map(({ kind, apiVersion }) => ({ kind, apiVersion })) })
+    );
+    expect(mediaType).toBe('application/json');
+    expect(Array.isArray(items)).toBe(true);
+    expect(items.map((item) => [item.metadata?.name, item.apiVersion])).toContainEqual([
+      SETTINGS,
+      `${API_GROUP}/${API_VERSION}`,
+    ]);
     await remove(accounts.Admin, SETTINGS);
   });
 

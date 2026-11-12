@@ -28,8 +28,9 @@ import (
 )
 
 const (
-	readerSentinel = "sentinel-reader-body"
-	listPath       = "/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/middlewares"
+	readerAPIVersion = "aigateway.ext.grafana.app/v1alpha1"
+	readerSentinel   = "sentinel-reader-body"
+	listPath         = "/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/middlewares"
 )
 
 func newTestReader(t *testing.T, handler http.HandlerFunc) *Reader {
@@ -82,6 +83,21 @@ func TestReader_Read(t *testing.T) {
 			expected: []extensionhost.TenantResource{
 				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"m":{"maxTokens":9007199254740993}},"ratio":1.0,"rules":[{"limits":{"rpm":10},"models":["m"]}]}`)},
 			},
+		},
+		{
+			name:     "a list labeled with another kind of the group",
+			pages:    map[string]string{"": `{"kind":"ModelCatalogList","apiVersion":"aigateway.ext.grafana.app/v1alpha1","items":[{"kind":"Middleware","apiVersion":"aigateway.ext.grafana.app/v1alpha1","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`},
+			expected: []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: true}},
+		},
+		{
+			name:     "a list without a kind or item kinds",
+			pages:    map[string]string{"": `{"items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":false}}]}`},
+			expected: []extensionhost.TenantResource{{Name: "a", Type: "a"}},
+		},
+		{
+			name:     "null items",
+			pages:    map[string]string{"": `{"kind":"MiddlewareList","items":null}`},
+			expected: nil,
 		},
 		{
 			name:  "one invalid resource does not fail the read",
@@ -142,6 +158,16 @@ func TestReader_Failures(t *testing.T) {
 		{name: "success that is not a list: status", handler: func(w http.ResponseWriter, _ *http.Request) {
 			writeList(w, `{"kind":"Status","apiVersion":"v1","status":"Success","message":"`+readerSentinel+`"}`)
 		}, expected: extensionhost.ErrReadInvalid},
+		{name: "success that is not a list: status with items", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"Status","items":[]}`)
+		}, expected: extensionhost.ErrReadInvalid},
+		{name: "success that is not a list: array", handler: func(w http.ResponseWriter, _ *http.Request) { writeList(w, `[]`) }, expected: extensionhost.ErrReadInvalid},
+		{name: "success that is not a list: items not an array", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"MiddlewareList","items":{}}`)
+		}, expected: extensionhost.ErrReadInvalid},
+		{name: "an item of another version", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"MiddlewareList","items":[{"apiVersion":"aigateway.ext.grafana.app/v2","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`)
+		}, expected: extensionhost.ErrReadInvalid},
 		{name: "endless pages", handler: func(w http.ResponseWriter, _ *http.Request) {
 			writeList(w, `{"kind":"MiddlewareList","metadata":{"continue":"again"},"items":[]}`)
 		}, expected: extensionhost.ErrReadInvalid},
@@ -192,8 +218,10 @@ func TestReader_LogsWhyAResponseIsInvalid(t *testing.T) {
 	}{
 		{name: "html", handler: respond("text/html; charset=utf-8; x="+readerSentinel, "<html>"+readerSentinel+"</html>"), reason: "decode", mediaType: "text/html"},
 		{name: "kind", handler: respond("application/json;as=Table;g="+readerSentinel, `{"kind":"`+readerSentinel+`","items":[]}`), reason: "kind", mediaType: "application/json"},
-		{name: "no kind", handler: respond("application/json", `{"items":[{"metadata":{"name":"`+readerSentinel+`"}}]}`), reason: "kind", mediaType: "application/json"},
+		{name: "no items", handler: respond("application/json", `{"kind":"MiddlewareList","metadata":{"name":"`+readerSentinel+`"}}`), reason: "items", mediaType: "application/json"},
 		{name: "item", handler: respond("application/json", `{"kind":"MiddlewareList","items":[{"spec":"`+readerSentinel+`"}]}`), reason: "item", mediaType: "application/json"},
+		{name: "item of another group", handler: respond("application/json", `{"kind":"MiddlewareList","items":[{"apiVersion":"`+readerSentinel+`/v1","metadata":{"name":"a"}}]}`), reason: "item", mediaType: "application/json"},
+		{name: "null body", handler: respond("application/json", `null`), reason: "decode", mediaType: "application/json"},
 		{name: "size", handler: respond("application/json", `{"kind":"MiddlewareList","items":[],"pad":"`+strings.Repeat(readerSentinel, maxListBytes/len(readerSentinel)+1)+`"}`), reason: "size", mediaType: "application/json"},
 		{name: "pages", handler: respond("application/json", `{"kind":"MiddlewareList","metadata":{"continue":"`+readerSentinel+`"},"items":[]}`), reason: "pages", mediaType: "application/json"},
 		{name: "no content type", handler: respond("", readerSentinel), reason: "decode", mediaType: "none"},
@@ -332,14 +360,14 @@ func TestResourceFrom(t *testing.T) {
 		{name: "no spec", spec: `null`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resource, err := resourceFrom(json.RawMessage(`{` + name + `,"spec":` + tc.spec + `}`))
+			resource, err := resourceFrom(json.RawMessage(`{`+name+`,"spec":`+tc.spec+`}`), readerAPIVersion)
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, resource)
 		})
 	}
 
-	for _, raw := range []string{`{"spec":{"type":"a","enabled":true}}`, `[]`} {
-		_, err := resourceFrom(json.RawMessage(raw))
+	for _, raw := range []string{`{"spec":{"type":"a","enabled":true}}`, `[]`, `{"apiVersion":"aigateway.ext.grafana.app/v2","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}`, `{"apiVersion":"other.ext.grafana.app/v1alpha1","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}`} {
+		_, err := resourceFrom(json.RawMessage(raw), readerAPIVersion)
 		assert.Error(t, err, raw)
 	}
 }

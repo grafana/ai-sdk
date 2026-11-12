@@ -339,7 +339,11 @@ counts denials and failures by extension, phase and event, including phase
 resources of types the build doesn't implement. Read failures are logged with
 the namespace and a fixed class, such as `refused` or `timeout`. A successful
 response the Gateway can't use is also logged with a fixed reason (`decode`,
-`kind`, `size`, `item` or `pages`) and its media type, never its content. Extension instances
+`kind`, `items`, `size`, `item` or `pages`) and its media type, never its
+content. The request path identifies the resources, so the Gateway doesn't
+trust the list's `kind` label, which Grafana may set to another kind of the
+API group: a JSON object with an `items` array is a list unless its `kind`
+names something other than a list, such as a `Status`. Extension instances
 that implement `Close` are closed within the Gateway's final one-second flush,
 after in-flight observations finish.
 

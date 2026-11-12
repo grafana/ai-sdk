@@ -287,6 +287,7 @@ The shipped tenant extensions apply to every call, so the shipped Gateway reads 
   4. Confirm list responses carry `kind: MiddlewareList`. Otherwise reads fail with class `invalid-response`.
 
   The same steps go into the PR body.
+- **List kind label.** Against the pinned Grafana nightly, listing `middlewares` returns `kind: ModelCatalogList`, the list kind of the manifest's first kind, with media type `application/json`. The reader therefore no longer requires `kind: MiddlewareList`: the request path identifies the resource, a JSON object with an `items` array is a list unless its `kind` names a non-list such as `Status`, and each item needs a name and, when present, the Middleware group and version. A platform bug report is drafted for the maintainers.
 - Stack-catalog coverage when #757 lands. No code change is expected, because `Sources` is nil.
 - Root `DefaultSettings` alignment: [#791](https://github.com/grafana/ai-sdk/issues/791).
 
