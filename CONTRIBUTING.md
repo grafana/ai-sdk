@@ -621,8 +621,11 @@ SDK's Go module dependency graph.
   dispatch the [promotion workflow](.github/workflows/publish-ai-gateway-ops.yml)
   from `main` with its full SHA. The workflow requires the commit's CI run and
   dev publication to have succeeded, publishes the same `<version>+<sha>` to the
-  staging catalog and requests a staging version pin that needs review before it
-  merges. To roll staging back, promote an earlier commit.
+  staging catalog (`ops` in the shared workflow) and requests a staging version
+  pin that never merges automatically and needs review. Promotion needs a
+  one-time grant and an existing staging pin in the deployment repository;
+  without the grant the pin request fails after publishing. To roll staging
+  back, promote an earlier commit.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use
