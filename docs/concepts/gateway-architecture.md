@@ -216,13 +216,13 @@ sequenceDiagram
    observers and outside the selected model, the
    [extension pipeline](../guides/gateway-extensions.md) runs the
    distribution's extensions that apply to the call's key ownership.
-   Operator extensions are built at startup. When a tenant extension applies,
-   the pipeline first resolves the call namespace's configuration from a cache
-   that reads the namespace's `Middleware` resources as the plugin, never as
-   the caller, on its own context and timeout. It builds the namespace's
-   tenant instances once per configuration revision, refreshes in the
-   background after a one-minute TTL, and never falls back to a default when
-   a read fails. The phases are
+   Every extension, operator or tenant, is built once at startup. When a
+   tenant extension applies, the pipeline first resolves the call namespace's
+   configuration from a cache that reads the namespace's `Middleware`
+   resources as the plugin, never as the caller, on its own context and
+   timeout. It decodes the namespace's configuration once per change and
+   passes it to each call, refreshes in the background after a one-minute
+   TTL, and never falls back to a default when a read fails. The phases are
    admit, request transforms with a host policy check after each, request
    inspection, then response inspection on each output part and one
    asynchronous observation. Every phase sees the caller, including its

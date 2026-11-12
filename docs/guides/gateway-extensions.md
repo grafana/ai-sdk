@@ -202,7 +202,7 @@ Each call's tenant extensions follow its namespace's resources:
 | No resource | Uses its default: on with `{}` when `EnabledByDefault`, off otherwise |
 | `enabled: false` | Is off |
 | `enabled: true` with a valid member | Runs with that member as its configuration |
-| A member its schema no longer accepts, a missing or foreign member, or a failing factory | Applies its failure policy, logged and counted |
+| A member its schema no longer accepts, a missing or foreign member, or a failing `Decode` | Applies its failure policy, logged and counted |
 | An enabled resource for a type this build doesn't implement | Is skipped, logged once per namespace and type, and counted |
 
 The rules for writing resources:
@@ -245,8 +245,12 @@ extensions.
 definition := modelAccessType.Bind(tenanttype.Implementation{
 	FailurePolicy: extension.FailSkip,
 	New:           newModelAccess,
+	Decode:        decodeModelAccess,
 })
 ```
+
+`newModelAccess` builds the one instance, and `decodeModelAccess` parses a
+namespace's stored member into the value its calls receive in `call.Config`.
 
 Startup fails when a tenant-scope definition has no public type, or differs
 from its type in schema or default. To add a type:
@@ -303,15 +307,17 @@ would not be applied. Deletes still work.
 
 ### Write tenant extensions
 
-- A tenant extension's factory runs once for each namespace configuration that
-  enables it, and again when that configuration changes. Keep it quick and free
-  of I/O. Its instance is closed once its configuration is replaced or the
-  namespace leaves the cache, and only after the calls using it finish.
-- All instances of a definition share `Dependencies.Registerer`, and
-  registering the same collector again succeeds. Create collectors once per
-  definition, register them in `New`, and never unregister them in `Close`: a
-  collector created anew in each `New` fails registration from the second
-  namespace on.
+- A tenant extension has one instance per process, like an operator one. Its
+  factory runs once at startup with an empty configuration, and its `Close`
+  runs once at shutdown.
+- Each call carries the namespace's configuration in `call.Config`. Without
+  `Decode`, it is the member as stored, a `json.RawMessage`. Set `Decode` on
+  the implementation to parse it once, into the type your phases
+  type-assert: the Gateway decodes each namespace's member once per change,
+  never per call. A decoding error applies the failure policy in that
+  namespace. A type without a configuration schema gets `nil`.
+- The decoded value is shared by every call in the namespace. Treat it as
+  read-only, and keep per-call data in `call.State`.
 - Tenant extensions see the same request information as operator extensions,
   including the caller's identity, and the provider instances and provider
   models of operator-catalog candidates and attempts.
