@@ -20,7 +20,8 @@ type Type struct {
 	// value means the type takes no configuration and has no member.
 	ConfigSchema schema.Schema
 	// EnabledByDefault is the extension's state in a namespace that stores no
-	// resource for it.
+	// resource for it. A type enabled by default runs with the empty
+	// configuration there, so its schema must accept it.
 	EnabledByDefault bool
 	// Example is a configuration the schema accepts. It documents the type
 	// and proves that the manifest member stores it unchanged. It is nil when

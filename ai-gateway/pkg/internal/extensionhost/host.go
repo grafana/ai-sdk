@@ -336,7 +336,9 @@ func (h *Host) ConnectTenants(reader TenantReader) {
 		return
 	}
 	if h.closed.Load() {
-		cache.close(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), observeTimeout)
+		defer cancel()
+		cache.close(ctx)
 	}
 }
 

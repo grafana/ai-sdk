@@ -790,7 +790,11 @@ func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
 		h := newTenantHarness(t, reader, TenantCacheConfig{}, definition)
 		ctx, cancel := context.WithCancel(inNamespace(t.Context(), "a"))
 		defer cancel()
-		go func() { _, _ = h.compose(t, extension.SourceOperatorCatalog).DoGenerate(ctx, provider.CallOptions{}) }()
+		waited := make(chan error, 1)
+		go func() {
+			_, err := h.compose(t, extension.SourceOperatorCatalog).DoGenerate(ctx, provider.CallOptions{})
+			waited <- err
+		}()
 		synctest.Wait()
 
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), time.Second)
@@ -810,6 +814,7 @@ func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
 		<-closed
 		synctest.Wait()
 		assert.False(t, decoded.Load(), "a read that completes during shutdown decodes nothing")
+		require.ErrorIs(t, <-waited, extension.ErrUnavailable, "the waiting call gets the closed error")
 		assert.NotContains(t, h.logs.String(), "gateway extension failed")
 	})
 }

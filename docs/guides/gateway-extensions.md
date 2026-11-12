@@ -255,7 +255,9 @@ namespace's stored member into the value its calls receive in `call.Config`.
 Startup fails when a tenant-scope definition has no public type, or differs
 from its type in schema or default. To add a type:
 
-1. Add it to the `tenanttype` registry with a description and an example.
+1. Add it to the `tenanttype` registry with a description and an example. A
+   type enabled by default runs with `{}` in namespaces without a resource, so
+   its schema must accept it; startup fails otherwise.
 2. Run `mise run generate-ai-gateway-kinds`, which projects the schema into the
    manifest and regenerates the kind. The projection keeps JSON types,
    properties, items, required fields and descriptions, and drops value
