@@ -30,12 +30,9 @@ type Type struct {
 
 // Implementation is how a build implements a type.
 type Implementation struct {
-	// Keys lists the key ownerships of the calls the extension applies to. Nil
-	// applies to both.
+	// Keys lists the key ownerships of the calls the extension applies to,
+	// whatever their source. Nil applies to both.
 	Keys []extension.KeyOwnership
-	// Sources narrows the calls the extension applies to. Nil applies to every
-	// source whose ownership is in Keys.
-	Sources []extension.Source
 	// Priority orders request transforms among tenant-scope extensions.
 	Priority      int
 	FailurePolicy extension.FailurePolicy
@@ -74,7 +71,6 @@ func (t Type) Bind(impl Implementation) extension.Definition {
 		Name:             t.Name,
 		Scope:            extension.ScopeTenant,
 		Keys:             impl.Keys,
-		Sources:          impl.Sources,
 		Priority:         impl.Priority,
 		FailurePolicy:    impl.FailurePolicy,
 		ConfigSchema:     t.ConfigSchema,
