@@ -236,7 +236,9 @@ const (
 )
 
 // OpenAIToolOptions carries per-tool OpenAI options attached to a
-// provider.Tool via ProviderOptions["openai"].
+// provider.Tool via ProviderOptions["openai"]. For an Azure-identified model,
+// attach this value directly under ProviderOptions["azure"]; that whole object
+// takes precedence over "openai". BuildProviderOptions uses the "openai" key.
 type OpenAIToolOptions struct {
 	// Async controls whether the tool may run asynchronously; nil leaves it unspecified.
 	Async *bool `json:"async,omitempty"`

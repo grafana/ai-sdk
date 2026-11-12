@@ -44,6 +44,10 @@ func buildParamsForProvider(modelID string, opts provider.CallOptions, providerO
 }
 
 func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOptionsName string, webSearchSourcesIncludeSupported bool, defaultReasoningSummary string) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
+	toolOptionsName := providerOptionsName
+	if toolOptionsName == "" {
+		toolOptionsName = providerName
+	}
 	if providerOptionsName == "" {
 		_, name, err := resolveProviderOptions(opts)
 		if err != nil {
@@ -105,7 +109,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	}
 
 	// Input conversion.
-	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
+	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, toolOptionsName, popts.Conversation != "", popts.PreviousResponseID != "")
 	inputCtx.isReasoningModel = isReasoning
 	inputCtx.configurationUpdateUnsupportedReason = configurationUpdateUnsupportedReason(caps, popts)
 	input, inputWarnings, err := convertInput(opts.Prompt, systemMode, popts, inputCtx)
@@ -137,7 +141,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, formatWarnings...)
 
 	// Tools + tool choice.
-	toolWarnings, err := prepareTools(&body, opts, popts, caps, &br)
+	toolWarnings, err := prepareTools(&body, opts, popts, caps, &br, toolOptionsName)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
