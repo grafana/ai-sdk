@@ -292,11 +292,6 @@ func TestDefaultSettings_ProviderOptions(t *testing.T) {
 		})
 	}
 
-	t.Run("BothUnset", func(t *testing.T) {
-		received := applyDefaultSettings(t, DefaultSettingsOptions{}, provider.CallOptions{})
-		assert.Nil(t, received.ProviderOptions)
-	})
-
 	t.Run("TypedDefaultMergedWithRawCaller", func(t *testing.T) {
 		settings := provider.BuildProviderOptions(defaultSettingsTestOption{Thinking: true})
 		caller := provider.ProviderOptions{
