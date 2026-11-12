@@ -2,8 +2,8 @@
 
 The public certificate in `cert.pem` and public test key embedded in
 `native-provider-proxy.ts` let command integration tests reach local synthetic
-adapters while the BYOK implementation retains its fixed native HTTPS
-destinations. They are not provider credentials and must never be used outside tests.
+adapters at the fixed native HTTPS destinations, which BYOK accounts without a
+custom `baseURL` use. They are not provider credentials and must never be used outside tests.
 The embedded key uses the scanner's inline `trufflehog:ignore` tag; adding that
 comment inside a PEM file would break TLS parsing. The certificate has a test-only
 preamble outside its PEM block.

@@ -288,6 +288,7 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 		{name: "attempt bound", err: execution.ErrRoutingAttemptBound, message: "routing exceeds the bound of 8 provider attempts"},
 		{name: "fallback model", err: execution.ErrUnknownFallbackModel, status: http.StatusNotFound, code: "model_not_found", message: "a providerOptions.gateway.models entry is not an available model"},
 		{name: "catalog configuration", err: execution.ErrCatalogConfiguration, status: http.StatusFailedDependency, code: "failed_dependency", message: "model catalog is invalid or missing a provider key"},
+		{name: "egress refusal", err: execution.ErrEgressRefused, status: http.StatusFailedDependency, code: "failed_dependency", message: "provider endpoint refused by the egress policy or not resolvable"},
 	} {
 		if tc.status == 0 {
 			tc.status, tc.code = http.StatusBadRequest, "invalid_request"

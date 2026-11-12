@@ -1,29 +1,39 @@
 package stackcatalog
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 const (
-	providerAnthropic = "anthropic"
-	providerOpenAI    = "openai"
+	providerAnthropic  = "anthropic"
+	providerOpenAI     = "openai"
+	providerCompatible = "openai-compatible"
 )
 
 // Parse validates a stack catalog spec whose providers have the secure keys
-// in keys, and returns it as a config.File without provider keys.
-func Parse(spec v1alpha1.Spec, keys []string) (config.File, error) {
+// in keys, and returns it as a config.File without provider keys. Custom
+// endpoints must be https and pass policy's checks that need no DNS lookup;
+// the egress client checks the addresses they resolve to when connecting.
+func Parse(spec v1alpha1.Spec, keys []string, policy outbound.EgressPolicy) (config.File, error) {
 	if err := checkPolicy(spec); err != nil {
 		return config.File{}, err
 	}
 	file := convert(spec)
 	if err := file.ValidateShape(); err != nil {
+		return config.File{}, err
+	}
+	if err := checkEndpoints(file, policy); err != nil {
 		return config.File{}, err
 	}
 	if err := checkKeys(file, keys); err != nil {
@@ -37,22 +47,36 @@ func checkPolicy(spec v1alpha1.Spec) error {
 		if !validName(name) {
 			return fmt.Errorf("modelcatalog: provider names must be DNS labels: 1 to 63 lowercase letters, digits or '-', starting and ending with a letter or digit")
 		}
-		provider := spec.Providers[name]
-		if provider.Type != providerAnthropic && provider.Type != providerOpenAI {
-			return fmt.Errorf("modelcatalog: providers.%s.type must be %s or %s", name, providerAnthropic, providerOpenAI)
+		switch spec.Providers[name].Type {
+		case providerAnthropic, providerOpenAI, providerCompatible:
+		default:
+			return fmt.Errorf("modelcatalog: providers.%s.type must be %s, %s or %s", name, providerAnthropic, providerOpenAI, providerCompatible)
 		}
-		for _, field := range []struct {
-			name string
-			set  bool
-		}{
-			{"baseURL", provider.BaseURL != nil},
-			{"providerName", provider.ProviderName != nil},
-			{"supportsStructuredOutputs", provider.SupportsStructuredOutputs != nil},
-		} {
-			if field.set {
-				return fmt.Errorf("modelcatalog: providers.%s.%s is not supported in a model catalog", name, field.name)
-			}
+	}
+	return nil
+}
+
+// checkEndpoints checks and normalizes each custom endpoint. Messages name
+// the field path, never the URL or its host.
+func checkEndpoints(file config.File, policy outbound.EgressPolicy) error {
+	for _, name := range slices.Sorted(maps.Keys(file.Providers)) {
+		provider := file.Providers[name]
+		if provider.BaseURL == "" {
+			continue
 		}
+		endpoint, err := outbound.CheckEndpoint(provider.BaseURL, nativemodel.DefaultBaseURL(provider.Type), policy)
+		switch {
+		case errors.Is(err, outbound.ErrEndpointForm):
+			return fmt.Errorf("modelcatalog: providers.%s.baseURL must be an absolute URL without userinfo, query or fragment", name)
+		case errors.Is(err, outbound.ErrEndpointScheme):
+			return fmt.Errorf("modelcatalog: providers.%s.baseURL must use https", name)
+		case errors.Is(err, execution.ErrEgressRefused):
+			return fmt.Errorf("modelcatalog: providers.%s.baseURL is refused by the egress policy", name)
+		case err != nil:
+			return fmt.Errorf("modelcatalog: providers.%s.baseURL host must be a DNS name or an IP address", name)
+		}
+		provider.BaseURL = endpoint
+		file.Providers[name] = provider
 	}
 	return nil
 }
@@ -60,7 +84,7 @@ func checkPolicy(spec v1alpha1.Spec) error {
 func convert(spec v1alpha1.Spec) config.File {
 	file := config.File{Providers: make(map[string]config.Provider, len(spec.Providers)), Models: make(map[string]config.Model, len(spec.Models))}
 	for name, provider := range spec.Providers {
-		file.Providers[name] = config.Provider{Type: provider.Type}
+		file.Providers[name] = config.Provider{Type: provider.Type, BaseURL: deref(provider.BaseURL), ProviderName: deref(provider.ProviderName), SupportsStructuredOutputs: deref(provider.SupportsStructuredOutputs)}
 	}
 	for id, model := range spec.Models {
 		converted := config.Model{Name: model.Name, Primary: target(model.Primary), Aliases: slices.Clone(model.Aliases)}
@@ -73,6 +97,14 @@ func convert(spec v1alpha1.Spec) config.File {
 		file.Models[id] = converted
 	}
 	return file
+}
+
+func deref[T any](pointer *T) T {
+	if pointer == nil {
+		var zero T
+		return zero
+	}
+	return *pointer
 }
 
 func target(value v1alpha1.Target) config.Primary {

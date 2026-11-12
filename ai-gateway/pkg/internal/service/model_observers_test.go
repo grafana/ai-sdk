@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -158,7 +159,7 @@ func TestModelObservers_IdenticalIdentitiesAcrossSelections(t *testing.T) {
 					"backend-primary":   seamModel(tc.failPrimary),
 					"backend-secondary": seamModel(false),
 				})
-				observed := newObservedRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}, nil))
+				observed := newObservedRuntime(t, NewSelector(created, &BYOKOptions{Clients: outbound.ModelClients{Shared: seamBYOKClient(), Egress: seamBYOKClient()}, Factory: BYOKIdentity}, nil))
 				var options provider.CallOptions
 				if tc.gateway != "" {
 					options = routedGateway(tc.gateway)

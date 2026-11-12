@@ -156,14 +156,14 @@ test.describe('ModelCatalog', () => {
     expect(Object.keys((await dropped.json()).secure)).toEqual(['anthropic']);
   });
 
-  test('baseURL and name references are refused', async ({ accounts }) => {
+  test('plain-HTTP baseURL and name references are refused', async ({ accounts }) => {
     const endpoint = {
-      anthropic: { type: 'anthropic', baseURL: 'https://backend.invalid' },
+      anthropic: { type: 'anthropic', baseURL: 'http://backend.invalid' },
       openai: { type: 'openai' },
     };
     await expectRefused(
       await create(accounts.Admin, catalog(uniqueName(), endpoint, createKeys(endpoint))),
-      'providers.anthropic.baseURL'
+      'providers.anthropic.baseURL must use https'
     );
     await expectRefused(
       await create(

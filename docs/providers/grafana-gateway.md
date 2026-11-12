@@ -274,8 +274,12 @@ under the provider's own options, such as `openai`.
 - Send the key on every call, including follow-up calls in a conversation.
 - List several accounts in priority order to fall back between them. An
   authentication failure stops the fallback.
-- Leave out `baseURL` to use the provider's own endpoint; other endpoints are
-  refused.
+- Leave out `baseURL` to use the provider's own endpoint. Another endpoint must
+  be `https` and permitted by the Gateway's
+  [custom endpoint policy](../../ai-gateway/README.md#custom-endpoints): one
+  it refuses without a DNS lookup, such as `http` or a private IP address, gets
+  the `400` BYOK credentials error, and one whose address it refuses when
+  connecting gets a `424` error. Neither names the endpoint.
 - OpenAI accounts can also set `organization` and `project`.
 
 Calls with your own key do not use the Gateway's configured models or aliases.

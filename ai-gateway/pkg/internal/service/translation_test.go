@@ -19,6 +19,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -273,7 +274,7 @@ func TestTranslation_AnthropicNativeValidation(t *testing.T) {
 		t.Run(route.name, func(t *testing.T) {
 			server := &nativeServer{}
 			factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-			selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory}, nil)
+			selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Clients: outbound.ModelClients{Shared: server.client(), Egress: server.client()}, Factory: factory}, nil)
 
 			valid := route.call
 			valid.translator = markTranslation
@@ -433,7 +434,7 @@ func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
 func TestTranslation_ConcurrentCallsAreIsolated(t *testing.T) {
 	server := &nativeServer{}
 	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-	selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory}, nil)
+	selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Clients: outbound.ModelClients{Shared: server.client(), Egress: server.client()}, Factory: factory}, nil)
 	runtime, err := execution.New(execution.Config{Selector: selector, Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	configured, byok := callerContext(t, gatewayauth.ConfiguredAccounts), callerContext(t, gatewayauth.RequestBYOK)

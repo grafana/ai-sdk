@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
@@ -48,7 +49,7 @@ func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, er
 }
 
 func byokSelector(client *http.Client, factory ModelFactory) execution.RequestSelector {
-	return NewSelector(&accountCatalogSpy{}, &BYOKOptions{Client: client, Factory: factory}, nil)
+	return NewSelector(&accountCatalogSpy{}, &BYOKOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}, Factory: factory}, nil)
 }
 
 func TestSelector_AccessModes(t *testing.T) {
@@ -106,7 +107,7 @@ func TestSelector_AccessModes(t *testing.T) {
 				})}
 				var byokOptions *BYOKOptions
 				if tc.byok {
-					byokOptions = &BYOKOptions{Client: client, Factory: factory}
+					byokOptions = &BYOKOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}, Factory: factory}
 				}
 				wire, err := newWireHandler(execution.Config{Selector: NewSelector(configured, byokOptions, nil), Limits: serviceTestLimits()})
 				require.NoError(t, err)

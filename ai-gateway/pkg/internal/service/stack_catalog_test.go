@@ -18,6 +18,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -71,6 +72,14 @@ func (builds *stackBuilds) build(providerConfig config.ResolvedProvider, descrip
 	}}, nil
 }
 
+// withEndpoint returns the test catalog with provider name of type
+// providerType at endpoint.
+func withEndpoint(name, providerType, endpoint string) StackCatalog {
+	stack := testStackCatalog()
+	stack.Spec.Providers[name] = v1alpha1.Provider{Type: providerType, BaseURL: &endpoint}
+	return stack
+}
+
 func stackGateway(controls string) json.RawMessage {
 	if controls == "" {
 		return nil
@@ -105,7 +114,7 @@ func TestSelectStackCatalog_BuildsOnlyTheChain(t *testing.T) {
 				stack = testStackCatalog()
 			}
 			builds := &stackBuilds{}
-			selected, err := selectStackCatalog(stack, tc.modelID, stackGateway(tc.gateway), builds.build)
+			selected, err := selectStackCatalog(stack, tc.modelID, stackGateway(tc.gateway), outbound.EgressPolicy{}, builds.build)
 			require.NoError(t, err)
 			assert.Equal(t, tc.built, builds.built)
 			assert.Equal(t, tc.canonical, selected.ID)
@@ -158,7 +167,10 @@ func TestSelectStackCatalog_Refusals(t *testing.T) {
 		{name: "unknown models entry", gateway: `{"models":["missing"]}`, err: execution.ErrUnknownFallbackModel},
 		{name: "only excludes every candidate", gateway: `{"only":["other"]}`, err: execution.ErrNoRoutingCandidates},
 		{name: "composed chain above the bound", catalog: nineCandidates, modelID: "single-0", gateway: `{"models":["single-1","single-2","single-3","single-4","single-5","single-6","single-7","single-8"]}`, err: execution.ErrRoutingAttemptBound},
-		{name: "unsupported provider type", catalog: withSpec(func(spec *v1alpha1.Spec) { spec.Providers["gpt"] = v1alpha1.Provider{Type: "openai-compatible"} }), err: execution.ErrCatalogConfiguration},
+		{name: "unknown provider type", catalog: withSpec(func(spec *v1alpha1.Spec) { spec.Providers["gpt"] = v1alpha1.Provider{Type: "bedrock"} }), err: execution.ErrCatalogConfiguration},
+		{name: "compatible provider without an endpoint", catalog: withSpec(func(spec *v1alpha1.Spec) { spec.Providers["gpt"] = v1alpha1.Provider{Type: "openai-compatible"} }), err: execution.ErrCatalogConfiguration},
+		{name: "plain HTTP endpoint", catalog: withEndpoint("gpt", "openai", "http://llm.example.com"), err: execution.ErrCatalogConfiguration},
+		{name: "endpoint the policy refuses", catalog: withEndpoint("gpt", "openai", "https://169.254.169.254"), err: execution.ErrCatalogConfiguration},
 		{name: "alias collision", catalog: withSpec(func(spec *v1alpha1.Spec) {
 			model := spec.Models["fast"]
 			model.Aliases = []string{"default"}
@@ -179,7 +191,7 @@ func TestSelectStackCatalog_Refusals(t *testing.T) {
 				modelID = "balanced"
 			}
 			builds := &stackBuilds{}
-			_, err := selectStackCatalog(stack, modelID, stackGateway(tc.gateway), builds.build)
+			_, err := selectStackCatalog(stack, modelID, stackGateway(tc.gateway), outbound.EgressPolicy{}, builds.build)
 			require.ErrorIs(t, err, tc.err)
 			assert.Empty(t, builds.built)
 			if tc.err == execution.ErrCatalogConfiguration {
@@ -192,7 +204,7 @@ func TestSelectStackCatalog_Refusals(t *testing.T) {
 func TestSelectStackCatalog_FallbackAndOverview(t *testing.T) {
 	builds := &stackBuilds{fail: map[string]bool{"claude/claude-sonnet": true}}
 	runtime, err := execution.New(execution.Config{Limits: serviceTestLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
-		return selectStackCatalog(testStackCatalog(), id, gateway, builds.build)
+		return selectStackCatalog(testStackCatalog(), id, gateway, outbound.EgressPolicy{}, builds.build)
 	}})
 	require.NoError(t, err)
 	call, err := runtime.Call(t.Context(), "default", provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
@@ -224,7 +236,7 @@ func TestSelectStackCatalog_NativeEndpointsWithCatalogKeys(t *testing.T) {
 		return nil, fmt.Errorf("request not sent")
 	})}
 	for _, modelID := range []string{"same", "fast"} {
-		selected, err := SelectStackCatalog(testStackCatalog(), modelID, nil, StackCatalogOptions{Client: client})
+		selected, err := SelectStackCatalog(testStackCatalog(), modelID, nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: http.DefaultClient}})
 		require.NoError(t, err)
 		_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)})
 		require.ErrorContains(t, err, "request not sent")
@@ -236,6 +248,8 @@ func TestSelectStackCatalog_NativeEndpointsWithCatalogKeys(t *testing.T) {
 	assert.Equal(t, "Bearer gpt-catalog-key", sent[1].Header.Get("Authorization"))
 
 	_, err := SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{})
+	require.Error(t, err)
+	_, err = SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client}})
 	require.Error(t, err)
 }
 
@@ -254,7 +268,7 @@ func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
 		wg.Go(func() {
 			stack := testStackCatalog()
 			stack.Keys = resource.DecryptedSecureValues{"claude": resource.RawSecureValue(fmt.Sprintf("catalog-%d-key", i%2)), "gpt": "gpt-catalog-key"}
-			selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Client: client})
+			selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: http.DefaultClient}})
 			if !assert.NoError(t, err) {
 				return
 			}
@@ -270,7 +284,7 @@ func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
 
 func TestNewSelector_CatalogAccess(t *testing.T) {
 	operator := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{"backend-primary": {}, "backend-secondary": {}})
-	selector := NewSelector(operator, nil, &StackCatalogOptions{Client: http.DefaultClient})
+	selector := NewSelector(operator, nil, &StackCatalogOptions{Clients: outbound.ModelClients{Shared: http.DefaultClient, Egress: http.DefaultClient}})
 	ctx := callerContext(t, gatewayauth.ConfiguredAccounts)
 	catalogCtx := callerContext(t, gatewayauth.CatalogAccounts)
 	for _, tc := range []struct {
@@ -343,18 +357,20 @@ func TestSelectStackCatalog_RefusesOperatorPolicedAnthropicOptions(t *testing.T)
 		"server-side fallback chain":   `{"fallbacks":[{"model":"claude-backup"}]}`,
 		"default server-side fallback": `{"fallbacks":"default"}`,
 	} {
-		t.Run(name, func(t *testing.T) {
-			var sent int
-			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-				sent++
-				return nil, fmt.Errorf("request not sent")
-			})}
-			selected, err := SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{Client: client})
-			require.NoError(t, err)
-			options := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
-			_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16), ProviderOptions: options})
-			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-			assert.Zero(t, sent)
-		})
+		for endpoint, stack := range map[string]StackCatalog{"native endpoint": testStackCatalog(), "custom endpoint": withEndpoint("claude", "anthropic", "https://anthropic-proxy.example.com")} {
+			t.Run(name+"/"+endpoint, func(t *testing.T) {
+				var sent int
+				client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					sent++
+					return nil, fmt.Errorf("request not sent")
+				})}
+				selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}})
+				require.NoError(t, err)
+				options := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
+				_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16), ProviderOptions: options})
+				require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+				assert.Zero(t, sent)
+			})
+		}
 	}
 }

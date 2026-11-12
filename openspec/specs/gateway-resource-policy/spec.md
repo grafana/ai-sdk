@@ -6,14 +6,14 @@ Assign every Gateway resource limit to one owner (the plugin host for request si
 ## Requirements
 
 ### Requirement: Outbound model transport bounds
-Every Gateway-constructed model, including each configured provider type and each BYOK account, SHALL use one shared model HTTP client. That client SHALL reject redirects and wait at most 10 seconds for response headers. It SHALL fail a non-`text/event-stream` response once its decompressed body exceeds 16 MiB, and SHALL NOT bound the bytes of a `text/event-stream` response, which the execution time bounds end. No bound SHALL be an operator setting.
+Every Gateway-constructed model SHALL use the shared model HTTP client, except one with a custom `baseURL` of a stack catalog or request account, which SHALL use the egress client. Both SHALL reject redirects and wait at most 10 seconds for response headers. Each SHALL fail a non-`text/event-stream` response once its decompressed body exceeds 16 MiB, and SHALL NOT bound the bytes of a `text/event-stream` response, which the execution time bounds end. No bound SHALL be an operator setting.
 
 #### Scenario: Decompressed bytes are counted
 - **WHEN** a provider returns a gzip-encoded body under 16 MiB compressed whose decompressed size exceeds 16 MiB
 - **THEN** the read SHALL fail with the transport's response-too-large error once the decompressed bytes exceed the bound
 
 #### Scenario: Each request has its own bound
-- **WHEN** two sequential requests through the shared client each return just under 16 MiB
+- **WHEN** two sequential requests through either client each return just under 16 MiB
 - **THEN** both SHALL succeed, because the bound applies to each response independently and not to the client or the logical call
 
 #### Scenario: Response exceeds the bound
@@ -27,6 +27,10 @@ Every Gateway-constructed model, including each configured provider type and eac
 #### Scenario: Unparsable media type
 - **WHEN** a response's media type cannot be parsed
 - **THEN** the 16 MiB total bound SHALL apply
+
+#### Scenario: Egress client bounds
+- **WHEN** a custom stack-catalog endpoint redirects, stalls its response headers or exceeds 16 MiB in a unary response
+- **THEN** the egress client SHALL enforce the same bounds as the shared client
 
 ### Requirement: Execution time bounds
 The language-model handler SHALL bound selection and the logical model call by the request context's deadline, which the platform's route deadline sets, and SHALL add no total duration of its own. It SHALL bound each established stream by a fixed 30-second idle duration between represented parts, and each post-terminal drain by a fixed 1-second drain duration. Drain SHALL be bounded by its duration alone, without a part count.

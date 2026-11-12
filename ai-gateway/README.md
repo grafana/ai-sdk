@@ -207,9 +207,9 @@ Reads return `secure.anthropic.name: inline-<generated>` in place of the key.
 Grafana creates that secret for the catalog and owns it there: replacing a key
 deletes the old secret, and deleting the catalog deletes its secrets.
 
-- `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
-  `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
-  can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
+- `spec` uses the catalog format above without `apiKeyEnv`. Providers are
+  named with lowercase letters, digits and `-`. A `baseURL` must be `https`;
+  see [Custom endpoints](#custom-endpoints).
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.
@@ -217,6 +217,68 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   and Admins can write them (`aigateway:catalogwriter`).
 - The Gateway validates every create and update, so writes fail while the
   plugin is unavailable. Deletes always work.
+
+### Custom endpoints
+
+A stack chooses its catalog's endpoints, and in `cloud` mode a caller that
+brings its own keys chooses each account's `baseURL`. The requests leave from
+the Gateway either way, so both follow one rule, which refuses endpoints that
+would reach the Gateway's own network:
+
+- A `baseURL` must be `https`. The host must be a DNS name or an IP address;
+  numeric forms such as `2130706433` are refused.
+- Each connection is checked after DNS resolution, against every address the
+  Gateway connects to. A name that resolves, or later re-resolves, to a
+  loopback, private, link-local, shared (`100.64.0.0/10`), multicast,
+  documentation or other non-public IPv4 or IPv6 address is refused, including
+  IPv4 addresses inside IPv6. Catalog writes and calls with request accounts
+  refuse such addresses when they are written as IP literals.
+- These connections never use `HTTPS_PROXY` or another proxy, because a proxy
+  would hide the address from the check. If your Grafana reaches the internet
+  only through a proxy, custom endpoints can't connect.
+- Redirects aren't followed, and the response limits in [Limits](#limits)
+  apply.
+- A request account whose `baseURL` fails these checks without a DNS lookup,
+  such as `http`, a refused IP literal or a denied host, gets the fixed `400`
+  BYOK credentials error before any request.
+- A refused or unresolvable endpoint gets a `424` `failed_dependency` error,
+  "provider endpoint refused by the egress policy or not resolvable", without
+  a request. It names no host or address. A model's fallbacks are still tried.
+  Other connection, TLS and read failures of custom endpoints are reported as
+  "provider connection failed" or "provider connection timed out", without
+  addresses or certificate names.
+- Providers and accounts without a `baseURL`, or with exactly their provider's
+  own endpoint such as `https://api.openai.com/v1` (ignoring the case of the
+  scheme and host, and a trailing `/`), use the native endpoint and the proxy settings, as before.
+  Any other form, such as an added `:443` or path, is a custom endpoint. The `model_catalog` setting's endpoints aren't
+  checked.
+
+Two settings adjust the policy. Each takes comma-separated entries: an IP
+address, a CIDR prefix such as `10.20.0.0/16`, a hostname, or `*.` and a
+domain, which matches its subdomains only.
+
+- `custom_endpoint_allow` lets catalogs and request accounts reach matching destinations
+  that are otherwise refused, such as a model server on your private network.
+  It doesn't limit other public endpoints. Unspecified (`0.0.0.0`, `::`) and
+  multicast addresses stay refused. A hostname entry trusts whatever that name
+  resolves to, so prefer prefixes.
+- `custom_endpoint_deny` refuses matching destinations, even when they
+  are also allowed. Deny by prefix: a denied hostname is a convenience, not a
+  boundary, because the same address stays reachable through its IP or
+  another name.
+- In `cloud` mode any user or service account can make the Gateway connect to
+  a permitted endpoint, not only the Admins who write catalogs.
+- Ports aren't restricted, so a catalog or a request account can reach any
+  port on a permitted host, and response timing can show whether a port is
+  open. Deny the
+  prefixes of public addresses that catalogs and request accounts must not reach, such as your own
+  services, cluster addresses from public IPv6 ranges, or a DNS64
+  network-specific prefix (only `64:ff9b::/96` is checked as the IPv4 address
+  it embeds).
+- An invalid entry stops the Gateway from starting. A changed setting applies
+  after a restart; stored catalogs that it now refuses fail their calls.
+- An endpoint's certificate must be trusted by the system roots or
+  `SSL_CERT_FILE`.
 
 ### Call a stored catalog
 
@@ -257,6 +319,8 @@ so they need no other change.
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
+| `custom_endpoint_allow` | Comma-separated destinations that custom endpoints of stored catalogs and request accounts may reach despite the built-in refusal; see [Custom endpoints](#custom-endpoints). |
+| `custom_endpoint_deny` | Comma-separated destinations that custom endpoints of stored catalogs and request accounts may never reach; see [Custom endpoints](#custom-endpoints). |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits

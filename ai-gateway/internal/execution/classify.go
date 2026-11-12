@@ -3,12 +3,28 @@ package execution
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
+)
+
+// ErrEgressRefused reports a provider connection that the custom-endpoint
+// egress policy refused, or whose host did not resolve. It carries no
+// endpoint, host or address.
+var ErrEgressRefused = errors.New("execution: provider endpoint refused by the egress policy or not resolvable")
+
+var (
+	// ErrEgressConnection reports an egress connection, TLS handshake or
+	// response read that failed after the egress policy permitted the address.
+	// It names no host, address or certificate, and classifies as upstream.
+	ErrEgressConnection = errors.New("execution: provider connection failed")
+	// ErrEgressTimeout is ErrEgressConnection for a timeout. It wraps
+	// [context.DeadlineExceeded], so it classifies as a timeout.
+	ErrEgressTimeout = fmt.Errorf("execution: provider connection timed out: %w", context.DeadlineExceeded)
 )
 
 // Category is the closed failure class of a call. Adapters map each category
@@ -36,6 +52,9 @@ const (
 	// CategoryCatalogConfiguration is a stored stack catalog that fails its
 	// checks or lacks a provider key.
 	CategoryCatalogConfiguration
+	// CategoryEgressRefused is a provider connection the custom-endpoint egress
+	// policy refused, or whose host did not resolve.
+	CategoryEgressRefused
 )
 
 // Reason refines [CategoryInvalidRequest] for host policy and routing refusals
@@ -163,6 +182,8 @@ func classifySingle(err error) Category {
 		return CategoryCancellation
 	case errors.Is(err, context.DeadlineExceeded):
 		return CategoryTimeout
+	case errors.Is(err, ErrEgressRefused):
+		return CategoryEgressRefused
 	}
 
 	var apiError *provider.APICallError
@@ -233,6 +254,9 @@ func categoryFromStatus(status int) Category {
 }
 
 func classifyTransport(err error) (Category, bool) {
+	if errors.Is(err, ErrEgressConnection) {
+		return CategoryUpstream, true
+	}
 	var urlError *url.Error
 	if errors.As(err, &urlError) {
 		if urlError.Timeout() {

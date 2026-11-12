@@ -5,22 +5,39 @@
 // first characters of the SHA-256 of the API key it received and the backend
 // model, so tests can check which key and model reached the provider without
 // the key appearing anywhere.
+//
+// It also listens with TLS, with the certificate scripts/e2e.sh generates, as
+// the custom endpoint of stack catalogs. Those calls answer with the key
+// digest, the backend model and how many requests arrived for the
+// egress-refused network name, which the egress policy must never connect to.
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
 
 const port = Number(process.env.PORT ?? 8080);
+const securePort = Number(process.env.TLS_PORT ?? 8443);
+const certificateDirectory = '/etc/native-proxy';
 const model = 'fake-model';
 const fixedText = ['fake ', 'stream'];
 const nativeHost = 'api.anthropic.com';
+const refusedHost = 'egress-refused';
 const keyDigestLength = 12;
+const requestsByHost = new Map();
+
+function keyDigest(request) {
+  const key = String(request.headers['x-api-key'] ?? '');
+  return createHash('sha256').update(key).digest('hex').slice(0, keyDigestLength);
+}
 
 function replyText(request, body) {
+  if (request.socket.encrypted) {
+    return [`custom ${keyDigest(request)} `, `${body.model} ${refusedHost}=${requestsByHost.get(refusedHost) ?? 0}`];
+  }
   if (request.headers.host !== nativeHost) {
     return fixedText;
   }
-  const key = String(request.headers['x-api-key'] ?? '');
-  const digest = createHash('sha256').update(key).digest('hex').slice(0, keyDigestLength);
-  return [`native ${digest} `, String(body.model)];
+  return [`native ${keyDigest(request)} `, String(body.model)];
 }
 
 function unary(response, text) {
@@ -68,7 +85,9 @@ function stream(response, text) {
   response.end();
 }
 
-createServer((request, response) => {
+function handle(request, response) {
+  const host = String(request.headers.host ?? '').replace(/:\d+$/, '');
+  requestsByHost.set(host, (requestsByHost.get(host) ?? 0) + 1);
   if (request.method !== 'POST' || !request.url?.endsWith('/v1/messages')) {
     response.writeHead(404).end();
     return;
@@ -90,4 +109,10 @@ createServer((request, response) => {
       unary(response, text);
     }
   });
-}).listen(port);
+}
+
+createServer(handle).listen(port);
+createSecureServer(
+  { cert: readFileSync(`${certificateDirectory}/cert.pem`), key: readFileSync(`${certificateDirectory}/key.pem`) },
+  handle
+).listen(securePort);

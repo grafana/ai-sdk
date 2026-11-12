@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 
 	"github.com/grafana/grafana-app-sdk/resource"
@@ -17,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
 	"github.com/grafana/ai-sdk/provider"
@@ -49,8 +49,11 @@ func StackCatalogFromContext(ctx context.Context) (StackCatalog, bool) {
 
 // StackCatalogOptions configures stack-catalog selection.
 type StackCatalogOptions struct {
-	// Client is the shared model HTTP client.
-	Client *http.Client
+	// Clients are the shared model client, for providers on their native
+	// endpoint, and the egress client, for providers with a custom endpoint.
+	Clients outbound.ModelClients
+	// Egress is the policy custom endpoints are checked against.
+	Egress outbound.EgressPolicy
 }
 
 // candidateBuilder constructs the physical model of one catalog candidate.
@@ -62,23 +65,29 @@ type candidateBuilder func(providerConfig config.ResolvedProvider, descriptor co
 // reason, resolves the requested model and models entries within the catalog,
 // and composes the routed chain. Only the chain's candidates are constructed,
 // with the catalog's keys, and no physical attempt records are written. The
-// selection carries the catalog's name and keys.
+// selection carries the catalog's name and keys. A candidate with a custom
+// endpoint connects through the egress client and reports its egress errors
+// without the request URL.
 func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, options StackCatalogOptions) (execution.Selection, error) {
-	if options.Client == nil {
-		return execution.Selection{}, fmt.Errorf("gateway service: model HTTP client is required")
+	if options.Clients.Shared == nil || options.Clients.Egress == nil {
+		return execution.Selection{}, fmt.Errorf("gateway service: model and egress HTTP clients are required")
 	}
-	return selectStackCatalog(stack, modelID, gateway, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
-		candidate, _, err := newCandidate(providerConfig, descriptor, nativeoptions.AnthropicPolicy{}, options.Client, nativemodel.NewAnthropic)
-		return candidate, err
+	return selectStackCatalog(stack, modelID, gateway, options.Egress, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
+		client, custom := options.Clients.For(providerConfig.BaseURL)
+		candidate, _, err := newCandidate(providerConfig, descriptor, nativeoptions.AnthropicPolicy{}, client, nativemodel.NewAnthropic)
+		if err != nil || !custom {
+			return candidate, err
+		}
+		return outbound.EgressModel(candidate), nil
 	})
 }
 
-func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, build candidateBuilder) (execution.Selection, error) {
+func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, policy outbound.EgressPolicy, build candidateBuilder) (execution.Selection, error) {
 	controls, err := routing.Decode(gateway, routing.ConfiguredAccess)
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	file, keys, err := parseStackCatalog(stack)
+	file, keys, err := parseStackCatalog(stack, policy)
 	if err != nil {
 		return execution.Selection{}, err
 	}
@@ -89,7 +98,8 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	}
 	lower, expected, err := composeRoute(groups, controls, func(group routedGroup, candidate int) (provider.LanguageModel, error) {
 		descriptor := group.descriptors[candidate]
-		return build(config.ResolvedProvider{Type: file.Providers[descriptor.Provider].Type, APIKey: string(stack.Keys[descriptor.Provider])}, descriptor)
+		configured := file.Providers[descriptor.Provider]
+		return build(config.ResolvedProvider{Type: configured.Type, APIKey: string(stack.Keys[descriptor.Provider]), BaseURL: configured.BaseURL, ProviderName: configured.ProviderName, SupportsStructuredOutputs: configured.SupportsStructuredOutputs}, descriptor)
 	}, nil)
 	if err != nil {
 		return execution.Selection{}, err
@@ -104,7 +114,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 // parseStackCatalog checks a stack catalog with the keys that have values, and
 // returns it with those values. Any failure is [execution.ErrCatalogConfiguration],
 // without the reason, which names spec identifiers.
-func parseStackCatalog(stack StackCatalog) (config.File, []string, error) {
+func parseStackCatalog(stack StackCatalog, policy outbound.EgressPolicy) (config.File, []string, error) {
 	secureKeys := make([]string, 0, len(stack.Keys))
 	keys := make([]string, 0, len(stack.Keys))
 	for name, value := range stack.Keys {
@@ -114,7 +124,7 @@ func parseStackCatalog(stack StackCatalog) (config.File, []string, error) {
 		secureKeys = append(secureKeys, name)
 		keys = append(keys, string(value))
 	}
-	file, err := stackcatalog.Parse(stack.Spec, secureKeys)
+	file, err := stackcatalog.Parse(stack.Spec, secureKeys, policy)
 	if err != nil {
 		return config.File{}, nil, execution.ErrCatalogConfiguration
 	}
@@ -125,16 +135,19 @@ var errNoStackCatalog = errors.New("gateway service: the request carries no stac
 
 // StackCatalogLister lists the models of the stack catalog a catalog route
 // serves, checked like a selection, without constructing any model.
-type StackCatalogLister struct{}
+type StackCatalogLister struct {
+	// Egress is the policy custom endpoints are checked against.
+	Egress outbound.EgressPolicy
+}
 
 // ListModels implements [catalog.ModelLister]. A catalog that fails its checks
 // fails with [execution.ErrCatalogConfiguration].
-func (StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, error) {
+func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, error) {
 	stack, ok := StackCatalogFromContext(ctx)
 	if !ok {
 		return nil, errNoStackCatalog
 	}
-	file, _, err := parseStackCatalog(stack)
+	file, _, err := parseStackCatalog(stack, lister.Egress)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +191,8 @@ func (index stackIndex) resolve(name string) (routedGroup, error) {
 	descriptors := append([]config.Primary{model.Primary}, model.Fallback...)
 	candidates := make([]catalog.ConfiguredCandidate, len(descriptors))
 	for i, descriptor := range descriptors {
-		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: index.file.Providers[descriptor.Provider].Type, ModelID: descriptor.Model}
+		configured := index.file.Providers[descriptor.Provider]
+		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: providerSlug(configured.Type, configured.ProviderName), ModelID: descriptor.Model}
 	}
 	return routedGroup{name: name, canonical: id, candidates: candidates, descriptors: descriptors}, nil
 }

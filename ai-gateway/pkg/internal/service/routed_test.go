@@ -22,6 +22,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -569,7 +570,7 @@ func TestRoutedSelection_BYOK(t *testing.T) {
 			}
 			server := &nativeServer{failing: failing}
 			spy := &accountCatalogSpy{}
-			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }}, nil)
+			selector := NewSelector(spy, &BYOKOptions{Clients: outbound.ModelClients{Shared: server.client(), Egress: server.client()}, Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }}, nil)
 			overview, _ := byokRoutedCall(t, selector, tc.gateway, provider.CallOptions{})
 			requests := server.requests()
 			keys := make([]string, len(requests))
@@ -611,7 +612,7 @@ func TestRoutedSelection_BYOKRefusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}
 			spy := &accountCatalogSpy{}
-			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }}, nil)
+			selector := NewSelector(spy, &BYOKOptions{Clients: outbound.ModelClients{Shared: server.client(), Egress: server.client()}, Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }}, nil)
 			overview, err := byokRoutedCall(t, selector, tc.gateway, provider.CallOptions{})
 			require.ErrorIs(t, err, tc.want)
 			assert.Nil(t, overview)

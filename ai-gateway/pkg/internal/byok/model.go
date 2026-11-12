@@ -8,6 +8,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -33,17 +34,18 @@ func (r Request) Groups() []routing.Group {
 }
 
 // New returns the model that tries request's accounts in the order of
-// placements, each against its own destination. An all-Anthropic chain also
-// checks native options before any attempt.
-func New(request Request, placements []routing.Placement, client *http.Client) (provider.LanguageModel, error) {
+// placements, each against its own destination. An account with a custom
+// endpoint connects through the egress client and reports its egress errors
+// bare; every other account uses the shared client. An all-Anthropic chain
+// also checks native options before any attempt.
+func New(request Request, placements []routing.Placement, clients outbound.ModelClients) (provider.LanguageModel, error) {
 	if len(placements) == 0 || len(placements) > config.MaxProviderAttempts {
 		return nil, ErrInvalidRequest
 	}
-	if client == nil {
-		return nil, fmt.Errorf("gateway byok: HTTP client is required")
+	if clients.Shared == nil || clients.Egress == nil {
+		return nil, fmt.Errorf("gateway byok: model and egress HTTP clients are required")
 	}
-	ownedClient := *client
-	ownedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	owned := outbound.ModelClients{Shared: withoutRedirects(clients.Shared), Egress: withoutRedirects(clients.Egress)}
 	candidates := make([]provider.LanguageModel, 0, len(placements))
 	allAnthropic := true
 	for _, placement := range placements {
@@ -54,7 +56,7 @@ func New(request Request, placements []routing.Placement, client *http.Client) (
 		if destination.Model == "" || placement.Candidate < 0 || placement.Candidate >= len(destination.Accounts) {
 			return nil, ErrInvalidRequest
 		}
-		candidate, err := newCandidate(destination, destination.Accounts[placement.Candidate], &ownedClient)
+		candidate, err := newCandidate(destination, destination.Accounts[placement.Candidate], owned)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +74,15 @@ func New(request Request, placements []routing.Placement, client *http.Client) (
 	return chain, nil
 }
 
-func newCandidate(destination Destination, account nativemodel.Config, client *http.Client) (provider.LanguageModel, error) {
+// withoutRedirects returns a copy of client that never follows a redirect.
+func withoutRedirects(client *http.Client) *http.Client {
+	owned := *client
+	owned.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &owned
+}
+
+func newCandidate(destination Destination, account nativemodel.Config, clients outbound.ModelClients) (provider.LanguageModel, error) {
+	client, custom := clients.For(account.BaseURL)
 	var candidate provider.LanguageModel
 	var target execution.TargetType
 	switch destination.Provider {
@@ -84,5 +94,9 @@ func newCandidate(destination Destination, account nativemodel.Config, client *h
 	default:
 		return nil, ErrInvalidSelector
 	}
-	return execution.Translate(candidate, execution.Target{Type: target, ModelID: destination.Model}), nil
+	translated := execution.Translate(candidate, execution.Target{Type: target, ModelID: destination.Model})
+	if custom {
+		return outbound.EgressModel(translated), nil
+	}
+	return translated, nil
 }

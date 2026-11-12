@@ -499,6 +499,92 @@ describe("stack-catalog routes through the authenticated command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
   });
 
+  it("refuses a custom endpoint the egress policy refuses with a not-retryable document in both clients", async () => {
+    const [native, gateway] = await startCloudGateway();
+    let connections = 0;
+    const listener = createNetServer(socket => { connections++; socket.destroy(); });
+    await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
+    const port = (listener.address() as { port: number }).port;
+    try {
+      const body = {
+        apiVersion: "aigateway.ext.grafana.app/v1alpha1",
+        kind: "ModelCatalog",
+        metadata: { name: CATALOG_NAME },
+        spec: {
+          providers: { claude: { type: "anthropic", baseURL: `https://localhost:${port}` } },
+          models: { "team-model": { name: "Team model", primary: { provider: "claude", model: "refused-model" } } },
+        },
+        secure: { claude: { create: CATALOG_KEY } },
+      };
+      const created = await fetch(`${gateway.baseURL}/modelcatalogs`, { method: "POST", headers: { Authorization: `Bearer ${TEST_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(5_000) });
+      assert.equal(created.status, 201, await created.text());
+      const baseURL = `${gateway.baseURL}/modelcatalogs/${CATALOG_NAME}`;
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "catalog-refused" }] }], maxOutputTokens: 32 };
+      const model = createGateway({ baseURL, apiKey: TEST_TOKEN })("team-model");
+      for (const mode of ["generate", "stream"] as const) {
+        let failure: any;
+        try {
+          if (mode === "generate") await model.doGenerate(options);
+          else await collectGatewayStream((await model.doStream(options)).stream);
+        } catch (error) { failure = error; }
+        assert.equal(failure?.statusCode, 424, mode);
+        assert.equal(failure.isRetryable, false);
+        assert.match(failure.message, /provider endpoint refused by the egress policy or not resolvable/);
+        const go = await captureGoClient(goClientBinaryPath, { baseURL, serviceAccountToken: TEST_TOKEN, modelID: "team-model", mode, options });
+        assert.equal(go.error?.statusCode, 424, mode);
+        assert.equal(go.error.isRetryable, false);
+        for (const exported of [JSON.stringify(failure.cause?.data ?? null), JSON.stringify(go.error)]) {
+          assert.equal(exported.includes(`localhost:${port}`), false);
+          assert.equal(exported.includes(CATALOG_KEY), false);
+        }
+      }
+      assert.equal(connections, 0, "the refused endpoint receives no connection");
+      assert.equal(native.requests.length, 0);
+      await gateway.stop();
+      assert.equal(gateway.stderr.includes(`localhost:${port}`), false);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop(), () => new Promise<void>(resolve => listener.close(() => resolve()))); }
+  });
+
+  it("refuses a request account endpoint the egress policy refuses, at decode or when connecting, in both clients", async () => {
+    const [native, gateway] = await startCloudGateway();
+    let connections = 0;
+    const listener = createNetServer(socket => { connections++; socket.destroy(); });
+    await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
+    const port = (listener.address() as { port: number }).port;
+    try {
+      const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "byok-refused" }] }];
+      for (const [baseURL, status, message] of [
+        [`https://127.0.0.1:${port}`, 400, /providerOptions\.gateway\.byok requires supported provider arrays with valid accounts/],
+        [`https://localhost:${port}`, 424, /provider endpoint refused by the egress policy or not resolvable/],
+      ] as const) {
+        const options: LanguageModelV4CallOptions = { prompt, maxOutputTokens: 32, providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key", baseURL }] } } } };
+        const model = createGateway({ baseURL: gateway.baseURL, apiKey: TEST_TOKEN })(BYOK_MODEL);
+        for (const mode of ["generate", "stream"] as const) {
+          let failure: any;
+          try {
+            if (mode === "generate") await model.doGenerate(options);
+            else await collectGatewayStream((await model.doStream(options)).stream);
+          } catch (error) { failure = error; }
+          assert.equal(failure?.statusCode, status, `${baseURL} ${mode}`);
+          assert.equal(failure.isRetryable, false);
+          assert.match(failure.message, message);
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
+          assert.equal(go.error?.statusCode, status, `${baseURL} ${mode}`);
+          assert.equal(go.error.isRetryable, false);
+          assert.match(go.error.message, message);
+          for (const exported of [JSON.stringify(failure.cause?.data ?? null), JSON.stringify(go.error)]) {
+            assert.equal(exported.includes(`:${port}`), false);
+            assert.equal(exported.includes("request-only-key"), false);
+          }
+        }
+      }
+      assert.equal(connections, 0, "the refused endpoint receives no connection");
+      assert.equal(native.requests.length, 0);
+      await gateway.stop();
+      assert.equal(gateway.stderr.includes(`:${port}`), false);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop(), () => new Promise<void>(resolve => listener.close(() => resolve()))); }
+  });
+
   it("surfaces the platform's Kubernetes Status for a missing catalog as a client error", async () => {
     const [native, gateway] = await startCloudGateway();
     try {

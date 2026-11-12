@@ -21,6 +21,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
@@ -69,7 +70,7 @@ func newAdapterHarness(t *testing.T) *adapterHarness {
 	unwrapped := func(_ string, lower provider.LanguageModel) (provider.LanguageModel, error) { return lower, nil }
 	models, err := service.BuildCatalog(file, providers, client, unwrapped)
 	require.NoError(t, err)
-	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(models, &service.BYOKOptions{Client: client, Factory: unwrapped}, nil), Limits: execution.DefaultLimits})
+	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(models, &service.BYOKOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}, Factory: unwrapped}, nil), Limits: execution.DefaultLimits})
 	require.NoError(t, err)
 	language, err := providerv4.New(runtime)
 	require.NoError(t, err)

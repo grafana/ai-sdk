@@ -48,6 +48,10 @@ func catalogDocument(t *testing.T, providers map[string]any, secure map[string]a
 	return string(body)
 }
 
+func anthropicAt(endpoint string) map[string]any {
+	return map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": endpoint}}
+}
+
 func sendCatalog(t *testing.T, ctx context.Context, method, url, token, body string) (int, string) {
 	t.Helper()
 	request, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
@@ -85,7 +89,7 @@ func TestProvider_ManagesTheManifestKinds(t *testing.T) {
 }
 
 func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{"GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW": "10.20.0.0/16", "GF_PLUGIN_CUSTOM_ENDPOINT_DENY": "denied.example"}})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	token := h.serviceToken(t, testInternalService)
@@ -116,7 +120,9 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 		body   string
 		reason string
 	}{
-		{name: "base URL", method: http.MethodPost, reason: "providers.anthropic.baseURL is not supported", body: catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "https://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})},
+		{name: "plain HTTP base URL", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL must use https", body: catalogDocument(t, anthropicAt("http://backend.example"), nil)},
+		{name: "private base URL", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL is refused by the egress policy", body: catalogDocument(t, anthropicAt("https://10.0.0.5"), nil)},
+		{name: "denied base URL host", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL is refused by the egress policy", body: catalogDocument(t, anthropicAt("https://denied.example"), nil)},
 		{name: "removing a used key", method: http.MethodPut, path: "default", reason: "providers.anthropic requires the secure value secure.anthropic", body: catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"remove": true}})},
 		{name: "another secret by name", method: http.MethodPut, path: "default", reason: "secure.anthropic must not reference a secret by name", body: catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"name": "shared"}})},
 		{name: "provider without a key", method: http.MethodPut, path: "default", reason: "providers.openai requires the secure value secure.openai", body: catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic"}, "openai": map[string]any{"type": "openai"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})},
@@ -130,6 +136,13 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 		})
 	}
 	assert.NotContains(t, h.logs.String(), catalogKey)
+
+	for name, endpoint := range map[string]string{"public": "https://anthropic-proxy.example.com", "allowed private": "https://10.20.0.5:8443"} {
+		t.Run("accepts a "+name+" base URL", func(t *testing.T) {
+			code, body := sendCatalog(t, ctx, http.MethodPut, catalogURL(h.server.URL, "default"), token, catalogDocument(t, anthropicAt(endpoint), nil))
+			assert.Equal(t, http.StatusOK, code, body)
+		})
+	}
 
 	code, body = sendCatalog(t, ctx, http.MethodGet, catalogURL(h.server.URL, "default"), token, "")
 	require.Equal(t, http.StatusOK, code, body)
@@ -148,7 +161,7 @@ func TestPluginProcess_ValidatesCatalogsWithoutLoggingKeys(t *testing.T) {
 	require.NoError(t, err)
 	providers := map[string]any{"anthropic": map[string]any{"type": "anthropic"}}
 
-	code, body := sendCatalog(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "https://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
+	code, body := sendCatalog(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "http://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
 	assert.Equal(t, http.StatusBadRequest, code, body)
 	assert.NotContains(t, body, catalogKey)
 	code, body = sendCatalog(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))

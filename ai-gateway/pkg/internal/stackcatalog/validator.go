@@ -12,16 +12,20 @@ import (
 	"github.com/grafana/grafana-app-sdk/resource"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 // Validator is the ModelCatalog admission validator. It refuses invalid
 // creates and updates with a 400 error whose message never contains a
 // secure value.
-type Validator struct{}
+type Validator struct {
+	// Policy is the egress policy custom endpoints are checked against.
+	Policy outbound.EgressPolicy
+}
 
 // Validate merges the request's secure values with the stored ones, as the
 // platform will store them, and parses the catalog with the merged keys.
-func (Validator) Validate(_ context.Context, request *app.AdmissionRequest) error {
+func (validator Validator) Validate(_ context.Context, request *app.AdmissionRequest) error {
 	catalog, ok := request.Object.(*v1alpha1.ModelCatalog)
 	if !ok {
 		return apierrors.NewBadRequest("modelcatalog: the admission object is not a ModelCatalog")
@@ -38,7 +42,7 @@ func (Validator) Validate(_ context.Context, request *app.AdmissionRequest) erro
 	if err != nil {
 		return apierrors.NewBadRequest(err.Error())
 	}
-	if _, err := Parse(catalog.Spec, keys); err != nil {
+	if _, err := Parse(catalog.Spec, keys, validator.Policy); err != nil {
 		return apierrors.NewBadRequest(err.Error())
 	}
 	return nil
