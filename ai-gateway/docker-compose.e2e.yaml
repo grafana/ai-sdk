@@ -2,8 +2,8 @@ services:
   grafana:
     environment:
       GF_PLUGIN_GRAFANA_AIGATEWAY_APP_MODEL_CATALOG: $$__file{/etc/grafana/provisioning/aigateway/models.e2e.yaml}
-      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_STACK_CATALOG_EGRESS_ALLOW: fake-anthropic,egress-denied
-      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_STACK_CATALOG_EGRESS_DENY: egress-denied
+      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_CUSTOM_ENDPOINT_ALLOW: fake-anthropic,egress-denied
+      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_CUSTOM_ENDPOINT_DENY: egress-denied
       HTTPS_PROXY: http://native-proxy:8443
       NO_PROXY: localhost,127.0.0.1,fake-anthropic,native-proxy
       SSL_CERT_FILE: /etc/native-proxy/cert.pem

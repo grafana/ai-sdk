@@ -100,7 +100,7 @@ func (h *harness) saveCatalog(t *testing.T, method, document string) {
 }
 
 func TestCatalogRoutes_CustomEndpoints(t *testing.T) {
-	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{"GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW": "127.0.0.1"}})
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{"GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW": "127.0.0.1"}})
 	anthropic := newTLSFakeAnthropic(t)
 	compatible := newFakeCompatible(t)
 	h.saveCatalog(t, http.MethodPost, endpointCatalog(t, map[string]any{

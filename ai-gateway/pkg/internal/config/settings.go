@@ -48,11 +48,12 @@ const (
 // ModelCatalogSetting is the setting key of the YAML model catalog document.
 const ModelCatalogSetting = "model_catalog"
 
-// Egress list setting keys: the destinations the stack-catalog egress policy
-// allows despite its built-in refusal, and those it always refuses.
+// Egress list setting keys: the destinations the egress policy for custom
+// endpoints of stack catalogs and request accounts allows despite its
+// built-in refusal, and those it always refuses.
 const (
-	EgressAllowSetting = "stack_catalog_egress_allow"
-	EgressDenySetting  = "stack_catalog_egress_deny"
+	EgressAllowSetting = "custom_endpoint_allow"
+	EgressDenySetting  = "custom_endpoint_deny"
 )
 
 // AgentObservabilityTokenSetting is the setting key of the Agent
@@ -75,7 +76,8 @@ type Settings struct {
 	ModelCatalog       string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
-	// Egress is the policy for custom stack-catalog provider endpoints.
+	// Egress is the policy for custom endpoints of stack catalogs and
+	// request accounts.
 	Egress outbound.EgressPolicy
 }
 

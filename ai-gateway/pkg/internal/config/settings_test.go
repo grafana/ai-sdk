@@ -86,8 +86,8 @@ func TestParseSettings_EgressLists(t *testing.T) {
 	})
 	t.Run("both lists", func(t *testing.T) {
 		environment := baseSettingsEnvironment()
-		environment["GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW"] = "10.20.0.0/16, llm.corp.example"
-		environment["GF_PLUGIN_STACK_CATALOG_EGRESS_DENY"] = "*.internal.example,203.0.113.7"
+		environment["GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW"] = "10.20.0.0/16, llm.corp.example"
+		environment["GF_PLUGIN_CUSTOM_ENDPOINT_DENY"] = "*.internal.example,203.0.113.7"
 		settings, err := ParseSettings(mapLookup(environment))
 		require.NoError(t, err)
 		allow, err := outbound.ParseEgressList("10.20.0.0/16, llm.corp.example")
@@ -98,7 +98,7 @@ func TestParseSettings_EgressLists(t *testing.T) {
 		require.NoError(t, settings.Egress.CheckHost("10.20.0.1"))
 		require.ErrorIs(t, settings.Egress.CheckHost("203.0.113.7"), execution.ErrEgressRefused)
 	})
-	for _, name := range []string{"GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW", "GF_PLUGIN_STACK_CATALOG_EGRESS_DENY"} {
+	for _, name := range []string{"GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW", "GF_PLUGIN_CUSTOM_ENDPOINT_DENY"} {
 		for _, value := range []string{"private-entry.example,,", "10.20.0.5/16", "private-entry.example,private-entry.example", "*.", " "} {
 			t.Run(name+" "+value, func(t *testing.T) {
 				environment := baseSettingsEnvironment()
@@ -130,6 +130,8 @@ func TestParseSettings_RemovedSettingsAreIgnored(t *testing.T) {
 		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "private-value"},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "20s"},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "private-value"},
+		{env: "GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW", value: "10.0.0.0/8"},
+		{env: "GF_PLUGIN_STACK_CATALOG_EGRESS_DENY", value: "private-value,"},
 	} {
 		t.Run(tc.env+"="+tc.value, func(t *testing.T) {
 			environment := baseSettingsEnvironment()

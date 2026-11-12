@@ -249,12 +249,12 @@ Two settings adjust the policy. Each takes comma-separated entries: an IP
 address, a CIDR prefix such as `10.20.0.0/16`, a hostname, or `*.` and a
 domain, which matches its subdomains only.
 
-- `stack_catalog_egress_allow` lets catalogs reach matching destinations
+- `custom_endpoint_allow` lets catalogs reach matching destinations
   that are otherwise refused, such as a model server on your private network.
   It doesn't limit other public endpoints. Unspecified (`0.0.0.0`, `::`) and
   multicast addresses stay refused. A hostname entry trusts whatever that name
   resolves to, so prefer prefixes.
-- `stack_catalog_egress_deny` refuses matching destinations, even when they
+- `custom_endpoint_deny` refuses matching destinations, even when they
   are also allowed. Deny by prefix: a denied hostname is a convenience, not a
   boundary, because the same address stays reachable through its IP or
   another name.
@@ -307,8 +307,8 @@ so they need no other change.
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
-| `stack_catalog_egress_allow` | Comma-separated destinations that stored catalogs' custom endpoints may reach despite the built-in refusal; see [Custom endpoints](#custom-endpoints). |
-| `stack_catalog_egress_deny` | Comma-separated destinations that stored catalogs' custom endpoints may never reach; see [Custom endpoints](#custom-endpoints). |
+| `custom_endpoint_allow` | Comma-separated destinations that stored catalogs' custom endpoints may reach despite the built-in refusal; see [Custom endpoints](#custom-endpoints). |
+| `custom_endpoint_deny` | Comma-separated destinations that stored catalogs' custom endpoints may never reach; see [Custom endpoints](#custom-endpoints). |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits

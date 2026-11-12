@@ -89,7 +89,7 @@ func TestProvider_ManagesTheManifestKinds(t *testing.T) {
 }
 
 func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
-	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{"GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW": "10.20.0.0/16", "GF_PLUGIN_STACK_CATALOG_EGRESS_DENY": "denied.example"}})
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{"GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW": "10.20.0.0/16", "GF_PLUGIN_CUSTOM_ENDPOINT_DENY": "denied.example"}})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	token := h.serviceToken(t, testInternalService)
