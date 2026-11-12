@@ -218,10 +218,11 @@ knownGaps:
     description: Go DefaultSettings also accepts a Reasoning default, which the
       upstream settings type omits although mergeObjects would merge it; an
       explicit provider-default caller value equals the Go zero value and
-      receives the default. Response format and tool choice merge only members
-      of the caller's active type, so text formats take no default schema, name
-      or description and a non-named choice carries no default tool name. Go
-      adapters ignore those members and the Grafana client rejects them.
+      receives the default. Response format merges only members of the caller's
+      active type, so text formats take no default schema, name or description,
+      and a caller tool choice replaces the default whole, so a non-named choice
+      carries no default tool name. Go adapters ignore those inactive members
+      and the Grafana client rejects them.
   - id: embedding-and-decision-model-surfaces
     surface: provider-contract
     status: gap

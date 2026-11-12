@@ -326,6 +326,17 @@ func TestDefaultSettings_ProviderOptions(t *testing.T) {
 		assert.Equal(t, caller["openai"], received.ProviderOptions["openai"])
 	})
 
+	t.Run("DefaultsNotSharedAcrossCalls", func(t *testing.T) {
+		settings := rawOptions(t, `{"anthropic":{"user":"default-user"}}`)
+		mw := DefaultSettings(DefaultSettingsOptions{ProviderOptions: settings})
+
+		params, err := mw.TransformParams(context.Background(), TransformParamsInput{})
+		require.NoError(t, err)
+		params.ProviderOptions["openai"] = provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(`{}`)}
+
+		assert.Len(t, settings, 1)
+	})
+
 	t.Run("MarshalErrorReturned", func(t *testing.T) {
 		mw := DefaultSettings(DefaultSettingsOptions{ProviderOptions: provider.BuildProviderOptions(unmarshalableOption{})})
 		_, err := mw.TransformParams(context.Background(), TransformParamsInput{

@@ -48,14 +48,14 @@ func Merge(base, override provider.ProviderOptions) (provider.ProviderOptions, e
 // MergeOverlapping deep-merges override into base like [Merge], but keeps the
 // original values of namespaces that are not JSON objects on both sides. Only
 // namespaces whose base and override values are both JSON objects are
-// returned as a merged [provider.RawProviderOption]. When either side is nil
-// the other is returned unchanged.
+// returned as a merged [provider.RawProviderOption]. The result is always a
+// new map, or nil when both sides are nil.
 func MergeOverlapping(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
 	if base == nil {
-		return override, nil
+		return maps.Clone(override), nil
 	}
 	if override == nil {
-		return base, nil
+		return maps.Clone(base), nil
 	}
 
 	baseShared := make(provider.ProviderOptions)
