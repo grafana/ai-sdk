@@ -18,8 +18,8 @@
 
 ## 4. Integration checks
 
-- [ ] 4.1 Run `mise run check`, `mise run lint` and `mise run parity-check`, and report any sub-step the sandbox cannot run
-- [ ] 4.2 Run `openspec validate align-default-settings-merge --strict`
+- [x] 4.1 Run `mise run check`, `mise run lint` and `mise run parity-check`, and report any sub-step the sandbox cannot run
+- [x] 4.2 Run `openspec validate align-default-settings-merge --strict`
 
 ## Workflow follow-up
 
