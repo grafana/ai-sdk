@@ -223,7 +223,9 @@ func TestBYOK_CustomEndpoints(t *testing.T) {
 			status, body := do(t, byokRequest(t, h, literal, false, account))
 			assert.Equal(t, http.StatusBadRequest, status, literal)
 			assert.Contains(t, body, "providerOptions.gateway.byok requires supported provider arrays with valid accounts")
-			assert.NotContains(t, body, strings.TrimPrefix(literal, "https://"))
+			parsed, err := url.Parse(literal)
+			require.NoError(t, err)
+			assert.NotContains(t, body, parsed.Host)
 		}
 		assert.Equal(t, before, custom.requests.Load())
 	})

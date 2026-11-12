@@ -247,9 +247,10 @@ would reach the Gateway's own network:
   Other connection, TLS and read failures of custom endpoints are reported as
   "provider connection failed" or "provider connection timed out", without
   addresses or certificate names.
-- Providers and accounts without a `baseURL`, or with their provider's own
-  endpoint such as `https://api.openai.com/v1`, use the native endpoint and
-  the proxy settings, as before. The `model_catalog` setting's endpoints aren't
+- Providers and accounts without a `baseURL`, or with exactly their provider's
+  own endpoint such as `https://api.openai.com/v1` (ignoring case and a
+  trailing `/`), use the native endpoint and the proxy settings, as before.
+  Any other form, such as an added `:443` or path, is a custom endpoint. The `model_catalog` setting's endpoints aren't
   checked.
 
 Two settings adjust the policy. Each takes comma-separated entries: an IP
@@ -270,7 +271,7 @@ domain, which matches its subdomains only.
 - Ports aren't restricted, so a catalog or a request account can reach any
   port on a permitted host, and response timing can show whether a port is
   open. Deny the
-  prefixes of public addresses that catalogs must not reach, such as your own
+  prefixes of public addresses that catalogs and request accounts must not reach, such as your own
   services, cluster addresses from public IPv6 ranges, or a DNS64
   network-specific prefix (only `64:ff9b::/96` is checked as the IPv4 address
   it embeds).

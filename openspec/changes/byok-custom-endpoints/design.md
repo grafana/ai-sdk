@@ -67,7 +67,7 @@
 
 - `byok.New(request, placements, clients outbound.ModelClients)`.
 - `newCandidate` calls `clients.For(account.BaseURL)` and builds the native model with that client, keeping today's owned-client copy that rejects redirects.
-- When the endpoint is custom, it wraps the model in `outbound.EgressModel` inside `execution.Translate`, at the same position as the stack candidate.
+- When the endpoint is custom, it wraps the translated model in `outbound.EgressModel`, outside `execution.Translate` and inside fallback, at the same position as the stack candidate.
 - Fallback across accounts, the attempt bound and native option checks are unchanged. A refused account is an ordinary attempt failure under the aggregate chain rule.
 
 ### Error mapping (BYOK compared with stack catalogs)
