@@ -545,6 +545,41 @@ describe("stack-catalog routes through the authenticated command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => native.stop(), () => new Promise<void>(resolve => listener.close(() => resolve()))); }
   });
 
+  it("refuses a request account endpoint the egress policy refuses, at decode or when connecting, in both clients", async () => {
+    const [native, gateway] = await startCloudGateway();
+    let connections = 0;
+    const listener = createNetServer(socket => { connections++; socket.destroy(); });
+    await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
+    const port = (listener.address() as { port: number }).port;
+    try {
+      const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "byok-refused" }] }];
+      for (const [baseURL, status, retryable] of [[`https://127.0.0.1:${port}`, 400, false], [`https://localhost:${port}`, 424, false]] as const) {
+        const options: LanguageModelV4CallOptions = { prompt, maxOutputTokens: 32, providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key", baseURL }] } } } };
+        const model = createGateway({ baseURL: gateway.baseURL, apiKey: TEST_TOKEN })(BYOK_MODEL);
+        for (const mode of ["generate", "stream"] as const) {
+          let failure: any;
+          try {
+            if (mode === "generate") await model.doGenerate(options);
+            else await collectGatewayStream((await model.doStream(options)).stream);
+          } catch (error) { failure = error; }
+          assert.equal(failure?.statusCode, status, `${baseURL} ${mode}`);
+          assert.equal(failure.isRetryable, retryable);
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
+          assert.equal(go.error?.statusCode, status, `${baseURL} ${mode}`);
+          assert.equal(go.error.isRetryable, retryable);
+          for (const exported of [JSON.stringify(failure.cause?.data ?? null), JSON.stringify(go.error)]) {
+            assert.equal(exported.includes(`:${port}`), false);
+            assert.equal(exported.includes("request-only-key"), false);
+          }
+        }
+      }
+      assert.equal(connections, 0, "the refused endpoint receives no connection");
+      assert.equal(native.requests.length, 0);
+      await gateway.stop();
+      assert.equal(gateway.stderr.includes(`:${port}`), false);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop(), () => new Promise<void>(resolve => listener.close(() => resolve()))); }
+  });
+
   it("surfaces the platform's Kubernetes Status for a missing catalog as a client error", async () => {
     const [native, gateway] = await startCloudGateway();
     try {
