@@ -14,7 +14,7 @@
 
 ## 3. Parity records
 
-- [ ] 3.1 Add the `default-settings-go-representation` entry to `test/conformance/upstream.yaml` `knownGaps`; verify with `mise run validate-parity-baseline`
+- [x] 3.1 Add the `default-settings-go-representation` entry to `test/conformance/upstream.yaml` `knownGaps`; verify with `mise run validate-parity-baseline`
 
 ## 4. Integration checks
 
