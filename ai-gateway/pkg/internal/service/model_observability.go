@@ -12,7 +12,6 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/middleware"
 	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
@@ -224,9 +223,15 @@ func (writer agentDiagnosticWriter) Write(message []byte) (int, error) {
 
 var errUnobservedSource = errors.New("gateway service: selection source has no observer configuration")
 
-// stackCatalogMetricModel is the fixed model label of stack-catalog calls, so
-// customer model IDs never become metric labels.
-const stackCatalogMetricModel = "catalog"
+// sourceMetricModels is the model label of each source's calls: the canonical
+// model ID for the operator catalog, and a fixed label for customer-configured
+// calls, so their model IDs never become metric labels. Each source has an
+// observer chain.
+var sourceMetricModels = map[execution.Source]string{
+	execution.SourceOperatorCatalog: "",
+	execution.SourceRequestBYOK:     "byok",
+	execution.SourceStackCatalog:    "catalog",
+}
 
 // ModelObservers applies the Gateway's logical observer chains to selections.
 // Its middleware and collectors are constructed once; each call only wraps its
@@ -247,27 +252,13 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 		IdentitySource:            metricsmiddleware.IdentityRequested,
 		StreamDrainTimeout:        drainTimeout,
 		DisableStreamChunkMetrics: false,
-		NormalizeModel: func(provider, model string) string {
-			if provider != "grafana" {
-				return "byok"
-			}
-			return model
-		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
 	}
-	loggerOptions := logmiddleware.Options{
-		Logger:             logger,
-		DynamicAttrs:       observationLogAttrs,
-		Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.ConfiguredAccounts),
-		IdentitySource:     logmiddleware.IdentityRequested,
-		StreamDrainTimeout: drainTimeout,
-	}
-	configured := modelObservationChain{
-		contextBridge:    observationBridgeMiddleware(),
-		structuredLogger: logmiddleware.Middleware(loggerOptions),
-		prometheus:       metrics,
+	shared := modelObservationChain{
+		contextBridge: observationBridgeMiddleware(),
+		prometheus:    metrics,
 	}
 	if runtime != nil && runtime.client != nil {
 		recording := agentmiddleware.RecordingMiddleware(agentmiddleware.RecordingOptions{
@@ -282,18 +273,22 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 			OnRecordError:    runtime.recordError,
 			OnRecordComplete: runtime.recordingComplete,
 		})
-		configured.agentRecording = &recording
+		shared.agentRecording = &recording
 	}
-	byok := configured
-	loggerOptions.Redactor = closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.RequestBYOK)
-	byok.structuredLogger = logmiddleware.Middleware(loggerOptions)
-	stack := configured
-	stack.metricModel = stackCatalogMetricModel
-	return &ModelObservers{chains: map[execution.Source]modelObservationChain{
-		execution.SourceOperatorCatalog: configured,
-		execution.SourceRequestBYOK:     byok,
-		execution.SourceStackCatalog:    stack,
-	}}, nil
+	chains := make(map[execution.Source]modelObservationChain, len(sourceMetricModels))
+	for source, metricModel := range sourceMetricModels {
+		chain := shared
+		chain.structuredLogger = logmiddleware.Middleware(logmiddleware.Options{
+			Logger:             logger,
+			DynamicAttrs:       observationLogAttrs,
+			Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), source),
+			IdentitySource:     logmiddleware.IdentityRequested,
+			StreamDrainTimeout: drainTimeout,
+		})
+		chain.metricModel = metricModel
+		chains[source] = chain
+	}
+	return &ModelObservers{chains: chains}, nil
 }
 
 // Compose is the runtime's [execution.ModelComposer]: it wraps the selected
