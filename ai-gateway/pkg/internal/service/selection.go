@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/byok"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -18,8 +18,11 @@ import (
 
 // BYOKOptions enables request-scoped accounts for BYOK callers.
 type BYOKOptions struct {
-	// Client is the shared model HTTP client for request accounts.
-	Client *http.Client
+	// Clients are the shared model client, for accounts on their native
+	// endpoint, and the egress client, for accounts with a custom endpoint.
+	Clients outbound.ModelClients
+	// Egress is the policy custom endpoints are checked against.
+	Egress outbound.EgressPolicy
 	// Factory gives the request accounts' chain its logical identity.
 	Factory ModelFactory
 }
@@ -80,7 +83,7 @@ func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions, stackOptions
 }
 
 func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (execution.Selection, error) {
-	request, err := byok.DecodeRequest(id, controls, nil)
+	request, err := byok.DecodeRequest(id, controls, options.Egress)
 	switch {
 	case errors.Is(err, byok.ErrInvalidSelector):
 		return execution.Selection{}, execution.ErrInvalidBYOKSelector
@@ -93,7 +96,7 @@ func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (exec
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	lower, err := byok.New(request, placements, options.Client)
+	lower, err := byok.New(request, placements, options.Clients)
 	if err != nil {
 		return execution.Selection{}, err
 	}

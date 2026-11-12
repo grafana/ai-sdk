@@ -202,11 +202,12 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
+	clients := outbound.ModelClients{Shared: nativeClient, Egress: egressClient}
 	var byokOptions *service.BYOKOptions
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
+		byokOptions = &service.BYOKOptions{Clients: clients, Egress: settings.Egress, Factory: service.BYOKIdentity}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Clients: outbound.ModelClients{Shared: nativeClient, Egress: egressClient}, Egress: settings.Egress}), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Clients: clients, Egress: settings.Egress}), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}

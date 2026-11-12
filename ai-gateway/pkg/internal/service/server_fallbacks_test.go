@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -258,7 +259,7 @@ func TestNativeServerFallbacks_BYOKIgnoresConfiguredPolicy(t *testing.T) {
 		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
 			backend := &serverFallbackBackend{}
 			client := backend.client()
-			selector := NewSelector(serverFallbackCatalog(t, client, &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false), &BYOKOptions{Client: client, Factory: identityModelFactory}, nil)
+			selector := NewSelector(serverFallbackCatalog(t, client, &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false), &BYOKOptions{Clients: outbound.ModelClients{Shared: client, Egress: client}, Factory: identityModelFactory}, nil)
 
 			configured, _ := serveConfigured(t, selector, "public", serverFallbackDefault, streaming)
 			require.Equal(t, http.StatusBadRequest, configured.Code, configured.Body.String())

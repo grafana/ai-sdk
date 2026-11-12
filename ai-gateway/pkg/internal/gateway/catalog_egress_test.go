@@ -187,3 +187,96 @@ func TestCatalogRoutes_RefusedEndpoints(t *testing.T) {
 		assert.NotContains(t, logs, private)
 	}
 }
+
+func byokRequest(t *testing.T, h *harness, baseURL string, streaming bool, auth credential) *http.Request {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"prompt":          []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "hi"}}}},
+		"maxOutputTokens": 16,
+		"providerOptions": map[string]any{"gateway": map[string]any{"byok": map[string]any{"anthropic": []any{
+			map[string]any{"apiKey": endpointCatalogKey, "baseURL": baseURL},
+		}}}},
+	})
+	require.NoError(t, err)
+	return catalogLanguageRequest(t, h.url("language-model"), "anthropic/claude-request", string(body), streaming, auth)
+}
+
+func TestBYOK_CustomEndpoints(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{tlsOperator: true, env: map[string]string{"GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW": "127.0.0.1"}})
+	custom := newTLSFakeAnthropic(t)
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+
+	t.Run("an allowed https endpoint serves unary and streamed calls with the account key", func(t *testing.T) {
+		for _, streaming := range []bool{false, true} {
+			status, body := do(t, byokRequest(t, h, custom.server.URL, streaming, account))
+			require.Equal(t, http.StatusOK, status, body)
+			assert.Contains(t, body, map[bool]string{false: "hello", true: "first"}[streaming])
+		}
+		keys, bodies := custom.nativeCalls()
+		assert.Equal(t, []string{endpointCatalogKey, endpointCatalogKey}, keys)
+		assert.Contains(t, bodies[0], `"model":"claude-request"`)
+	})
+
+	t.Run("a refused literal fails at decode with the BYOK credentials document", func(t *testing.T) {
+		before := custom.requests.Load()
+		for _, literal := range []string{"https://169.254.169.254", "http://" + strings.TrimPrefix(custom.server.URL, "https://"), "https://2130706433"} {
+			status, body := do(t, byokRequest(t, h, literal, false, account))
+			assert.Equal(t, http.StatusBadRequest, status, literal)
+			assert.Contains(t, body, "providerOptions.gateway.byok requires supported provider arrays with valid accounts")
+			assert.NotContains(t, body, strings.TrimPrefix(literal, "https://"))
+		}
+		assert.Equal(t, before, custom.requests.Load())
+	})
+	logs := h.logs.String()
+	assert.NotContains(t, logs, endpointCatalogKey)
+}
+
+func TestBYOK_RefusedEndpoints(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{tlsOperator: true})
+	working := newFakeAnthropic(t)
+	useNativeAnthropic(t, working)
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+	operator, err := url.Parse(h.anthropic.server.URL)
+	require.NoError(t, err)
+	refusedName := "https://localhost:" + operator.Port()
+
+	t.Run("a name resolving to a refused address fails when connecting", func(t *testing.T) {
+		status, body := do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, accessToken(h.serviceToken(t, testInternalService))))
+		require.Equal(t, http.StatusOK, status, body)
+		require.EqualValues(t, 1, h.anthropic.requests.Load())
+		for _, streaming := range []bool{false, true} {
+			status, body := do(t, byokRequest(t, h, refusedName, streaming, account))
+			assert.Equal(t, http.StatusFailedDependency, status)
+			var document struct {
+				Error json.RawMessage `json:"error"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(body), &document), body)
+			assert.JSONEq(t, egressError, string(document.Error))
+			for _, private := range []string{"localhost", operator.Port(), endpointCatalogKey} {
+				assert.NotContains(t, body, private)
+			}
+		}
+		assert.EqualValues(t, 1, h.anthropic.requests.Load(), "the refused endpoint receives no request, even with an idle operator connection to it")
+	})
+	t.Run("a refused account falls back to the next", func(t *testing.T) {
+		body, err := json.Marshal(map[string]any{
+			"prompt":          []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "hi"}}}},
+			"maxOutputTokens": 16,
+			"providerOptions": map[string]any{"gateway": map[string]any{"byok": map[string]any{"anthropic": []any{
+				map[string]any{"apiKey": "first-" + endpointCatalogKey, "baseURL": refusedName},
+				map[string]any{"apiKey": endpointCatalogKey},
+			}}}},
+		})
+		require.NoError(t, err)
+		status, response := do(t, catalogLanguageRequest(t, h.url("language-model"), "anthropic/claude-request", string(body), false, account))
+		require.Equal(t, http.StatusOK, status, response)
+		assert.Contains(t, response, execution.ErrEgressRefused.Error(), "the overview carries the fixed refusal")
+		assert.NotContains(t, response, "localhost")
+		assert.EqualValues(t, 1, working.requests.Load(), "the second account reaches the native endpoint")
+		assert.EqualValues(t, 1, h.anthropic.requests.Load())
+	})
+	logs := h.logs.String()
+	for _, private := range []string{"localhost:" + operator.Port(), endpointCatalogKey} {
+		assert.NotContains(t, logs, private)
+	}
+}

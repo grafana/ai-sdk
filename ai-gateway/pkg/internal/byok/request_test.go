@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -15,12 +16,12 @@ import (
 
 // decodeGateway decodes raw call-level gateway controls as a BYOK caller sends
 // them.
-func decodeGateway(selector string, raw json.RawMessage, approvals map[Provider][]string) (Request, error) {
+func decodeGateway(selector string, raw json.RawMessage, policy outbound.EgressPolicy) (Request, error) {
 	controls, err := routing.Decode(raw, routing.RequestAccountAccess)
 	if err != nil {
 		return Request{}, err
 	}
-	return DecodeRequest(selector, controls, approvals)
+	return DecodeRequest(selector, controls, policy)
 }
 
 // newAll returns the model that tries every account of request in order.
@@ -31,12 +32,12 @@ func newAll(request Request, client *http.Client) (provider.LanguageModel, error
 			placements = append(placements, routing.Placement{Group: g, Candidate: c})
 		}
 	}
-	return New(request, placements, client)
+	return New(request, placements, outbound.ModelClients{Shared: client, Egress: client})
 }
 
 func TestDecodeRequest_FallbackModels(t *testing.T) {
 	const accounts = `"byok":{"anthropic":[{"apiKey":"a1"},{"apiKey":"a2"}],"openai":[{"apiKey":"o1"}]}`
-	got, err := decodeGateway("anthropic/x", json.RawMessage(`{`+accounts+`,"models":["openai/y","anthropic/z/w"]}`), nil)
+	got, err := decodeGateway("anthropic/x", json.RawMessage(`{`+accounts+`,"models":["openai/y","anthropic/z/w"]}`), outbound.EgressPolicy{})
 	require.NoError(t, err)
 	require.Len(t, got.Destinations, 3)
 	for i, want := range []struct {
@@ -72,7 +73,7 @@ func TestDecodeRequest_RoutingRefusals(t *testing.T) {
 		{name: "requested credentials precede fallback", raw: `{"byok":{"openai":[{"apiKey":"o"}]},"models":["bedrock/y"]}`, want: ErrInvalidRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := decodeGateway("anthropic/x", json.RawMessage(tc.raw), nil)
+			got, err := decodeGateway("anthropic/x", json.RawMessage(tc.raw), outbound.EgressPolicy{})
 			require.ErrorIs(t, err, tc.want)
 			if tc.want == ErrInvalidRequest {
 				assert.NotErrorIs(t, err, ErrInvalidSelector)
@@ -100,7 +101,7 @@ func TestDecodeRequest_LargeFallbackAccounts(t *testing.T) {
 		"only":   []string{"anthropic"},
 	})
 	require.NoError(t, err)
-	got, err := decodeGateway("anthropic/x", raw, nil)
+	got, err := decodeGateway("anthropic/x", raw, outbound.EgressPolicy{})
 	require.NoError(t, err)
 	selectors := make([]string, len(got.Destinations))
 	for i, destination := range got.Destinations {
