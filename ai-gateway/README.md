@@ -174,9 +174,12 @@ elsewhere.
 - **`self-hosted`:** every user and service account that can use the app gets
   the configured models. Requests that bring their own provider keys are
   refused. Using the app takes the `plugins.app:access` permission on scope
-  `plugins:id:grafana-aigateway-app`, which the Viewer role has by default. To
-  limit access, grant that permission with role-based access control only to
-  the users and service accounts that need it.
+  `plugins:id:grafana-aigateway-app`. Viewers have it for every app by
+  default, through scope `plugins:*`, so to limit access, remove that
+  permission from the basic roles and grant it on the Gateway's scope only to
+  the roles that need it, as described in
+  [Prevent Viewers from accessing an app plugin](https://grafana.com/docs/grafana/latest/administration/roles-and-permissions/access-control/plan-rbac-rollout-strategy/#prevent-viewers-from-accessing-an-app-plugin).
+  Changing basic roles needs Grafana Enterprise.
 - **`cloud`:** for Grafana Cloud. Only the Grafana services listed in
   `access_internal_services` get the configured models. Each entry is the
   service identity a caller presents, the `serviceIdentity` claim of its access

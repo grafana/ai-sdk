@@ -9,7 +9,7 @@ models you get, depends on where Grafana runs:
 | An application on self-hosted Grafana | Grafana service account token | The models your administrator configured |
 | An application on Grafana Cloud | Grafana service account token | Any model from your own provider account (bring your own key) |
 | A Grafana service in Grafana Cloud | Cloud access policy token | The models Grafana configured for your service |
-| An App Platform app (plugin backend) | The token exchange Grafana gives your backend | The configured models for calls on behalf of a user; in Grafana Cloud, for the app's own calls too once it is allowed |
+| An App Platform app (plugin backend) | The token exchange Grafana gives your backend | Self-hosted: the configured models, on behalf of a user. Grafana Cloud: the configured models once your app is allowed; until then, your own provider key on behalf of a user |
 
 Keep credentials on your application server. Never include them in browser
 code.
@@ -188,10 +188,11 @@ What each call gets:
 | Call | Self-hosted Grafana | Grafana Cloud |
 |---|---|---|
 | As the app | Refused, because the Gateway needs a user or service account | The configured models once your app is [allowed](#get-your-service-allowed-in-grafana-cloud); refused before |
-| On behalf of a user | The configured models, if the user can use the Gateway app | The configured models once your app is allowed; before that, your own provider key |
+| On behalf of a user | The configured models | The configured models once your app is allowed; before that, your own provider key |
 
-A user can use the Gateway app with the `plugins.app:access` permission on
-`plugins:id:grafana-aigateway-app`. Grafana's Viewer role has it by default.
+In both environments, a call on behalf of a user also needs the user to have
+the `plugins.app:access` permission on `plugins:id:grafana-aigateway-app`.
+Grafana's Viewer role has it by default.
 
 ## Get your service allowed in Grafana Cloud
 
