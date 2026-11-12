@@ -47,6 +47,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 
 - Inputs are what #758 has after its parent check: the decoded spec, Grafana's decrypted values unchanged, and the catalog name. `StackCatalogOptions` mirrors `BYOKOptions`.
 - It returns `execution.StackCatalogSelection(canonicalID, catalog.Name, model, expected, keys)`: source `stack-catalog`, configured attribution (same overview as the operator catalog), the catalog name, and every non-empty decrypted value as request keys.
+- The overview attribution stays an unexported field set by the constructors, not derived from `Source`. `Source` is exported, so a selector can build a `Selection` with a known source but without expected attempts. Today such a selection publishes no overview; deriving attribution from `Source` would publish one. Keeping that distinction would need a marker of constructor-built selections, which is exactly what the field is.
 - Errors: `execution.ErrCatalogConfiguration`, `catalog.ErrUnknownModel`, `execution.ErrUnknownFallbackModel`, `ErrUnsupportedGatewayControl`, and the routing sentinels.
 - #758 adds the `catalog` account branch to `NewSelector`, which calls this function with the catalog it decoded for the request.
 - Namespace and resource version are not inputs. The observation already carries the route namespace, and the parent check (#758) ties the catalog to it. No consumer of the version exists until a cache keyed by it does.
@@ -72,20 +73,25 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 
 - `Selection` gains an unexported `keys []string`, set only by `StackCatalogSelection`. `Call` builds the capture with `r.redactor.With(selected.keys)`, which returns the runtime redactor unchanged when keys are empty, and otherwise a new one over both key sets.
 - Overview attempt errors and `View.Current` therefore redact both. The merged redactor lives only in that call's capture.
-- BYOK selections carry no keys, so the existing BYOK rule (caller-owned echoes are kept) is unchanged.
+- BYOK selections carry no keys, so the existing BYOK rule (caller-owned echoes are kept) is unchanged. Request keys reach nothing but the caller, so they need no redaction:
+  - `applyPolicy` removes the `gateway` namespace, `byok` included, from the call options before selection, so no middleware, observer or native request body sees it. The keys live only in each account's provider client and its request header.
+  - Logs keep only the closed allowlist, never error text or options. Metrics have closed labels. Agent Observability is metadata-only, and its filter drops options, input, output and `CallError`.
+  - BYOK chains have no physical attempt sink. Startup and plugin-run failures are the only logged Go errors, and neither carries request data.
+  - Native failure summaries (the execution overview and event-local `nativeError`) are written only into the response to the caller, who supplied the keys. The runtime, ProviderWire and the BYOK package log nothing.
 - All decrypted values are included, not just the placed providers', mirroring the operator rule ("including unused accounts").
 
 ### Metric label: a metric identity view, chosen by source
 
-- The stack-catalog chain shares the startup bridge, Agent Observability recording, the operator-catalog logger and the single metrics middleware. Only how they are stacked differs: per call, the composer builds:
+- Every chain shares the startup bridge, Agent Observability recording and the single metrics middleware, and has a logger whose allowlist is chosen by the source. Customer-configured sources also get a fixed metric model: `byok` for request accounts and `catalog` for stack catalogs. For a stack-catalog call, the composer builds:
 
   `bind catalog → bridge → recording → logger → identity(grafana, canonical) → metrics → identity(grafana, "catalog") → selected model`
 
-- Each middleware sees the identity of the model beneath it. Metrics therefore see `grafana`/`catalog`, which `NormalizeModel` keeps as is, while logs and Agent Observability see the canonical ID. The choice is made by source in `Compose`, without a second registration and without changing the reusable Prometheus middleware.
+- Each middleware sees the identity of the model beneath it. Metrics therefore see `grafana`/`catalog`, or the native provider and `byok` for request accounts, while logs and Agent Observability see the logical model ID. One mechanism, chosen by source in `Compose`, masks both customer sources, without a second registration or a normalizer that guesses from the provider name.
 - The cost is a few wrapper allocations per call; no middleware or collector is constructed.
 - Alternatives considered:
   - a distinct logical provider for stack catalogs: changes log and Agent Observability identity, and still decides by provider;
   - a context-aware `NormalizeModel`: needs a change to the published `middleware/prometheus` module.
+- The log allowlist (`allowModelLogAttr`) is keyed by the selection source, not the caller's account access, like the chain itself. Request accounts allow the native provider and a bounded free-form model ID; both catalog sources allow provider `grafana` and bounded model IDs.
 
 ### Catalog name in observation
 
@@ -95,7 +101,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 - The log key is `catalog`, following the existing pairs (`namespace` in logs, `gateway.namespace` in metadata). This deviates from the issue's wording, which names `gateway.catalog` for both surfaces.
 - A name over the bound is omitted without a count: no counter of dropped observation values exists, and one field does not warrant adding one.
 - Alternatives considered:
-  - a separate stack-catalog log policy: no field differs from the configured policy;
+  - a stack-catalog log policy with fields of its own: no field differs from the operator-catalog policy;
   - having #758 put the name into the observation at route time: telemetry would then name the route's catalog, not the one selected.
 
 ### Optional operator catalog: an empty catalog, not a nil selector
