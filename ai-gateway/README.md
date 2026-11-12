@@ -46,7 +46,8 @@ client.
 4. Restart Grafana and enable **Grafana AI Gateway** under
    **Administration > Plugins and data > Plugins**.
 
-The app's overview page shows the Gateway URL that applications use.
+The app's overview page shows the Gateway URL that applications use, and the
+URL of each stored model catalog.
 
 ## Configure models
 
@@ -187,6 +188,14 @@ A stack can also store its own model catalogs in Grafana as `ModelCatalog`
 resources, with each provider's API key held as a Grafana secure value, and
 call their models through the catalog's own routes.
 
+Admins manage catalogs on the app's **Model catalogs** page. A key you enter
+there is sent once and never shown again: the page only shows that a provider
+has one, and an edit that doesn't replace a key keeps the stored one. When
+Grafana or the Gateway refuses a change, the page shows the message it returns.
+Viewers and Editors see catalogs read-only. The page follows each user's Grafana permissions, so
+granting or removing `aigateway:catalogwriter` changes what it offers them.
+You can also write catalogs through the API, for example:
+
 ```yaml
 apiVersion: aigateway.ext.grafana.app/v1alpha1
 kind: ModelCatalog
@@ -238,6 +247,11 @@ so they need no other change.
 - An edit applies on the next call. A key rotated outside the catalog, without
   changing the resource, can take up to a minute to apply, because Grafana
   caches decrypted keys for that long.
+- Removing a role, or revoking a token or access policy, can take longer to
+  apply, because Grafana and Grafana Cloud cache permissions and tokens. The
+  catalog page picks up changed permissions on a later reload, once Grafana's
+  permission cache refreshes, and Grafana refuses writes the user can no longer
+  make.
 - Grafana itself answers `403` when the caller can't call the catalog and `404`
   when the catalog doesn't exist. These are Kubernetes `Status` documents, not
   Gateway error documents; both clients report them as errors with that status.

@@ -32,6 +32,13 @@
       "path": "/a/%PLUGIN_ID%/overview",
       "addToNav": true,
       "defaultNav": true
+    },
+    {
+      "type": "page",
+      "name": "Model catalogs",
+      "path": "/a/%PLUGIN_ID%/catalogs",
+      "action": "aigateway.ext.grafana.app/modelcatalogs:get",
+      "addToNav": true
     }
   ],
   "dependencies": {
