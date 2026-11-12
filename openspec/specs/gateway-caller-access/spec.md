@@ -152,6 +152,10 @@ On a catalog route, the Gateway SHALL grant `catalog` access to a verified calle
 - **WHEN** an anonymous session calls a catalog route, directly or relayed by a service
 - **THEN** the request SHALL be refused
 
+#### Scenario: Anonymous caller allowed by Grafana's declared check
+- **WHEN** Grafana's declared check allows an anonymous caller on a catalog route
+- **THEN** the plugin SHALL still refuse it with the permission document, because catalog calls spend the stack's own provider keys and an anonymous caller cannot be attributed
+
 ### Requirement: Catalog access selects only its parent catalog
 `catalog` access SHALL select and list only the route's parent catalog. It SHALL NOT reach the operator catalog, operator provider keys, BYOK accounts or another catalog, and a namespace route SHALL never grant `catalog` access.
 
