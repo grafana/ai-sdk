@@ -1,4 +1,8 @@
-package aisdk
+// Package provideroptions merges provider options with the rules of upstream
+// mergeObjects: nested JSON objects merge recursively, any other override
+// value replaces the base value, and the keys __proto__, constructor and
+// prototype are ignored in override objects.
+package provideroptions
 
 import (
 	"bytes"
@@ -8,7 +12,10 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func mergeStepProviderOptions(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
+// Merge deep-merges override into base. When either side is nil the other is
+// returned unchanged; otherwise every merged namespace is returned as a
+// [provider.RawProviderOption].
+func Merge(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
 	if base == nil {
 		return override, nil
 	}
@@ -16,15 +23,15 @@ func mergeStepProviderOptions(base, override provider.ProviderOptions) (provider
 		return base, nil
 	}
 
-	baseObject, err := providerOptionsObject(base)
+	baseObject, err := optionsObject(base)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling base options: %w", err)
 	}
-	overrideObject, err := providerOptionsObject(override)
+	overrideObject, err := optionsObject(override)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling override options: %w", err)
 	}
-	merged := mergeJSONObject(baseObject, overrideObject)
+	merged := mergeObject(baseObject, overrideObject)
 
 	result := make(provider.ProviderOptions, len(merged))
 	for key, value := range merged {
@@ -37,7 +44,7 @@ func mergeStepProviderOptions(base, override provider.ProviderOptions) (provider
 	return result, nil
 }
 
-func providerOptionsObject(options provider.ProviderOptions) (map[string]any, error) {
+func optionsObject(options provider.ProviderOptions) (map[string]any, error) {
 	data, err := json.Marshal(options)
 	if err != nil {
 		return nil, err
@@ -51,22 +58,26 @@ func providerOptionsObject(options provider.ProviderOptions) (map[string]any, er
 	return object, nil
 }
 
-func mergeJSONObject(base, override map[string]any) map[string]any {
+func mergeObject(base, override map[string]any) map[string]any {
 	result := make(map[string]any, len(base)+len(override))
 	for key, value := range base {
 		result[key] = value
 	}
 	for key, value := range override {
-		if key == "__proto__" || key == "constructor" || key == "prototype" {
+		if ignoredKey(key) {
 			continue
 		}
 		baseObject, baseOK := result[key].(map[string]any)
 		overrideObject, overrideOK := value.(map[string]any)
 		if baseOK && overrideOK {
-			result[key] = mergeJSONObject(baseObject, overrideObject)
+			result[key] = mergeObject(baseObject, overrideObject)
 			continue
 		}
 		result[key] = value
 	}
 	return result
+}
+
+func ignoredKey(key string) bool {
+	return key == "__proto__" || key == "constructor" || key == "prototype"
 }
