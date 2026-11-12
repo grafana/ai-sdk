@@ -79,7 +79,7 @@ stateDiagram-v2
   - **Failure:** `retryAt = now + failureBackoff` (30 s, fixed). Without a snapshot, install the failure snapshot. Otherwise keep last-known-good until the bound.
   - **Evicted meanwhile:** a result for an evicted entry is retired at once.
 - **Constants:** `ttl` 1 minute, `maxStaleness` 10 minutes, `readTimeout` 5 s, `failureBackoff` 30 s and `maxNamespaces` 1024 are named constants that `extensionhost.TenantCacheConfig` can override in tests. The clock comes from `Config.Clock`, so `synctest` drives it.
-- **Revision:** a per-entry counter that increments on every swap. It appears in logs. The list key is the snapshot itself, keyed by source inside it, so the effective key is (namespace, revision, source), and ownership follows from the source.
+- **Revision:** a per-entry counter that increments on every swap. It appears in logs. The list key is the snapshot itself, keyed by key ownership inside it, so the effective key is (namespace, revision, key ownership).
 - **Memory:** a snapshot keeps no raw configuration beyond what instances retain. Equality uses a SHA-256 of the normalized resources. The worst case is `maxNamespaces` × tenant definitions × 64 KiB of configuration retained by instances.
 
 ### Snapshots
@@ -96,14 +96,14 @@ A snapshot is built from the resources and the tenant definitions. For each tena
 - The **failure snapshot** marks every tenant definition failed, and builds nothing.
 - Enabled resources whose type this build doesn't implement are logged and counted once per entry and type (the entry keeps a set). Disabled and invalid ones are ignored.
 - Configuration and factory failures count once per build under `extension_events_total{phase="configure",event="failed"}`, with one warning naming the extension, namespace, policy and class. Calls that a `fail-closed` failure refuses are visible in the model metrics as unavailable errors.
-- Each snapshot precomputes `lists` per source with the existing `listsFor` logic over operator instances, default tenant instances and its own instances. It also keeps the unavailable definitions that apply to each source. An absent snapshot reuses the startup lists.
+- Each snapshot precomputes `lists` per key ownership with the existing list logic over operator instances, default tenant instances and its own instances. It also keeps the unavailable definitions that apply to each key ownership. An absent snapshot reuses the startup lists.
 
 ### How the pipeline consumes it
 
-- `New` builds the operator and default-tenant instances as today, plus `tenantSources[source]`: whether any tenant definition applies to that source.
+- `New` builds the operator and default-tenant instances as today, plus `tenantKeys[keys]`: whether any tenant definition applies to that key ownership.
 - `Compose` returns the model unchanged only when neither an instance nor a tenant definition applies to the source. Otherwise it returns the pipeline, as before.
 - `pipeline.newCall(ctx)`:
-  - When the cache is connected and `tenantSources[source]` is true, it acquires the namespace's snapshot and uses `snapshot.lists[source]`. Otherwise it uses the startup lists, so no read happens.
+  - When the cache is connected and `tenantKeys[source.Keys()]` is true, it acquires the namespace's snapshot and uses `snapshot.lists[source.Keys()]`. Otherwise it uses the startup lists, so no read happens.
   - When the lists carry an unavailable definition, the call ends with `ErrUnavailable` before admit, with an observe record of outcome error, as a fail-closed admit failure does.
 - Release:
   - after `DoGenerate` returns when the lists don't check output;

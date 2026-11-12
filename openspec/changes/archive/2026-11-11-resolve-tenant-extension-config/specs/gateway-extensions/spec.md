@@ -117,7 +117,7 @@ The Gateway SHALL read a namespace's configuration only for a call to which at l
 - **WHEN** the shipped backend, which registers no tenant extension, serves calls
 - **THEN** it SHALL make no `Middleware` reads
 
-#### Scenario: Extension narrowed to another source
+#### Scenario: Extension limited to another key ownership
 - **WHEN** the only tenant extension declares ownership `operator`, and a request BYOK call runs
 - **THEN** that call SHALL NOT read the namespace's configuration
 

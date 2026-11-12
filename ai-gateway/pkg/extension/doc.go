@@ -36,9 +36,10 @@
 //  6. [Observer] in name order, once per call, with the call's [Record], off
 //     the response's critical path.
 //
-// An extension applies to a call only when its declared key ownerships and
-// sources include the call's; otherwise none of its phases run and it gets no
-// record.
+// An extension applies to a call only when its declared key ownerships, or
+// both when none are declared, include the call's; otherwise none of its phases run and it gets no record. The
+// call's source is informational and does not decide where an extension
+// applies.
 //
 // # Request information
 //

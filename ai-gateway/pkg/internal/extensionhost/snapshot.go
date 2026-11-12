@@ -18,12 +18,12 @@ const closeTimeout = observeTimeout
 // not a call phase.
 const phaseConfigure extension.Phase = "configure"
 
-// snapshot is one namespace configuration revision: the lists each source's
-// calls use, and the instances built for it. Calls hold a reference while
+// snapshot is one namespace configuration revision: the lists the calls of
+// each key ownership use, and the instances built for it. Calls hold a reference while
 // they use its instances; once it is retired, the last release closes them.
 // A snapshot without its own instances needs no references.
 type snapshot struct {
-	lists  map[extension.Source]*lists
+	lists  map[extension.KeyOwnership]*lists
 	owned  []*instance
 	digest [sha256.Size]byte
 
@@ -161,9 +161,9 @@ func (h *Host) buildSnapshot(namespace string, resources []TenantResource, diges
 		instances = append(instances, built)
 	}
 	sortByName(instances)
-	built := &snapshot{lists: make(map[extension.Source]*lists, len(extension.Sources)), owned: owned, digest: digest}
-	for _, source := range extension.Sources {
-		built.lists[source] = newLists(instances, source, unavailable)
+	built := &snapshot{lists: make(map[extension.KeyOwnership]*lists, len(keyOwnerships)), owned: owned, digest: digest}
+	for _, keys := range keyOwnerships {
+		built.lists[keys] = newLists(instances, keys, unavailable)
 	}
 	h.track(built)
 	return built
@@ -196,9 +196,9 @@ func (h *Host) failureSnapshot() *snapshot {
 			unavailable = append(unavailable, definition)
 		}
 	}
-	failed := &snapshot{lists: make(map[extension.Source]*lists, len(extension.Sources))}
-	for _, source := range extension.Sources {
-		failed.lists[source] = newLists(h.operators, source, unavailable)
+	failed := &snapshot{lists: make(map[extension.KeyOwnership]*lists, len(keyOwnerships))}
+	for _, keys := range keyOwnerships {
+		failed.lists[keys] = newLists(h.operators, keys, unavailable)
 	}
 	return failed
 }

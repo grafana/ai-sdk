@@ -26,8 +26,6 @@ const observeTimeout = time.Second
 // phase.
 const phaseClose extension.Phase = "close"
 
-var errUnknownSource = errors.New("extensions: selection source has no extension configuration")
-
 // Config configures a [Host].
 type Config struct {
 	Plan       *Plan
@@ -57,11 +55,12 @@ type Host struct {
 	defaults map[string]*instance
 	// tenant holds every tenant-scope definition by name.
 	tenant []extension.Definition
-	// tenantSources reports, per source, whether a tenant definition applies.
-	tenantSources map[extension.Source]bool
-	// lists are the startup instances' lists, used without namespace
-	// configuration.
-	lists map[extension.Source]*lists
+	// tenantKeys reports, per key ownership, whether a tenant definition
+	// applies.
+	tenantKeys map[extension.KeyOwnership]bool
+	// lists are the startup instances' lists per key ownership, used without
+	// namespace configuration.
+	lists map[extension.KeyOwnership]*lists
 	// failed is the snapshot of a namespace whose configuration cannot be
 	// read: every tenant extension applies its failure policy.
 	failed             *snapshot
@@ -99,9 +98,9 @@ type instance struct {
 	closer            extension.Closer
 }
 
-// lists are the instances that apply to calls from one source, by name, the
-// positions of the transformers among them in transform order, and the
-// fail-closed tenant extensions whose configuration failed.
+// lists are the instances that apply to calls with one key ownership, by
+// name, the positions of the transformers among them in transform order, and
+// the fail-closed tenant extensions whose configuration failed.
 type lists struct {
 	byName            []*instance
 	transforms        []int
@@ -109,6 +108,9 @@ type lists struct {
 	observer          bool
 	unavailable       []extension.Definition
 }
+
+// keyOwnerships are the key ownerships the host keeps lists for.
+var keyOwnerships = []extension.KeyOwnership{extension.KeysOperator, extension.KeysCustomer}
 
 // empty reports whether the lists leave a call to the selected model alone.
 func (l *lists) empty() bool { return len(l.byName) == 0 && len(l.unavailable) == 0 }
@@ -179,11 +181,11 @@ func New(config Config) (*Host, error) {
 	}
 	sortByName(host.startup)
 	sortByName(host.operators)
-	host.lists = make(map[extension.Source]*lists, len(extension.Sources))
-	host.tenantSources = make(map[extension.Source]bool, len(extension.Sources))
-	for _, source := range extension.Sources {
-		host.lists[source] = newLists(host.startup, source, nil)
-		host.tenantSources[source] = slices.ContainsFunc(host.tenant, func(definition extension.Definition) bool { return applies(definition, source) })
+	host.lists = make(map[extension.KeyOwnership]*lists, len(keyOwnerships))
+	host.tenantKeys = make(map[extension.KeyOwnership]bool, len(keyOwnerships))
+	for _, keys := range keyOwnerships {
+		host.lists[keys] = newLists(host.startup, keys, nil)
+		host.tenantKeys[keys] = slices.ContainsFunc(host.tenant, func(definition extension.Definition) bool { return applies(definition, keys) })
 	}
 	host.failed = host.failureSnapshot()
 	return host, nil
@@ -226,11 +228,12 @@ func construct(planned planned, logger *slog.Logger, registerer sharedRegisterer
 }
 
 // newLists returns the lists of the instances, in name order, that apply to
-// source, with the unavailable definitions that apply to it.
-func newLists(instances []*instance, source extension.Source, unavailable []extension.Definition) *lists {
+// calls whose keys are owned by keys, with the unavailable definitions that
+// apply to them.
+func newLists(instances []*instance, keys extension.KeyOwnership, unavailable []extension.Definition) *lists {
 	selected := &lists{}
 	for _, built := range instances {
-		if !applies(built.definition, source) {
+		if !applies(built.definition, keys) {
 			continue
 		}
 		selected.byName = append(selected.byName, built)
@@ -238,7 +241,7 @@ func newLists(instances []*instance, source extension.Source, unavailable []exte
 		selected.observer = selected.observer || built.observer != nil
 	}
 	for _, definition := range unavailable {
-		if applies(definition, source) {
+		if applies(definition, keys) {
 			selected.unavailable = append(selected.unavailable, definition)
 		}
 	}
@@ -262,14 +265,13 @@ func newLists(instances []*instance, source extension.Source, unavailable []exte
 
 // Compose is the extension layer of the runtime's model composer: it wraps a
 // selection's model in the extension pipeline, or returns the model
-// unchanged when no extension can apply to its source. Which extensions run
-// is decided per call, from the call's namespace configuration.
+// unchanged when no extension can apply to the key ownership of its source.
+// Which extensions run is decided per call, from the call's namespace
+// configuration.
 func (h *Host) Compose(selected execution.Selection) (provider.LanguageModel, error) {
-	applicable, ok := h.lists[selected.Source]
-	if !ok {
-		return nil, errUnknownSource
-	}
-	if applicable.empty() && !h.tenantSources[selected.Source] {
+	keys := selected.Source.Keys()
+	applicable := h.lists[keys]
+	if applicable.empty() && !h.tenantKeys[keys] {
 		return selected.Model, nil
 	}
 	return &pipeline{LanguageModel: selected.Model, host: h, source: selected.Source, requested: selected.RequestedID(), canonical: selected.CanonicalID(), candidates: candidates(selected.Expected()), attempts: selected.Attempts}, nil
@@ -289,18 +291,18 @@ func (h *Host) ConnectTenants(reader TenantReader) {
 	}
 }
 
-// resolve returns the lists for a call from source in namespace, and the
-// snapshot the call holds until it releases it.
-func (h *Host) resolve(ctx context.Context, namespace string, source extension.Source) (*lists, *snapshot, error) {
+// resolve returns the lists for a call in namespace whose keys are owned by
+// keys, and the snapshot the call holds until it releases it.
+func (h *Host) resolve(ctx context.Context, namespace string, keys extension.KeyOwnership) (*lists, *snapshot, error) {
 	cache := h.cache.Load()
-	if cache == nil || !h.tenantSources[source] {
-		return h.lists[source], nil, nil
+	if cache == nil || !h.tenantKeys[keys] {
+		return h.lists[keys], nil, nil
 	}
 	held, err := cache.acquire(ctx, namespace)
 	if err != nil {
 		return nil, nil, err
 	}
-	return held.lists[source], held, nil
+	return held.lists[keys], held, nil
 }
 
 // candidates returns the extension view of a selection's expected attempts.

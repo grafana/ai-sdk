@@ -141,10 +141,9 @@ func (t Type) Member() string
 func All() []Type
 
 // Implementation is how a build implements a type. Failure policy, key
-// ownership, sources and priority belong to the implementation.
+// ownership and priority belong to the implementation.
 type Implementation struct {
 	Keys          []extension.KeyOwnership
-	Sources       []extension.Source
 	Priority      int
 	FailurePolicy extension.FailurePolicy
 	New           func(config json.RawMessage, deps extension.Dependencies) (any, error)

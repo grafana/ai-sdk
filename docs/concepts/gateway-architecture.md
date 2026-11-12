@@ -215,7 +215,7 @@ sequenceDiagram
    BYOK chain with its own log redaction for request accounts. Inside the
    observers and outside the selected model, the
    [extension pipeline](../guides/gateway-extensions.md) runs the
-   distribution's extensions that apply to the call's key ownership and source.
+   distribution's extensions that apply to the call's key ownership.
    Operator extensions are built at startup. When a tenant extension applies,
    the pipeline first resolves the call namespace's configuration from a cache
    that reads the namespace's `Middleware` resources as the plugin, never as

@@ -63,7 +63,7 @@ const (
 // first read completes, or after shutdown has begun.
 func (p *pipeline) newCall(ctx context.Context) (*call, error) {
 	base := p.host.requestInfo(ctx)
-	applicable, held, err := p.host.resolve(ctx, base.Namespace, p.source)
+	applicable, held, err := p.host.resolve(ctx, base.Namespace, p.source.Keys())
 	if errors.Is(err, errTenantsClosed) {
 		return nil, extension.ErrUnavailable
 	}

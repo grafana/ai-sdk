@@ -38,8 +38,9 @@ type Call struct {
 	// Namespace is the route namespace the platform authorized.
 	Namespace string
 	Keys      KeyOwnership
-	Source    Source
-	Caller    CallerType
+	// Source is informational; see [Source].
+	Source Source
+	Caller CallerType
 	// CallerIdentity is the verified identity actor's typed UID,
 	// user:<uid> or service-account:<uid>, also for an internal service
 	// calling on behalf of one. It is empty when the caller has none.
