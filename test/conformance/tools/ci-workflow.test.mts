@@ -18,6 +18,46 @@ const sharedCD = /^grafana\/plugin-ci-workflows\/\.github\/workflows\/cd\.yml@ci
 const publishDocument = parseDocument(readFileSync(resolve(root, ".github/workflows", publishFile), "utf8"));
 assert.deepEqual(publishDocument.errors, []);
 const publishing = publishDocument.toJS() as { on: unknown; permissions: unknown; concurrency: unknown; jobs: typeof jobs };
+const promoteFile = "publish-ai-gateway-ops.yml";
+const promoteDocument = parseDocument(readFileSync(resolve(root, ".github/workflows", promoteFile), "utf8"));
+assert.deepEqual(promoteDocument.errors, []);
+const promoting = promoteDocument.toJS() as typeof publishing;
+const updaterImage = "us-docker.pkg.dev/grafanalabs-global/docker-deployment-tools-prod/updater";
+const versionsFile = "ksonnet/environments/appplugins/grafana-aigateway-app/versions.libsonnet";
+const runPin = (script: string, env: Record<string, string>) => {
+  const stub = mkdtempSync(join(tmpdir(), "pin-"));
+  try {
+    writeFileSync(join(stub, "docker"), `#!/usr/bin/env bash\nprintf '%s\\0' "$@" > "${stub}/args"\nprintf '%s' "$GITHUB_TOKEN" > "${stub}/token"\n`);
+    writeFileSync(join(stub, "gh"), `#!/usr/bin/env bash\nprintf '%s\\0' "$GH_TOKEN" "$@" > "${stub}/gh-args"\n[ -n "$STUB_HEAD" ] || exit 1\nprintf '%s\\n' "$STUB_HEAD"\n`);
+    chmodSync(join(stub, "docker"), 0o755);
+    chmodSync(join(stub, "gh"), 0o755);
+    const result = spawnSync("bash", ["-c", script], {
+      env: {
+        ...process.env,
+        PATH: `${stub}:${process.env.PATH}`,
+        GITHUB_TOKEN: "test-token",
+        GITHUB_SERVER_URL: "https://github.com",
+        GITHUB_REPOSITORY: "grafana/ai-sdk",
+        GITHUB_RUN_ID: "42",
+        ...env,
+      },
+    });
+    const called = existsSync(join(stub, "args"));
+    const args = called ? readFileSync(join(stub, "args"), "utf8").split("\0").slice(0, -1) : undefined;
+    const config = args?.find((arg) => arg.startsWith("CONFIG_JSON="));
+    return {
+      status: result.status,
+      stdout: result.stdout.toString(),
+      headLookup: existsSync(join(stub, "gh-args")) ? readFileSync(join(stub, "gh-args"), "utf8").split("\0").slice(0, -1) : undefined,
+      args,
+      configArg: config,
+      config: config === undefined ? undefined : JSON.parse(config.slice("CONFIG_JSON=".length)) as unknown,
+      token: called ? readFileSync(join(stub, "token"), "utf8") : undefined,
+    };
+  } finally {
+    rmSync(stub, { recursive: true, force: true });
+  }
+};
 const normalize = (value: string | undefined) => value?.replace(/\s+/g, " ").trim();
 const needs = (job: string) => [jobs[job]!.needs ?? []].flat();
 const steps = (job: string) => jobs[job]!.steps ?? [];
@@ -246,7 +286,7 @@ describe("candidate-source workflow gates", () => {
       assert.equal(jobs[name]!.uses, undefined, `${name}: publication must not lengthen or cancel the required CI run`);
     }
     const workflows = resolve(root, ".github/workflows");
-    for (const file of readdirSync(workflows).filter((name) => name !== publishFile)) {
+    for (const file of readdirSync(workflows).filter((name) => name !== publishFile && name !== promoteFile)) {
       assert.doesNotMatch(readFileSync(resolve(workflows, file), "utf8"), /plugin-ci-workflows/, `${file} must not publish the plugin`);
     }
   });
@@ -276,54 +316,22 @@ describe("candidate-source workflow gates", () => {
 
     const sha = "0123456789abcdef0123456789abcdef01234567";
     const newer = "fedcba9876543210fedcba9876543210fedcba98";
-    const run = (version: string, head: string | null = sha) => {
-      const stub = mkdtempSync(join(tmpdir(), "pin-"));
-      try {
-        writeFileSync(join(stub, "docker"), `#!/usr/bin/env bash\nprintf '%s\\0' "$@" > "${stub}/args"\nprintf '%s' "$GITHUB_TOKEN" > "${stub}/token"\n`);
-        writeFileSync(join(stub, "gh"), `#!/usr/bin/env bash\nprintf '%s\\0' "$GH_TOKEN" "$@" > "${stub}/gh-args"\n[ -n "$STUB_HEAD" ] || exit 1\nprintf '%s\\n' "$STUB_HEAD"\n`);
-        chmodSync(join(stub, "docker"), 0o755);
-        chmodSync(join(stub, "gh"), 0o755);
-        const result = spawnSync("bash", ["-c", pin.run!], {
-          env: {
-            ...process.env,
-            PATH: `${stub}:${process.env.PATH}`,
-            GITHUB_TOKEN: "test-token",
-            GH_TOKEN: "read-token",
-            STUB_HEAD: head ?? "",
-            PLUGIN_VERSION: version,
-            GITHUB_SHA: sha,
-            GITHUB_SERVER_URL: "https://github.com",
-            GITHUB_REPOSITORY: "grafana/ai-sdk",
-            GITHUB_RUN_ID: "42",
-          },
-        });
-        const called = existsSync(join(stub, "args"));
-        return {
-          status: result.status,
-          stdout: result.stdout.toString(),
-          headLookup: existsSync(join(stub, "gh-args")) ? readFileSync(join(stub, "gh-args"), "utf8").split("\0").slice(0, -1) : undefined,
-          args: called ? readFileSync(join(stub, "args"), "utf8").split("\0").slice(0, -1) : undefined,
-          token: called ? readFileSync(join(stub, "token"), "utf8") : undefined,
-        };
-      } finally {
-        rmSync(stub, { recursive: true, force: true });
-      }
-    };
+    const run = (version: string, head: string | null = sha) =>
+      runPin(pin.run!, { GH_TOKEN: "read-token", STUB_HEAD: head ?? "", PLUGIN_VERSION: version, GITHUB_SHA: sha });
 
     const version = `0.1.0-alpha.1+${sha}`;
     const published = run(version);
     assert.equal(published.status, 0);
     assert.deepEqual(published.headLookup, ["read-token", "api", "repos/grafana/ai-sdk/git/ref/heads/main", "--jq", ".object.sha"]);
     assert.equal(published.token, "test-token");
-    const config = published.args!.find((arg) => arg.startsWith("CONFIG_JSON="));
-    assert.deepEqual(published.args, ["run", "--rm", "-e", "GITHUB_TOKEN", "-e", config, "us-docker.pkg.dev/grafanalabs-global/docker-deployment-tools-prod/updater"]);
-    assert.deepEqual(JSON.parse(config!.slice("CONFIG_JSON=".length)), {
+    assert.deepEqual(published.args, ["run", "--rm", "-e", "GITHUB_TOKEN", "-e", published.configArg, updaterImage]);
+    assert.deepEqual(published.config, {
       pull_request_branch_prefix: "auto-merge/updater/grafana-aigateway-app/dev",
       pull_request_enabled: true,
       pull_request_existing_strategy: "replace",
       pull_request_message: "Created by https://github.com/grafana/ai-sdk/actions/runs/42. This PR will auto-merge once CI has passed.",
       update_jsonnet_attribute_configs: [{
-        file_path: "ksonnet/environments/appplugins/grafana-aigateway-app/versions.libsonnet",
+        file_path: versionsFile,
         jsonnet_key: "dev",
         jsonnet_value: version,
       }],
@@ -344,6 +352,107 @@ describe("candidate-source workflow gates", () => {
       const unknown = run(version, head);
       assert.notEqual(unknown.status, 0, `${head}`);
       assert.equal(unknown.args, undefined, `${head}: must not pin without knowing the head of main`);
+    }
+  });
+
+  it("promotes only a dev-published main commit to the ops catalog on manual dispatch", () => {
+    assert.deepEqual(promoting.on, {
+      workflow_dispatch: {
+        inputs: {
+          commit: {
+            description: "Full SHA of the main commit to promote; its dev publication must have succeeded",
+            required: true,
+            type: "string",
+          },
+        },
+      },
+    });
+    assert.deepEqual(promoting.permissions, {});
+    assert.deepEqual(promoting.concurrency, { group: "ai-gateway-ops-publish", "cancel-in-progress": false });
+    assert.deepEqual(Object.keys(promoting.jobs).sort(), ["publish", "source-ci", "update-plugin-version"]);
+
+    const gate = promoting.jobs["source-ci"]!;
+    const devGate = publishing.jobs["source-ci"]!;
+    assert.equal(gate.if, "${{ github.repository == 'grafana/ai-sdk' && github.ref == 'refs/heads/main' }}");
+    assert.deepEqual(gate.permissions, devGate.permissions);
+    assert.deepEqual(gate.steps!.slice(0, -1), devGate.steps!.slice(0, -1), "run the same locked gate tooling as dev");
+    assert.ok(gate.steps!.every((step) => step["continue-on-error"] !== true));
+    const check = gate.steps!.at(-1)!;
+    assert.equal(check.run, devGate.steps!.at(-1)!.run);
+    assert.deepEqual(check.env, { GH_READ_TOKEN: "${{ github.token }}", GATEWAY_PROMOTED_COMMIT: "${{ inputs.commit }}" });
+    const gateScript = readFileSync(resolve(root, "release/tooling/gateway-publication-gate.mjs"), "utf8");
+    assert.ok(gateScript.includes(`'${publishFile}'`), "the gate reads the dev publication workflow");
+    assert.ok(gateScript.includes(`'${publishing.jobs.publish!.name} / Publish to catalog (dev)'`), "the gate requires the dev catalog job by its name");
+
+    const job = promoting.jobs.publish!;
+    const dev = publishing.jobs.publish!;
+    assert.equal(job.needs, "source-ci");
+    assert.equal(job.if, undefined, "publication must not run when the gate fails or is skipped");
+    assert.equal(job.uses, dev.uses, "use the same pinned shared workflow as dev");
+    assert.equal(job.steps, undefined);
+    assert.equal(job.secrets, undefined);
+    assert.notEqual(job["continue-on-error"], true);
+    assert.deepEqual(job.permissions, dev.permissions);
+    assert.deepEqual(job.with, {
+      ...dev.with,
+      branch: "${{ inputs.commit }}",
+      environment: "ops",
+      "plugin-version-suffix": "${{ inputs.commit }}",
+    }, "rebuild the promoted commit with the dev settings, so ops gets the version dev published");
+  });
+
+  it("requests a reviewed ops pin for exactly the promoted version", () => {
+    const job = promoting.jobs["update-plugin-version"]!;
+    const dev = publishing.jobs["update-plugin-version"]!;
+    assert.equal(job.needs, "publish");
+    assert.equal(job.if, "${{ github.repository == 'grafana/ai-sdk' }}", "no status function, so a failed or skipped publish skips the pin");
+    assert.deepEqual(job.permissions, dev.permissions);
+    assert.equal(job.uses, undefined);
+    assert.equal(job.secrets, undefined);
+    const pinSteps = job.steps!;
+    assert.ok(pinSteps.every((step) => step["continue-on-error"] !== true && step.if === undefined));
+    assert.equal(pinSteps.length, 3);
+    assert.deepEqual(pinSteps.slice(0, 2), dev.steps!.slice(0, 2), "reuse the dev updater authentication");
+    const pin = pinSteps[2]!;
+    assert.deepEqual(pin.env, {
+      GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}",
+      PROMOTED_COMMIT: "${{ inputs.commit }}",
+      PLUGIN_VERSION: "${{ fromJSON(needs.publish.outputs.plugin).version }}",
+    });
+    assert.doesNotMatch(pin.run!, /\$\{\{/, "pass expressions through env");
+
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const run = (version: string, commit = sha) =>
+      runPin(pin.run!, { PLUGIN_VERSION: version, PROMOTED_COMMIT: commit, GITHUB_SHA: "f".repeat(40), STUB_HEAD: "f".repeat(40) });
+
+    const version = `0.1.0-alpha.1+${sha}`;
+    const promoted = run(version);
+    assert.equal(promoted.status, 0);
+    assert.equal(promoted.headLookup, undefined, "ops may pin any promoted commit, including an older one");
+    assert.equal(promoted.token, "test-token");
+    assert.deepEqual(promoted.args, ["run", "--rm", "-e", "GITHUB_TOKEN", "-e", promoted.configArg, updaterImage]);
+    assert.deepEqual(promoted.config, {
+      pull_request_branch_prefix: "updater/grafana-aigateway-app/ops",
+      pull_request_enabled: true,
+      pull_request_existing_strategy: "replace",
+      pull_request_message: `Created by https://github.com/grafana/ai-sdk/actions/runs/42. It promotes ${sha}, already published to dev, to ops. It does not auto-merge: review before merging.`,
+      update_jsonnet_attribute_configs: [{
+        file_path: versionsFile,
+        jsonnet_key: "ops",
+        jsonnet_value: version,
+      }],
+    });
+    assert.doesNotMatch(pin.run!, /auto-merge\//, "ops pins need human review");
+
+    for (const mismatch of ["", `+${sha}`, "0.1.0-alpha.1", `0.1.0-alpha.1+${"f".repeat(40)}`, `${version}-dirty`]) {
+      const refused = run(mismatch);
+      assert.notEqual(refused.status, 0, mismatch);
+      assert.equal(refused.args, undefined, `${mismatch}: must not request a pin`);
+    }
+    for (const commit of ["", "main", sha.slice(0, 7)]) {
+      const refused = run(`0.1.0-alpha.1+${commit}`, commit);
+      assert.notEqual(refused.status, 0, commit);
+      assert.equal(refused.args, undefined, `${commit}: must not request a pin`);
     }
   });
 
