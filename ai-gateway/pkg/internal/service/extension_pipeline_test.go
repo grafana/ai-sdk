@@ -199,3 +199,26 @@ func TestExtensionRequest(t *testing.T) {
 	}
 	assert.Equal(t, extension.Call{}, ExtensionRequest(context.Background()))
 }
+
+func TestExtensionPipeline_UnobservedSourceRunsNoPhase(t *testing.T) {
+	var calls int
+	lower := &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		calls++
+		return &provider.GenerateResult{}, nil
+	}}
+	for _, source := range []extension.Source{"", extension.SourceStackCatalog} {
+		t.Run(string(source), func(t *testing.T) {
+			recorder := &pipelineRecorder{}
+			observed, host := newExtensionRuntime(t, func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+				return execution.Selection{ID: id, Model: lower, Source: source}, nil
+			}, recorder)
+			_, err := observed.runtime.Call(callerContext(t, gatewayauth.ConfiguredAccounts), "public", provider.CallOptions{Prompt: []provider.Message{provider.UserText("observe me")}})
+			category, _ := execution.ClassifySelection(err)
+			assert.Equal(t, execution.CategoryInternal, category)
+			host.Close(context.Background())
+			assert.Empty(t, recorder.admitted)
+			assert.Empty(t, recorder.observed)
+			assert.Zero(t, calls)
+		})
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,7 +123,8 @@ func TestHost_Compose(t *testing.T) {
 			h.flush()
 			ran := map[string]bool{}
 			for _, entry := range log.list() {
-				ran[entry[:len(entry)-len(entry[indexColon(entry):])]] = true
+				name, _, _ := strings.Cut(entry, ":")
+				ran[name] = true
 			}
 			assert.Len(t, ran, len(tc.applies))
 			for _, name := range tc.applies {
@@ -130,13 +132,4 @@ func TestHost_Compose(t *testing.T) {
 			}
 		})
 	}
-}
-
-func indexColon(entry string) int {
-	for i, character := range entry {
-		if character == ':' {
-			return i
-		}
-	}
-	return len(entry)
 }
