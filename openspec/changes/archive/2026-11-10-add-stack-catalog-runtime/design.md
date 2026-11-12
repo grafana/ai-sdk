@@ -76,7 +76,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 - BYOK selections carry no keys, so the existing BYOK rule (caller-owned echoes are kept) is unchanged. Request keys reach nothing but the caller, so they need no redaction:
   - `applyPolicy` removes the `gateway` namespace, `byok` included, from the call options before selection, so no middleware, observer or native request body sees it. The keys live only in each account's provider client and its request header.
   - Logs keep only the closed allowlist, never error text or options. Metrics have closed labels. Agent Observability is metadata-only, and its filter drops options, input, output and `CallError`.
-  - BYOK chains have no physical attempt sink. Startup failures are the only logged Go errors.
+  - BYOK chains have no physical attempt sink. Startup and plugin-run failures are the only logged Go errors, and neither carries request data.
   - Native failure summaries (the execution overview and event-local `nativeError`) are written only into the response to the caller, who supplied the keys. The runtime, ProviderWire and the BYOK package log nothing.
 - All decrypted values are included, not just the placed providers', mirroring the operator rule ("including unused accounts").
 
