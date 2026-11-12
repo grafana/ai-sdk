@@ -26,8 +26,6 @@ const observeTimeout = time.Second
 // phase.
 const phaseClose extension.Phase = "close"
 
-var errUnknownSource = errors.New("extensions: selection source has no extension configuration")
-
 // Config configures a [Host].
 type Config struct {
 	Plan       *Plan
@@ -45,7 +43,7 @@ type Config struct {
 // around each call. It is safe for concurrent use.
 type Host struct {
 	instances    []*instance
-	lists        map[extension.Source]*lists
+	lists        map[extension.KeyOwnership]*lists
 	logger       *slog.Logger
 	clock        func() time.Time
 	requestInfo  func(context.Context) extension.Call
@@ -66,8 +64,8 @@ type instance struct {
 	closer            extension.Closer
 }
 
-// lists are the instances that apply to calls from one source, by name, and
-// the positions of the transformers among them in transform order.
+// lists are the instances that apply to calls with one key ownership, by
+// name, and the positions of the transformers among them in transform order.
 type lists struct {
 	byName            []*instance
 	transforms        []int
@@ -114,9 +112,9 @@ func New(config Config) (*Host, error) {
 		}
 	}
 	slices.SortFunc(host.instances, func(a, b *instance) int { return strings.Compare(a.definition.Name, b.definition.Name) })
-	host.lists = make(map[extension.Source]*lists, len(extension.Sources))
-	for _, source := range extension.Sources {
-		host.lists[source] = host.listsFor(source)
+	host.lists = map[extension.KeyOwnership]*lists{
+		extension.KeysOperator: host.listsFor(extension.KeysOperator),
+		extension.KeysCustomer: host.listsFor(extension.KeysCustomer),
 	}
 	return host, nil
 }
@@ -150,10 +148,10 @@ func construct(planned planned, config Config) (*instance, error) {
 	return built, nil
 }
 
-func (h *Host) listsFor(source extension.Source) *lists {
+func (h *Host) listsFor(keys extension.KeyOwnership) *lists {
 	selected := &lists{}
 	for _, built := range h.instances {
-		if !applies(built.definition, source) {
+		if !applies(built.definition, keys) {
 			continue
 		}
 		selected.byName = append(selected.byName, built)
@@ -179,13 +177,10 @@ func (h *Host) listsFor(source extension.Source) *lists {
 }
 
 // Compose is the extension layer of the runtime's model composer: it wraps a
-// selection's model in the pipeline of the extensions that apply to its
-// source, or returns the model unchanged when none applies.
+// selection's model in the pipeline of the extensions that apply to the key
+// ownership of its source, or returns the model unchanged when none applies.
 func (h *Host) Compose(selected execution.Selection) (provider.LanguageModel, error) {
-	applicable, ok := h.lists[selected.Source]
-	if !ok {
-		return nil, errUnknownSource
-	}
+	applicable := h.lists[selected.Source.Keys()]
 	if len(applicable.byName) == 0 {
 		return selected.Model, nil
 	}

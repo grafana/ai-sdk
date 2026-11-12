@@ -117,14 +117,16 @@ Observability exports; it never becomes a metric label or reaches a provider.
 
 ## Choose where an extension applies
 
-- **Key ownership.** `operator` calls use the operator's catalog and keys;
-  `customer` calls use the customer's keys, from request BYOK or a stack
-  catalog. `Keys` defaults to both.
-- **Sources.** `Sources` narrows further to `operator-catalog`,
-  `request-byok` or `stack-catalog`.
+Declare where an extension applies with `Keys`, the key ownership of the
+calls it handles. `operator` calls use the operator's catalog and keys;
+`customer` calls use the customer's keys, from request BYOK or a stack catalog.
+`Keys` defaults to both.
 
 An extension that doesn't apply to a call runs none of its phases and gets no
-record.
+record. `Call.Source` names where the call's models and keys came from, such as
+`operator-catalog`, `request-byok` or `stack-catalog`. It is informational:
+the set may grow, and a new source keeps its key ownership, so don't use it to
+decide whether an extension applies.
 
 ## Handle failures
 
