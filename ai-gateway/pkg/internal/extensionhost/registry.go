@@ -66,14 +66,6 @@ func validateDefinition(definition extension.Definition) error {
 			return invalid("key ownership")
 		}
 	}
-	for i, source := range definition.Sources {
-		if !slices.Contains(extension.Sources, source) || slices.Contains(definition.Sources[:i], source) {
-			return invalid("source")
-		}
-		if len(definition.Keys) != 0 && !slices.Contains(definition.Keys, source.Keys()) {
-			return fmt.Errorf("extensions: extension %q declares source %q outside its key ownership", definition.Name, source)
-		}
-	}
 	for i, secret := range definition.Secrets {
 		if !secretNamePattern.MatchString(secret) || slices.Contains(definition.Secrets[:i], secret) {
 			return invalid("secret name")
@@ -85,10 +77,8 @@ func validateDefinition(definition extension.Definition) error {
 	return nil
 }
 
-// applies reports whether definition applies to calls from source.
-func applies(definition extension.Definition, source extension.Source) bool {
-	if len(definition.Keys) != 0 && !slices.Contains(definition.Keys, source.Keys()) {
-		return false
-	}
-	return len(definition.Sources) == 0 || slices.Contains(definition.Sources, source)
+// applies reports whether definition applies to calls whose keys are owned by
+// keys.
+func applies(definition extension.Definition, keys extension.KeyOwnership) bool {
+	return len(definition.Keys) == 0 || slices.Contains(definition.Keys, keys)
 }

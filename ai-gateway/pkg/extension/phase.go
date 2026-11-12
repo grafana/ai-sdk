@@ -38,8 +38,9 @@ type Call struct {
 	// Namespace is the route namespace the platform authorized.
 	Namespace string
 	Keys      KeyOwnership
-	Source    Source
-	Caller    CallerType
+	// Source is informational; see [Source].
+	Source Source
+	Caller CallerType
 	// CorrelationID identifies the call in Gateway logs.
 	CorrelationID string
 	// Model is the selected model: its canonical ID for catalog selections, or
