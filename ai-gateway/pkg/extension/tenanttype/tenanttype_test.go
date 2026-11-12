@@ -30,7 +30,6 @@ func TestType_Bind(t *testing.T) {
 	built := false
 	definition := tenantType.Bind(Implementation{
 		Keys:          []extension.KeyOwnership{extension.KeysCustomer},
-		Priority:      3,
 		FailurePolicy: extension.FailSkip,
 		New: func(json.RawMessage, extension.Dependencies) (any, error) {
 			built = true
@@ -40,7 +39,6 @@ func TestType_Bind(t *testing.T) {
 	assert.Equal(t, "default-instructions", definition.Name)
 	assert.Equal(t, extension.ScopeTenant, definition.Scope)
 	assert.Equal(t, []extension.KeyOwnership{extension.KeysCustomer}, definition.Keys)
-	assert.Equal(t, 3, definition.Priority)
 	assert.Equal(t, extension.FailSkip, definition.FailurePolicy)
 	assert.JSONEq(t, string(configSchema.JSON()), string(definition.ConfigSchema.JSON()))
 	assert.True(t, definition.EnabledByDefault)

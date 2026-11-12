@@ -113,7 +113,7 @@ func mustSchema(t *testing.T, raw string) schema.Schema {
 func configurable(t *testing.T, name string, log *journal, change ...func(*extension.Definition)) extension.Definition {
 	t.Helper()
 	valueSchema := mustSchema(t, `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"},"limits":{"type":"object","properties":{"rpm":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}`)
-	base := []func(*extension.Definition){tenant(0), skip, func(d *extension.Definition) {
+	base := []func(*extension.Definition){tenant, skip, func(d *extension.Definition) {
 		d.EnabledByDefault = false
 		d.ConfigSchema = valueSchema
 		d.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {

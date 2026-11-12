@@ -47,10 +47,7 @@ type Definition struct {
 	Scope Scope
 	// Keys lists the key ownerships of the calls the extension applies to,
 	// whatever their source. Nil applies to both.
-	Keys []KeyOwnership
-	// Priority orders request transforms within a scope, ascending. Ties are
-	// ordered by name.
-	Priority      int
+	Keys          []KeyOwnership
 	FailurePolicy FailurePolicy
 	// ConfigSchema is the JSON Schema the extension's configuration must match.
 	// The zero value accepts only an empty configuration.
