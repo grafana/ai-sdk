@@ -174,20 +174,6 @@ Every call into extension code, including factories, phases and close, SHALL rec
 - **WHEN** a `fail-closed` response inspector panics on a stream part
 - **THEN** the stream SHALL end with one unavailable error event, other concurrent calls SHALL be unaffected, and the panic SHALL be counted
 
-### Requirement: Key ownership filtering
-Key ownership SHALL be `operator` for operator-catalog selections and `customer` for every other source, including sources added later. An extension SHALL apply to a call when its declared ownerships, which default to both, include the call's ownership. The call's source SHALL be informational for extensions and SHALL NOT decide where an extension applies. An extension that does not apply SHALL run no phase and get no observe record.
-
-#### Scenario: Operator-owned extension on a BYOK call
-- **WHEN** an extension declares ownership `operator` and a request BYOK call runs
-- **THEN** none of its phases SHALL run for that call
-
-#### Scenario: Undeclared ownership
-- **WHEN** an extension declares no ownership
-- **THEN** it SHALL apply to operator-catalog, routed and request BYOK calls
-
-#### Scenario: Customer-owned extension
-- **WHEN** an extension declares ownership `customer`
-- **THEN** it SHALL apply to request BYOK and stack-catalog calls and SHALL NOT apply to operator-catalog calls
 ### Requirement: Pipeline placement
 The pipeline SHALL wrap every selection, whatever its source, inside the logical observers and outside the selected model and its fallback chain. Extension outcomes SHALL NOT be retried by fallback, and request phases SHALL complete before any provider call.
 
@@ -246,3 +232,18 @@ Enabled extensions SHALL be constructed at startup, before the plugin serves req
 #### Scenario: Concurrent calls
 - **WHEN** many calls run concurrently through one extension
 - **THEN** each call's phases SHALL run sequentially and see only that call's state
+
+### Requirement: Key ownership filtering
+Key ownership SHALL be `operator` for operator-catalog selections and `customer` for every other source, including sources added later. An extension SHALL apply to a call when its declared ownerships, which default to both, include the call's ownership. The call's source SHALL be informational for extensions and SHALL NOT decide where an extension applies. An extension that does not apply SHALL run no phase and get no observe record.
+
+#### Scenario: Operator-owned extension on a BYOK call
+- **WHEN** an extension declares ownership `operator` and a request BYOK call runs
+- **THEN** none of its phases SHALL run for that call
+
+#### Scenario: Undeclared ownership
+- **WHEN** an extension declares no ownership
+- **THEN** it SHALL apply to operator-catalog, routed and request BYOK calls
+
+#### Scenario: Customer-owned extension
+- **WHEN** an extension declares ownership `customer`
+- **THEN** it SHALL apply to request BYOK and stack-catalog calls and SHALL NOT apply to operator-catalog calls
