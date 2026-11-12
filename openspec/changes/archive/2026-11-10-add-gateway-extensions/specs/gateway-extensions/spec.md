@@ -18,10 +18,10 @@ A public Go package in the Gateway module SHALL define the extension contract: d
 - **THEN** it SHALL state that the API is v0, experimental and may break in minor releases
 
 ### Requirement: Extension definitions
-An extension definition SHALL declare a name, a scope of `operator` or `tenant`, a failure policy of `fail-closed` or `skip`, and a factory. It MAY declare key ownerships, sources, a transform priority, a JSON Schema for its configuration, secret names and whether it is enabled by default. Names SHALL be 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit.
+An extension definition SHALL declare a name, a scope of `operator` or `tenant`, a failure policy of `fail-closed` or `skip`, and a factory. It MAY declare key ownerships, a JSON Schema for its configuration, secret names and whether it is enabled by default. Names SHALL be 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit.
 
 #### Scenario: Invalid definition
-- **WHEN** a definition has an invalid name, an unknown scope or failure policy, no factory, a configuration schema that does not compile, or an invalid or repeated secret name
+- **WHEN** a definition has an invalid name, an unknown scope or failure policy, an unknown or repeated key ownership, no factory, a configuration schema that does not compile, or an invalid or repeated secret name
 - **THEN** startup SHALL fail before any request is served, naming the extension and the invalid field
 
 #### Scenario: Duplicate names
@@ -69,11 +69,11 @@ Admit, request inspection and response inspection SHALL each run across extensio
 - **THEN** `a` and `b` SHALL have run admit, `c` SHALL NOT, and no transform, inspection or model invocation SHALL occur
 
 ### Requirement: Transform order
-Request transforms SHALL run tenant-scope extensions first, then operator-scope extensions; within a scope by ascending priority, then by name. Each transform SHALL receive the parameters the previous one returned.
+Request transforms SHALL run tenant-scope extensions first, then operator-scope extensions, each in name order. Each transform SHALL receive the parameters the previous one returned.
 
-#### Scenario: Mixed scopes and priorities
-- **WHEN** operator extension `o1` with priority 0, tenant extension `t2` with priority 5 and tenant extension `t1` with priority 5 transform the request
-- **THEN** they SHALL run as `t1`, `t2`, `o1`, and `o1` SHALL receive the parameters returned by `t2`
+#### Scenario: Mixed scopes
+- **WHEN** operator extensions `o1` and `o0` and tenant extensions `t2` and `t1` transform the request
+- **THEN** they SHALL run as `t1`, `t2`, `o0`, `o1`, and `o0` SHALL receive the parameters returned by `t2`
 
 ### Requirement: Host policy after each transform
 The host SHALL check the parameters each transform returns against host request policy: no protected call header and no call-level `gateway` provider-option namespace. A refused result SHALL be a failure of that extension under its failure policy, and SHALL never reach a provider.
@@ -174,25 +174,6 @@ Every call into extension code, including factories, phases and close, SHALL rec
 - **WHEN** a `fail-closed` response inspector panics on a stream part
 - **THEN** the stream SHALL end with one unavailable error event, other concurrent calls SHALL be unaffected, and the panic SHALL be counted
 
-### Requirement: Key ownership and source filtering
-Key ownership SHALL be `operator` for operator-catalog selections and `customer` for every other source. An extension SHALL apply to a call when its declared ownerships, which default to both, include the call's ownership and its declared sources, when present, include the call's source. An extension that does not apply SHALL run no phase and get no observe record.
-
-#### Scenario: Operator-owned extension on a BYOK call
-- **WHEN** an extension declares ownership `operator` and a request BYOK call runs
-- **THEN** none of its phases SHALL run for that call
-
-#### Scenario: Undeclared ownership
-- **WHEN** an extension declares no ownership or source
-- **THEN** it SHALL apply to operator-catalog, routed and request BYOK calls
-
-#### Scenario: Narrowed by source
-- **WHEN** an extension declares ownership `customer` and source `stack-catalog`
-- **THEN** it SHALL NOT apply to request BYOK calls
-
-#### Scenario: Inconsistent declaration
-- **WHEN** a definition declares ownership `operator` and source `request-byok`
-- **THEN** startup SHALL fail naming the extension
-
 ### Requirement: Pipeline placement
 The pipeline SHALL wrap every selection, whatever its source, inside the logical observers and outside the selected model and its fallback chain. Extension outcomes SHALL NOT be retried by fallback, and request phases SHALL complete before any provider call.
 
@@ -251,3 +232,18 @@ Enabled extensions SHALL be constructed at startup, before the plugin serves req
 #### Scenario: Concurrent calls
 - **WHEN** many calls run concurrently through one extension
 - **THEN** each call's phases SHALL run sequentially and see only that call's state
+
+### Requirement: Key ownership filtering
+Key ownership SHALL be `operator` for operator-catalog selections and `customer` for every other source, including sources added later. An extension SHALL apply to a call when its declared ownerships, which default to both, include the call's ownership. The call's source SHALL be informational for extensions and SHALL NOT decide where an extension applies. An extension that does not apply SHALL run no phase and get no observe record.
+
+#### Scenario: Operator-owned extension on a BYOK call
+- **WHEN** an extension declares ownership `operator` and a request BYOK call runs
+- **THEN** none of its phases SHALL run for that call
+
+#### Scenario: Undeclared ownership
+- **WHEN** an extension declares no ownership
+- **THEN** it SHALL apply to operator-catalog, routed and request BYOK calls
+
+#### Scenario: Customer-owned extension
+- **WHEN** an extension declares ownership `customer`
+- **THEN** it SHALL apply to request BYOK and stack-catalog calls and SHALL NOT apply to operator-catalog calls

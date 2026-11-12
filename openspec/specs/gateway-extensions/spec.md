@@ -17,10 +17,10 @@ A public Go package in the Gateway module SHALL define the extension contract: d
 - **THEN** it SHALL state that the API is v0, experimental and may break in minor releases
 
 ### Requirement: Extension definitions
-An extension definition SHALL declare a name, a scope of `operator` or `tenant`, a failure policy of `fail-closed` or `skip`, and a factory. It MAY declare key ownerships, sources, a transform priority, a JSON Schema for its configuration, secret names and whether it is enabled by default. Names SHALL be 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit.
+An extension definition SHALL declare a name, a scope of `operator` or `tenant`, a failure policy of `fail-closed` or `skip`, and a factory. It MAY declare key ownerships, a JSON Schema for its configuration, secret names and whether it is enabled by default. Names SHALL be 1 to 63 lowercase letters, digits or hyphens, starting and ending with a letter or digit.
 
 #### Scenario: Invalid definition
-- **WHEN** a definition has an invalid name, an unknown scope or failure policy, no factory, a configuration schema that does not compile, or an invalid or repeated secret name
+- **WHEN** a definition has an invalid name, an unknown scope or failure policy, an unknown or repeated key ownership, no factory, a configuration schema that does not compile, or an invalid or repeated secret name
 - **THEN** startup SHALL fail before any request is served, naming the extension and the invalid field
 
 #### Scenario: Duplicate names
@@ -68,11 +68,11 @@ Admit, request inspection and response inspection SHALL each run across extensio
 - **THEN** `a` and `b` SHALL have run admit, `c` SHALL NOT, and no transform, inspection or model invocation SHALL occur
 
 ### Requirement: Transform order
-Request transforms SHALL run tenant-scope extensions first, then operator-scope extensions; within a scope by ascending priority, then by name. Each transform SHALL receive the parameters the previous one returned.
+Request transforms SHALL run tenant-scope extensions first, then operator-scope extensions, each in name order. Each transform SHALL receive the parameters the previous one returned.
 
-#### Scenario: Mixed scopes and priorities
-- **WHEN** operator extension `o1` with priority 0, tenant extension `t2` with priority 5 and tenant extension `t1` with priority 5 transform the request
-- **THEN** they SHALL run as `t1`, `t2`, `o1`, and `o1` SHALL receive the parameters returned by `t2`
+#### Scenario: Mixed scopes
+- **WHEN** operator extensions `o1` and `o0` and tenant extensions `t2` and `t1` transform the request
+- **THEN** they SHALL run as `t1`, `t2`, `o0`, `o1`, and `o0` SHALL receive the parameters returned by `t2`
 
 ### Requirement: Host policy after each transform
 The host SHALL check the parameters each transform returns against host request policy: no protected call header and no call-level `gateway` provider-option namespace. A refused result SHALL be a failure of that extension under its failure policy, and SHALL never reach a provider.
@@ -189,25 +189,6 @@ Every call into extension code, including factories, phases and close, SHALL rec
 - **WHEN** a `fail-closed` response inspector panics on a stream part
 - **THEN** the stream SHALL end with one unavailable error event, other concurrent calls SHALL be unaffected, and the panic SHALL be counted
 
-### Requirement: Key ownership and source filtering
-Key ownership SHALL be `operator` for operator-catalog selections and `customer` for every other source. An extension SHALL apply to a call when its declared ownerships, which default to both, include the call's ownership and its declared sources, when present, include the call's source. An extension that does not apply SHALL run no phase and get no observe record.
-
-#### Scenario: Operator-owned extension on a BYOK call
-- **WHEN** an extension declares ownership `operator` and a request BYOK call runs
-- **THEN** none of its phases SHALL run for that call
-
-#### Scenario: Undeclared ownership
-- **WHEN** an extension declares no ownership or source
-- **THEN** it SHALL apply to operator-catalog, routed and request BYOK calls
-
-#### Scenario: Narrowed by source
-- **WHEN** an extension declares ownership `customer` and source `stack-catalog`
-- **THEN** it SHALL NOT apply to request BYOK calls
-
-#### Scenario: Inconsistent declaration
-- **WHEN** a definition declares ownership `operator` and source `request-byok`
-- **THEN** startup SHALL fail naming the extension
-
 ### Requirement: Pipeline placement
 The pipeline SHALL wrap every selection, whatever its source, inside the logical observers and outside the selected model and its fallback chain. Extension outcomes SHALL NOT be retried by fallback, and request phases SHALL complete before any provider call.
 
@@ -246,11 +227,11 @@ A distribution MAY mark operator-scope extensions as mandatory by name. A mandat
 - **THEN** startup SHALL fail naming it
 
 ### Requirement: Extension instance lifecycle
-Operator-scope extensions enabled by the operator setting, and tenant-scope extensions enabled by default, SHALL be constructed at startup, before requests are served, with a logger scoped to the extension, the definition's shared registerer, a clock and resolved secrets. A startup factory error SHALL fail startup. Per-namespace tenant instances follow "Per-namespace extension instances". Instances SHALL be shared by concurrent calls, and one call's phases SHALL never run concurrently.
+Every extension SHALL have one instance per process, constructed at startup before requests are served: an enabled operator-scope extension with its validated configuration, and every tenant-scope extension with an empty configuration. Each SHALL get a logger scoped to the extension, a registerer labeled with its name, a clock and its resolved secrets. A factory error SHALL fail startup. Instances SHALL be shared by concurrent calls, and one call's phases SHALL never run concurrently.
 
-#### Scenario: Factory contract allows more than one run
-- **WHEN** a developer reads the factory documentation
-- **THEN** it SHALL state that a factory may run more than once per process, once per configuration it is given, and that collectors are registered through the shared registerer
+#### Scenario: Factory runs once
+- **WHEN** a tenant extension is enabled in several namespaces, and their configurations change
+- **THEN** its factory SHALL have run once, at startup, and its instance SHALL be closed once, at shutdown
 
 #### Scenario: Factory fails
 - **WHEN** an extension's factory returns an error or panics at startup
@@ -301,6 +282,21 @@ Extensions SHALL NOT be able to replace, wrap or extend the runtime's attempt ca
 #### Scenario: Observer changes its attempts
 - **WHEN** one observer changes the attempts in its record
 - **THEN** other observers' records and the call's overview SHALL be unchanged
+
+### Requirement: Key ownership filtering
+Key ownership SHALL be `operator` for operator-catalog selections and `customer` for every other source, including sources added later. An extension SHALL apply to a call when its declared ownerships, which default to both, include the call's ownership. The call's source SHALL be informational for extensions and SHALL NOT decide where an extension applies. An extension that does not apply SHALL run no phase and get no observe record.
+
+#### Scenario: Operator-owned extension on a BYOK call
+- **WHEN** an extension declares ownership `operator` and a request BYOK call runs
+- **THEN** none of its phases SHALL run for that call
+
+#### Scenario: Undeclared ownership
+- **WHEN** an extension declares no ownership
+- **THEN** it SHALL apply to operator-catalog, routed and request BYOK calls
+
+#### Scenario: Customer-owned extension
+- **WHEN** an extension declares ownership `customer`
+- **THEN** it SHALL apply to request BYOK and stack-catalog calls and SHALL NOT apply to operator-catalog calls
 
 ### Requirement: Tenant configuration resources
 The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v1alpha1` that is not folder-scoped and declares no secure values. Its `spec` SHALL hold the extension `type`, a required `enabled` flag and, as optional fields, one typed member per public tenant type with configuration, named the lowerCamel form of the type. A resource's name SHALL equal its `spec.type`, so a namespace holds at most one resource per extension.
@@ -460,7 +456,7 @@ The extension guide SHALL describe the `Middleware` resource and its members, ro
 
 #### Scenario: Extension author reads the guide
 - **WHEN** an extension author reads the guide's tenant configuration section
-- **THEN** they SHALL find that a tenant type's name, schema and default are public, that its implementation may be private, that type schemas change only additively, and that a factory may run once per namespace configuration
+- **THEN** they SHALL find that a tenant type's name, schema and default are public, that its implementation may be private, that type schemas change only additively, and that its instance is built once and reads each namespace's configuration from the call
 
 #### Scenario: Org admin reads the guide
 - **WHEN** an org admin reads how a change takes effect
@@ -497,7 +493,7 @@ Each call's tenant-scope extensions SHALL follow the `Middleware` resources of t
 - **THEN** after the change propagates, its calls SHALL use the extension's default state
 
 ### Requirement: Tenant configuration checked when read
-At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL pass the factory the stored member with numbers unchanged. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking factory SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
+At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member with numbers unchanged. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
 
 #### Scenario: Schema tightened after storage
 - **WHEN** a stored enabled member no longer matches its `skip` extension's schema
@@ -509,14 +505,14 @@ At read time the Gateway SHALL check each enabled resource's member against its 
 
 #### Scenario: Large integer
 - **WHEN** a stored member holds the integer `9007199254740993`, nested inside an object
-- **THEN** the factory SHALL receive that exact number
+- **THEN** the extension's calls in that namespace SHALL receive that exact number in their configuration
 
 #### Scenario: Member of another type
 - **WHEN** a stored spec sets a member other than its type's, or more than one member
 - **THEN** that extension SHALL apply its failure policy in that namespace
 
-#### Scenario: Factory fails for one namespace
-- **WHEN** a tenant extension's factory fails for one namespace's configuration
+#### Scenario: Decoding fails for one namespace
+- **WHEN** a tenant extension's decoder fails for one namespace's configuration
 - **THEN** that namespace SHALL apply the failure policy, and another namespace with a valid configuration SHALL run the extension
 
 ### Requirement: Tenant types not implemented at read time
@@ -600,35 +596,43 @@ The Gateway SHALL read a namespace's configuration only for a call to which at l
 - **WHEN** the shipped backend serves calls in a namespace that stores no `Middleware` resource
 - **THEN** it SHALL read that namespace's configuration at most once per cache TTL, and the calls SHALL reach the model unchanged
 
-#### Scenario: Extension narrowed to another source
+#### Scenario: Extension limited to another key ownership
 - **WHEN** the only tenant extension declares ownership `operator`, and a request BYOK call runs
 - **THEN** that call SHALL NOT read the namespace's configuration
 
-### Requirement: Per-namespace extension instances
-A tenant extension enabled by a namespace's resource SHALL get its own instance, built once for each configuration revision of that namespace and reused while the configuration stays unchanged. An instance SHALL be closed after its namespace's configuration is replaced, evicted or expires, and only once no call or observation still uses it. Defaults SHALL use the instance built at startup.
+### Requirement: Tenant configuration per call
+Each phase of a tenant-scope extension SHALL receive the call namespace's configuration for it in the request information: the decoded member when the namespace enables it, or the decoded empty configuration in its default state. Operator-scope extensions and tenant types without a configuration schema SHALL receive none. A call SHALL keep the configuration it started with when the namespace's configuration changes or leaves the cache during the call.
+
+#### Scenario: Two namespaces
+- **WHEN** one tenant extension runs for calls in two namespaces with different members
+- **THEN** each call SHALL receive its own namespace's configuration from the same instance
+
+#### Scenario: Configuration changes during a stream
+- **WHEN** a namespace's configuration changes, or the namespace is evicted, while a stream is open
+- **THEN** the stream's later phases SHALL keep the configuration it started with, and no instance SHALL be closed
+
+#### Scenario: Operator extension
+- **WHEN** an operator-scope extension runs
+- **THEN** its request information SHALL carry no configuration
+
+### Requirement: Tenant configuration decoding
+A tenant-scope definition MAY declare a decoder that turns a stored member into the value its calls receive; without one, calls SHALL receive the member as stored. The Gateway SHALL decode each namespace's member once per change, never per call, and SHALL decode the empty configuration of a type enabled by default once at startup, failing startup when that fails. An operator-scope definition with a decoder, or a tenant-scope one with secrets, SHALL fail startup.
 
 #### Scenario: Unchanged refresh
-- **WHEN** a refresh reads the same configuration
-- **THEN** the namespace SHALL keep its instances, and no factory SHALL run
+- **WHEN** a namespace is read again and its resources are unchanged
+- **THEN** no decoder SHALL run
 
-#### Scenario: Replaced during a stream
-- **WHEN** a namespace's configuration changes while a stream that uses its instance is open
-- **THEN** the stream SHALL keep that instance until it ends and its observation completes, then the instance SHALL be closed once
+#### Scenario: Default configuration fails to decode
+- **WHEN** a default-enabled tenant extension's decoder fails on the empty configuration
+- **THEN** startup SHALL fail naming the extension, without the error's text
 
-#### Scenario: Eviction
-- **WHEN** a namespace with configured instances is evicted
-- **THEN** its instances SHALL be closed after their in-flight calls and observations end
+#### Scenario: Default-enabled type that refuses the empty configuration
+- **WHEN** a public tenant type enabled by default has a schema that refuses the empty configuration
+- **THEN** startup SHALL fail naming the type, also on a host that starts idle
 
-### Requirement: Extension metrics shared across instances
-Every instance of one definition SHALL receive the same metrics registerer, with the extension's name as a constant label. Registering a collector that the same definition already registered SHALL succeed, so a definition that creates its collectors once can register them in every factory run. A different collector with the same descriptors SHALL still fail registration.
-
-#### Scenario: Two namespaces register one counter
-- **WHEN** a definition creates one counter and its factory registers it for two namespaces
-- **THEN** both factory runs SHALL succeed, and both instances SHALL increment the same series
-
-#### Scenario: Conflicting collector
-- **WHEN** a factory creates a new collector with the same descriptors on each run
-- **THEN** its second run SHALL fail registration, and that namespace SHALL apply the extension's failure policy
+#### Scenario: Operator extension with a decoder
+- **WHEN** an operator-scope definition declares a decoder
+- **THEN** startup SHALL fail naming the extension
 
 ### Requirement: Tenant configuration without API access
 When the host gives the plugin no API access, the Gateway SHALL make no reads, SHALL run every tenant-scope extension in its default state in every namespace, and SHALL log this once at startup when the build registers a tenant-scope extension.

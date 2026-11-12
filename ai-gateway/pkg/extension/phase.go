@@ -38,8 +38,9 @@ type Call struct {
 	// Namespace is the route namespace the platform authorized.
 	Namespace string
 	Keys      KeyOwnership
-	Source    Source
-	Caller    CallerType
+	// Source is informational; see [Source].
+	Source Source
+	Caller CallerType
 	// CallerIdentity is the verified identity actor's typed UID,
 	// user:<uid> or service-account:<uid>, also for an internal service
 	// calling on behalf of one. It is empty when the caller has none.
@@ -56,6 +57,13 @@ type Call struct {
 	// Candidates are the call's planned attempts, in the order the call may
 	// try them.
 	Candidates []Candidate
+	// Config is a tenant-scope extension's configuration for the call's
+	// namespace: the value [Definition.Decode] returned for the namespace's
+	// stored configuration, or for the empty configuration when the namespace
+	// stores no resource. It is nil for operator-scope extensions and for
+	// tenant types without a configuration schema. It is shared by concurrent
+	// calls and must not be modified.
+	Config any
 	// State belongs to the extension for this call, for example a reservation
 	// made in admit and committed in observe.
 	State any

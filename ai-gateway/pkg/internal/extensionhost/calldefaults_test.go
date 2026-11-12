@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func TestShippedCallDefaults_EveryKeyOwnershipAndSource(t *testing.T) {
+func TestShippedCallDefaults_EveryKeyOwnership(t *testing.T) {
 	reader := newFakeReader()
 	reader.set("configured",
 		stored("default-instructions", true, `{"messages":[{"content":"Be brief."},{"content":"Cite sources."}]}`),
@@ -34,7 +34,7 @@ func TestShippedCallDefaults_EveryKeyOwnershipAndSource(t *testing.T) {
 		{namespace: "none", want: provider.CallOptions{Prompt: []provider.Message{user}}},
 		{namespace: "invalid", want: provider.CallOptions{Prompt: []provider.Message{user}}},
 	} {
-		for _, source := range extension.Sources {
+		for _, source := range []extension.Source{extension.SourceOperatorCatalog, extension.SourceRequestBYOK} {
 			for _, stream := range []bool{false, true} {
 				model := h.compose(t, source)
 				params := provider.CallOptions{Prompt: []provider.Message{user}}

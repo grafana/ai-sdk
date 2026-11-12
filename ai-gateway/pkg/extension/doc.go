@@ -6,11 +6,11 @@
 // A distribution passes [Definition] values to the Gateway's composition
 // entrypoint. There is no global or import-time registry. At startup the
 // Gateway validates every definition, reads operator configuration, and runs
-// each enabled extension's factory once with its validated configuration and
-// [Dependencies]. Tenant-scope extensions also run once for each namespace
-// configuration that enables them, read from the namespace's Middleware
-// resources. A factory may therefore run more than once per process and must
-// not assume it is the only instance.
+// each extension's factory once with [Dependencies]: an enabled operator-scope
+// extension with its validated configuration, and every tenant-scope
+// extension with an empty one. A tenant-scope extension's configuration is
+// read per namespace from Middleware resources, decoded once per change with
+// [Definition.Decode], and given to each call in [Call.Config].
 //
 // # Phases
 //
@@ -23,10 +23,10 @@
 //  1. [Admitter] across extensions in name order, with request information
 //     only. The first [ErrDenied] ends the call.
 //  2. [RequestTransformer] with tenant-scope extensions first, then
-//     operator-scope extensions, each by ascending [Definition.Priority] and
-//     then by name. Each transform receives the parameters the previous one
-//     returned; the host refuses parameters that add a protected call header
-//     or the call-level "gateway" provider-option namespace.
+//     operator-scope extensions, each in name order. Each transform receives
+//     the parameters the previous one returned; the host refuses parameters
+//     that add a protected call header or the call-level "gateway"
+//     provider-option namespace.
 //  3. [RequestInspector] in name order, on exactly the parameters the model
 //     receives. The first [ErrDenied] ends the call.
 //  4. The selected model, once, with its fallback chain.
@@ -36,9 +36,10 @@
 //  6. [Observer] in name order, once per call, with the call's [Record], off
 //     the response's critical path.
 //
-// An extension applies to a call only when its declared key ownerships and
-// sources include the call's; otherwise none of its phases run and it gets no
-// record.
+// An extension applies to a call only when its declared key ownerships, or
+// both when none are declared, include the call's; otherwise none of its
+// phases run and it gets no record. The call's source is informational and
+// does not decide where an extension applies.
 //
 // # Request information
 //

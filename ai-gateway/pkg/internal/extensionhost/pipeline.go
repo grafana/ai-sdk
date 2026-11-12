@@ -37,11 +37,8 @@ type pipeline struct {
 // phases on the caller's goroutine, stream response phases on the forwarding
 // goroutine, and observation on its own goroutine after the outcome.
 type call struct {
-	host  *Host
-	lists *lists
-	// held is the namespace configuration snapshot whose instances the call
-	// uses, released once the call no longer calls them.
-	held          *snapshot
+	host          *Host
+	lists         *lists
 	attempts      func(error) []execution.Attempt
 	views         []*extension.Call
 	started       time.Time
@@ -63,7 +60,7 @@ const (
 // first read completes, or after shutdown has begun.
 func (p *pipeline) newCall(ctx context.Context) (*call, error) {
 	base := p.host.requestInfo(ctx)
-	applicable, held, err := p.host.resolve(ctx, base.Namespace, p.source)
+	applicable, err := p.host.resolve(ctx, base.Namespace, p.source.Keys())
 	if errors.Is(err, errTenantsClosed) {
 		return nil, extension.ErrUnavailable
 	}
@@ -75,19 +72,10 @@ func (p *pipeline) newCall(ctx context.Context) (*call, error) {
 	for i := range views {
 		view := base
 		view.Candidates = slices.Clone(p.candidates)
+		view.Config = applicable.configs[i]
 		views[i] = &view
 	}
-	return &call{host: p.host, lists: applicable, held: held, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}, nil
-}
-
-// release drops the call's namespace configuration snapshot. The call's
-// phases never run concurrently, so it needs no lock.
-func (c *call) release() {
-	if c.held != nil {
-		held := c.held
-		c.held = nil
-		c.host.release(held)
-	}
+	return &call{host: p.host, lists: applicable, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}, nil
 }
 
 // run runs one phase of the extension at position i and applies its outcome:
@@ -224,15 +212,11 @@ func (c *call) reserve() bool {
 // decided.
 func (c *call) dispatch(ctx context.Context, reserved bool, outcome extension.Outcome, usage provider.Usage, modelErr error) {
 	if !reserved {
-		c.release()
 		return
 	}
 	record := extension.Record{Outcome: outcome, DeniedBy: c.denial, Usage: usage, Attempts: physicalAttempts(c.attempts(modelErr)), Started: c.started, Duration: c.host.clock().Sub(c.started)}
 	detached := context.WithoutCancel(ctx)
-	c.host.observations.run(func() {
-		defer c.release()
-		c.observe(detached, record)
-	})
+	c.host.observations.run(func() { c.observe(detached, record) })
 }
 
 func (c *call) observe(ctx context.Context, record extension.Record) {
@@ -279,7 +263,6 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		return nil, err
 	}
 	if c.lists.empty() {
-		c.release()
 		return p.LanguageModel.DoGenerate(ctx, options)
 	}
 	params, err := c.request(ctx, options)
@@ -293,7 +276,6 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		return result, err
 	}
 	if !c.lists.checksOutput() {
-		c.release()
 		return result, nil
 	}
 	history, _ := execution.RebuildToolHistory(options.Prompt)
@@ -330,7 +312,6 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 		return nil, err
 	}
 	if c.lists.empty() {
-		c.release()
 		return p.LanguageModel.DoStream(ctx, options)
 	}
 	params, err := c.request(ctx, options)
@@ -339,7 +320,6 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 		return nil, err
 	}
 	if !c.lists.checksOutput() {
-		c.release()
 		return p.LanguageModel.DoStream(ctx, params)
 	}
 	modelContext, cancel := context.WithCancel(ctx)

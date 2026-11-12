@@ -20,7 +20,8 @@ type Type struct {
 	// value means the type takes no configuration and has no member.
 	ConfigSchema schema.Schema
 	// EnabledByDefault is the extension's state in a namespace that stores no
-	// resource for it.
+	// resource for it. A type enabled by default runs with the empty
+	// configuration there, so its schema must accept it.
 	EnabledByDefault bool
 	// Example is a configuration the schema accepts. It documents the type
 	// and proves that the manifest member stores it unchanged. It is nil when
@@ -30,18 +31,19 @@ type Type struct {
 
 // Implementation is how a build implements a type.
 type Implementation struct {
-	// Keys lists the key ownerships of the calls the extension applies to. Nil
-	// applies to both.
-	Keys []extension.KeyOwnership
-	// Sources narrows the calls the extension applies to. Nil applies to every
-	// source whose ownership is in Keys.
-	Sources []extension.Source
-	// Priority orders request transforms among tenant-scope extensions.
-	Priority      int
+	// Keys lists the key ownerships of the calls the extension applies to,
+	// whatever their source. Nil applies to both.
+	Keys          []extension.KeyOwnership
 	FailurePolicy extension.FailurePolicy
-	// New constructs an instance from a validated configuration, as
-	// [extension.Definition.New] does.
+	// New constructs the extension's one instance, as
+	// [extension.Definition.New] does for a tenant-scope extension: once per
+	// process, with an empty configuration.
 	New func(config json.RawMessage, deps extension.Dependencies) (any, error)
+	// Decode turns a namespace's stored configuration into the value its
+	// calls receive in [extension.Call.Config], as
+	// [extension.Definition.Decode] does. Nil passes the configuration
+	// through as its canonical JSON.
+	Decode func(config json.RawMessage) (any, error)
 }
 
 var registry = []Type{defaultInstructions, defaultSettings}
@@ -92,11 +94,10 @@ func (t Type) Bind(impl Implementation) extension.Definition {
 		Name:             t.Name,
 		Scope:            extension.ScopeTenant,
 		Keys:             impl.Keys,
-		Sources:          impl.Sources,
-		Priority:         impl.Priority,
 		FailurePolicy:    impl.FailurePolicy,
 		ConfigSchema:     t.ConfigSchema,
 		EnabledByDefault: t.EnabledByDefault,
 		New:              impl.New,
+		Decode:           impl.Decode,
 	}
 }

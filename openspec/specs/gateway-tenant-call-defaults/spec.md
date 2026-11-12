@@ -58,7 +58,7 @@ When enabled, `default-settings` SHALL set each configured field only when the c
 - **THEN** the model SHALL receive those headers, provider options and tools exactly as the call sent them
 
 ### Requirement: Tenant call defaults scope
-Both extensions SHALL be tenant-scope, apply to calls with operator-owned and customer-owned keys from every source, act only as request transforms, and use failure policy `skip`. The shipped Gateway SHALL register both, bound to their public types.
+Both extensions SHALL be tenant-scope, apply to calls with operator-owned and customer-owned keys, whatever their source, act only as request transforms, and use failure policy `skip`. The shipped Gateway SHALL register both, bound to their public types.
 
 #### Scenario: Both key ownerships
 - **WHEN** a namespace enables both extensions and runs a catalog call and a request BYOK call

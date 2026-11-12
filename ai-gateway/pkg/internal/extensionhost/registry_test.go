@@ -44,12 +44,10 @@ func TestValidateDefinitions(t *testing.T) {
 		{name: "repeated key ownership", definitions: with(func(d *extension.Definition) {
 			d.Keys = []extension.KeyOwnership{extension.KeysOperator, extension.KeysOperator}
 		}), message: "invalid key ownership"},
-		{name: "unknown source", definitions: with(func(d *extension.Definition) { d.Sources = []extension.Source{"routed"} }), message: "invalid source"},
-		{name: "source outside ownership", definitions: with(func(d *extension.Definition) {
-			d.Keys, d.Sources = []extension.KeyOwnership{extension.KeysOperator}, []extension.Source{extension.SourceRequestBYOK}
-		}), message: `declares source "request-byok" outside its key ownership`},
 		{name: "invalid secret name", definitions: with(func(d *extension.Definition) { d.Secrets = []string{"api_key"} }), message: "invalid secret name"},
 		{name: "repeated secret", definitions: with(func(d *extension.Definition) { d.Secrets = []string{"apiKey", "apiKey"} }), message: "invalid secret name"},
+		{name: "operator decoder", definitions: with(func(d *extension.Definition) { d.Decode = func(json.RawMessage) (any, error) { return nil, nil } }), message: `operator extension "quota" declares a decoder, which only tenant extensions take`},
+		{name: "tenant secrets", definitions: with(func(d *extension.Definition) { d.Scope, d.Secrets = extension.ScopeTenant, []string{"apiKey"} }), message: `tenant extension "quota" declares secrets, which only the operator setting supplies`},
 		{name: "duplicate names", definitions: []extension.Definition{validDefinition("quota"), validDefinition("quota")}, message: `extension name "quota" is registered twice`},
 		{name: "unknown mandatory", definitions: []extension.Definition{validDefinition("quota")}, mandatory: []string{"audit"}, message: `mandatory extension "audit" is not registered`},
 		{name: "mandatory tenant", definitions: with(func(d *extension.Definition) { d.Scope = extension.ScopeTenant }), mandatory: []string{"quota"}, message: `mandatory extension "quota" must have operator scope`},
@@ -64,7 +62,7 @@ func TestValidateDefinitions(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		customer := validDefinition("audit")
-		customer.Keys, customer.Sources = []extension.KeyOwnership{extension.KeysCustomer}, []extension.Source{extension.SourceStackCatalog}
+		customer.Keys = []extension.KeyOwnership{extension.KeysCustomer}
 		customer.Secrets = []string{"apiKey", "endpointToken"}
 		assert.NoError(t, ValidateDefinitions([]extension.Definition{validDefinition("quota"), customer}, []string{"quota"}, nil))
 		assert.NoError(t, ValidateDefinitions(nil, nil, nil))
@@ -106,6 +104,7 @@ func TestValidateDefinitions_TenantTypes(t *testing.T) {
 		{name: "schema without example", types: withType(func(tt *tenanttype.Type) { tt.Example = nil }), message: `tenant type "default-instructions" needs an example`},
 		{name: "example the schema refuses", types: withType(func(tt *tenanttype.Type) { tt.Example = json.RawMessage(`{"text":"too long"}`) }), message: `tenant type "default-instructions" needs an example`},
 		{name: "example over a bound above 2^53", types: []tenanttype.Type{{Name: "bounded", ConfigSchema: configSchema(t, `{"type":"object","properties":{"n":{"type":"integer","maximum":9007199254740992}},"additionalProperties":false}`), Example: json.RawMessage(`{"n":9007199254740993}`)}}, message: `tenant type "bounded" needs an example`},
+		{name: "default-enabled type whose schema refuses the empty configuration", types: []tenanttype.Type{{Name: "required", EnabledByDefault: true, ConfigSchema: configSchema(t, `{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`), Example: json.RawMessage(`{"text":"hi"}`)}}, message: `tenant type "required" is enabled by default but its configuration schema refuses the empty configuration`},
 		{name: "example without schema", types: []tenanttype.Type{{Name: "marker", Example: json.RawMessage(`{}`)}}, message: `tenant type "marker" has an example but no configuration schema`},
 		{name: "tenant definition without a type", definitions: bound(instructions), message: `tenant extension "default-instructions" has no public tenant type`},
 		{name: "different schema", definitions: bound(instructions, func(d *extension.Definition) {
@@ -133,27 +132,21 @@ func TestApplies(t *testing.T) {
 	everywhere := validDefinition("all")
 	operator := validDefinition("operator")
 	operator.Keys = []extension.KeyOwnership{extension.KeysOperator}
-	stack := validDefinition("stack")
-	stack.Keys, stack.Sources = []extension.KeyOwnership{extension.KeysCustomer}, []extension.Source{extension.SourceStackCatalog}
+	customer := validDefinition("customer")
+	customer.Keys = []extension.KeyOwnership{extension.KeysCustomer}
+	both := validDefinition("both")
+	both.Keys = []extension.KeyOwnership{extension.KeysOperator, extension.KeysCustomer}
 	for _, tc := range []struct {
 		definition extension.Definition
-		applies    []extension.Source
+		operator   bool
+		customer   bool
 	}{
-		{definition: everywhere, applies: extension.Sources},
-		{definition: operator, applies: []extension.Source{extension.SourceOperatorCatalog}},
-		{definition: stack, applies: []extension.Source{extension.SourceStackCatalog}},
+		{definition: everywhere, operator: true, customer: true},
+		{definition: operator, operator: true},
+		{definition: customer, customer: true},
+		{definition: both, operator: true, customer: true},
 	} {
-		for _, source := range extension.Sources {
-			assert.Equal(t, contains(tc.applies, source), applies(tc.definition, source), "%s on %s", tc.definition.Name, source)
-		}
+		assert.Equal(t, tc.operator, applies(tc.definition, extension.KeysOperator), tc.definition.Name)
+		assert.Equal(t, tc.customer, applies(tc.definition, extension.KeysCustomer), tc.definition.Name)
 	}
-}
-
-func contains(sources []extension.Source, source extension.Source) bool {
-	for _, candidate := range sources {
-		if candidate == source {
-			return true
-		}
-	}
-	return false
 }

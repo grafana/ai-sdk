@@ -30,19 +30,16 @@ func TestType_Bind(t *testing.T) {
 	built := false
 	definition := tenantType.Bind(Implementation{
 		Keys:          []extension.KeyOwnership{extension.KeysCustomer},
-		Sources:       []extension.Source{extension.SourceRequestBYOK},
-		Priority:      3,
 		FailurePolicy: extension.FailSkip,
 		New: func(json.RawMessage, extension.Dependencies) (any, error) {
 			built = true
 			return nil, nil
 		},
+		Decode: func(json.RawMessage) (any, error) { return "decoded", nil },
 	})
 	assert.Equal(t, "default-instructions", definition.Name)
 	assert.Equal(t, extension.ScopeTenant, definition.Scope)
 	assert.Equal(t, []extension.KeyOwnership{extension.KeysCustomer}, definition.Keys)
-	assert.Equal(t, []extension.Source{extension.SourceRequestBYOK}, definition.Sources)
-	assert.Equal(t, 3, definition.Priority)
 	assert.Equal(t, extension.FailSkip, definition.FailurePolicy)
 	assert.JSONEq(t, string(configSchema.JSON()), string(definition.ConfigSchema.JSON()))
 	assert.True(t, definition.EnabledByDefault)
@@ -50,6 +47,9 @@ func TestType_Bind(t *testing.T) {
 	_, err = definition.New(nil, extension.Dependencies{})
 	require.NoError(t, err)
 	assert.True(t, built)
+	decoded, err := definition.Decode(nil)
+	require.NoError(t, err)
+	assert.Equal(t, "decoded", decoded)
 }
 
 func TestAll(t *testing.T) {

@@ -1,6 +1,8 @@
 package extension
 
 // Source names where a call's selected model and its provider keys come from.
+// It is informational: the set may grow, so extensions decide where they apply
+// by key ownership ([Definition.Keys]), not by branching on the source.
 type Source string
 
 const (
@@ -13,11 +15,9 @@ const (
 	SourceStackCatalog Source = "stack-catalog"
 )
 
-// Sources lists every [Source].
-var Sources = []Source{SourceOperatorCatalog, SourceRequestBYOK, SourceStackCatalog}
-
 // Keys returns who owns the provider keys of a call from the source:
-// [KeysOperator] for [SourceOperatorCatalog] and [KeysCustomer] otherwise.
+// [KeysOperator] for [SourceOperatorCatalog] and [KeysCustomer] for every
+// other source, including ones added later.
 func (s Source) Keys() KeyOwnership {
 	if s == SourceOperatorCatalog {
 		return KeysOperator

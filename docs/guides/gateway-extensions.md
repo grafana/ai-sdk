@@ -70,8 +70,8 @@ For each call, the Gateway runs the phases in this order:
 - Admit and both inspectors run in name order and stop at the first
   `ErrDenied`. The caller gets the Gateway's fixed permission error; your error
   text never reaches it.
-- Transforms run tenant extensions first, then operator extensions, each by
-  ascending `Priority`, then by name. The Gateway refuses a transform that adds
+- Transforms run tenant extensions first, then operator extensions, each in
+  name order. The Gateway refuses a transform that adds
   a credential-bearing header or the `gateway` provider-option namespace.
 - Response parts are the same for unary and streaming calls. A streamed part
   carries its delta; a unary part carries the complete text. A unary abort
@@ -118,14 +118,16 @@ Observability exports; it never becomes a metric label or reaches a provider.
 
 ## Choose where an extension applies
 
-- **Key ownership.** `operator` calls use the operator's catalog and keys;
-  `customer` calls use the customer's keys, from request BYOK or a stack
-  catalog. `Keys` defaults to both.
-- **Sources.** `Sources` narrows further to `operator-catalog`,
-  `request-byok` or `stack-catalog`.
+Declare where an extension applies with `Keys`, the key ownership of the
+calls it handles. `operator` calls use the operator's catalog and keys;
+`customer` calls use the customer's keys, from request BYOK or a stack catalog.
+`Keys` defaults to both.
 
 An extension that doesn't apply to a call runs none of its phases and gets no
-record.
+record. `Call.Source` names where the call's models and keys came from, such as
+`operator-catalog`, `request-byok` or `stack-catalog`. It is informational:
+the set may grow, and a new source keeps its key ownership, so don't use it to
+decide whether an extension applies.
 
 ## Handle failures
 
@@ -207,7 +209,7 @@ Each call's tenant extensions follow its namespace's resources:
 | No resource | Uses its default: on with `{}` when `EnabledByDefault`, off otherwise |
 | `enabled: false` | Is off |
 | `enabled: true` with a valid member | Runs with that member as its configuration |
-| A member its schema no longer accepts, a missing or foreign member, or a failing factory | Applies its failure policy, logged and counted |
+| A member its schema no longer accepts, a missing or foreign member, or a failing `Decode` | Applies its failure policy, logged and counted |
 | An enabled resource for a type this build doesn't implement | Is skipped, logged once per namespace and type, and counted |
 
 The rules for writing resources:
@@ -250,13 +252,19 @@ extensions.
 definition := modelAccessType.Bind(tenanttype.Implementation{
 	FailurePolicy: extension.FailSkip,
 	New:           newModelAccess,
+	Decode:        decodeModelAccess,
 })
 ```
+
+`newModelAccess` builds the one instance, and `decodeModelAccess` parses a
+namespace's stored member into the value its calls receive in `call.Config`.
 
 Startup fails when a tenant-scope definition has no public type, or differs
 from its type in schema or default. To add a type:
 
-1. Add it to the `tenanttype` registry with a description and an example.
+1. Add it to the `tenanttype` registry with a description and an example. A
+   type enabled by default runs with `{}` in namespaces without a resource, so
+   its schema must accept it; startup fails otherwise.
 2. Run `mise run generate-ai-gateway-kinds`, which projects the schema into the
    manifest and regenerates the kind. The projection keeps JSON types,
    properties, items, required fields and descriptions, and drops value
@@ -314,15 +322,19 @@ would not be applied. Deletes still work.
 
 ### Write tenant extensions
 
-- A tenant extension's factory runs once for each namespace configuration that
-  enables it, and again when that configuration changes. Keep it quick and free
-  of I/O. Its instance is closed once its configuration is replaced or the
-  namespace leaves the cache, and only after the calls using it finish.
-- All instances of a definition share `Dependencies.Registerer`, and
-  registering the same collector again succeeds. Create collectors once per
-  definition, register them in `New`, and never unregister them in `Close`: a
-  collector created anew in each `New` fails registration from the second
-  namespace on.
+- A tenant extension has one instance per process, like an operator one. Its
+  factory runs once at startup with an empty configuration, and its `Close`
+  runs once at shutdown.
+- Each call carries the namespace's configuration in `call.Config`. Without
+  `Decode`, it is the member as stored, a `json.RawMessage`. Set `Decode` on
+  the implementation to parse it once, into the type your phases
+  type-assert: the Gateway decodes each namespace's member once per change,
+  never per call. A decoding error applies the failure policy in that
+  namespace. For a type enabled by default, `Decode` also runs once at startup
+  on `{}`, and its failure fails startup. A type without a configuration
+  schema gets `nil`.
+- The decoded value is shared by every call in the namespace. Treat it as
+  read-only, and keep per-call data in `call.State`.
 - Tenant extensions see the same request information as operator extensions,
   including the caller's identity, and the provider instances and provider
   models of operator-catalog candidates and attempts.

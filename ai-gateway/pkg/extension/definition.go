@@ -45,16 +45,9 @@ type Definition struct {
 	// letter or digit, and unique within a distribution.
 	Name  string
 	Scope Scope
-	// Keys lists the key ownerships of the calls the extension applies to. Nil
-	// applies to both.
-	Keys []KeyOwnership
-	// Sources narrows the calls the extension applies to. Nil applies to every
-	// source whose ownership is in Keys. Every source must have an ownership in
-	// Keys.
-	Sources []Source
-	// Priority orders request transforms within a scope, ascending. Ties are
-	// ordered by name.
-	Priority      int
+	// Keys lists the key ownerships of the calls the extension applies to,
+	// whatever their source. Nil applies to both.
+	Keys          []KeyOwnership
 	FailurePolicy FailurePolicy
 	// ConfigSchema is the JSON Schema the extension's configuration must match.
 	// The zero value accepts only an empty configuration.
@@ -67,16 +60,28 @@ type Definition struct {
 	// EnabledByDefault enables the extension when it has no configuration
 	// entry.
 	EnabledByDefault bool
-	// New constructs an instance from its validated configuration, a JSON
-	// object, and its dependencies. The instance must implement at least one
-	// phase interface: [Admitter], [RequestTransformer], [RequestInspector],
-	// [ResponseInspector] or [Observer]. It may also implement [Closer]. New
-	// may run more than once per process, once per configuration it is given:
-	// a tenant extension's runs once for each namespace configuration that
-	// enables it. It should be quick and do no I/O. An instance built for a
-	// namespace is closed once its configuration is replaced or evicted and
-	// no call still uses it.
+	// New constructs the extension's one instance, once per process at
+	// startup, with its dependencies. An operator-scope extension gets its
+	// validated configuration from the operator setting. A tenant-scope
+	// extension gets an empty configuration and receives each namespace's
+	// configuration per call in [Call.Config]. The instance must implement at
+	// least one phase interface: [Admitter], [RequestTransformer],
+	// [RequestInspector], [ResponseInspector] or [Observer]. It may also
+	// implement [Closer], which runs once at shutdown.
 	New func(config json.RawMessage, deps Dependencies) (any, error)
+	// Decode turns a tenant-scope extension's stored configuration, a JSON
+	// object its ConfigSchema accepts, into the value its calls receive in
+	// [Call.Config]. The host runs it once each time a namespace's stored
+	// configuration changes, never per call, and once at startup on the
+	// empty configuration of a type enabled by default. Nil passes the
+	// configuration through as its canonical [json.RawMessage]. An error or
+	// panic applies the extension's failure policy in that namespace, or
+	// fails startup for the default configuration. It may run concurrently
+	// for different namespaces. The returned value is shared by concurrent
+	// calls and must not be modified. A type without a
+	// configuration schema never decodes. Operator-scope definitions must
+	// leave it nil.
+	Decode func(config json.RawMessage) (any, error)
 }
 
 // Dependencies are the process services an extension instance may use.
@@ -85,11 +90,7 @@ type Dependencies struct {
 	// name attached. It is not filtered by the Gateway's log allowlist.
 	Logger *slog.Logger
 	// Registerer registers the extension's collectors, with the extension's
-	// name as the constant label "extension". Every instance of a definition
-	// receives the same registerer, and registering a collector the
-	// definition already registered succeeds. Create collectors once per
-	// definition, register them in New, and never unregister them in Close:
-	// a collector created in each New run fails registration on the second.
+	// name as the constant label "extension".
 	Registerer prometheus.Registerer
 	// Clock returns the current time.
 	Clock func() time.Time

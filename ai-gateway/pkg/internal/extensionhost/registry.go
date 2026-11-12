@@ -92,6 +92,9 @@ func validateTypes(types []tenanttype.Type) (map[string]tenanttype.Type, error) 
 		if tenantType.Example == nil || CheckConfig(extension.Definition{ConfigSchema: tenantType.ConfigSchema}, tenantType.Example) != nil {
 			return nil, fmt.Errorf("extensions: tenant type %q needs an example its configuration schema accepts", tenantType.Name)
 		}
+		if tenantType.EnabledByDefault && CheckConfig(extension.Definition{ConfigSchema: tenantType.ConfigSchema}, emptyConfig) != nil {
+			return nil, fmt.Errorf("extensions: tenant type %q is enabled by default but its configuration schema refuses the empty configuration", tenantType.Name)
+		}
 	}
 	return byName, nil
 }
@@ -122,6 +125,12 @@ func validateDefinition(definition extension.Definition) error {
 	default:
 		return invalid("scope")
 	}
+	if definition.Scope == extension.ScopeOperator && definition.Decode != nil {
+		return fmt.Errorf("extensions: operator extension %q declares a decoder, which only tenant extensions take", definition.Name)
+	}
+	if definition.Scope == extension.ScopeTenant && len(definition.Secrets) != 0 {
+		return fmt.Errorf("extensions: tenant extension %q declares secrets, which only the operator setting supplies", definition.Name)
+	}
 	switch definition.FailurePolicy {
 	case extension.FailClosed, extension.FailSkip:
 	default:
@@ -135,14 +144,6 @@ func validateDefinition(definition extension.Definition) error {
 			return invalid("key ownership")
 		}
 	}
-	for i, source := range definition.Sources {
-		if !slices.Contains(extension.Sources, source) || slices.Contains(definition.Sources[:i], source) {
-			return invalid("source")
-		}
-		if len(definition.Keys) != 0 && !slices.Contains(definition.Keys, source.Keys()) {
-			return fmt.Errorf("extensions: extension %q declares source %q outside its key ownership", definition.Name, source)
-		}
-	}
 	for i, secret := range definition.Secrets {
 		if !secretNamePattern.MatchString(secret) || slices.Contains(definition.Secrets[:i], secret) {
 			return invalid("secret name")
@@ -154,10 +155,8 @@ func validateDefinition(definition extension.Definition) error {
 	return nil
 }
 
-// applies reports whether definition applies to calls from source.
-func applies(definition extension.Definition, source extension.Source) bool {
-	if len(definition.Keys) != 0 && !slices.Contains(definition.Keys, source.Keys()) {
-		return false
-	}
-	return len(definition.Sources) == 0 || slices.Contains(definition.Sources, source)
+// applies reports whether definition applies to calls whose keys are owned by
+// keys.
+func applies(definition extension.Definition, keys extension.KeyOwnership) bool {
+	return len(definition.Keys) == 0 || slices.Contains(definition.Keys, keys)
 }
