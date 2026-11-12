@@ -2,15 +2,15 @@
 
 ## 1. Shared provider-option merge
 
-- [ ] 1.1 Move the step provider-option merge from `provider_options.go` into a root-module internal package and switch `StreamText` to it; verify `GOFLAGS=-buildvcs=false go test ./...` passes with the existing step-merge tests unchanged in behavior
-- [ ] 1.2 Port the `merge-objects.test.ts` cases that apply to JSON (flat, nested, arrays replaced, null handling, complex nested, empty objects, nil inputs, non-mutation, prototype keys at top level and nested) to the internal package; verify with `go test ./internal/...`
+- [x] 1.1 Move the step provider-option merge from `provider_options.go` into a root-module internal package and switch `StreamText` to it; verify `GOFLAGS=-buildvcs=false go test ./...` passes with the existing step-merge tests unchanged in behavior
+- [x] 1.2 Port the `merge-objects.test.ts` cases that apply to JSON (flat, nested, arrays replaced, null handling, complex nested, empty objects, nil inputs, non-mutation, prototype keys at top level and nested) to the internal package; verify with `go test ./internal/...`
 
 ## 2. DefaultSettings merge rules
 
-- [ ] 2.1 Merge `ProviderOptions` through the shared package and return its errors; port the upstream provider-option cases ("merge provider metadata with default settings", "merge complex provider metadata objects", "nested provider metadata objects", empty default, empty param, both undefined) and add typed-option `ResolveOption` and prototype-key cases; verify with `go test ./middleware/...`
-- [ ] 2.2 Merge `ResponseFormat` by active members per the spec; add tests for JSON inheriting the default schema and name, caller schema winning, text over a JSON default, and nil caller; verify with `go test ./middleware/...`
-- [ ] 2.3 Port the remaining upstream cases (temperature keep zero, default when unset, param precedence, maxOutputTokens, stopSequences, topP, headers merge, empty default headers, empty param headers, both undefined). Add Go cases for empty `StopSequences`/`Tools` kept, automatic `ToolChoice` over a named default, and `Reasoning`. Verify with `go test ./middleware/...`
-- [ ] 2.4 Update the `DefaultSettings` and `DefaultSettingsOptions` godoc for the merge rules, `RawProviderOption` results and the error return; verify with `mise run lint`
+- [x] 2.1 Merge `ProviderOptions` through the shared package, converting only namespaces set on both sides, and return its errors; port the upstream provider-option cases ("merge provider metadata with default settings", "merge complex provider metadata objects", "nested provider metadata objects", empty default, empty param, both undefined) and add typed-option `ResolveOption` and prototype-key cases; verify with `go test ./middleware/...`
+- [x] 2.2 Merge `ResponseFormat` by active members per the spec; add tests for JSON inheriting the default schema and name, caller schema winning, text over a JSON default, and nil caller; verify with `go test ./middleware/...`
+- [x] 2.3 Port the remaining upstream cases (temperature keep zero, default when unset, param precedence, maxOutputTokens, stopSequences, topP, headers merge, empty default headers, empty param headers, both undefined). Add Go cases for empty `StopSequences`/`Tools` kept, automatic `ToolChoice` over a named default, and `Reasoning`. Verify with `go test ./middleware/...`
+- [x] 2.4 Update the `DefaultSettings` and `DefaultSettingsOptions` godoc for the merge rules, `RawProviderOption` results and the error return; verify with `mise run lint`
 
 ## 3. Parity records
 

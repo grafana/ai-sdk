@@ -45,7 +45,7 @@
 
 ### Requirement: Deep-merge default provider options
 
-When both the defaults and the caller supply `ProviderOptions`, they SHALL merge recursively by JSON representation: objects under the same key SHALL merge key by key, and for any other value the caller's SHALL replace the default's, including arrays and JSON `null`. Caller keys `__proto__`, `constructor` and `prototype` SHALL be ignored while merging. When only one side supplies provider options, its value SHALL pass through unchanged.
+A namespace that both sides set to JSON objects SHALL merge recursively and reach the model as raw JSON: nested objects merge key by key, and any other caller value, including arrays and `null`, replaces the default's. Caller keys `__proto__`, `constructor` and `prototype` SHALL be ignored while merging. Every other namespace SHALL reach the model with its original value, the caller's winning when both set it.
 
 #### Scenario: Nested provider options merge
 - **WHEN** the default `anthropic` namespace is `{"tools": {"retrieval": {"enabled": true}, "math": {"enabled": true}}}`
@@ -66,6 +66,10 @@ When both the defaults and the caller supply `ProviderOptions`, they SHALL merge
 - **WHEN** the caller's namespace contains `__proto__`, `constructor` or `prototype` keys alongside ordinary keys and both sides supply provider options
 - **THEN** the merged namespace SHALL contain the default keys and the caller's ordinary keys only
 
+#### Scenario: One-sided namespaces keep their values
+- **WHEN** a namespace is set only in the defaults or only by the caller, with a typed or raw value
+- **THEN** the model SHALL receive that namespace's original value
+
 #### Scenario: Typed options remain resolvable
 - **WHEN** the default is a typed provider option and the caller supplies raw JSON for the same namespace
 - **THEN** the provider SHALL resolve the merged namespace with `provider.ResolveOption` into its typed options containing both sides' values
@@ -76,7 +80,7 @@ When both the defaults and the caller supply `ProviderOptions`, they SHALL merge
 
 ### Requirement: Merge default response format by type
 
-A default `ResponseFormat` SHALL apply when the caller's is nil. When both are set, the caller's type SHALL win, or the default's if the caller's is empty. For a JSON result, an unset caller schema, name or description SHALL take the default's. A text result SHALL carry no schema, name or description.
+A default `ResponseFormat` SHALL apply when the caller's is nil. When both are set, the caller's type SHALL win, or the default's if the caller's is empty. For a JSON result, an unset caller schema, name or description SHALL take the default's. A non-JSON result SHALL take no schema, name or description from the default.
 
 #### Scenario: JSON caller inherits default schema
 - **WHEN** the default is JSON with a schema and name
@@ -90,7 +94,7 @@ A default `ResponseFormat` SHALL apply when the caller's is nil. When both are s
 #### Scenario: Text caller over JSON default
 - **WHEN** the default is JSON with a schema, name and description
 - **AND** the caller's is text
-- **THEN** the model SHALL receive a text format with no schema, name or description
+- **THEN** the model SHALL receive the caller's text format with no schema, name or description
 
 ### Requirement: Replace default tool choice
 
