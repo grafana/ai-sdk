@@ -14,19 +14,34 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-var _ extension.RequestTransformer = transformer{}
+var (
+	_ extension.RequestTransformer = instructionsTransformer{}
+	_ extension.RequestTransformer = settingsTransformer{}
+)
 
-func newTransformer(t *testing.T, definition extension.Definition, config string) extension.RequestTransformer {
-	t.Helper()
-	instance, err := definition.New(json.RawMessage(config), extension.Dependencies{})
-	require.NoError(t, err)
-	require.IsType(t, transformer{}, instance, "only a request transform")
-	return instance.(transformer)
+// configured is a definition's process instance with one namespace's decoded
+// configuration, as the host passes it to each call.
+type configured struct {
+	transformer extension.RequestTransformer
+	config      any
 }
 
-func transform(t *testing.T, transformer extension.RequestTransformer, params provider.CallOptions) provider.CallOptions {
+func newTransformer(t *testing.T, definition extension.Definition, config string) configured {
 	t.Helper()
-	result, err := transformer.TransformRequest(context.Background(), &extension.Call{}, params)
+	instance, err := definition.New(json.RawMessage(`{}`), extension.Dependencies{})
+	require.NoError(t, err)
+	transformer, ok := instance.(extension.RequestTransformer)
+	require.True(t, ok, "a request transform")
+	_, inspects := instance.(extension.RequestInspector)
+	assert.False(t, inspects, "only a request transform")
+	decoded, err := definition.Decode(json.RawMessage(config))
+	require.NoError(t, err)
+	return configured{transformer: transformer, config: decoded}
+}
+
+func transform(t *testing.T, bound configured, params provider.CallOptions) provider.CallOptions {
+	t.Helper()
+	result, err := bound.transformer.TransformRequest(context.Background(), &extension.Call{Config: bound.config}, params)
 	require.NoError(t, err)
 	return result
 }
@@ -39,7 +54,7 @@ func TestDefinitions(t *testing.T) {
 		assert.Equal(t, tenantType.Name, definition.Name)
 		assert.Equal(t, extension.ScopeTenant, definition.Scope)
 		assert.Nil(t, definition.Keys, "operator-owned and customer-owned calls")
-		assert.Nil(t, definition.Sources, "every source")
+		assert.NotNil(t, definition.Decode)
 		assert.Equal(t, extension.FailSkip, definition.FailurePolicy)
 		assert.False(t, definition.EnabledByDefault)
 		assert.Equal(t, tenantType.ConfigSchema.JSON(), definition.ConfigSchema.JSON())
@@ -189,7 +204,7 @@ func TestFactories_RefuseUndecodableConfiguration(t *testing.T) {
 		{definition: settingsDefinition(), config: `{"topK":1.5}`},
 		{definition: settingsDefinition(), config: `{"temperature":1e400}`},
 	} {
-		_, err := tc.definition.New(json.RawMessage(tc.config), extension.Dependencies{})
+		_, err := tc.definition.Decode(json.RawMessage(tc.config))
 		require.Error(t, err, tc.config)
 		assert.NotContains(t, err.Error(), "e2e-sentinel")
 		assert.NotContains(t, err.Error(), "1e30")
@@ -223,8 +238,21 @@ func TestSettings_FactoryAcceptsWhatAdmissionAccepts(t *testing.T) {
 				return
 			}
 			require.NoError(t, admitted)
-			_, err := settingsDefinition().New(json.RawMessage(tc.config), extension.Dependencies{})
+			_, err := settingsDefinition().Decode(json.RawMessage(tc.config))
 			assert.NoError(t, err)
 		})
+	}
+}
+
+func TestTransformers_RefuseACallWithoutTheirConfiguration(t *testing.T) {
+	params := provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.TextPart("hello"))}}
+	for _, definition := range Definitions() {
+		instance, err := definition.New(json.RawMessage(`{}`), extension.Dependencies{})
+		require.NoError(t, err)
+		for _, config := range []any{nil, json.RawMessage(`{}`)} {
+			result, err := instance.(extension.RequestTransformer).TransformRequest(context.Background(), &extension.Call{Config: config}, params)
+			assert.Error(t, err, definition.Name)
+			assert.Equal(t, params, result, "the parameters are returned unchanged, and the failure policy applies")
+		}
 	}
 }

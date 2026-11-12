@@ -1,6 +1,7 @@
 package calldefaults
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -9,9 +10,13 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/middleware"
+	"github.com/grafana/ai-sdk/provider"
 )
 
-var errSettingsConfig = errors.New("calldefaults: the default-settings configuration does not decode")
+var (
+	errSettingsConfig = errors.New("calldefaults: the default-settings configuration does not decode")
+	errSettingsCall   = errors.New("calldefaults: the call carries no default-settings configuration")
+)
 
 type settingsConfig struct {
 	Temperature      *float64     `json:"temperature"`
@@ -27,11 +32,15 @@ type settingsConfig struct {
 func settingsDefinition() extension.Definition {
 	return tenanttype.DefaultSettings().Bind(tenanttype.Implementation{
 		FailurePolicy: extension.FailSkip,
-		New:           newSettings,
+		New:           func(json.RawMessage, extension.Dependencies) (any, error) { return settingsTransformer{}, nil },
+		Decode:        decodeSettings,
 	})
 }
 
-func newSettings(config json.RawMessage, _ extension.Dependencies) (any, error) {
+// decodeSettings decodes a namespace's default settings into the middleware's
+// options. Stop sequences are clipped, so a later transform's append never
+// writes into the slice every call of the namespace shares.
+func decodeSettings(config json.RawMessage) (any, error) {
 	var decoded settingsConfig
 	if err := json.Unmarshal(config, &decoded); err != nil {
 		return nil, errSettingsConfig
@@ -53,7 +62,18 @@ func newSettings(config json.RawMessage, _ extension.Dependencies) (any, error) 
 	if options.Seed, err = intOf(decoded.Seed); err != nil {
 		return nil, err
 	}
-	return transformer{middleware: middleware.DefaultSettings(options)}, nil
+	return options, nil
+}
+
+// settingsTransformer applies each call's default settings.
+type settingsTransformer struct{}
+
+func (settingsTransformer) TransformRequest(ctx context.Context, call *extension.Call, params provider.CallOptions) (provider.CallOptions, error) {
+	options, ok := call.Config.(middleware.DefaultSettingsOptions)
+	if !ok {
+		return params, errSettingsCall
+	}
+	return middleware.DefaultSettings(options).TransformParams(ctx, middleware.TransformParamsInput{Params: params})
 }
 
 // intOf converts an integer the schema accepted, which may be written with a
