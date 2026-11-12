@@ -32,9 +32,7 @@ type Type struct {
 type Implementation struct {
 	// Keys lists the key ownerships of the calls the extension applies to,
 	// whatever their source. Nil applies to both.
-	Keys []extension.KeyOwnership
-	// Priority orders request transforms among tenant-scope extensions.
-	Priority      int
+	Keys          []extension.KeyOwnership
 	FailurePolicy extension.FailurePolicy
 	// New constructs an instance from a validated configuration, as
 	// [extension.Definition.New] does.
@@ -71,7 +69,6 @@ func (t Type) Bind(impl Implementation) extension.Definition {
 		Name:             t.Name,
 		Scope:            extension.ScopeTenant,
 		Keys:             impl.Keys,
-		Priority:         impl.Priority,
 		FailurePolicy:    impl.FailurePolicy,
 		ConfigSchema:     t.ConfigSchema,
 		EnabledByDefault: t.EnabledByDefault,
