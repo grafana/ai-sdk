@@ -617,29 +617,12 @@ SDK's Go module dependency graph.
   request. To roll dev back, pin an earlier published `<version>+<sha>` in the
   deployment repository. The next `main` publication replaces that pin, so also
   revert the faulty commit on `main` to keep dev on a good version.
-- **Gateway ops promotion:** ops runs only versions that a maintainer promotes
-  from dev. Dispatch the [promotion
-  workflow](.github/workflows/publish-ai-gateway-ops.yml) from `main` with the
-  full SHA of a `main` commit. It first requires that the commit's push CI run
-  shows every required source check and plugin validation succeeded, and that
-  the commit's dev publication run succeeded; a commit whose dev publication was
-  superseded or failed cannot be promoted. It then rebuilds that commit through
-  the same pinned shared workflow and settings as dev, targeting the ops catalog
-  with the `grafana_cloud` scope, so ops gets the same `<version>+<sha>` version
-  as dev, although the package is signed again. Promotions run one at a time; a
-  newer dispatch replaces one that is still waiting. After publishing, it opens
-  a pull request in the deployment repository that pins ops to exactly that
-  version, replacing an ops pin pull request that has not merged. That pull
-  request never merges automatically: review and merge it to roll ops forward.
-  The promotion may pin any promoted commit, including one older than the head
-  of `main`, so to roll ops back, promote an earlier dev-published commit or pin
-  an earlier ops version in the deployment repository. Promotion needs a one-time
-  grant in the deployment repository that lets this workflow open the ops pin
-  pull request for manual dispatches on `main`, and an existing ops pin to
-  update; without the grant the pin job fails after publishing, and without the
-  pin it opens no pull request. The shared workflow creates the ops catalog
-  plugin stub from the prod catalog's when it is missing. Promotion does not
-  publish to dev or prod, or create tags or releases.
+- **Gateway staging promotion:** to promote a commit that dev already runs,
+  dispatch the [promotion workflow](.github/workflows/publish-ai-gateway-ops.yml)
+  from `main` with its full SHA. The workflow requires the commit's CI run and
+  dev publication to have succeeded, publishes the same `<version>+<sha>` to the
+  staging catalog and requests a staging version pin that needs review before it
+  merges. To roll staging back, promote an earlier commit.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use
