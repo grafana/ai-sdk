@@ -148,10 +148,14 @@ func TestMergeOverlapping(t *testing.T) {
 		merged, err = MergeOverlapping(options, nil)
 		require.NoError(t, err)
 		assert.Equal(t, options, merged)
+		merged["other"] = raw("other", `{}`)
+		assert.Len(t, options, 1)
 
 		merged, err = MergeOverlapping(nil, options)
 		require.NoError(t, err)
 		assert.Equal(t, options, merged)
+		merged["other"] = raw("other", `{}`)
+		assert.Len(t, options, 1)
 	})
 
 	t.Run("OnlySharedNamespacesBecomeRaw", func(t *testing.T) {
