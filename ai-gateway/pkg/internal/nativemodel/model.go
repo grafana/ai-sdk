@@ -17,6 +17,18 @@ const (
 	OpenAIBaseURL    = "https://api.openai.com/v1"
 )
 
+// DefaultBaseURL returns the native endpoint of a provider type, or "" for a
+// type without one, such as openai-compatible.
+func DefaultBaseURL(providerType string) string {
+	switch providerType {
+	case "anthropic":
+		return AnthropicBaseURL
+	case "openai":
+		return OpenAIBaseURL
+	}
+	return ""
+}
+
 type Config struct {
 	APIKey       string `json:"apiKey"`
 	BaseURL      string `json:"baseURL,omitempty"`

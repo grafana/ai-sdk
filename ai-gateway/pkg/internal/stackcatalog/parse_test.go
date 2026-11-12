@@ -78,6 +78,17 @@ func TestParse_CustomEndpoints(t *testing.T) {
 	}, file.Providers)
 }
 
+func TestParse_NativeDefaultCountsAsUnset(t *testing.T) {
+	deny, err := outbound.ParseEgressList("api.anthropic.com,api.openai.com")
+	require.NoError(t, err)
+	spec := testSpec()
+	spec.Providers["anthropic"] = v1alpha1.Provider{Type: "anthropic", BaseURL: pointer("https://API.anthropic.com/")}
+	spec.Providers["openai"] = v1alpha1.Provider{Type: "openai", BaseURL: pointer("https://api.openai.com/v1")}
+	file, err := Parse(spec, testKeys, outbound.EgressPolicy{Deny: deny})
+	require.NoError(t, err, "the egress lists don't apply to native endpoints")
+	assert.Equal(t, map[string]config.Provider{"anthropic": {Type: "anthropic"}, "openai": {Type: "openai"}}, file.Providers)
+}
+
 func TestParse_RefusesEndpoints(t *testing.T) {
 	const (
 		form     = "modelcatalog: providers.openai.baseURL must be an absolute URL without userinfo, query or fragment"

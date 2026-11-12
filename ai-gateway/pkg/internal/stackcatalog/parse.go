@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
@@ -63,7 +64,7 @@ func checkEndpoints(file config.File, policy outbound.EgressPolicy) error {
 		if provider.BaseURL == "" {
 			continue
 		}
-		endpoint, err := outbound.CheckEndpoint(provider.BaseURL, policy)
+		endpoint, err := outbound.CheckEndpoint(provider.BaseURL, nativemodel.DefaultBaseURL(provider.Type), policy)
 		switch {
 		case errors.Is(err, outbound.ErrEndpointForm):
 			return fmt.Errorf("modelcatalog: providers.%s.baseURL must be an absolute URL without userinfo, query or fragment", name)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -19,14 +20,20 @@ var (
 )
 
 // CheckEndpoint checks a customer-chosen endpoint without resolving it and
-// returns it normalized. It fails with [ErrEndpointForm], [ErrEndpointScheme],
-// [ErrEndpointHost] or [execution.ErrEgressRefused], none of which contains
-// the URL. The egress client checks the addresses the endpoint resolves to
-// when connecting.
-func CheckEndpoint(raw string, policy EgressPolicy) (string, error) {
+// returns it normalized. An endpoint equal to native, the provider type's
+// native endpoint, counts as unset: CheckEndpoint returns "" without applying
+// policy, so the model keeps the shared client. Scheme and host compare
+// case-insensitively and a trailing "/" is ignored. It fails with
+// [ErrEndpointForm], [ErrEndpointScheme], [ErrEndpointHost] or
+// [execution.ErrEgressRefused], none of which contains the URL. The egress
+// client checks the addresses the endpoint resolves to when connecting.
+func CheckEndpoint(raw, native string, policy EgressPolicy) (string, error) {
 	parsed, err := ValidateEndpoint(raw)
 	if err != nil {
 		return "", ErrEndpointForm
+	}
+	if isNative(parsed, native) {
+		return "", nil
 	}
 	if !strings.EqualFold(parsed.Scheme, httpsScheme) {
 		return "", ErrEndpointScheme
@@ -35,6 +42,18 @@ func CheckEndpoint(raw string, policy EgressPolicy) (string, error) {
 		return "", err
 	}
 	return parsed.String(), nil
+}
+
+func isNative(endpoint *url.URL, native string) bool {
+	if native == "" {
+		return false
+	}
+	want, err := url.Parse(native)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(endpoint.Scheme, want.Scheme) && strings.EqualFold(endpoint.Host, want.Host) &&
+		strings.TrimSuffix(endpoint.EscapedPath(), "/") == strings.TrimSuffix(want.EscapedPath(), "/")
 }
 
 // ModelClients are the two clients a customer-configured model may use: the

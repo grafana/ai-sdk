@@ -36,7 +36,7 @@ func TestCheckEndpoint(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.raw, func(t *testing.T) {
-			got, err := CheckEndpoint(tc.raw, policy)
+			got, err := CheckEndpoint(tc.raw, "", policy)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 				assert.Empty(t, got)
@@ -47,6 +47,34 @@ func TestCheckEndpoint(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestCheckEndpoint_NativeDefault(t *testing.T) {
+	const native = "https://api.openai.com/v1"
+	denyNative := mustPolicy(t, "", "api.openai.com")
+	for _, raw := range []string{native, "https://api.openai.com/v1/", "HTTPS://API.OpenAI.com/v1"} {
+		t.Run("unset "+raw, func(t *testing.T) {
+			got, err := CheckEndpoint(raw, native, denyNative)
+			require.NoError(t, err, "the egress lists don't apply to the native endpoint")
+			assert.Empty(t, got)
+		})
+	}
+	for _, raw := range []string{"https://api.openai.com/v2", "https://api.openai.com:443/v1", "https://api.openai.com", "https://api.openai.com/V1"} {
+		t.Run("custom "+raw, func(t *testing.T) {
+			got, err := CheckEndpoint(raw, native, EgressPolicy{})
+			require.NoError(t, err)
+			assert.Equal(t, raw, got)
+		})
+	}
+	t.Run("plain HTTP is not native", func(t *testing.T) {
+		_, err := CheckEndpoint("http://api.openai.com/v1", native, EgressPolicy{})
+		require.ErrorIs(t, err, ErrEndpointScheme)
+	})
+	t.Run("no native endpoint", func(t *testing.T) {
+		got, err := CheckEndpoint(native, "", EgressPolicy{})
+		require.NoError(t, err)
+		assert.Equal(t, native, got)
+	})
 }
 
 func TestModelClients_For(t *testing.T) {

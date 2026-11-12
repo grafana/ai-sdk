@@ -98,6 +98,20 @@ func TestSelectStackCatalog_CustomEndpointsUseTheEgressClient(t *testing.T) {
 	assert.Equal(t, "Bearer gpt-catalog-key", native[0].Header.Get("Authorization"))
 }
 
+func TestSelectStackCatalog_NativeDefaultUsesTheSharedClient(t *testing.T) {
+	shared, egress := &recordingClient{}, &recordingClient{}
+	native := "https://api.anthropic.com"
+	stack := customEndpointCatalog()
+	stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", BaseURL: &native}
+	selected, err := SelectStackCatalog(stack, "balanced", stackGateway(`{"only":["anthropic"]}`), StackCatalogOptions{Clients: outbound.ModelClients{Shared: shared.client(), Egress: egress.client()}})
+	require.NoError(t, err)
+	_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)})
+	require.Error(t, err)
+	require.Len(t, shared.requests(), 1)
+	assert.Equal(t, "https://api.anthropic.com/v1/messages", shared.requests()[0].URL.String())
+	assert.Empty(t, egress.requests())
+}
+
 func TestSelectStackCatalog_CompatibleProviderFields(t *testing.T) {
 	builds := &recordedConfigs{}
 	selected, err := selectStackCatalog(customEndpointCatalog(), "balanced", stackGateway(`{"only":["acme"]}`), outbound.EgressPolicy{}, builds.build)
