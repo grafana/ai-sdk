@@ -17,6 +17,10 @@ type testOption struct {
 
 func (testOption) ProviderKey() string { return "test" }
 
+type scalarOption string
+
+func (scalarOption) ProviderKey() string { return "scalar" }
+
 type failingOption struct {
 	Value func() `json:"value"`
 }
@@ -129,6 +133,104 @@ func TestMerge(t *testing.T) {
 
 	t.Run("MarshalError", func(t *testing.T) {
 		_, err := Merge(provider.BuildProviderOptions(failingOption{}), provider.ProviderOptions{})
+		require.Error(t, err)
+	})
+}
+
+func TestMergeOverlapping(t *testing.T) {
+	t.Run("NilInputs", func(t *testing.T) {
+		options := provider.BuildProviderOptions(testOption{Keep: "value"})
+
+		merged, err := MergeOverlapping(nil, nil)
+		require.NoError(t, err)
+		assert.Nil(t, merged)
+
+		merged, err = MergeOverlapping(options, nil)
+		require.NoError(t, err)
+		assert.Equal(t, options, merged)
+
+		merged, err = MergeOverlapping(nil, options)
+		require.NoError(t, err)
+		assert.Equal(t, options, merged)
+	})
+
+	t.Run("OnlySharedNamespacesBecomeRaw", func(t *testing.T) {
+		baseOnly := testOption{Keep: "base-only"}
+		overrideOnly := scalarOption("override-only")
+		base := provider.ProviderOptions{
+			"test":   testOption{Nested: map[string]any{"left": true}, Keep: "value"},
+			"base":   baseOnly,
+			"shared": raw("shared", `{"a":{"x":1}}`),
+		}
+		override := provider.ProviderOptions{
+			"test":   raw("test", `{"nested":{"right":true}}`),
+			"shared": raw("shared", `{"a":{"y":2}}`),
+			"scalar": overrideOnly,
+		}
+
+		merged, err := MergeOverlapping(base, override)
+		require.NoError(t, err)
+
+		assert.Equal(t, baseOnly, merged["base"])
+		assert.Equal(t, overrideOnly, merged["scalar"])
+		assert.JSONEq(t, `{
+			"test":{"nested":{"left":true,"right":true},"keep":"value"},
+			"base":{"nested":null,"keep":"base-only"},
+			"shared":{"a":{"x":1,"y":2}},
+			"scalar":"override-only"
+		}`, encode(t, merged))
+		assert.IsType(t, provider.RawProviderOption{}, merged["test"])
+
+		resolved, ok, err := provider.ResolveOption[testOption](merged, "test")
+		require.NoError(t, err)
+		require.True(t, ok)
+		assert.Equal(t, testOption{Nested: map[string]any{"left": true, "right": true}, Keep: "value"}, resolved)
+		assert.Len(t, base, 3)
+		assert.Len(t, override, 3)
+		assert.IsType(t, testOption{}, base["test"])
+	})
+
+	t.Run("NonObjectNamespaceReplaced", func(t *testing.T) {
+		override := provider.ProviderOptions{
+			"a": raw("a", `null`),
+			"b": scalarOption("caller"),
+			"c": nil,
+		}
+		base := provider.ProviderOptions{
+			"a": raw("a", `{"x":1}`),
+			"b": raw("b", `{"x":1}`),
+			"c": raw("c", `{"x":1}`),
+		}
+
+		merged, err := MergeOverlapping(base, override)
+		require.NoError(t, err)
+		assert.Equal(t, override["a"], merged["a"])
+		assert.Equal(t, override["b"], merged["b"])
+		assert.Nil(t, merged["c"])
+		assert.Contains(t, merged, "c")
+	})
+
+	t.Run("PrototypeNamespacesIgnored", func(t *testing.T) {
+		base := provider.ProviderOptions{"constructor": raw("constructor", `{"base":true}`)}
+		override := provider.ProviderOptions{
+			"constructor": raw("constructor", `{"override":true}`),
+			"__proto__":   raw("__proto__", `{"override":true}`),
+			"safe":        raw("safe", `{"override":true}`),
+		}
+
+		merged, err := MergeOverlapping(base, override)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"constructor":{"base":true},"safe":{"override":true}}`, encode(t, merged))
+	})
+
+	t.Run("MarshalErrorOnlyForSharedNamespaces", func(t *testing.T) {
+		failing := provider.BuildProviderOptions(failingOption{})
+
+		merged, err := MergeOverlapping(failing, provider.ProviderOptions{"other": raw("other", `{}`)})
+		require.NoError(t, err)
+		assert.Len(t, merged, 2)
+
+		_, err = MergeOverlapping(failing, provider.ProviderOptions{"failing": raw("failing", `{}`)})
 		require.Error(t, err)
 	})
 }

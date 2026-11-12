@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -36,6 +37,56 @@ func Merge(base, override provider.ProviderOptions) (provider.ProviderOptions, e
 	result := make(provider.ProviderOptions, len(merged))
 	for key, value := range merged {
 		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling merged option %q: %w", key, err)
+		}
+		result[key] = provider.RawProviderOption{Key: key, Raw: raw}
+	}
+	return result, nil
+}
+
+// MergeOverlapping deep-merges override into base like [Merge], but keeps the
+// original values of namespaces that are not JSON objects on both sides. Only
+// namespaces whose base and override values are both JSON objects are
+// returned as a merged [provider.RawProviderOption]. When either side is nil
+// the other is returned unchanged.
+func MergeOverlapping(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
+	if base == nil {
+		return override, nil
+	}
+	if override == nil {
+		return base, nil
+	}
+
+	baseShared := make(provider.ProviderOptions)
+	overrideShared := make(provider.ProviderOptions)
+	for key, value := range override {
+		if baseValue, ok := base[key]; ok && !ignoredKey(key) {
+			baseShared[key] = baseValue
+			overrideShared[key] = value
+		}
+	}
+	baseObject, err := optionsObject(baseShared)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling base options: %w", err)
+	}
+	overrideObject, err := optionsObject(overrideShared)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling override options: %w", err)
+	}
+
+	result := maps.Clone(base)
+	for key, value := range override {
+		if ignoredKey(key) {
+			continue
+		}
+		baseNamespace, baseOK := baseObject[key].(map[string]any)
+		overrideNamespace, overrideOK := overrideObject[key].(map[string]any)
+		if !baseOK || !overrideOK {
+			result[key] = value
+			continue
+		}
+		raw, err := json.Marshal(mergeObject(baseNamespace, overrideNamespace))
 		if err != nil {
 			return nil, fmt.Errorf("marshaling merged option %q: %w", key, err)
 		}

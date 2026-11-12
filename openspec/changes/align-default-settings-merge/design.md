@@ -26,15 +26,16 @@ Upstream reference: `ai@7.0.159`, commit `028a0253`, fetched with `gh api repos/
 
 ### Provider options: share the existing `mergeObjects` port
 
-Move the merge from `provider_options.go` into a root-module internal package and call it from both `StreamText` step preparation and `DefaultSettings`. Errors are returned from `TransformParams`.
+Move the merge from `provider_options.go` into a root-module internal package. `StreamText` step preparation keeps calling the existing whole-map merge (`Merge`) unchanged. `DefaultSettings` calls a second entry point (`MergeOverlapping`) that shares the same recursive object merge but only merges namespaces present on both sides. Errors are returned from `TransformParams`.
 
 - Alternative: a second copy in `middleware`. Rejected as duplication of a security-relevant rule set.
 - Alternative: an exported `provider` helper. Rejected: new public API with no other consumer.
-- Consequence: when both sides supply provider options, every namespace reaches the model as `RawProviderOption`, as already happens after a `prepareStep` override. Providers resolve with `provider.ResolveOption`.
+- Alternative: reuse `Merge` as is. Rejected: it turns every namespace into `RawProviderOption`, breaking custom models that type-assert a typed option set on only one side. Changing `Merge` instead would change `prepareStep` behavior.
+- Consequence: only namespaces that are JSON objects on both sides reach the model as `RawProviderOption`; providers resolve them with `provider.ResolveOption`. Other namespaces keep their original values, and only the shared namespaces are marshaled.
 
 ### Response format: merge active members only
 
-Merge field by field (`Type`, then `Schema`, `Name`, `Description` for JSON). When the resulting type is text, clear the JSON-only members.
+Merge field by field: the caller's `Type`, or the default's when empty; then, for a JSON result only, fill an unset `Schema`, `Name` and `Description` from the default. A non-JSON result takes no members from the default and keeps the caller's value otherwise unchanged.
 
 - Alternative: literal deep merge, giving `{type: text, schema: ...}`. Rejected: no Go adapter acts on those members and the Grafana client rejects them, so it would only add failures.
 - Alternative: keep whole replacement. Rejected: a JSON caller without a schema would lose the default schema, which upstream keeps.
@@ -61,9 +62,9 @@ Add one `knownGaps` entry, `default-settings-go-representation` (surface `core-m
 ## Risks / Trade-offs
 
 - [A caller relied on a namespace replacing the default's keys] → Upstream semantics; called out in the PR and changelog. Removing a default key requires a caller value such as `null`.
-- [A custom model type-asserts a typed provider option] → It now gets `RawProviderOption` when both sides supply options. Document `ResolveOption` in the `DefaultSettings` godoc.
+- [A custom model type-asserts a typed provider option] → Only a namespace set on both sides becomes `RawProviderOption`. Document `ResolveOption` in the `DefaultSettings` godoc.
 - [Merged namespace JSON is re-encoded] → Keys reorder, but numbers are preserved through `json.Number`. No semantic change.
-- [`TransformParams` can now fail] → Only on unmarshalable provider options, which would also fail at the provider.
+- [`TransformParams` can now fail] → Only when a namespace set on both sides cannot be marshaled, which would also fail at the provider.
 
 ## Migration Plan
 
