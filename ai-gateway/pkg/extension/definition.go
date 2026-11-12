@@ -76,8 +76,9 @@ type Definition struct {
 	// empty configuration of a type enabled by default. Nil passes the
 	// configuration through as its canonical [json.RawMessage]. An error or
 	// panic applies the extension's failure policy in that namespace, or
-	// fails startup for the default configuration. The returned value is
-	// shared by concurrent calls and must not be modified. A type without a
+	// fails startup for the default configuration. It may run concurrently
+	// for different namespaces. The returned value is shared by concurrent
+	// calls and must not be modified. A type without a
 	// configuration schema never decodes. Operator-scope definitions must
 	// leave it nil.
 	Decode func(config json.RawMessage) (any, error)

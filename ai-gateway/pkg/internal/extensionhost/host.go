@@ -3,6 +3,7 @@ package extensionhost
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -191,16 +192,9 @@ func New(config Config) (*Host, error) {
 	}
 	sortByName(host.startup)
 	sortByName(host.operators)
-	defaults := host.operatorMembers()
-	for _, definition := range host.tenant {
-		if decoded, ok := host.defaults[definition.Name]; ok {
-			defaults = append(defaults, member{instance: host.tenantInstances[definition.Name], config: decoded})
-		}
-	}
-	host.lists = make(map[extension.KeyOwnership]*lists, len(keyOwnerships))
+	host.lists = host.buildNamespace("", nil, [sha256.Size]byte{}).lists
 	host.tenantKeys = make(map[extension.KeyOwnership]bool, len(keyOwnerships))
 	for _, keys := range keyOwnerships {
-		host.lists[keys] = newLists(defaults, keys, nil)
 		host.tenantKeys[keys] = slices.ContainsFunc(host.tenant, func(definition extension.Definition) bool { return applies(definition, keys) })
 	}
 	host.failed = host.failureConfig()
@@ -274,11 +268,10 @@ func decode(definition extension.Definition, configuration json.RawMessage) (any
 	return decoded, "", nil
 }
 
-// newLists returns the lists of the members, in name order, that apply to
-// calls whose keys are owned by keys, with the unavailable definitions that
-// apply to them.
+// newLists returns the lists of the members, which are in name order, that
+// apply to calls whose keys are owned by keys, with the unavailable
+// definitions that apply to them.
 func newLists(members []member, keys extension.KeyOwnership, unavailable []extension.Definition) *lists {
-	slices.SortFunc(members, func(a, b member) int { return strings.Compare(a.instance.definition.Name, b.instance.definition.Name) })
 	selected := &lists{}
 	for _, running := range members {
 		built := running.instance

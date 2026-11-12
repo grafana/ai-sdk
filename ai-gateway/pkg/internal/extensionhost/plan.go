@@ -38,8 +38,7 @@ type planned struct {
 // NewPlan applies the operator extension setting's entries to valid
 // definitions. Operator extensions without an entry use their default state.
 // Every tenant extension is planned with an empty configuration, since any
-// namespace may enable it; one enabled by default must accept the empty
-// configuration, its default.
+// namespace may enable it.
 // Mandatory extensions must have an enabled entry. Failures name the setting,
 // the extension and the field, never their values.
 func NewPlan(definitions []extension.Definition, mandatory []string, entries map[string]config.ExtensionEntry) (*Plan, error) {
@@ -71,11 +70,6 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 	slices.SortFunc(plan.tenant, func(a, b extension.Definition) int { return strings.Compare(a.Name, b.Name) })
 	for _, definition := range definitions {
 		if definition.Scope == extension.ScopeTenant {
-			if definition.EnabledByDefault {
-				if err := CheckConfig(definition, emptyConfig); err != nil {
-					return nil, fmt.Errorf("config: %s.%s.config %w", setting, definition.Name, err)
-				}
-			}
 			plan.enabled = append(plan.enabled, planned{definition: definition, config: emptyConfig})
 			continue
 		}

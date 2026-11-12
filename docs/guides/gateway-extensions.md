@@ -315,7 +315,9 @@ would not be applied. Deletes still work.
   the implementation to parse it once, into the type your phases
   type-assert: the Gateway decodes each namespace's member once per change,
   never per call. A decoding error applies the failure policy in that
-  namespace. A type without a configuration schema gets `nil`.
+  namespace. For a type enabled by default, `Decode` also runs once at startup
+  on `{}`, and its failure fails startup. A type without a configuration
+  schema gets `nil`.
 - The decoded value is shared by every call in the namespace. Treat it as
   read-only, and keep per-call data in `call.State`.
 - Tenant extensions see the same request information as operator extensions,

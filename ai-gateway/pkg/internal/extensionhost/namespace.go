@@ -3,6 +3,8 @@ package extensionhost
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"slices"
+	"strings"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 )
@@ -63,6 +65,7 @@ func (h *Host) buildNamespace(namespace string, resources []TenantResource, dige
 		}
 		members = append(members, member{instance: running, config: decoded})
 	}
+	slices.SortFunc(members, func(a, b member) int { return strings.Compare(a.instance.definition.Name, b.instance.definition.Name) })
 	built := &namespaceConfig{lists: make(map[extension.KeyOwnership]*lists, len(keyOwnerships)), digest: digest}
 	for _, keys := range keyOwnerships {
 		built.lists[keys] = newLists(members, keys, unavailable)
@@ -98,8 +101,9 @@ func (h *Host) failureConfig() *namespaceConfig {
 		}
 	}
 	failed := &namespaceConfig{lists: make(map[extension.KeyOwnership]*lists, len(keyOwnerships))}
+	operators := h.operatorMembers()
 	for _, keys := range keyOwnerships {
-		failed.lists[keys] = newLists(h.operatorMembers(), keys, unavailable)
+		failed.lists[keys] = newLists(operators, keys, unavailable)
 	}
 	return failed
 }
