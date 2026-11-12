@@ -155,12 +155,13 @@ func TestConformance_Stream(t *testing.T) {
 
 func TestConformance_Hooks(t *testing.T) {
 	scenarios := []struct {
-		name      string
-		expectDir string
+		name            string
+		expectDir       string
+		rejectTransform bool
 	}{
-		{"allow", "allow"},
-		{"deny", "deny"},
-		{"transform_preserves_signature", "transform_preserves_signature"},
+		{"allow", "allow", false},
+		{"deny", "deny", false},
+		{"transform_preserves_signature", "transform_preserves_signature", true},
 	}
 
 	for _, sc := range scenarios {
@@ -179,6 +180,26 @@ func TestConformance_Hooks(t *testing.T) {
 				ClientResolver: func(context.Context) *agento11y.Client { return client },
 			})}})
 			_, err = wrapped.DoGenerate(context.Background(), provider.CallOptions{Prompt: originalPrompt})
+
+			if sc.rejectTransform {
+				require.NotNil(t, hookResp.TransformedInput)
+				require.ErrorIs(t, err, ErrHookTransformFailed)
+				assert.Zero(t, model.generateHit)
+				assert.Zero(t, model.streamHit)
+
+				decoded, err := client.EvaluateHook(context.Background(), agento11y.HookEvaluateRequest{Phase: agento11y.HookPhasePreflight})
+				require.NoError(t, err)
+				require.NotNil(t, decoded.TransformedInput)
+				inactive, err := applyTransformedRequest(provider.CallOptions{Prompt: originalPrompt}, *decoded.TransformedInput)
+				require.NoError(t, err)
+				if regenerateConformanceFixtures {
+					writeJSONFile(t, filepath.Join(dir, "expected_prompt.json"), inactive.Prompt)
+					return
+				}
+				expected := readJSONFile[[]provider.Message](t, filepath.Join(dir, "expected_prompt.json"))
+				assertPromptsEquivalent(t, expected, inactive.Prompt)
+				return
+			}
 
 			switch hookResp.Action {
 			case agento11y.HookActionAllow:
