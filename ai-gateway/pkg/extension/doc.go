@@ -6,11 +6,11 @@
 // A distribution passes [Definition] values to the Gateway's composition
 // entrypoint. There is no global or import-time registry. At startup the
 // Gateway validates every definition, reads operator configuration, and runs
-// each enabled extension's factory once with its validated configuration and
-// [Dependencies]. Tenant-scope extensions also run once for each namespace
-// configuration that enables them, read from the namespace's Middleware
-// resources. A factory may therefore run more than once per process and must
-// not assume it is the only instance.
+// each extension's factory once with [Dependencies]: an enabled operator-scope
+// extension with its validated configuration, and every tenant-scope
+// extension with an empty one. A tenant-scope extension's configuration is
+// read per namespace from Middleware resources, decoded once per change with
+// [Definition.Decode], and given to each call in [Call.Config].
 //
 // # Phases
 //

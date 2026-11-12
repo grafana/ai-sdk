@@ -3,6 +3,7 @@ package extensionhost
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -43,27 +44,31 @@ type Config struct {
 }
 
 // Host owns the constructed extension instances and composes their pipeline
-// around each call. It is safe for concurrent use.
+// around each call. Every extension, operator or tenant, has one instance per
+// process; a namespace's tenant configuration reaches its calls as data. It
+// is safe for concurrent use.
 type Host struct {
-	// startup holds the instances built at startup: enabled operator
-	// extensions and tenant extensions enabled by default, by name.
+	// startup holds every instance, operator and tenant, by name.
 	startup []*instance
 	// operators holds the operator-scope instances among startup.
 	operators []*instance
-	// defaults holds each default-enabled tenant extension's startup
-	// instance by name.
-	defaults map[string]*instance
+	// tenantInstances holds each tenant-scope instance by name.
+	tenantInstances map[string]*instance
+	// defaults holds the decoded default configuration of each tenant
+	// extension enabled by default, by name.
+	defaults map[string]any
 	// tenant holds every tenant-scope definition by name.
 	tenant []extension.Definition
 	// tenantKeys reports, per key ownership, whether a tenant definition
 	// applies.
 	tenantKeys map[extension.KeyOwnership]bool
-	// lists are the startup instances' lists per key ownership, used without
-	// namespace configuration.
+	// lists are the default lists per key ownership, used without namespace
+	// configuration: operator extensions and tenant extensions enabled by
+	// default, with their default configuration.
 	lists map[extension.KeyOwnership]*lists
-	// failed is the snapshot of a namespace whose configuration cannot be
-	// read: every tenant extension applies its failure policy.
-	failed             *snapshot
+	// failed is the configuration of a namespace that cannot be read: every
+	// tenant extension applies its failure policy.
+	failed             *namespaceConfig
 	logger             *slog.Logger
 	clock              func() time.Time
 	requestInfo        func(context.Context) extension.Call
@@ -74,18 +79,8 @@ type Host struct {
 	unimplementedTypes prometheus.Counter
 	observations       observations
 	closeOnce          sync.Once
-	// registerers holds each definition's shared registerer.
-	registerers map[string]sharedRegisterer
-	cacheConfig TenantCacheConfig
-	cache       atomic.Pointer[tenantCache]
-
-	// mu guards live and shuttingDown, and orders closing.Add before the
-	// shutdown wait.
-	mu sync.Mutex
-	// live holds the snapshots whose instances are not closed yet.
-	live         map[*snapshot]struct{}
-	shuttingDown bool
-	closing      sync.WaitGroup
+	cacheConfig        TenantCacheConfig
+	cache              atomic.Pointer[tenantCache]
 }
 
 type instance struct {
@@ -98,12 +93,20 @@ type instance struct {
 	closer            extension.Closer
 }
 
+// member is an instance that runs for a call, with its configuration for
+// the call: nil for operator extensions.
+type member struct {
+	instance *instance
+	config   any
+}
+
 // lists are the instances that apply to calls with one key ownership, by
-// name, the positions of the transformers among them in transform order
-// (tenant scope first, then operator scope, each by name), and the
-// fail-closed tenant extensions whose configuration failed.
+// name, with their configuration, the positions of the transformers among
+// them in transform order (tenant scope first, then operator scope, each by
+// name), and the fail-closed tenant extensions whose configuration failed.
 type lists struct {
 	byName            []*instance
+	configs           []any
 	transforms        []int
 	responseInspector bool
 	observer          bool
@@ -116,19 +119,21 @@ var keyOwnerships = []extension.KeyOwnership{extension.KeysOperator, extension.K
 // empty reports whether the lists leave a call to the selected model alone.
 func (l *lists) empty() bool { return len(l.byName) == 0 && len(l.unavailable) == 0 }
 
-// New registers the extension metrics and constructs every planned instance.
-// A factory that fails or panics, or an instance without a phase, fails
-// construction without the factory's error text; instances already built are
-// closed.
+// New registers the extension metrics, constructs one instance of every
+// planned extension, and decodes the empty configuration of every tenant
+// extension enabled by default. A factory or default decoding that fails or
+// panics, or an instance without a phase, fails construction without the
+// error text; instances already built are closed.
 func New(config Config) (*Host, error) {
 	host := &Host{
-		logger:       config.Logger,
-		clock:        config.Clock,
-		requestInfo:  config.RequestInfo,
-		drainTimeout: config.DrainTimeout,
-		tenant:       config.Plan.tenant,
-		cacheConfig:  config.TenantCache.withDefaults(),
-		live:         map[*snapshot]struct{}{},
+		logger:          config.Logger,
+		clock:           config.Clock,
+		requestInfo:     config.RequestInfo,
+		drainTimeout:    config.DrainTimeout,
+		tenant:          config.Plan.tenant,
+		cacheConfig:     config.TenantCache.withDefaults(),
+		tenantInstances: map[string]*instance{},
+		defaults:        map[string]any{},
 		events: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "grafana_ai_gateway",
 			Name:      "extension_events_total",
@@ -155,40 +160,49 @@ func New(config Config) (*Host, error) {
 			return nil, fmt.Errorf("extensions: registering metrics: %w", err)
 		}
 	}
-	host.registerers = make(map[string]sharedRegisterer, len(config.Plan.enabled)+len(host.tenant))
-	for _, planned := range config.Plan.enabled {
-		host.registerers[planned.definition.Name] = newSharedRegisterer(config.Registerer, planned.definition.Name)
+	fail := func(err error) (*Host, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), observeTimeout)
+		defer cancel()
+		host.Close(ctx)
+		return nil, err
 	}
-	for _, definition := range host.tenant {
-		host.registerers[definition.Name] = newSharedRegisterer(config.Registerer, definition.Name)
-	}
-	host.defaults = map[string]*instance{}
 	for _, planned := range config.Plan.enabled {
-		built, _, err := construct(planned, config.Logger, host.registerers[planned.definition.Name], config.Clock)
+		built, err := construct(planned, config.Logger, config.Registerer, config.Clock)
 		if built != nil {
 			host.startup = append(host.startup, built)
 		}
 		if err != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), observeTimeout)
-			host.Close(ctx)
-			cancel()
-			return nil, err
+			return fail(err)
 		}
-		if planned.definition.Scope == extension.ScopeTenant {
-			host.defaults[planned.definition.Name] = built
-		} else {
+		if planned.definition.Scope == extension.ScopeOperator {
 			host.operators = append(host.operators, built)
+			continue
 		}
+		host.tenantInstances[planned.definition.Name] = built
+		if !planned.definition.EnabledByDefault {
+			continue
+		}
+		decoded, _, err := decode(planned.definition, emptyConfig)
+		if err != nil {
+			return fail(fmt.Errorf("extensions: decoding the default configuration of extension %q failed", planned.definition.Name))
+		}
+		host.defaults[planned.definition.Name] = decoded
 	}
 	sortByName(host.startup)
 	sortByName(host.operators)
+	defaults := host.operatorMembers()
+	for _, definition := range host.tenant {
+		if decoded, ok := host.defaults[definition.Name]; ok {
+			defaults = append(defaults, member{instance: host.tenantInstances[definition.Name], config: decoded})
+		}
+	}
 	host.lists = make(map[extension.KeyOwnership]*lists, len(keyOwnerships))
 	host.tenantKeys = make(map[extension.KeyOwnership]bool, len(keyOwnerships))
 	for _, keys := range keyOwnerships {
-		host.lists[keys] = newLists(host.startup, keys, nil)
+		host.lists[keys] = newLists(defaults, keys, nil)
 		host.tenantKeys[keys] = slices.ContainsFunc(host.tenant, func(definition extension.Definition) bool { return applies(definition, keys) })
 	}
-	host.failed = host.failureSnapshot()
+	host.failed = host.failureConfig()
 	return host, nil
 }
 
@@ -196,14 +210,23 @@ func sortByName(instances []*instance) {
 	slices.SortFunc(instances, func(a, b *instance) int { return strings.Compare(a.definition.Name, b.definition.Name) })
 }
 
-// construct runs a definition's factory. On failure it returns the failure's
-// class, and the instance when the factory returned one without a phase, so
-// the caller can close it.
-func construct(planned planned, logger *slog.Logger, registerer sharedRegisterer, clock func() time.Time) (*instance, failureClass, error) {
+// operatorMembers returns the operator instances as members without
+// configuration.
+func (h *Host) operatorMembers() []member {
+	members := make([]member, len(h.operators))
+	for i, built := range h.operators {
+		members[i] = member{instance: built}
+	}
+	return members
+}
+
+// construct runs a definition's factory. It returns the instance when the
+// factory returned one without a phase, so the caller can close it.
+func construct(planned planned, logger *slog.Logger, registerer prometheus.Registerer, clock func() time.Time) (*instance, error) {
 	definition := planned.definition
 	deps := extension.Dependencies{
 		Logger:     logger.With("extension", definition.Name),
-		Registerer: registerer,
+		Registerer: prometheus.WrapRegistererWith(prometheus.Labels{"extension": definition.Name}, registerer),
 		Clock:      clock,
 		Secrets:    planned.secrets,
 	}
@@ -213,7 +236,7 @@ func construct(planned planned, logger *slog.Logger, registerer sharedRegisterer
 		return err
 	})
 	if err != nil {
-		return nil, classOf(err), fmt.Errorf("extensions: constructing extension %q failed", definition.Name)
+		return nil, fmt.Errorf("extensions: constructing extension %q failed", definition.Name)
 	}
 	built := &instance{definition: definition}
 	built.admitter, _ = value.(extension.Admitter)
@@ -223,21 +246,46 @@ func construct(planned planned, logger *slog.Logger, registerer sharedRegisterer
 	built.observer, _ = value.(extension.Observer)
 	built.closer, _ = value.(extension.Closer)
 	if built.admitter == nil && built.transformer == nil && built.requestInspector == nil && built.responseInspector == nil && built.observer == nil {
-		return built, classError, fmt.Errorf("extensions: extension %q implements no phase", definition.Name)
+		return built, fmt.Errorf("extensions: extension %q implements no phase", definition.Name)
 	}
-	return built, "", nil
+	return built, nil
 }
 
-// newLists returns the lists of the instances, in name order, that apply to
+// decode returns the value a tenant extension's calls receive for a
+// configuration its schema accepts: nil for a type without a schema, the
+// configuration itself without Decode, or what Decode returns. A failure
+// returns its class.
+func decode(definition extension.Definition, configuration json.RawMessage) (any, failureClass, error) {
+	if definition.ConfigSchema.JSON() == nil {
+		return nil, "", nil
+	}
+	if definition.Decode == nil {
+		return configuration, "", nil
+	}
+	var decoded any
+	err := contain(func() (err error) {
+		decoded, err = definition.Decode(configuration)
+		return err
+	})
+	if err != nil {
+		return nil, classOf(err), err
+	}
+	return decoded, "", nil
+}
+
+// newLists returns the lists of the members, in name order, that apply to
 // calls whose keys are owned by keys, with the unavailable definitions that
 // apply to them.
-func newLists(instances []*instance, keys extension.KeyOwnership, unavailable []extension.Definition) *lists {
+func newLists(members []member, keys extension.KeyOwnership, unavailable []extension.Definition) *lists {
+	slices.SortFunc(members, func(a, b member) int { return strings.Compare(a.instance.definition.Name, b.instance.definition.Name) })
 	selected := &lists{}
-	for _, built := range instances {
+	for _, running := range members {
+		built := running.instance
 		if !applies(built.definition, keys) {
 			continue
 		}
 		selected.byName = append(selected.byName, built)
+		selected.configs = append(selected.configs, running.config)
 		selected.responseInspector = selected.responseInspector || built.responseInspector != nil
 		selected.observer = selected.observer || built.observer != nil
 	}
@@ -269,8 +317,8 @@ func scopeOrder(scope extension.Scope) int {
 // Compose is the extension layer of the runtime's model composer: it wraps a
 // selection's model in the extension pipeline, or returns the model
 // unchanged when no extension can apply to the key ownership of its source.
-// Which extensions run is decided per call, from the call's namespace
-// configuration.
+// Which extensions run, and with which configuration, is decided per call
+// from the call's namespace configuration.
 func (h *Host) Compose(selected execution.Selection) (provider.LanguageModel, error) {
 	keys := selected.Source.Keys()
 	applicable := h.lists[keys]
@@ -295,17 +343,18 @@ func (h *Host) ConnectTenants(reader TenantReader) {
 }
 
 // resolve returns the lists for a call in namespace whose keys are owned by
-// keys, and the snapshot the call holds until it releases it.
-func (h *Host) resolve(ctx context.Context, namespace string, keys extension.KeyOwnership) (*lists, *snapshot, error) {
+// keys. They are immutable, so the call keeps using them after the
+// namespace's configuration changes.
+func (h *Host) resolve(ctx context.Context, namespace string, keys extension.KeyOwnership) (*lists, error) {
 	cache := h.cache.Load()
 	if cache == nil || !h.tenantKeys[keys] {
-		return h.lists[keys], nil, nil
+		return h.lists[keys], nil
 	}
-	held, err := cache.acquire(ctx, namespace)
+	configured, err := cache.acquire(ctx, namespace)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return held.lists[keys], held, nil
+	return configured.lists[keys], nil
 }
 
 // candidates returns the extension view of a selection's expected attempts.
@@ -327,13 +376,10 @@ func candidates(expected []execution.ExpectedAttempt) []extension.Candidate {
 }
 
 // Close stops reading tenant configuration and accepting observations, waits
-// for observations in flight, and closes every instance concurrently, until
-// ctx ends: startup instances, every namespace's instances, and closes
-// already started for replaced or evicted configurations. Observations still
-// running when ctx ends are counted as dropped; close failures, and closes
-// still running when ctx ends, are counted and logged as failures. A
-// namespace read whose factory outlives ctx closes what it built itself,
-// bounded by its own close timeout. Later calls have no effect.
+// for reads and observations in flight, and closes every instance
+// concurrently, until ctx ends. Observations still running when ctx ends are
+// counted as dropped; close failures, and closes still running when ctx ends,
+// are counted and logged as failures. Later calls have no effect.
 func (h *Host) Close(ctx context.Context) {
 	h.closeOnce.Do(func() { h.close(ctx) })
 }
@@ -343,18 +389,7 @@ func (h *Host) close(ctx context.Context) {
 		cache.close(ctx)
 	}
 	h.dropped.Add(float64(h.observations.close(ctx)))
-	h.mu.Lock()
-	h.shuttingDown = true
-	instances := slices.Clone(h.startup)
-	for held := range h.live {
-		instances = append(instances, held.owned...)
-	}
-	clear(h.live)
-	h.mu.Unlock()
-	var group sync.WaitGroup
-	group.Go(func() { h.closeInstances(ctx, instances) })
-	group.Go(func() { waitUntil(ctx, &h.closing) })
-	group.Wait()
+	h.closeInstances(ctx, h.startup)
 }
 
 // closeInstances closes instances concurrently until ctx ends, counting

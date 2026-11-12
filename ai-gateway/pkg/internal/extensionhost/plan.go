@@ -19,8 +19,8 @@ import (
 
 var emptyConfig = json.RawMessage(`{}`)
 
-// Plan is the validated configuration of every enabled extension. Secrets are
-// read separately, after every other setting is validated.
+// Plan is the validated configuration of every extension to construct.
+// Secrets are read separately, after every other setting is validated.
 type Plan struct {
 	enabled []planned
 	// tenant holds every tenant-scope definition, enabled or not, in name
@@ -36,9 +36,10 @@ type planned struct {
 }
 
 // NewPlan applies the operator extension setting's entries to valid
-// definitions. Operator extensions without an entry use their default state;
-// tenant extensions enabled by default are planned with an empty
-// configuration, as their default state.
+// definitions. Operator extensions without an entry use their default state.
+// Every tenant extension is planned with an empty configuration, since any
+// namespace may enable it; one enabled by default must accept the empty
+// configuration, its default.
 // Mandatory extensions must have an enabled entry. Failures name the setting,
 // the extension and the field, never their values.
 func NewPlan(definitions []extension.Definition, mandatory []string, entries map[string]config.ExtensionEntry) (*Plan, error) {
@@ -69,6 +70,15 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 	}
 	slices.SortFunc(plan.tenant, func(a, b extension.Definition) int { return strings.Compare(a.Name, b.Name) })
 	for _, definition := range definitions {
+		if definition.Scope == extension.ScopeTenant {
+			if definition.EnabledByDefault {
+				if err := CheckConfig(definition, emptyConfig); err != nil {
+					return nil, fmt.Errorf("config: %s.%s.config %w", setting, definition.Name, err)
+				}
+			}
+			plan.enabled = append(plan.enabled, planned{definition: definition, config: emptyConfig})
+			continue
+		}
 		entry, configured := entries[definition.Name]
 		enabled := definition.EnabledByDefault
 		if configured {

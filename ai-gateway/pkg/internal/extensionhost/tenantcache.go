@@ -57,12 +57,12 @@ func (c TenantCacheConfig) withDefaults() TenantCacheConfig {
 	return c
 }
 
-// tenantCache caches each namespace's configuration snapshot, read as the
+// tenantCache caches each namespace's configuration, read as the
 // plugin on its own root context. A namespace's first call waits for its
 // first read; concurrent calls share one read, and later calls are served
 // from the cache while a background refresh runs after the TTL. A failed
 // read is retried after the backoff; the last successful read is served for
-// at most the maximum staleness, then the failure snapshot.
+// at most the maximum staleness, then the failure configuration.
 type tenantCache struct {
 	host   *Host
 	reader TenantReader
@@ -82,7 +82,9 @@ type tenantCache struct {
 // tenantEntry is one namespace's cache state. The cache lock guards it.
 type tenantEntry struct {
 	namespace string
-	snapshot  *snapshot
+	// config is the namespace's configuration served to calls; nil before
+	// the first read completes.
+	config *namespaceConfig
 	// loadedAt is the time of the last successful read; zero before one.
 	loadedAt time.Time
 	// failed reports whether the last read failed.
@@ -101,10 +103,10 @@ func newTenantCache(host *Host, reader TenantReader) *tenantCache {
 	return &tenantCache{host: host, reader: reader, config: host.cacheConfig, root: root, cancel: cancel, entries: map[string]*list.Element{}, order: list.New()}
 }
 
-// acquire returns namespace's snapshot with a reference the caller must
-// release. It waits for the namespace's first read, or until ctx ends. A
-// call without a namespace never reads and gets the failure snapshot.
-func (c *tenantCache) acquire(ctx context.Context, namespace string) (*snapshot, error) {
+// acquire returns namespace's configuration. It waits for the namespace's
+// first read, or until ctx ends. A call without a namespace never reads and
+// gets the failure configuration.
+func (c *tenantCache) acquire(ctx context.Context, namespace string) (*namespaceConfig, error) {
 	if namespace == "" {
 		return c.host.failed, nil
 	}
@@ -115,7 +117,7 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*snapshot,
 			return nil, errTenantsClosed
 		}
 		entry := c.touch(namespace)
-		if entry.snapshot == nil {
+		if entry.config == nil {
 			loading := c.start(entry)
 			c.mu.Unlock()
 			select {
@@ -124,7 +126,7 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*snapshot,
 				return nil, ctx.Err()
 			}
 			c.mu.Lock()
-			if entry.evicted || entry.snapshot == nil {
+			if entry.evicted || entry.config == nil {
 				c.mu.Unlock()
 				continue
 			}
@@ -135,8 +137,7 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*snapshot,
 				c.start(entry)
 			}
 		}
-		served := entry.snapshot
-		served.acquire()
+		served := entry.config
 		c.mu.Unlock()
 		return served, nil
 	}
@@ -164,15 +165,12 @@ func (c *tenantCache) touch(namespace string) *tenantEntry {
 	return entry
 }
 
-// evict removes an entry and retires its snapshot. The caller holds the lock.
+// evict removes an entry. The caller holds the lock.
 func (c *tenantCache) evict(element *list.Element) {
 	victim := element.Value.(*tenantEntry)
 	c.order.Remove(element)
 	delete(c.entries, victim.namespace)
 	victim.evicted = true
-	if victim.snapshot != nil {
-		c.host.retire(victim.snapshot)
-	}
 }
 
 // due reports whether a call should start a background refresh. The caller
@@ -185,16 +183,15 @@ func (c *tenantCache) due(entry *tenantEntry, now time.Time) bool {
 }
 
 // expire replaces the last configuration read successfully with the failure
-// snapshot once reads have kept failing past the maximum staleness since it
+// configuration once reads have kept failing past the maximum staleness since it
 // was read. An entry whose last read succeeded is never expired: its next
 // refresh replaces it. The caller holds the lock.
 func (c *tenantCache) expire(entry *tenantEntry, now time.Time) {
-	if !entry.failed || entry.snapshot == c.host.failed || now.Before(entry.loadedAt.Add(c.config.MaxStaleness)) {
+	if !entry.failed || entry.config == c.host.failed || now.Before(entry.loadedAt.Add(c.config.MaxStaleness)) {
 		return
 	}
 	c.host.logger.Warn("gateway tenant configuration expired", "namespace", entry.namespace)
-	c.host.retire(entry.snapshot)
-	entry.snapshot = c.host.failed
+	entry.config = c.host.failed
 }
 
 // start starts a read for entry unless one is in flight, and returns the
@@ -222,8 +219,8 @@ func (c *tenantCache) load(entry *tenantEntry) {
 		}
 		c.mu.Lock()
 		entry.failed, entry.retryAt = true, now.Add(c.config.FailureBackoff)
-		if entry.snapshot == nil {
-			entry.snapshot = c.host.failed
+		if entry.config == nil {
+			entry.config = c.host.failed
 		}
 		c.finish(entry)
 		c.mu.Unlock()
@@ -233,7 +230,7 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	digest := digestOf(resources)
 	c.mu.Lock()
 	entry.failed, entry.loadedAt, entry.retryAt = false, now, time.Time{}
-	unchanged := entry.snapshot != nil && entry.snapshot != c.host.failed && entry.snapshot.digest == digest
+	unchanged := entry.config != nil && entry.config != c.host.failed && entry.config.digest == digest
 	if unchanged || c.closed {
 		c.finish(entry)
 		c.mu.Unlock()
@@ -245,21 +242,13 @@ func (c *tenantCache) load(entry *tenantEntry) {
 		c.host.unimplementedTypes.Inc()
 		c.host.logger.Warn("gateway tenant configuration has a type this build does not implement", "namespace", entry.namespace, "type", name)
 	}
-	built := c.host.buildSnapshot(entry.namespace, resources, digest)
+	built := c.host.buildNamespace(entry.namespace, resources, digest)
 	c.mu.Lock()
-	unused := entry.evicted || c.closed
-	var previous *snapshot
-	if !unused {
-		previous = entry.snapshot
-		entry.snapshot = built
+	if !entry.evicted && !c.closed {
+		entry.config = built
 	}
 	c.finish(entry)
 	c.mu.Unlock()
-	if unused {
-		c.host.retire(built)
-	} else if previous != nil {
-		c.host.retire(previous)
-	}
 }
 
 // unimplementedTypes returns the enabled resources' types this build does not
@@ -282,8 +271,8 @@ func (c *tenantCache) finish(entry *tenantEntry) {
 	entry.loading = nil
 }
 
-// close stops reads, retires every entry's snapshot and waits, until ctx
-// ends, for reads in flight, which build nothing once the cache is closed.
+// close stops reads, drops every entry and waits, until ctx ends, for reads
+// in flight, which apply nothing once the cache is closed.
 func (c *tenantCache) close(ctx context.Context) {
 	c.cancel()
 	c.mu.Lock()

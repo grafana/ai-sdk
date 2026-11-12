@@ -34,9 +34,15 @@ type Implementation struct {
 	// whatever their source. Nil applies to both.
 	Keys          []extension.KeyOwnership
 	FailurePolicy extension.FailurePolicy
-	// New constructs an instance from a validated configuration, as
-	// [extension.Definition.New] does.
+	// New constructs the extension's one instance, as
+	// [extension.Definition.New] does for a tenant-scope extension: once per
+	// process, with an empty configuration.
 	New func(config json.RawMessage, deps extension.Dependencies) (any, error)
+	// Decode turns a namespace's stored configuration into the value its
+	// calls receive in [extension.Call.Config], as
+	// [extension.Definition.Decode] does. Nil passes the configuration
+	// through as its canonical JSON.
+	Decode func(config json.RawMessage) (any, error)
 }
 
 var registry = []Type{}
@@ -73,5 +79,6 @@ func (t Type) Bind(impl Implementation) extension.Definition {
 		ConfigSchema:     t.ConfigSchema,
 		EnabledByDefault: t.EnabledByDefault,
 		New:              impl.New,
+		Decode:           impl.Decode,
 	}
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -108,16 +111,41 @@ func mustSchema(t *testing.T, raw string) schema.Schema {
 	return compiled
 }
 
+// configRecorder is a tenant extension instance whose transform journals its
+// name and the call's configuration.
+type configRecorder struct {
+	name    string
+	journal *journal
+}
+
+func (r configRecorder) TransformRequest(_ context.Context, call *extension.Call, params provider.CallOptions) (provider.CallOptions, error) {
+	r.journal.add(r.name + rendered(call.Config) + ":transform")
+	return params, nil
+}
+
+// rendered renders a call's configuration for the journal: nil as empty,
+// raw JSON as written.
+func rendered(config any) string {
+	switch value := config.(type) {
+	case nil:
+		return ""
+	case json.RawMessage:
+		return string(value)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
 // configurable returns a default-off, skip tenant extension whose transform
-// journals its name and configuration.
+// journals its name and the call's configuration.
 func configurable(t *testing.T, name string, log *journal, change ...func(*extension.Definition)) extension.Definition {
 	t.Helper()
 	valueSchema := mustSchema(t, `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"},"limits":{"type":"object","properties":{"rpm":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}`)
 	base := []func(*extension.Definition){tenant, skip, func(d *extension.Definition) {
 		d.EnabledByDefault = false
 		d.ConfigSchema = valueSchema
-		d.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {
-			return &recorder{name: name + string(config), journal: log}, nil
+		d.New = func(json.RawMessage, extension.Dependencies) (any, error) {
+			return configRecorder{name: name, journal: log}, nil
 		}
 	}}
 	return define(name, nil, append(base, change...)...)
@@ -392,17 +420,7 @@ func TestTenantCache_ReadsOnlyWhenATenantExtensionApplies(t *testing.T) {
 	})
 }
 
-// phaselessInstance implements no phase, only Close.
-type phaselessInstance struct{ closes atomic.Int32 }
-
-func (p *phaselessInstance) Close(context.Context) error {
-	p.closes.Add(1)
-	return nil
-}
-
-var phaseless = &phaselessInstance{}
-
-func TestBuildSnapshot(t *testing.T) {
+func TestBuildNamespace(t *testing.T) {
 	mismatch := stored("t1", true, `{}`)
 	mismatch.Type = "other"
 	for _, tc := range []struct {
@@ -424,9 +442,10 @@ func TestBuildSnapshot(t *testing.T) {
 		{name: "member for a schema-less extension", resources: []TenantResource{stored("plain", true, `{}`)}, ran: []string{`on{}`}, failed: 1},
 		{name: "name differs from type", resources: []TenantResource{mismatch}, ran: []string{`on{}`}, failed: 1},
 		{name: "fail-closed configuration refused", resources: []TenantResource{stored("gate", true, `{"v":1}`)}, ran: nil, failed: 1, refused: true},
-		{name: "fail-closed factory panics", resources: []TenantResource{stored("panics", true, `{}`)}, failed: 1, refused: true},
-		{name: "factory returns no phase", resources: []TenantResource{stored("phaseless", true, `{}`)}, ran: []string{`on{}`}, failed: 1},
-		{name: "schema-less extension", resources: []TenantResource{stored("plain", true, "")}, ran: []string{`on{}`, `plain{}`}},
+		{name: "fail-closed decoding panics", resources: []TenantResource{stored("panics", true, `{}`)}, failed: 1, refused: true},
+		{name: "decoding fails", resources: []TenantResource{stored("decodes", true, `{"v":"`+tenantSentinel+`"}`)}, ran: []string{`on{}`}, failed: 1},
+		{name: "decoded value", resources: []TenantResource{stored("decodes", true, `{"v":"x"}`)}, ran: []string{`decodes{x}`, `on{}`}},
+		{name: "schema-less extension", resources: []TenantResource{stored("plain", true, "")}, ran: []string{`on{}`, `plain`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -439,11 +458,9 @@ func TestBuildSnapshot(t *testing.T) {
 					configurable(t, "gate", log, failClosed),
 					configurable(t, "plain", log, func(d *extension.Definition) { d.ConfigSchema = schema.Schema{} }),
 					configurable(t, "panics", log, failClosed, func(d *extension.Definition) {
-						d.New = func(json.RawMessage, extension.Dependencies) (any, error) { panic(tenantSentinel) }
+						d.Decode = func(json.RawMessage) (any, error) { panic(tenantSentinel) }
 					}),
-					configurable(t, "phaseless", log, func(d *extension.Definition) {
-						d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return phaseless, nil }
-					}),
+					configurable(t, "decodes", log, func(d *extension.Definition) { d.Decode = decodeValue }),
 				)
 				err := h.generate(t, "a")
 				if tc.refused {
@@ -454,7 +471,7 @@ func TestBuildSnapshot(t *testing.T) {
 				}
 				assert.Equal(t, tc.ran, transforms(log))
 				failures := 0.0
-				for _, name := range []string{"on", "t1", "gate", "plain", "panics", "phaseless"} {
+				for _, name := range []string{"on", "t1", "gate", "plain", "panics", "decodes"} {
 					failures += h.events(name, string(phaseConfigure), eventFailed)
 				}
 				assert.Equal(t, tc.failed, failures)
@@ -464,7 +481,24 @@ func TestBuildSnapshot(t *testing.T) {
 	}
 }
 
-func TestTenantCache_ExactNumbersReachTheFactory(t *testing.T) {
+// decodedValue is a typed tenant configuration.
+type decodedValue struct{ V string }
+
+func (v *decodedValue) String() string { return "{" + v.V + "}" }
+
+// decodeValue decodes a configuration's v field, refusing the sentinel.
+func decodeValue(config json.RawMessage) (any, error) {
+	var value decodedValue
+	if err := json.Unmarshal(config, &value); err != nil {
+		return nil, err
+	}
+	if value.V == tenantSentinel {
+		return nil, errors.New(tenantSentinel)
+	}
+	return &value, nil
+}
+
+func TestTenantCache_ExactNumbersReachTheCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
 		reader.set("a", stored("t1", true, `{"n":9007199254740993}`))
@@ -499,37 +533,90 @@ func TestTenantCache_TypesNotImplemented(t *testing.T) {
 	})
 }
 
-func TestTenantCache_UnchangedRefreshKeepsInstances(t *testing.T) {
+func TestTenantCache_DecodesOncePerChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
 		reader.set("a", stored("t1", true, `{"v":"x"}`))
-		var factoryRuns int
-		var mu sync.Mutex
+		reader.set("b", stored("t1", true, `{"v":"x"}`))
+		var factoryRuns, decodes atomic.Int32
 		definition := configurable(t, "t1", &journal{}, func(d *extension.Definition) {
 			d.New = func(json.RawMessage, extension.Dependencies) (any, error) {
-				mu.Lock()
-				factoryRuns++
-				mu.Unlock()
+				factoryRuns.Add(1)
 				return &recorder{}, nil
+			}
+			d.Decode = func(config json.RawMessage) (any, error) {
+				decodes.Add(1)
+				return decodeValue(config)
 			}
 		})
 		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute}, definition)
-		require.NoError(t, h.generate(t, "a"))
+		for range 3 {
+			require.NoError(t, h.generate(t, "a"))
+		}
+		require.NoError(t, h.generate(t, "b"))
+		assert.Equal(t, int32(2), decodes.Load(), "once per namespace read, not per call")
 		time.Sleep(time.Minute)
 		require.NoError(t, h.generate(t, "a"))
 		synctest.Wait()
-		assert.Equal(t, 2, reader.readCount())
-		mu.Lock()
-		assert.Equal(t, 1, factoryRuns)
-		mu.Unlock()
+		assert.Equal(t, int32(2), decodes.Load(), "an unchanged refresh decodes nothing")
+		reader.set("a", stored("t1", true, `{"v":"y"}`))
+		time.Sleep(time.Minute)
+		require.NoError(t, h.generate(t, "a"))
+		synctest.Wait()
+		assert.Equal(t, int32(3), decodes.Load())
+		assert.Equal(t, int32(1), factoryRuns.Load(), "the factory runs once per process")
 	})
 }
 
-// closing is a tenant extension instance that counts its closes.
+func TestTenantCache_CallConfig(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		reader.set("a", stored("typed", true, `{"v":"x"}`), stored("raw", true, `{"v":"y"}`))
+		var mu sync.Mutex
+		seen := map[string][]any{}
+		record := func(name string) *recorder {
+			return &recorder{admit: func(_ context.Context, call *extension.Call) error {
+				mu.Lock()
+				defer mu.Unlock()
+				seen[name] = append(seen[name], call.Config)
+				return nil
+			}}
+		}
+		typed := configurable(t, "typed", &journal{}, func(d *extension.Definition) {
+			d.Decode = decodeValue
+			d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return record("typed"), nil }
+		})
+		raw := configurable(t, "raw", &journal{}, func(d *extension.Definition) {
+			d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return record("raw"), nil }
+		})
+		h := newTenantHarness(t, reader, TenantCacheConfig{}, typed, raw, define("operator", record("operator")))
+		for range 2 {
+			require.NoError(t, h.generate(t, "a"))
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		require.Len(t, seen["typed"], 2)
+		assert.Equal(t, &decodedValue{V: "x"}, seen["typed"][0])
+		assert.Same(t, seen["typed"][0], seen["typed"][1], "calls share the namespace's decoded value")
+		assert.Equal(t, []any{json.RawMessage(`{"v":"y"}`), json.RawMessage(`{"v":"y"}`)}, seen["raw"], "without Decode, calls get the member as read")
+		assert.Equal(t, []any{nil, nil}, seen["operator"])
+	})
+}
+
+// closing is a tenant extension instance that counts its closes and journals
+// the configuration each response part sees.
 type closing struct {
 	recorder
 	mu     sync.Mutex
 	closes int
+	parts  []string
+}
+
+func (c *closing) InspectResponse(_ context.Context, call *extension.Call, _ extension.Part) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.parts = append(c.parts, rendered(call.Config))
+	return nil
 }
 
 func (c *closing) Close(context.Context) error {
@@ -545,52 +632,42 @@ func (c *closing) closeCount() int {
 	return c.closes
 }
 
-// closingExtension returns a tenant extension that builds a closing
-// instance per configuration, recorded in built by configuration.
-func closingExtension(t *testing.T, built *sync.Map) extension.Definition {
+func (c *closing) seen() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Compact(slices.Clone(c.parts))
+}
+
+// closingExtension returns a tenant extension with one closing instance.
+func closingExtension(t *testing.T, instance *closing) extension.Definition {
 	t.Helper()
 	return configurable(t, "t1", &journal{}, func(d *extension.Definition) {
-		d.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {
-			instance := &closing{}
-			built.Store(string(config), instance)
-			return instance, nil
-		}
+		d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return instance, nil }
 	})
 }
 
-func loadClosing(t *testing.T, built *sync.Map, config string) *closing {
-	t.Helper()
-	value, ok := built.Load(config)
-	require.True(t, ok, config)
-	return value.(*closing)
-}
-
-func TestTenantCache_ReplacementClosesAfterTheStreamAndObservation(t *testing.T) {
+func TestTenantCache_CallsKeepTheirConfigurationAcrossChanges(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
 		reader.set("a", stored("t1", true, `{"v":"old"}`))
-		built := &sync.Map{}
-		observed := make(chan struct{})
-		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute}, closingExtension(t, built), define("watcher", &recorder{observe: func(context.Context, *extension.Call, extension.Record) error {
-			<-observed
-			return nil
-		}}))
+		reader.set("b", stored("t1", true, `{"v":"b"}`))
+		instance := &closing{}
+		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute, MaxNamespaces: 1}, closingExtension(t, instance))
 		parts := make(chan provider.StreamPart)
 		h.model.stream = func(context.Context) (*provider.StreamResult, error) {
 			return &provider.StreamResult{Stream: parts}, nil
 		}
 		result, err := h.compose(t, extension.SourceOperatorCatalog).DoStream(inNamespace(t.Context(), "a"), provider.CallOptions{})
 		require.NoError(t, err)
-		old := loadClosing(t, built, `{"v":"old"}`)
-
 		h.model.stream = nil
+
 		reader.set("a", stored("t1", true, `{"v":"new"}`))
 		time.Sleep(time.Minute)
 		require.NoError(t, h.generate(t, "a"))
 		synctest.Wait()
 		require.NoError(t, h.generate(t, "a"))
+		require.NoError(t, h.generate(t, "b"), "evicts a while its stream is open")
 		synctest.Wait()
-		assert.Zero(t, old.closeCount(), "the open stream still holds the old instance")
 
 		for _, part := range textParts("x") {
 			parts <- part
@@ -598,76 +675,27 @@ func TestTenantCache_ReplacementClosesAfterTheStreamAndObservation(t *testing.T)
 		close(parts)
 		collect(t, result.Stream)
 		synctest.Wait()
-		assert.Zero(t, old.closeCount(), "the stream's observation still holds it")
+		assert.Equal(t, []string{`{"v":"old"}`, `{"v":"new"}`, `{"v":"b"}`, `{"v":"old"}`}, instance.seen(), "the refresh call is served the old configuration, and the open stream keeps the one it started with")
+		assert.Zero(t, instance.closeCount(), "neither a refresh nor an eviction closes an instance")
 
-		close(observed)
-		synctest.Wait()
-		assert.Equal(t, 1, old.closeCount())
-		assert.Zero(t, loadClosing(t, built, `{"v":"new"}`).closeCount())
-	})
-}
-
-func TestTenantCache_EvictionClosesAfterRelease(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		reader := newFakeReader()
-		reader.set("a", stored("t1", true, `{"v":"a"}`))
-		reader.set("b", stored("t1", true, `{"v":"b"}`))
-		built := &sync.Map{}
-		release := make(chan struct{})
-		h := newTenantHarness(t, reader, TenantCacheConfig{MaxNamespaces: 1}, closingExtension(t, built))
-		h.model.generate = func(ctx context.Context) (*provider.GenerateResult, error) {
-			if ctx.Value(namespaceKey{}) == "a" {
-				<-release
-			}
-			return textResult("x"), nil
-		}
-		done := make(chan error, 1)
-		go func() { done <- h.generate(t, "a") }()
-		synctest.Wait()
-		first := loadClosing(t, built, `{"v":"a"}`)
-
-		require.NoError(t, h.generate(t, "b"))
-		synctest.Wait()
-		assert.Zero(t, first.closeCount(), "the evicted configuration is still in use")
-		close(release)
-		require.NoError(t, <-done)
-		synctest.Wait()
-		assert.Equal(t, 1, first.closeCount())
-
-		require.NoError(t, h.generate(t, "a"))
-		assert.Equal(t, 3, reader.readCount(), "an evicted namespace reads again")
-		synctest.Wait()
-		assert.Equal(t, 1, loadClosing(t, built, `{"v":"b"}`).closeCount(), "reading a again evicted b")
-	})
-}
-
-func TestTenantCache_ShutdownClosesNamespaceInstances(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		reader := newFakeReader()
-		reader.set("a", stored("t1", true, `{"v":"a"}`))
-		reader.set("b", stored("t1", true, `{"v":"b"}`))
-		built := &sync.Map{}
-		h := newTenantHarness(t, reader, TenantCacheConfig{}, closingExtension(t, built))
-		require.NoError(t, h.generate(t, "a"))
-		require.NoError(t, h.generate(t, "b"))
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		h.host.Close(ctx)
-		assert.Equal(t, 1, loadClosing(t, built, `{"v":"a"}`).closeCount())
-		assert.Equal(t, 1, loadClosing(t, built, `{"v":"b"}`).closeCount())
+		h.host.Close(ctx)
+		assert.Equal(t, 1, instance.closeCount(), "the instance is closed once, at shutdown")
 		require.ErrorIs(t, h.generate(t, "c"), extension.ErrUnavailable)
 	})
 }
 
-func TestTenantCache_SharedCollectors(t *testing.T) {
+func TestTenantCache_CollectorsRegisterOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
-		reader.set("a", stored("shared", true, ""), stored("fresh", true, ""))
-		reader.set("b", stored("shared", true, ""), stored("fresh", true, ""))
-		counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "shared_calls_total", Help: "Calls."})
-		shared := configurable(t, "shared", &journal{}, func(d *extension.Definition) {
+		reader.set("a", stored("counted", true, ""))
+		reader.set("b", stored("counted", true, ""))
+		counted := configurable(t, "counted", &journal{}, func(d *extension.Definition) {
 			d.ConfigSchema = schema.Schema{}
 			d.New = func(_ json.RawMessage, deps extension.Dependencies) (any, error) {
+				counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "counted_calls_total", Help: "Calls."})
 				if err := deps.Registerer.Register(counter); err != nil {
 					return nil, err
 				}
@@ -677,23 +705,11 @@ func TestTenantCache_SharedCollectors(t *testing.T) {
 				}}, nil
 			}
 		})
-		log := &journal{}
-		fresh := configurable(t, "fresh", log, func(d *extension.Definition) {
-			d.ConfigSchema = schema.Schema{}
-			d.New = func(_ json.RawMessage, deps extension.Dependencies) (any, error) {
-				if err := deps.Registerer.Register(prometheus.NewCounter(prometheus.CounterOpts{Name: "fresh_total", Help: "Fresh."})); err != nil {
-					return nil, err
-				}
-				return &recorder{name: "fresh", journal: log}, nil
-			}
-		})
-		h := newTenantHarness(t, reader, TenantCacheConfig{}, shared, fresh)
+		h := newTenantHarness(t, reader, TenantCacheConfig{}, counted)
 		require.NoError(t, h.generate(t, "a"))
 		require.NoError(t, h.generate(t, "b"))
-		assert.Equal(t, 2.0, metricValue(h, "shared_calls_total", map[string]string{"extension": "shared"}))
-		assert.Zero(t, h.events("shared", string(phaseConfigure), eventFailed))
-		assert.Equal(t, []string{"fresh"}, transforms(log), "the second namespace's fresh collector fails")
-		assert.Equal(t, 1.0, h.events("fresh", string(phaseConfigure), eventFailed))
+		assert.Equal(t, 2.0, metricValue(h, "counted_calls_total", map[string]string{"extension": "counted"}), "a collector created in New registers once, and both namespaces use it")
+		assert.Zero(t, h.events("counted", string(phaseConfigure), eventFailed))
 	})
 }
 
@@ -715,13 +731,12 @@ func TestTenantCache_IdleNamespaceKeepsItsConfiguration(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
 		reader.set("a", stored("t1", true, `{"v":"x"}`))
-		var factoryRuns sync.Map
+		var decodes atomic.Int32
 		log := &journal{}
 		definition := configurable(t, "t1", log, failClosed, func(d *extension.Definition) {
-			d.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {
-				runs, _ := factoryRuns.LoadOrStore("runs", new(int))
-				*runs.(*int)++
-				return &recorder{name: "t1" + string(config), journal: log}, nil
+			d.Decode = func(config json.RawMessage) (any, error) {
+				decodes.Add(1)
+				return config, nil
 			}
 		})
 		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute, MaxStaleness: 10 * time.Minute}, definition)
@@ -731,8 +746,7 @@ func TestTenantCache_IdleNamespaceKeepsItsConfiguration(t *testing.T) {
 		synctest.Wait()
 		require.NoError(t, h.generate(t, "a"))
 		assert.Equal(t, []string{`t1{"v":"x"}`, `t1{"v":"x"}`, `t1{"v":"x"}`}, transforms(log))
-		runs, _ := factoryRuns.Load("runs")
-		assert.Equal(t, 1, *runs.(*int), "an unchanged refresh after idling builds nothing")
+		assert.Equal(t, int32(1), decodes.Load(), "an unchanged refresh after idling decodes nothing")
 		assert.Equal(t, 2, reader.readCount())
 	})
 }
@@ -766,11 +780,11 @@ func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
 		reader.setGate(gate)
 		reader.stubborn = true
 		reader.set("a", stored("t1", true, `{"v":"a"}`))
-		var factoryRuns sync.Map
+		var decoded atomic.Bool
 		definition := configurable(t, "t1", &journal{}, func(d *extension.Definition) {
-			d.New = func(json.RawMessage, extension.Dependencies) (any, error) {
-				factoryRuns.Store("ran", true)
-				return &recorder{}, nil
+			d.Decode = func(config json.RawMessage) (any, error) {
+				decoded.Store(true)
+				return config, nil
 			}
 		})
 		h := newTenantHarness(t, reader, TenantCacheConfig{}, definition)
@@ -795,24 +809,71 @@ func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
 		close(gate)
 		<-closed
 		synctest.Wait()
-		assert.Empty(t, h.host.live, "no snapshot is left to close after shutdown")
-		_, ran := factoryRuns.Load("ran")
-		assert.False(t, ran, "a read that completes during shutdown builds no instance")
+		assert.False(t, decoded.Load(), "a read that completes during shutdown decodes nothing")
 		assert.NotContains(t, h.logs.String(), "gateway extension failed")
 	})
 }
 
-func TestBuildSnapshot_ClosesAPhaselessInstance(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		reader := newFakeReader()
-		reader.set("a", stored("phaseless", true, `{}`))
+// phaselessInstance implements no phase, only Close.
+type phaselessInstance struct{ closes atomic.Int32 }
+
+func (p *phaselessInstance) Close(context.Context) error {
+	p.closes.Add(1)
+	return nil
+}
+
+func TestNew_TenantExtensions(t *testing.T) {
+	newTenantHost := func(t *testing.T, definitions ...extension.Definition) (*Host, error) {
+		t.Helper()
+		require.NoError(t, ValidateDefinitions(definitions, nil, typesOf(definitions)))
+		plan, err := NewPlan(definitions, nil, nil)
+		require.NoError(t, err)
+		return New(Config{Plan: plan, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Registerer: prometheus.NewRegistry(), Clock: time.Now, RequestInfo: func(context.Context) extension.Call { return extension.Call{} }})
+	}
+
+	t.Run("every tenant extension is constructed once", func(t *testing.T) {
+		var runs atomic.Int32
+		count := func(d *extension.Definition) {
+			d.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {
+				runs.Add(1)
+				assert.JSONEq(t, `{}`, string(config), "a tenant factory gets an empty configuration")
+				return &recorder{}, nil
+			}
+		}
+		host, err := newTenantHost(t, configurable(t, "off", &journal{}, count), configurable(t, "on", &journal{}, defaultOn, count))
+		require.NoError(t, err)
+		t.Cleanup(func() { host.Close(context.Background()) })
+		assert.Equal(t, int32(2), runs.Load())
+	})
+
+	t.Run("default configuration decoded once", func(t *testing.T) {
+		var decodes atomic.Int32
+		host, err := newTenantHost(t, configurable(t, "on", &journal{}, defaultOn, func(d *extension.Definition) {
+			d.Decode = func(config json.RawMessage) (any, error) {
+				decodes.Add(1)
+				return decodeValue(config)
+			}
+		}))
+		require.NoError(t, err)
+		t.Cleanup(func() { host.Close(context.Background()) })
+		assert.Equal(t, int32(1), decodes.Load())
+		assert.Equal(t, []any{&decodedValue{}}, host.lists[extension.KeysOperator].configs)
+	})
+
+	t.Run("default configuration that fails to decode", func(t *testing.T) {
+		_, err := newTenantHost(t, configurable(t, "on", &journal{}, defaultOn, func(d *extension.Definition) {
+			d.Decode = func(json.RawMessage) (any, error) { return nil, errors.New(tenantSentinel) }
+		}))
+		require.EqualError(t, err, `extensions: decoding the default configuration of extension "on" failed`)
+	})
+
+	t.Run("tenant instance without a phase", func(t *testing.T) {
 		instance := &phaselessInstance{}
-		h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "phaseless", &journal{}, func(d *extension.Definition) {
+		_, err := newTenantHost(t, configurable(t, "phaseless", &journal{}, func(d *extension.Definition) {
 			d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return instance, nil }
 		}))
-		require.NoError(t, h.generate(t, "a"))
-		synctest.Wait()
-		assert.Equal(t, int32(1), instance.closes.Load())
+		require.EqualError(t, err, `extensions: extension "phaseless" implements no phase`)
+		assert.Equal(t, int32(1), instance.closes.Load(), "the instance built is closed")
 	})
 }
 

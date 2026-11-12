@@ -210,27 +210,27 @@ func TestMiddlewareAdmission_AcrossBuilds(t *testing.T) {
 }
 
 // namespaceRecorder is a tenant extension that records, per admit, the
-// call's namespace and the extension and configuration its instance was
-// built with.
+// call's namespace and the extension and configuration the call carries.
 type namespaceRecorder struct {
-	config string
-	calls  *sync.Map
+	name  string
+	calls *sync.Map
 }
 
 func (r namespaceRecorder) Admit(_ context.Context, call *extension.Call) error {
-	r.calls.Store(call.Namespace+" "+r.config, true)
+	config, _ := call.Config.(json.RawMessage)
+	r.calls.Store(call.Namespace+" "+r.name+string(config), true)
 	return nil
 }
 
 const recordingSchema = `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"},"limits":{"type":"object","properties":{"rpm":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}`
 
 // recordingTenant returns a public tenant type with a nested schema and its
-// definition, whose instances record their configuration.
+// definition, whose instance records each call's configuration.
 func recordingTenant(t *testing.T, name string, calls *sync.Map, enabledByDefault bool) (tenanttype.Type, extension.Definition) {
 	t.Helper()
 	tenant := tenantType(t, name, recordingSchema, `{}`, enabledByDefault)
-	return tenant, tenant.Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: func(config json.RawMessage, _ extension.Dependencies) (any, error) {
-		return namespaceRecorder{config: name + string(config), calls: calls}, nil
+	return tenant, tenant.Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: func(json.RawMessage, extension.Dependencies) (any, error) {
+		return namespaceRecorder{name: name, calls: calls}, nil
 	}})
 }
 

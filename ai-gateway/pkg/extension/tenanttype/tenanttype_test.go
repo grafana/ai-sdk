@@ -35,6 +35,7 @@ func TestType_Bind(t *testing.T) {
 			built = true
 			return nil, nil
 		},
+		Decode: func(json.RawMessage) (any, error) { return "decoded", nil },
 	})
 	assert.Equal(t, "default-instructions", definition.Name)
 	assert.Equal(t, extension.ScopeTenant, definition.Scope)
@@ -46,6 +47,9 @@ func TestType_Bind(t *testing.T) {
 	_, err = definition.New(nil, extension.Dependencies{})
 	require.NoError(t, err)
 	assert.True(t, built)
+	decoded, err := definition.Decode(nil)
+	require.NoError(t, err)
+	assert.Equal(t, "decoded", decoded)
 }
 
 func TestAll(t *testing.T) {
