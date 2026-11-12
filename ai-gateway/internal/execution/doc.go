@@ -29,9 +29,11 @@
 //     since is [WaitClosedAfterError], and any other close is [WaitClosed];
 //   - the closed failure categories and reasons;
 //   - request-local attempt capture, projected into an overview from the
-//     expected attempts of [ConfiguredSelection] and [AccountSelection], with
-//     the served model the selected output reports after an Anthropic
-//     server-side fallback.
+//     expected attempts of [ConfiguredSelection], [StackCatalogSelection] and
+//     [AccountSelection], with native failure summaries redacting the
+//     configured keys and the selection's own request keys, and the served
+//     model the selected output reports after an Anthropic server-side
+//     fallback.
 //
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,

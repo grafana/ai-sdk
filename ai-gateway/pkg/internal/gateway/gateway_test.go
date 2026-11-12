@@ -122,14 +122,14 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		{name: "unsupported provider scheme", url: "ftp://provider.example", message: "must use http or https"},
 		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
 		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
-		{name: "missing model catalog", change: func(env map[string]string) {
-			delete(env, "GF_PLUGIN_MODEL_CATALOG")
-		}, message: "GF_PLUGIN_MODEL_CATALOG is required"},
 		{name: "invalid model catalog", change: func(env map[string]string) {
 			env["GF_PLUGIN_MODEL_CATALOG"] += "unknown: backend-private\n"
 		}, message: "invalid YAML fields or values"},
 		{name: "oversized model catalog", change: func(env map[string]string) {
 			env["GF_PLUGIN_MODEL_CATALOG"] += "#" + strings.Repeat("x", 64<<10)
+		}, message: "GF_PLUGIN_MODEL_CATALOG exceeds 65536 bytes"},
+		{name: "oversized blank model catalog", change: func(env map[string]string) {
+			env["GF_PLUGIN_MODEL_CATALOG"] = strings.Repeat(" ", 64<<10+1)
 		}, message: "GF_PLUGIN_MODEL_CATALOG exceeds 65536 bytes"},
 	}
 	for _, tc := range tests {
@@ -152,6 +152,27 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 				assert.NotContains(t, err.Error(), private)
 				assert.NotContains(t, logs, private)
 			}
+		})
+	}
+}
+
+func TestNew_StartsWithoutModelCatalog(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(map[string]string)
+	}{
+		{name: "unset", change: func(env map[string]string) { delete(env, "GF_PLUGIN_MODEL_CATALOG") }},
+		{name: "empty", change: func(env map[string]string) { env["GF_PLUGIN_MODEL_CATALOG"] = "" }},
+		{name: "whitespace", change: func(env map[string]string) { env["GF_PLUGIN_MODEL_CATALOG"] = " \n\t" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newStartupEnvironment(t, "https://provider.example")
+			tc.change(env.values)
+			gw, _, err := env.start(t)
+			require.NoError(t, err)
+			assert.False(t, gw.Idle())
+			require.NotNil(t, gw.Handler())
+			assert.Empty(t, env.secrets)
 		})
 	}
 }

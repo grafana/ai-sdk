@@ -33,6 +33,15 @@ func NewSummaryRedactor(keys []string) SummaryRedactor {
 	return redactor
 }
 
+// With returns a policy that also protects keys, leaving the receiver
+// unchanged. Without keys it returns the receiver.
+func (redactor SummaryRedactor) With(keys []string) SummaryRedactor {
+	if len(keys) == 0 {
+		return redactor
+	}
+	return NewSummaryRedactor(append(slices.Clone(redactor.keys), keys...))
+}
+
 // Redact protects summary fields without changing the projected source.
 func (redactor SummaryRedactor) Redact(failure *Failure) *Failure {
 	if failure == nil || redactor.replacer == nil {

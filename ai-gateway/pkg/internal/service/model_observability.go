@@ -12,7 +12,6 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/middleware"
 	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
@@ -224,6 +223,16 @@ func (writer agentDiagnosticWriter) Write(message []byte) (int, error) {
 
 var errUnobservedSource = errors.New("gateway service: selection source has no observer configuration")
 
+// sourceMetricModels is the model label of each source's calls: the canonical
+// model ID for the operator catalog, and a fixed label for customer-configured
+// calls, so their model IDs never become metric labels. Each source has an
+// observer chain.
+var sourceMetricModels = map[execution.Source]string{
+	execution.SourceOperatorCatalog: "",
+	execution.SourceRequestBYOK:     "byok",
+	execution.SourceStackCatalog:    "catalog",
+}
+
 // ModelObservers applies the Gateway's logical observer chains to selections.
 // Its middleware and collectors are constructed once; each call only wraps its
 // selected model in the chain of the selection's source.
@@ -243,27 +252,13 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 		IdentitySource:            metricsmiddleware.IdentityRequested,
 		StreamDrainTimeout:        drainTimeout,
 		DisableStreamChunkMetrics: false,
-		NormalizeModel: func(provider, model string) string {
-			if provider != "grafana" {
-				return "byok"
-			}
-			return model
-		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
 	}
-	loggerOptions := logmiddleware.Options{
-		Logger:             logger,
-		DynamicAttrs:       observationLogAttrs,
-		Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.ConfiguredAccounts),
-		IdentitySource:     logmiddleware.IdentityRequested,
-		StreamDrainTimeout: drainTimeout,
-	}
-	configured := modelObservationChain{
-		contextBridge:    observationBridgeMiddleware(),
-		structuredLogger: logmiddleware.Middleware(loggerOptions),
-		prometheus:       metrics,
+	shared := modelObservationChain{
+		contextBridge: observationBridgeMiddleware(),
+		prometheus:    metrics,
 	}
 	if runtime != nil && runtime.client != nil {
 		recording := agentmiddleware.RecordingMiddleware(agentmiddleware.RecordingOptions{
@@ -278,26 +273,38 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 			OnRecordError:    runtime.recordError,
 			OnRecordComplete: runtime.recordingComplete,
 		})
-		configured.agentRecording = &recording
+		shared.agentRecording = &recording
 	}
-	byok := configured
-	loggerOptions.Redactor = closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.RequestBYOK)
-	byok.structuredLogger = logmiddleware.Middleware(loggerOptions)
-	return &ModelObservers{chains: map[execution.Source]modelObservationChain{
-		execution.SourceOperatorCatalog: configured,
-		execution.SourceRequestBYOK:     byok,
-	}}, nil
+	chains := make(map[execution.Source]modelObservationChain, len(sourceMetricModels))
+	for source, metricModel := range sourceMetricModels {
+		chain := shared
+		chain.structuredLogger = logmiddleware.Middleware(logmiddleware.Options{
+			Logger:             logger,
+			DynamicAttrs:       observationLogAttrs,
+			Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), source),
+			IdentitySource:     logmiddleware.IdentityRequested,
+			StreamDrainTimeout: drainTimeout,
+		})
+		chain.metricModel = metricModel
+		chains[source] = chain
+	}
+	return &ModelObservers{chains: chains}, nil
 }
 
 // Compose is the runtime's [execution.ModelComposer]: it wraps the selected
 // model, which carries its logical identity, in the observer chain of the
-// selection's source. A source without a chain fails.
+// selection's source, and binds a stack catalog's name into the call's
+// observation. A source without a chain fails.
 func (o *ModelObservers) Compose(selected execution.Selection) (provider.LanguageModel, error) {
 	chain, ok := o.chains[selected.Source]
 	if !ok {
 		return nil, errUnobservedSource
 	}
-	return chain.observe(selected.Model), nil
+	observed := chain.observe(selected.Model)
+	if selected.Catalog == "" {
+		return observed, nil
+	}
+	return middleware.Wrap(middleware.WrapOptions{Model: observed, Middleware: []middleware.Middleware{catalogBindingMiddleware(selected.Catalog)}}), nil
 }
 
 type modelObservationChain struct {
@@ -305,8 +312,14 @@ type modelObservationChain struct {
 	agentRecording   *middleware.Middleware
 	structuredLogger middleware.Middleware
 	prometheus       middleware.Middleware
+	// metricModel, when set, replaces the model ID that the metrics
+	// middleware sees, and only that middleware.
+	metricModel string
 }
 
+// observe wraps identity in the chain. Each middleware sees the identity of
+// the model directly beneath it, so a metric model is an identity view beneath
+// the metrics middleware, and every layer above reports identity's model ID.
 func (chain modelObservationChain) observe(identity provider.LanguageModel) provider.LanguageModel {
 	observers := make([]middleware.Middleware, 0, 4)
 	observers = append(observers, chain.contextBridge)
@@ -314,13 +327,18 @@ func (chain modelObservationChain) observe(identity provider.LanguageModel) prov
 		observers = append(observers, *chain.agentRecording)
 	}
 	observers = append(observers, chain.structuredLogger, chain.prometheus)
-	return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers})
+	if chain.metricModel == "" {
+		return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers})
+	}
+	metricView := middleware.Wrap(middleware.WrapOptions{Model: identity, ModelID: chain.metricModel})
+	return middleware.Wrap(middleware.WrapOptions{Model: metricView, ModelID: identity.ModelID(), Middleware: observers})
 }
 
 var allowedAgentMetadataKeys = map[string]struct{}{
 	"gateway.correlation_id": {},
 	"gateway.caller_service": {},
 	"gateway.namespace":      {},
+	"gateway.catalog":        {},
 }
 
 // filterAgentGeneration removes every metadata/tag/identity field not owned by

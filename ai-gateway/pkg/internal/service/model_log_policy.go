@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 
 	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
 	"github.com/grafana/ai-sdk/provider"
@@ -41,11 +41,11 @@ var numericModelLogKeys = map[string]struct{}{
 // allowModelLogAttrs applies the Gateway-owned closed attribute policy before
 // the reusable logger's default secret redactor. Unknown keys and values that
 // are not valid for their fixed field are omitted rather than serialized.
-func allowModelLogAttrs(attrs []slog.Attr, access gatewayauth.AccountAccess) []slog.Attr {
+func allowModelLogAttrs(attrs []slog.Attr, source execution.Source) []slog.Attr {
 	allowed := make([]slog.Attr, 0, len(attrs))
 	for _, attr := range attrs {
 		attr.Value = attr.Value.Resolve()
-		if allowModelLogAttr(attr, access) {
+		if allowModelLogAttr(attr, source) {
 			allowed = append(allowed, attr)
 		}
 	}
@@ -56,7 +56,7 @@ func allowModelLogAttrs(attrs []slog.Attr, access gatewayauth.AccountAccess) []s
 // logger's general panic fallback intentionally sees the original attributes;
 // recovering here prevents that compatibility behavior from bypassing the
 // Gateway policy if this delegate ever panics.
-func closedModelLogRedactor(delegate logmiddleware.Redactor, access gatewayauth.AccountAccess) logmiddleware.Redactor {
+func closedModelLogRedactor(delegate logmiddleware.Redactor, source execution.Source) logmiddleware.Redactor {
 	return logmiddleware.RedactorFunc(func(ctx context.Context, event logmiddleware.EventKind, attrs []slog.Attr) (out []slog.Attr) {
 		defer func() {
 			if recover() != nil {
@@ -66,11 +66,11 @@ func closedModelLogRedactor(delegate logmiddleware.Redactor, access gatewayauth.
 		if delegate == nil {
 			return nil
 		}
-		return delegate.RedactAttrs(ctx, event, allowModelLogAttrs(attrs, access))
+		return delegate.RedactAttrs(ctx, event, allowModelLogAttrs(attrs, source))
 	})
 }
 
-func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
+func allowModelLogAttr(attr slog.Attr, source execution.Source) bool {
 	if _, ok := numericModelLogKeys[attr.Key]; ok {
 		if attr.Key == "ai_sdk.error.status_code" {
 			return attr.Value.Kind() == slog.KindInt64 && attr.Value.Int64() >= 100 && attr.Value.Int64() <= 599
@@ -98,7 +98,7 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 	case "ai_sdk.call.type":
 		return stringIn(attr, "generate", "stream")
 	case "ai_sdk.provider", "gen_ai.system":
-		if access == gatewayauth.RequestBYOK {
+		if source == execution.SourceRequestBYOK {
 			return stringIn(attr, "anthropic", "openai")
 		}
 		return stringIn(attr, "grafana")
@@ -117,7 +117,7 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 			string(provider.FinishReasonOther),
 		)
 	case "ai_sdk.model", "gen_ai.request.model":
-		if access == gatewayauth.RequestBYOK {
+		if source == execution.SourceRequestBYOK {
 			if attr.Value.Kind() != slog.KindString {
 				return false
 			}
@@ -133,7 +133,7 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 			return true
 		}
 		return attr.Value.Kind() == slog.KindString && boundedObservationValue(attr.Value.String()) != ""
-	case "ai_sdk.call.id", "correlation_id", "caller_service", "namespace":
+	case "ai_sdk.call.id", "correlation_id", "caller_service", "namespace", "catalog":
 		return attr.Value.Kind() == slog.KindString && boundedObservationValue(attr.Value.String()) != ""
 	case "ai_sdk.warnings.types":
 		values, ok := attr.Value.Any().([]string)

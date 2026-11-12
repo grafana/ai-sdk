@@ -226,7 +226,7 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 
 | Setting | Description |
 |---|---|
-| `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Required. |
+| `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
@@ -248,6 +248,7 @@ format, not the Gateway's.
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
 | 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
+| The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved |
 
 ### Request duration
 

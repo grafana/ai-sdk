@@ -321,16 +321,24 @@ func TestBuildCatalog_InjectsExplicitClientBaseURLAndBackendModel(t *testing.T) 
 
 func TestBuildCatalog_RejectsMissingOrInvalidReferences(t *testing.T) {
 	file := testCatalogFile()
-	for _, providers := range []map[string]config.ResolvedProvider{
-		{},
-		{"anthropic-primary": {Type: "unsupported", APIKey: "secret"}},
-		{"anthropic-primary": {Type: "anthropic"}},
-		{"anthropic-primary": {Type: "openai-compatible", APIKey: "secret"}},
+	file.Models = map[string]config.Model{"grafana/assistant": file.Models["grafana/assistant"]}
+	for _, tc := range []struct {
+		providers map[string]config.ResolvedProvider
+		message   string
+	}{
+		{providers: map[string]config.ResolvedProvider{}, message: `gateway service: model "grafana/assistant" references unresolved provider`},
+		{providers: map[string]config.ResolvedProvider{"anthropic-primary": {Type: "unsupported", APIKey: "secret"}}, message: `gateway service: provider "anthropic-primary" is invalid`},
+		{providers: map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic"}}, message: `gateway service: provider "anthropic-primary" is invalid`},
+		{providers: map[string]config.ResolvedProvider{"anthropic-primary": {Type: "openai-compatible", APIKey: "secret"}}, message: `gateway service: provider "anthropic-primary" is invalid`},
 	} {
-		created, err := BuildCatalog(file, providers, http.DefaultClient, identityModelFactory)
-		require.Error(t, err)
+		created, err := BuildCatalog(file, tc.providers, http.DefaultClient, identityModelFactory)
+		require.EqualError(t, err, tc.message)
 		assert.Nil(t, created)
 	}
+	_, err := buildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, func(nativemodel.Config, string, *http.Client) provider.LanguageModel {
+		return nil
+	}, identityModelFactory)
+	require.EqualError(t, err, `gateway service: constructing model "grafana/assistant" returned nil`)
 }
 
 func TestBuildCatalog_FallbackConstructionFailsOpenWithoutPrivateSink(t *testing.T) {

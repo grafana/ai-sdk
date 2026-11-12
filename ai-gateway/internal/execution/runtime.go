@@ -97,7 +97,7 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	if err != nil {
 		return nil, err
 	}
-	attempts := newAttemptCapture(modelID, selected, r.redactor)
+	attempts := newAttemptCapture(modelID, selected, r.redactor.With(selected.keys))
 	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
 

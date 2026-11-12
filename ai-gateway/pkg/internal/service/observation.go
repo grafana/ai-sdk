@@ -26,6 +26,7 @@ type requestObservation struct {
 	correlationID string
 	callerService string
 	namespace     string
+	catalog       string
 }
 
 type modelObservationKey struct{}
@@ -77,22 +78,37 @@ func observationCorrelationID(ctx context.Context) string {
 // of the authentication state; the provider's original context propagation is
 // otherwise preserved.
 func observationBridgeMiddleware() middleware.Middleware {
-	withObservation := func(ctx context.Context) context.Context {
+	return contextMiddleware(func(ctx context.Context) context.Context {
 		return context.WithValue(ctx, modelObservationKey{}, observationFromContext(ctx))
-	}
+	})
+}
+
+// catalogBindingMiddleware adds a stack catalog's name to each call's request
+// observation, for the observers beneath it. A name outside the observation
+// value bound is left out.
+func catalogBindingMiddleware(name string) middleware.Middleware {
+	return contextMiddleware(func(ctx context.Context) context.Context {
+		observation := observationFromContext(ctx)
+		observation.catalog = boundedObservationValue(name)
+		return context.WithValue(ctx, modelObservationKey{}, observation)
+	})
+}
+
+// contextMiddleware invokes the model under the context with returns.
+func contextMiddleware(with func(context.Context) context.Context) middleware.Middleware {
 	return middleware.Middleware{
 		WrapGenerate: func(ctx context.Context, params middleware.WrapGenerateParams) (*provider.GenerateResult, error) {
-			return params.DoGenerate(withObservation(ctx))
+			return params.DoGenerate(with(ctx))
 		},
 		WrapStream: func(ctx context.Context, params middleware.WrapStreamParams) (*provider.StreamResult, error) {
-			return params.DoStream(withObservation(ctx))
+			return params.DoStream(with(ctx))
 		},
 	}
 }
 
 func observationLogAttrs(ctx context.Context) []slog.Attr {
 	observation := observationFromContext(ctx)
-	attrs := make([]slog.Attr, 0, 3)
+	attrs := make([]slog.Attr, 0, 4)
 	for _, field := range []struct {
 		key   string
 		value string
@@ -100,6 +116,7 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 		{key: "correlation_id", value: observation.correlationID},
 		{key: "caller_service", value: observation.callerService},
 		{key: "namespace", value: observation.namespace},
+		{key: "catalog", value: observation.catalog},
 	} {
 		if field.value != "" {
 			attrs = append(attrs, slog.String(field.key, field.value))
@@ -112,11 +129,12 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 // observation bridge. Callers may mutate the result without changing context.
 func observationMetadata(ctx context.Context) map[string]any {
 	observation := observationFromContext(ctx)
-	metadata := make(map[string]any, 3)
+	metadata := make(map[string]any, 4)
 	for key, value := range map[string]string{
 		"gateway.correlation_id": observation.correlationID,
 		"gateway.caller_service": observation.callerService,
 		"gateway.namespace":      observation.namespace,
+		"gateway.catalog":        observation.catalog,
 	} {
 		if value != "" {
 			metadata[key] = value
