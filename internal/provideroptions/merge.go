@@ -58,41 +58,44 @@ func MergeOverlapping(base, override provider.ProviderOptions) (provider.Provide
 		return maps.Clone(base), nil
 	}
 
-	baseShared := make(provider.ProviderOptions)
-	overrideShared := make(provider.ProviderOptions)
-	for key, value := range override {
-		if baseValue, ok := base[key]; ok && !ignoredKey(key) {
-			baseShared[key] = baseValue
-			overrideShared[key] = value
-		}
-	}
-	baseObject, err := optionsObject(baseShared)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling base options: %w", err)
-	}
-	overrideObject, err := optionsObject(overrideShared)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling override options: %w", err)
-	}
-
 	result := maps.Clone(base)
 	for key, value := range override {
 		if ignoredKey(key) {
 			continue
 		}
-		baseNamespace, baseOK := baseObject[key].(map[string]any)
-		overrideNamespace, overrideOK := overrideObject[key].(map[string]any)
-		if !baseOK || !overrideOK {
+		baseValue, shared := base[key]
+		if !shared {
 			result[key] = value
 			continue
 		}
-		raw, err := json.Marshal(mergeObject(baseNamespace, overrideNamespace))
+		merged, err := mergeNamespace(key, baseValue, value)
 		if err != nil {
-			return nil, fmt.Errorf("marshaling merged option %q: %w", key, err)
+			return nil, err
 		}
-		result[key] = provider.RawProviderOption{Key: key, Raw: raw}
+		result[key] = merged
 	}
 	return result, nil
+}
+
+func mergeNamespace(key string, base, override provider.ProviderOption) (provider.ProviderOption, error) {
+	baseObject, err := optionsObject(provider.ProviderOptions{key: base})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling base options: %w", err)
+	}
+	overrideObject, err := optionsObject(provider.ProviderOptions{key: override})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling override options: %w", err)
+	}
+	baseNamespace, baseOK := baseObject[key].(map[string]any)
+	overrideNamespace, overrideOK := overrideObject[key].(map[string]any)
+	if !baseOK || !overrideOK {
+		return override, nil
+	}
+	raw, err := json.Marshal(mergeObject(baseNamespace, overrideNamespace))
+	if err != nil {
+		return nil, fmt.Errorf("marshaling merged option %q: %w", key, err)
+	}
+	return provider.RawProviderOption{Key: key, Raw: raw}, nil
 }
 
 func optionsObject(options provider.ProviderOptions) (map[string]any, error) {
