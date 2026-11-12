@@ -14,7 +14,7 @@
 
 ## 4. Integration checks
 
-- [ ] 4.1 Run the full check set and `openspec validate simplify-extension-applicability --strict`; verify all pass.
+- [x] 4.1 Run the full check set and `openspec validate simplify-extension-applicability --strict`; verify all pass.
 
 ## Workflow follow-up
 
