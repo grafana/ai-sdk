@@ -204,7 +204,7 @@ sequenceDiagram
    BYOK chain with its own log redaction for request accounts. Inside the
    observers and outside the selected model, the
    [extension pipeline](../guides/gateway-extensions.md) runs the
-   distribution's extensions that apply to the call's key ownership and source:
+   distribution's extensions that apply to the call's key ownership:
    admit, request transforms with a host policy check after each, request
    inspection, then response inspection on each output part and one
    asynchronous observation. Every phase sees the caller, including its

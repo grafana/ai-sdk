@@ -42,13 +42,9 @@ type Definition struct {
 	// letter or digit, and unique within a distribution.
 	Name  string
 	Scope Scope
-	// Keys lists the key ownerships of the calls the extension applies to. Nil
-	// applies to both.
+	// Keys lists the key ownerships of the calls the extension applies to,
+	// whatever their source. Nil applies to both.
 	Keys []KeyOwnership
-	// Sources narrows the calls the extension applies to. Nil applies to every
-	// source whose ownership is in Keys. Every source must have an ownership in
-	// Keys.
-	Sources []Source
 	// Priority orders request transforms within a scope, ascending. Ties are
 	// ordered by name.
 	Priority      int

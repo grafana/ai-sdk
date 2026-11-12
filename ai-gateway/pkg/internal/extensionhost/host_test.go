@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,9 +92,6 @@ func TestNew_Construction(t *testing.T) {
 
 func TestHost_Compose(t *testing.T) {
 	operatorOnly := define("operator", &recorder{}, func(d *extension.Definition) { d.Keys = []extension.KeyOwnership{extension.KeysOperator} })
-	stackOnly := define("stack", &recorder{}, func(d *extension.Definition) {
-		d.Keys, d.Sources = []extension.KeyOwnership{extension.KeysCustomer}, []extension.Source{extension.SourceStackCatalog}
-	})
 	model := &fakeModel{}
 
 	t.Run("no extension applies", func(t *testing.T) {
@@ -104,34 +102,29 @@ func TestHost_Compose(t *testing.T) {
 		assert.Same(t, model, composed)
 	})
 
-	t.Run("unknown source", func(t *testing.T) {
-		host, err := newHost(t)
-		require.NoError(t, err)
-		_, err = host.Compose(execution.Selection{ID: "x", Model: model, Source: "routed"})
-		assert.ErrorIs(t, err, errUnknownSource)
-	})
-
 	for _, tc := range []struct {
 		source  extension.Source
 		applies []string
 	}{
 		{source: extension.SourceOperatorCatalog, applies: []string{"all", "operator"}},
-		{source: extension.SourceRequestBYOK, applies: []string{"all"}},
-		{source: extension.SourceStackCatalog, applies: []string{"all", "stack"}},
+		{source: extension.SourceRequestBYOK, applies: []string{"all", "customer"}},
+		{source: extension.SourceStackCatalog, applies: []string{"all", "customer"}},
+		{source: "a-later-source", applies: []string{"all", "customer"}},
 	} {
 		t.Run(string(tc.source), func(t *testing.T) {
 			log := &journal{}
 			h := newHarness(t,
 				define("all", &recorder{name: "all", journal: log}),
 				define("operator", &recorder{name: "operator", journal: log}, func(d *extension.Definition) { d.Keys = operatorOnly.Keys }),
-				define("stack", &recorder{name: "stack", journal: log}, func(d *extension.Definition) { d.Keys, d.Sources = stackOnly.Keys, stackOnly.Sources }),
+				define("customer", &recorder{name: "customer", journal: log}, func(d *extension.Definition) { d.Keys = []extension.KeyOwnership{extension.KeysCustomer} }),
 			)
 			_, err := h.compose(t, tc.source).DoGenerate(t.Context(), provider.CallOptions{})
 			require.NoError(t, err)
 			h.flush()
 			ran := map[string]bool{}
 			for _, entry := range log.list() {
-				ran[entry[:len(entry)-len(entry[indexColon(entry):])]] = true
+				name, _, _ := strings.Cut(entry, ":")
+				ran[name] = true
 			}
 			assert.Len(t, ran, len(tc.applies))
 			for _, name := range tc.applies {
@@ -139,13 +132,4 @@ func TestHost_Compose(t *testing.T) {
 			}
 		})
 	}
-}
-
-func indexColon(entry string) int {
-	for i, character := range entry {
-		if character == ':' {
-			return i
-		}
-	}
-	return len(entry)
 }

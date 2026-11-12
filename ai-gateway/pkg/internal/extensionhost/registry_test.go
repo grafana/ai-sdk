@@ -42,10 +42,6 @@ func TestValidateDefinitions(t *testing.T) {
 		{name: "repeated key ownership", definitions: with(func(d *extension.Definition) {
 			d.Keys = []extension.KeyOwnership{extension.KeysOperator, extension.KeysOperator}
 		}), message: "invalid key ownership"},
-		{name: "unknown source", definitions: with(func(d *extension.Definition) { d.Sources = []extension.Source{"routed"} }), message: "invalid source"},
-		{name: "source outside ownership", definitions: with(func(d *extension.Definition) {
-			d.Keys, d.Sources = []extension.KeyOwnership{extension.KeysOperator}, []extension.Source{extension.SourceRequestBYOK}
-		}), message: `declares source "request-byok" outside its key ownership`},
 		{name: "invalid secret name", definitions: with(func(d *extension.Definition) { d.Secrets = []string{"api_key"} }), message: "invalid secret name"},
 		{name: "repeated secret", definitions: with(func(d *extension.Definition) { d.Secrets = []string{"apiKey", "apiKey"} }), message: "invalid secret name"},
 		{name: "duplicate names", definitions: []extension.Definition{validDefinition("quota"), validDefinition("quota")}, message: `extension name "quota" is registered twice`},
@@ -62,7 +58,7 @@ func TestValidateDefinitions(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		customer := validDefinition("audit")
-		customer.Keys, customer.Sources = []extension.KeyOwnership{extension.KeysCustomer}, []extension.Source{extension.SourceStackCatalog}
+		customer.Keys = []extension.KeyOwnership{extension.KeysCustomer}
 		customer.Secrets = []string{"apiKey", "endpointToken"}
 		assert.NoError(t, ValidateDefinitions([]extension.Definition{validDefinition("quota"), customer}, []string{"quota"}))
 		assert.NoError(t, ValidateDefinitions(nil, nil))
@@ -73,27 +69,21 @@ func TestApplies(t *testing.T) {
 	everywhere := validDefinition("all")
 	operator := validDefinition("operator")
 	operator.Keys = []extension.KeyOwnership{extension.KeysOperator}
-	stack := validDefinition("stack")
-	stack.Keys, stack.Sources = []extension.KeyOwnership{extension.KeysCustomer}, []extension.Source{extension.SourceStackCatalog}
+	customer := validDefinition("customer")
+	customer.Keys = []extension.KeyOwnership{extension.KeysCustomer}
+	both := validDefinition("both")
+	both.Keys = []extension.KeyOwnership{extension.KeysOperator, extension.KeysCustomer}
 	for _, tc := range []struct {
 		definition extension.Definition
-		applies    []extension.Source
+		operator   bool
+		customer   bool
 	}{
-		{definition: everywhere, applies: extension.Sources},
-		{definition: operator, applies: []extension.Source{extension.SourceOperatorCatalog}},
-		{definition: stack, applies: []extension.Source{extension.SourceStackCatalog}},
+		{definition: everywhere, operator: true, customer: true},
+		{definition: operator, operator: true},
+		{definition: customer, customer: true},
+		{definition: both, operator: true, customer: true},
 	} {
-		for _, source := range extension.Sources {
-			assert.Equal(t, contains(tc.applies, source), applies(tc.definition, source), "%s on %s", tc.definition.Name, source)
-		}
+		assert.Equal(t, tc.operator, applies(tc.definition, extension.KeysOperator), tc.definition.Name)
+		assert.Equal(t, tc.customer, applies(tc.definition, extension.KeysCustomer), tc.definition.Name)
 	}
-}
-
-func contains(sources []extension.Source, source extension.Source) bool {
-	for _, candidate := range sources {
-		if candidate == source {
-			return true
-		}
-	}
-	return false
 }
