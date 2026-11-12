@@ -21,10 +21,10 @@
 //  1. [Admitter] across extensions in name order, with request information
 //     only. The first [ErrDenied] ends the call.
 //  2. [RequestTransformer] with tenant-scope extensions first, then
-//     operator-scope extensions, each by ascending [Definition.Priority] and
-//     then by name. Each transform receives the parameters the previous one
-//     returned; the host refuses parameters that add a protected call header
-//     or the call-level "gateway" provider-option namespace.
+//     operator-scope extensions, each in name order. Each transform receives
+//     the parameters the previous one returned; the host refuses parameters
+//     that add a protected call header or the call-level "gateway"
+//     provider-option namespace.
 //  3. [RequestInspector] in name order, on exactly the parameters the model
 //     receives. The first [ErrDenied] ends the call.
 //  4. The selected model, once, with its fallback chain.
@@ -35,9 +35,9 @@
 //     the response's critical path.
 //
 // An extension applies to a call only when its declared key ownerships, or
-// both when none are declared, include the call's; otherwise none of its phases run and it gets no record. The
-// call's source is informational and does not decide where an extension
-// applies.
+// both when none are declared, include the call's; otherwise none of its
+// phases run and it gets no record. The call's source is informational and
+// does not decide where an extension applies.
 //
 // # Request information
 //

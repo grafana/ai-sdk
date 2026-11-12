@@ -122,15 +122,7 @@ func define(name string, value any, change ...func(*extension.Definition)) exten
 
 func skip(definition *extension.Definition) { definition.FailurePolicy = extension.FailSkip }
 
-func tenant(priority int) func(*extension.Definition) {
-	return func(definition *extension.Definition) {
-		definition.Scope, definition.Priority = extension.ScopeTenant, priority
-	}
-}
-
-func priority(value int) func(*extension.Definition) {
-	return func(definition *extension.Definition) { definition.Priority = value }
-}
+func tenant(definition *extension.Definition) { definition.Scope = extension.ScopeTenant }
 
 // typesOf returns the public tenant types the tenant-scope definitions bind
 // to.

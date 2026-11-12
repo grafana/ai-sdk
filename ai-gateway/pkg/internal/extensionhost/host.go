@@ -65,7 +65,8 @@ type instance struct {
 }
 
 // lists are the instances that apply to calls with one key ownership, by
-// name, and the positions of the transformers among them in transform order.
+// name, and the positions of the transformers among them in transform order:
+// tenant scope first, then operator scope, each by name.
 type lists struct {
 	byName            []*instance
 	transforms        []int
@@ -164,16 +165,18 @@ func (h *Host) listsFor(keys extension.KeyOwnership) *lists {
 		}
 	}
 	slices.SortStableFunc(selected.transforms, func(a, b int) int {
-		first, second := selected.byName[a].definition, selected.byName[b].definition
-		if first.Scope != second.Scope {
-			if first.Scope == extension.ScopeTenant {
-				return -1
-			}
-			return 1
-		}
-		return cmp.Compare(first.Priority, second.Priority)
+		return cmp.Compare(scopeOrder(selected.byName[a].definition.Scope), scopeOrder(selected.byName[b].definition.Scope))
 	})
 	return selected
+}
+
+// scopeOrder orders transforms: tenant scope before operator scope. The list is
+// already in name order, and the sort is stable.
+func scopeOrder(scope extension.Scope) int {
+	if scope == extension.ScopeTenant {
+		return 0
+	}
+	return 1
 }
 
 // Compose is the extension layer of the runtime's model composer: it wraps a
