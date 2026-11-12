@@ -143,10 +143,12 @@ Model aliases, discovery and fallback work as described in the
 [provider guide](../providers/grafana-gateway.md).
 
 `grafana` is also accepted as the audience, but a token for `grafana` works
-with every Grafana API; the API group limits it to the Gateway. If you
-exchange tokens yourself and use `NewWithAccessToken`, an exchange with a
-system access policy also needs the `X-Org-ID` and `X-Realms` headers, which
-the Go client sends for you.
+with every Grafana API; the API group limits it to the Gateway.
+
+An exchange with a system access policy needs the `X-Org-ID` and `X-Realms`
+headers. `NewWithTokenExchange` sends them for you. If you exchange tokens with
+your own code and pass the result to `NewWithAccessToken`, your exchange
+request must add them.
 
 ### Call several stacks
 
