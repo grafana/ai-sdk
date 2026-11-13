@@ -86,9 +86,6 @@ func validateDefinition(definition extension.Definition) error {
 	if definition.Scope == extension.ScopeTenant && len(definition.Secrets) != 0 {
 		return fmt.Errorf("extensions: tenant extension %q declares secrets, which only the operator setting supplies", definition.Name)
 	}
-	if definition.Scope == extension.ScopeTenant && definition.EnabledByDefault && definition.ConfigSchema.Compiled() != nil && CheckConfig(definition, emptyConfig) != nil {
-		return fmt.Errorf("extensions: tenant extension %q is enabled by default but its configuration schema refuses the empty configuration", definition.Name)
-	}
 	switch definition.FailurePolicy {
 	case extension.FailClosed, extension.FailSkip:
 	default:

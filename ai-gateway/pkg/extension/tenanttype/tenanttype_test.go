@@ -62,7 +62,8 @@ var namePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 var reservedMembers = []string{"type", "enabled"}
 
 // problems returns what is wrong with a registry: invalid or repeated names,
-// reserved or shared members, and examples that don't match the schema.
+// reserved or shared members, examples that don't match the schema, and a
+// type enabled by default whose schema refuses the empty configuration.
 func problems(types []Type) []string {
 	var found []string
 	names := map[string]bool{}
@@ -92,6 +93,9 @@ func problems(types []Type) []string {
 		if tenantType.Example == nil || tenantType.ConfigSchema.Validate(tenantType.Example) != nil {
 			found = append(found, fmt.Sprintf("%q needs an example its schema accepts", tenantType.Name))
 		}
+		if tenantType.EnabledByDefault && tenantType.ConfigSchema.Validate(json.RawMessage(`{}`)) != nil {
+			found = append(found, fmt.Sprintf("%q is enabled by default but its schema refuses the empty configuration", tenantType.Name))
+		}
 	}
 	return found
 }
@@ -112,6 +116,8 @@ func TestProblems(t *testing.T) {
 	configSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"text":{"type":"string","maxLength":4}},"additionalProperties":false}`))
 	require.NoError(t, err)
 	instructions := Type{Name: "default-instructions", ConfigSchema: configSchema, Example: json.RawMessage(`{"text":"hi"}`)}
+	required, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`))
+	require.NoError(t, err)
 	with := func(change func(*Type)) []Type {
 		changed := instructions
 		change(&changed)
@@ -128,6 +134,7 @@ func TestProblems(t *testing.T) {
 		{name: "shared member", types: []Type{{Name: "a-1b", ConfigSchema: configSchema, Example: instructions.Example}, {Name: "a1b", ConfigSchema: configSchema, Example: instructions.Example}}, problem: `"a-1b" and "a1b" share the member "a1b"`},
 		{name: "schema without example", types: with(func(tt *Type) { tt.Example = nil }), problem: `"default-instructions" needs an example its schema accepts`},
 		{name: "example the schema refuses", types: with(func(tt *Type) { tt.Example = json.RawMessage(`{"text":"too long"}`) }), problem: `"default-instructions" needs an example its schema accepts`},
+		{name: "default-enabled type whose schema refuses the empty configuration", types: []Type{{Name: "required", EnabledByDefault: true, ConfigSchema: required, Example: json.RawMessage(`{"text":"hi"}`)}}, problem: `"required" is enabled by default but its schema refuses the empty configuration`},
 		{name: "example without schema", types: []Type{{Name: "marker", Example: json.RawMessage(`{}`)}}, problem: `"marker" has an example but no schema`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

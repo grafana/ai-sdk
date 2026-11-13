@@ -147,9 +147,9 @@ A tenant-scope definition MAY declare a decoder that turns a stored member into 
 - **WHEN** a default-enabled tenant extension's decoder fails on the empty configuration
 - **THEN** startup SHALL fail naming the extension, without the error's text
 
-#### Scenario: Default-enabled extension that refuses the empty configuration
-- **WHEN** a tenant-scope definition enabled by default has a configuration schema that refuses the empty configuration
-- **THEN** startup SHALL fail naming the extension, also on a host that starts idle
+#### Scenario: Default-enabled type that refuses the empty configuration
+- **WHEN** a public tenant type enabled by default has a configuration schema that refuses the empty configuration
+- **THEN** the repository checks SHALL fail naming the type
 
 #### Scenario: Operator extension with a decoder
 - **WHEN** an operator-scope definition declares a decoder

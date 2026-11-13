@@ -258,7 +258,7 @@ from its type in schema or default. To add a type:
 
 1. Add it to the `tenanttype` registry with a description and an example. A
    type enabled by default runs with `{}` in namespaces without a resource, so
-   its schema must accept it; startup fails otherwise.
+   its schema must accept it; the registry tests fail otherwise.
 2. Run `mise run generate-ai-gateway-kinds`, which projects the schema into the
    manifest and regenerates the kind. The projection keeps JSON types,
    properties, items, required fields and descriptions, and drops value

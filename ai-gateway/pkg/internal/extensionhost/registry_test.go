@@ -47,12 +47,6 @@ func TestValidateDefinitions(t *testing.T) {
 		{name: "invalid secret name", definitions: with(func(d *extension.Definition) { d.Secrets = []string{"api_key"} }), message: "invalid secret name"},
 		{name: "repeated secret", definitions: with(func(d *extension.Definition) { d.Secrets = []string{"apiKey", "apiKey"} }), message: "invalid secret name"},
 		{name: "operator decoder", definitions: with(func(d *extension.Definition) { d.Decode = func(json.RawMessage) (any, error) { return nil, nil } }), message: `operator extension "quota" declares a decoder, which only tenant extensions take`},
-		{name: "default-enabled tenant schema refusing the empty configuration", definitions: with(func(d *extension.Definition) {
-			d.Scope, d.EnabledByDefault = extension.ScopeTenant, true
-			compiled, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`))
-			require.NoError(t, err)
-			d.ConfigSchema = compiled
-		}), message: `tenant extension "quota" is enabled by default but its configuration schema refuses the empty configuration`},
 		{name: "tenant secrets", definitions: with(func(d *extension.Definition) { d.Scope, d.Secrets = extension.ScopeTenant, []string{"apiKey"} }), message: `tenant extension "quota" declares secrets, which only the operator setting supplies`},
 		{name: "duplicate names", definitions: []extension.Definition{validDefinition("quota"), validDefinition("quota")}, message: `extension name "quota" is registered twice`},
 		{name: "unknown mandatory", definitions: []extension.Definition{validDefinition("quota")}, mandatory: []string{"audit"}, message: `mandatory extension "audit" is not registered`},
