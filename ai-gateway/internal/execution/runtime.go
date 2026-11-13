@@ -69,8 +69,11 @@ type Call struct {
 // [ErrInvalidToolHistory] before anything else. It then refuses protected call
 // headers with [ErrProtectedCallHeader], and removes the call-level
 // [ControlNamespace] from options to pass it to the selector. The configured
-// [ModelComposer] then composes the model the call invokes; a composer that
-// fails, panics or returns an invalid model fails the call as internal. A
+// [ModelComposer] then composes the model the call invokes around the selected
+// model; a composer that fails, panics or returns an invalid model fails the
+// call as internal. The call counts as entered only when the selected model
+// itself is invoked, so a composed layer that ends the call first records no
+// attempt. A
 // context that has ended before or during selection decides the outcome, and
 // its error is returned. A translator set with [WithTranslator] reaches every
 // physical attempt of this call only.
@@ -90,38 +93,56 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	selected, err := r.selectModel(ctx, modelID, options, gateway)
+	selected, attempts, err := r.selectModel(ctx, modelID, options, gateway)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
 	if err != nil {
 		return nil, err
 	}
-	attempts := newAttemptCapture(modelID, selected, r.redactor)
 	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
 
-func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
+func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, attempts *attemptCapture, err error) {
 	defer func() {
 		if recover() != nil {
-			selected, err = Selection{}, errInternal
+			selected, attempts, err = Selection{}, nil, errInternal
 		}
 	}()
 	selected, err = r.selector(ctx, modelID, options, gateway)
 	if err != nil {
-		return selected, err
+		return selected, nil, err
 	}
 	if !validSelection(selected) {
-		return Selection{}, errInternal
+		return Selection{}, nil, errInternal
 	}
+	attempts = newAttemptCapture(modelID, selected, r.redactor)
+	selected.Model = enteredModel{LanguageModel: selected.Model, attempts: attempts}
 	if r.compose == nil {
-		return selected, nil
+		return selected, attempts, nil
 	}
 	selected.Model, err = r.compose(selected)
 	if err != nil || !validSelection(selected) {
-		return Selection{}, errInternal
+		return Selection{}, nil, errInternal
 	}
-	return selected, nil
+	return selected, attempts, nil
+}
+
+// enteredModel records the call's entry when the selected model itself is
+// invoked, beneath every composed layer.
+type enteredModel struct {
+	provider.LanguageModel
+	attempts *attemptCapture
+}
+
+func (m enteredModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+	m.attempts.enter()
+	return m.LanguageModel.DoGenerate(ctx, options)
+}
+
+func (m enteredModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	m.attempts.enter()
+	return m.LanguageModel.DoStream(ctx, options)
 }
 
 func validSelection(selected Selection) (valid bool) {
@@ -170,7 +191,6 @@ func (c *Call) generate(ctx context.Context) (result *provider.GenerateResult, e
 			err = errInternal
 		}
 	}()
-	c.attempts.enter()
 	return c.model.DoGenerate(ctx, c.options)
 }
 
@@ -213,19 +233,19 @@ func (c *Call) stream(ctx context.Context) (result *provider.StreamResult, err e
 			result, err = nil, errInternal
 		}
 	}()
-	c.attempts.enter()
 	return c.model.DoStream(ctx, c.options)
 }
 
 func (c *Call) abandon(cancel context.CancelFunc, result *provider.StreamResult) {
 	cancel()
 	if result != nil {
-		startDrain(result.Stream, c.limits.StreamDrainDuration)
+		StartDrain(result.Stream, c.limits.StreamDrainDuration)
 	}
 }
 
 // View seals the call's attempt capture and projects it for an outcome that
-// failed with err, or succeeded when err is nil or [ErrInvalidOutput].
+// failed with err, or succeeded when err is nil, [ErrInvalidOutput] or an
+// extension outcome after the selected model was entered.
 func (c *Call) View(err error) View { return c.attempts.view(err) }
 
 // Close seals the call's attempt capture.
@@ -345,11 +365,13 @@ func (s *Stream) Close() {
 	s.closeAll.Do(func() {
 		s.cancel()
 		s.idle.Stop()
-		startDrain(s.parts, s.limits.StreamDrainDuration)
+		StartDrain(s.parts, s.limits.StreamDrainDuration)
 	})
 }
 
-func startDrain(parts <-chan provider.StreamPart, duration time.Duration) {
+// StartDrain drains parts on its own goroutine until it closes or duration
+// passes. A nil channel is not drained.
+func StartDrain(parts <-chan provider.StreamPart, duration time.Duration) {
 	if parts != nil {
 		go drain(parts, duration)
 	}

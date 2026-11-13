@@ -19,13 +19,28 @@ const (
 	distributionMain   = `package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/gateway"
 )
 
+type audit struct{}
+
+func (audit) Observe(context.Context, *extension.Call, extension.Record) error { return nil }
+
 func main() {
-	if gateway.Run(gateway.Options{}) != nil {
+	definition := extension.Definition{
+		Name:          "audit",
+		Scope:         extension.ScopeOperator,
+		FailurePolicy: extension.FailSkip,
+		New: func(json.RawMessage, extension.Dependencies) (any, error) {
+			return audit{}, nil
+		},
+	}
+	if gateway.Run(gateway.Options{Extensions: append(gateway.DefaultExtensions(), definition)}) != nil {
 		os.Exit(1)
 	}
 }
@@ -88,4 +103,8 @@ func TestRun_CompilesFromAnExternalModule(t *testing.T) {
 	build.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local")
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))
+}
+
+func TestDefaultExtensions_ShippedBuildRegistersNone(t *testing.T) {
+	require.Empty(t, DefaultExtensions())
 }

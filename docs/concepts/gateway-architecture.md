@@ -44,6 +44,7 @@ flowchart LR
       byok[Cloud request accounts: Anthropic or OpenAI]
       compose[Request routing: models, order, only]
       logical[Logical model observation]
+      extensions[Extension pipeline]
       routing[Configured or request-composed ordered candidates]
     end
     subgraph outbound[Outbound provider adapters]
@@ -64,8 +65,9 @@ flowchart LR
   byok -->|routing controls| compose
   compose --> routing
   runtime -->|then observes the selection| logical
-  logical --> routing
-  logical --> byok
+  logical --> extensions
+  extensions --> routing
+  extensions --> byok
   byok --> anthropic
   byok --> openai
   routing --> anthropic --> apis
@@ -104,7 +106,9 @@ The plugin backend's `main` only calls `gateway.Run` from the public
 experimental. `Run` owns the plugin runtime, the plugin ID, the authenticator,
 the app provider that receives the host's API access configuration, the
 lifecycle events and the final flush, so another Go module can build a
-Gateway distribution without repeating or missing any of them.
+Gateway distribution without repeating or missing any of them. A distribution
+passes its [extensions](../guides/gateway-extensions.md) in `Options`; the
+shipped backend passes none.
 
 **Other inbound protocols are not wired into this plugin backend.** In particular,
 `/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
@@ -120,7 +124,8 @@ Imagine `assistant` has an Anthropic primary and an OpenAI backup. The catalog
 and its model objects, which carry the canonical identity, are built at
 startup; selection below looks up those objects rather than constructing the
 whole chain for every request. The runtime then wraps the selected model in the
-logical observers, which are also built at startup, once for each call. This sequence
+extension pipeline and the logical observers, which are also built at startup,
+once for each call. This sequence
 follows the private configured-account path; Cloud selection is described below.
 
 ```mermaid
@@ -139,7 +144,8 @@ sequenceDiagram
   R->>R: Apply host request policy
   R->>M: Resolve public model under request deadline
   M-->>R: Canonical model and configured candidates
-  R->>R: Wrap the selection in its source's logical observers
+  R->>R: Wrap the selection in its extension pipeline and logical observers
+  R->>R: Run admit, request transforms and request inspection
   R->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
   P-->>M: Native result or native stream
@@ -195,8 +201,15 @@ sequenceDiagram
 4. **The wrapped model performs the call.** After selection, the runtime wraps
    the selected model once in the logical observer chain of the selection's
    source: the same observers for a configured, aliased or routed call, and a
-   BYOK chain with its own log redaction for request accounts. Logical
-   observation surrounds the configured primary/fallback chain. Candidate-specific option checks and
+   BYOK chain with its own log redaction for request accounts. Inside the
+   observers and outside the selected model, the
+   [extension pipeline](../guides/gateway-extensions.md) runs the
+   distribution's extensions that apply to the call's key ownership:
+   admit, request transforms with a host policy check after each, request
+   inspection, then response inspection on each output part and one
+   asynchronous observation. A refusal before the model makes no provider call
+   and records no attempt, and fallback never retries an extension outcome.
+   Logical observation surrounds the configured primary/fallback chain. Candidate-specific option checks and
    native adapters run within that chain. When the inbound adapter supplied an
    option translator, each candidate first translates its own copy of the call
    options for its native protocol; host policy re-checks the result before the

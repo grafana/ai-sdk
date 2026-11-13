@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/authlib/types"
 
 	"github.com/grafana/grafana-app-sdk/resource"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 )
 
 // AccessMode selects how verified callers map to account access.
@@ -80,6 +82,7 @@ type Caller struct {
 	Identity          string
 	access            AccountAccess
 	attributedService string
+	callerType        extension.CallerType
 }
 
 // AccountAccess returns the account population the caller may use.
@@ -88,6 +91,10 @@ func (caller Caller) AccountAccess() AccountAccess { return caller.access }
 // AttributedService returns the service identity that observations may
 // attribute, which is set only for configured access in cloud mode.
 func (caller Caller) AttributedService() string { return caller.attributedService }
+
+// Type returns the kind of caller: an allowlisted internal service, or the
+// identity actor's type. A refused caller has none.
+func (caller Caller) Type() extension.CallerType { return caller.callerType }
 
 // Decide maps the verified caller and route namespace to account access. The
 // token namespace must cover the route namespace. A refused caller carries no
@@ -98,10 +105,10 @@ func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) Caller 
 		return refused
 	}
 	service := single(info.GetExtra()[DirectCallerServiceKey])
-	caller := Caller{Namespace: namespace, Identity: identityActor(info)}
+	caller := Caller{Namespace: namespace, Identity: identityActor(info), callerType: identityActorType(info)}
 	switch {
 	case policy.Mode == AccessModeCloud && service != "" && slices.Contains(policy.InternalServices, service):
-		caller.access, caller.attributedService = ConfiguredAccounts, service
+		caller.access, caller.attributedService, caller.callerType = ConfiguredAccounts, service, extension.CallerInternalService
 	case caller.Identity == "":
 		return refused
 	case policy.Mode == AccessModeCloud:
@@ -121,6 +128,18 @@ func identityActor(info types.AuthInfo) string {
 		return ""
 	}
 	return info.GetUID()
+}
+
+// identityActorType returns the caller type of the identity actor when it is a
+// user or service account.
+func identityActorType(info types.AuthInfo) extension.CallerType {
+	if identityActor(info) == "" {
+		return ""
+	}
+	if types.IsIdentityType(info.GetIdentityType(), types.TypeServiceAccount) {
+		return extension.CallerServiceAccount
+	}
+	return extension.CallerUser
 }
 
 func single(values []string) string {

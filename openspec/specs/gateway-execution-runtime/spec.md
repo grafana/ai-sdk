@@ -133,7 +133,7 @@ Closing a stream SHALL cancel the model context and start one asynchronous drain
 - **THEN** no second drain SHALL start
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
+The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation, unavailable or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
@@ -167,6 +167,11 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 #### Scenario: Invalid output
 - **WHEN** a stream wait or a unary call reports invalid output
 - **THEN** provider classification SHALL return internal
+
+#### Scenario: Extension outcomes
+- **WHEN** invocation, setup or an in-band stream error part carries an extension denial or an extension unavailable outcome, alone or wrapped in a status-less provider error
+- **THEN** provider, selection and stream-part classification SHALL return permission or unavailable respectively, before any other rule
+- **AND** no other error SHALL be classified as unavailable
 
 ### Requirement: Aggregate chain-failure classification
 The runtime SHALL classify a chain failure that joins two or more attempt failures, or attempt failures with the call-level context error, as one failure: a call-level cancellation or expired deadline SHALL win; otherwise the newest attempt failure that is not a refusal SHALL decide by the single-error rules; only when every attempt refused SHALL it be invalid request. A refusal is an attempt failure that is invalid request through `ErrUnsupportedRequest` or `ErrUnsupportedFunctionality`.
@@ -511,3 +516,21 @@ Adapters SHALL NOT own or evaluate output lifecycle rules; they SHALL act on the
 #### Scenario: Agreement at the same part
 - **WHEN** the runtime returns invalid output at a stream part, for any lifecycle rule class, or for a unary result
 - **THEN** ProviderWire SHALL write the same response as for a content rejection it owns at that part or result: the frames of the earlier parts and then one internal terminal error, or the 500 internal-error document, with the same execution metadata
+
+### Requirement: Model entry at the selected model
+The runtime SHALL record that a call entered its model only when the selected model itself is invoked, beneath every per-call layer composed around it. A call that a per-call layer ends before invoking the selected model SHALL record no entry, observe no attempt and synthesize none.
+
+#### Scenario: Denied before the model
+- **WHEN** a per-call layer refuses a single-candidate configured call before invoking the selected model
+- **THEN** the call's view SHALL have no attempt and no overview, and zero provider calls SHALL occur
+
+#### Scenario: No per-call layer
+- **WHEN** no composer is configured and a single-candidate configured call succeeds
+- **THEN** the view SHALL report the one selected attempt, as before this change
+
+### Requirement: Attempt view after an extension response refusal
+An extension denial or unavailable outcome returned after the selected model was entered SHALL leave the attempt view equal to the view of a successful call, because the provider attempt succeeded and only its output was refused.
+
+#### Scenario: Single candidate output denied
+- **WHEN** a single-candidate configured call's output is denied by a response inspector
+- **THEN** the call SHALL fail with the permission category, and its overview SHALL report the one selected attempt

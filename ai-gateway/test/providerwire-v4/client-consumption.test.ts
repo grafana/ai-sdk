@@ -237,6 +237,30 @@ describe("registered Gateway client consumption", () => {
     }
   });
 
+  it("consumes an extension's in-band denial or unavailable error and the end of the stream", async () => {
+    for (const error of [
+      { message: "forbidden", type: "forbidden", param: null, code: "forbidden", statusCode: 403, retryable: false },
+      { message: "service unavailable", type: "internal_server_error", param: null, code: "unavailable", statusCode: 503, retryable: true },
+    ]) {
+      const model = modelWithFetch(async () =>
+        sseResponse([
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", delta: "hello" },
+          { type: "error", error },
+        ]),
+      );
+
+      const parts = await collect((await model.doStream({ prompt: [] })).stream);
+
+      assert.deepEqual(parts.map((part) => part.type), ["stream-start", "text-start", "text-delta", "error"]);
+      const last = parts[parts.length - 1];
+      if (last?.type === "error") {
+        assert.deepEqual(last.error, error);
+      }
+    }
+  });
+
   it("maps structured unary and streaming setup errors", async () => {
     const model = modelWithFetch(async () => invalidRequestResponse());
 
@@ -257,6 +281,7 @@ describe("registered Gateway client consumption", () => {
       { name: "timeout", status: 504, type: "internal_server_error", code: "timeout", retryable: true, isInstance: GatewayInternalServerError.isInstance },
       { name: "cancellation", status: 499, type: "internal_server_error", code: "canceled", retryable: false, isInstance: GatewayInternalServerError.isInstance },
       { name: "internal", status: 500, type: "internal_server_error", code: "internal_error", retryable: true, isInstance: GatewayInternalServerError.isInstance },
+      { name: "extension unavailable", status: 503, type: "internal_server_error", code: "unavailable", retryable: true, isInstance: GatewayInternalServerError.isInstance },
     ] as const;
 
     for (const testCase of cases) {

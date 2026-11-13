@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 )
@@ -51,6 +52,8 @@ func TestClassifySelection(t *testing.T) {
 		{"no candidates", ErrNoRoutingCandidates, CategoryInvalidRequest, ReasonNoCandidates},
 		{"attempt bound", ErrRoutingAttemptBound, CategoryInvalidRequest, ReasonAttemptBound},
 		{"unknown fallback model", fmt.Errorf("wrapped: %w", ErrUnknownFallbackModel), CategoryModelNotFound, ReasonFallbackModel},
+		{"extension denial", fmt.Errorf("wrapped: %w", extension.ErrDenied), CategoryPermission, ReasonNone},
+		{"extension unavailable", extension.ErrUnavailable, CategoryUnavailable, ReasonNone},
 		{"provider fallthrough", apiError(429, nil), CategoryRateLimit, ReasonNone},
 		{"deadline", context.DeadlineExceeded, CategoryTimeout, ReasonNone},
 		{"other", errors.New("private"), CategoryInternal, ReasonNone},
@@ -86,6 +89,8 @@ func TestClassifyProvider(t *testing.T) {
 		{"url error", &url.Error{Op: "Post", URL: "https://private", Err: testNetError{}}, CategoryUpstream},
 		{"dial error", &net.OpError{Op: "dial", Net: "tcp", Addr: testAddr("private:443"), Err: errors.New("refused")}, CategoryUpstream},
 		{"invalid output", fmt.Errorf("wrapped: %w", ErrInvalidOutput), CategoryInternal},
+		{"extension denial", fmt.Errorf("wrapped: %w", extension.ErrDenied), CategoryPermission},
+		{"extension unavailable", extension.ErrUnavailable, CategoryUnavailable},
 		{"other", errors.New("private internal"), CategoryInternal},
 		{"nil", nil, CategoryInternal},
 		{"panicking error", panicError{}, CategoryInternal},
@@ -157,6 +162,9 @@ func TestClassify_ProviderAndStreamBoundaries(t *testing.T) {
 		{"zero status wrapped cancellation", apiError(0, fmt.Errorf("read: %w", context.Canceled)), CategoryCancellation, CategoryCancellation},
 		{"zero canceled status", apiError(0, context.Canceled), CategoryCancellation, CategoryCancellation},
 		{"zero status transport timeout", apiError(0, testNetError{timeout: true}), CategoryUpstream, CategoryTimeout},
+		{"zero status extension denial", apiError(0, extension.ErrDenied), CategoryPermission, CategoryPermission},
+		{"zero status extension unavailable", apiError(0, extension.ErrUnavailable), CategoryUnavailable, CategoryUnavailable},
+		{"extension denial before other causes", apiError(0, errors.Join(extension.ErrDenied, context.Canceled)), CategoryPermission, CategoryPermission},
 		{"nil API error", (*provider.APICallError)(nil), CategoryInternal, CategoryInternal},
 		{"non API error", errors.New("private"), CategoryInternal, CategoryInternal},
 	} {

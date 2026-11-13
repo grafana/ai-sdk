@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -197,7 +198,9 @@ func TestRuntimeCall_Compose(t *testing.T) {
 		require.Len(t, received, 1)
 		assert.Equal(t, "id", received[0].ID)
 		assert.Equal(t, SourceOperatorCatalog, received[0].Source)
-		assert.Same(t, selected, received[0].Model)
+		entered, ok := received[0].Model.(enteredModel)
+		require.True(t, ok)
+		assert.Same(t, selected, entered.LanguageModel)
 		assert.Equal(t, 1, composed.callCount())
 		assert.Zero(t, selected.callCount())
 	})
@@ -219,6 +222,50 @@ func TestRuntimeCall_Compose(t *testing.T) {
 			assert.Zero(t, selected.callCount())
 		})
 	}
+
+	t.Run("a layer that refuses before the selected model records no attempt", func(t *testing.T) {
+		for _, stream := range []bool{false, true} {
+			runtime, selected := newComposedConfigured(t, func(Selection) (provider.LanguageModel, error) {
+				return &generateModel{
+					generate: func(context.Context) (*provider.GenerateResult, error) { return nil, extension.ErrDenied },
+					stream:   func(context.Context) (*provider.StreamResult, error) { return nil, extension.ErrDenied },
+				}, nil
+			})
+			call, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+			require.NoError(t, err)
+			if stream {
+				_, err = call.Stream()
+			} else {
+				_, err = call.Generate()
+			}
+			assert.ErrorIs(t, err, extension.ErrDenied)
+			assert.Nil(t, call.View(err).Overview)
+			assert.Zero(t, selected.callCount())
+			call.Close()
+		}
+	})
+
+	t.Run("a layer that invokes the selected model records its attempt", func(t *testing.T) {
+		runtime, selected := newComposedConfigured(t, func(s Selection) (provider.LanguageModel, error) {
+			inner := s.Model
+			return &generateModel{generate: func(ctx context.Context) (*provider.GenerateResult, error) {
+				if _, err := inner.DoGenerate(ctx, provider.CallOptions{}); err != nil {
+					return nil, err
+				}
+				return nil, extension.ErrDenied
+			}}, nil
+		})
+		call, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		_, err = call.Generate()
+		assert.ErrorIs(t, err, extension.ErrDenied)
+		view := call.View(err)
+		require.NotNil(t, view.Overview)
+		require.Len(t, view.Overview.Attempts, 1)
+		assert.Equal(t, fallback.AttemptSelected, view.Overview.Attempts[0].Outcome)
+		assert.Equal(t, 1, selected.callCount())
+	})
 
 	t.Run("selection errors skip the composer", func(t *testing.T) {
 		var composed atomic.Int32
@@ -805,4 +852,15 @@ func TestWait_Err(t *testing.T) {
 	assert.NoError(t, WaitClosedAfterError.Err())
 	assert.ErrorIs(t, WaitInvalidOutput.Err(), ErrInvalidOutput)
 	assert.Equal(t, CategoryInternal, ClassifyProvider(WaitInvalidOutput.Err()))
+}
+
+func newComposedConfigured(t *testing.T, compose ModelComposer) (*Runtime, *generateModel) {
+	t.Helper()
+	selected := &generateModel{modelID: "selected"}
+	expected := []ExpectedAttempt{{ModelID: "id", CanonicalID: "canonical", Destination: catalog.ConfiguredCandidate{Provider: "native", ModelID: "backend"}}}
+	runtime, err := New(Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+		return ConfiguredSelection("canonical", selected, expected), nil
+	}, Compose: compose, Limits: testLimits()})
+	require.NoError(t, err)
+	return runtime, selected
 }

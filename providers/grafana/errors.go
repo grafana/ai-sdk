@@ -133,7 +133,7 @@ func registeredError(category GatewayErrorCategory, code string, status int) boo
 	case GatewayFailedDependency:
 		return status == 424 && code == "failed_dependency"
 	case GatewayInternalServer:
-		return status == 500 && code == "internal_error" || status == 502 && code == "upstream_error" || status == 503 && code == "overloaded" || status == 504 && code == "timeout" || status == 499 && code == "canceled"
+		return status == 500 && code == "internal_error" || status == 502 && code == "upstream_error" || status == 503 && code == "overloaded" || status == 503 && code == "unavailable" || status == 504 && code == "timeout" || status == 499 && code == "canceled"
 	}
 	return false
 }

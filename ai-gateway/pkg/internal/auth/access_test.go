@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/grafana/authlib/authn"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/grafana/grafana-app-sdk/resource"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
@@ -84,7 +86,21 @@ func TestAccessPolicy_Decide(t *testing.T) {
 			assert.Equal(t, namespace, caller.Namespace)
 			assert.Equal(t, tc.identity, caller.Identity)
 			assert.Equal(t, tc.attributed, caller.AttributedService())
+			assert.Equal(t, expectedCallerType(tc.identity, tc.attributed), caller.Type())
 		})
+	}
+}
+
+// expectedCallerType is the caller type a table case implies: an attributed
+// internal service, else its identity actor's type.
+func expectedCallerType(identity, attributed string) extension.CallerType {
+	switch {
+	case attributed != "":
+		return extension.CallerInternalService
+	case strings.HasPrefix(identity, "service-account:"):
+		return extension.CallerServiceAccount
+	default:
+		return extension.CallerUser
 	}
 }
 

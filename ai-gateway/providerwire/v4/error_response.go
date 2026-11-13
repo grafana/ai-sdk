@@ -32,6 +32,7 @@ const (
 	codeCancellation   errorCode = "canceled"
 	codeInternal       errorCode = "internal_error"
 	codeProviderStream errorCode = "provider_error"
+	codeUnavailable    errorCode = "unavailable"
 )
 
 type errorDefinition struct {
@@ -143,6 +144,13 @@ var publicErrors = [...]errorDefinition{
 		code:      codeProviderStream,
 		retryable: false,
 	},
+	safeUnavailable: {
+		status:    http.StatusServiceUnavailable,
+		message:   "service unavailable",
+		kind:      errorInternal,
+		code:      codeUnavailable,
+		retryable: true,
+	},
 }
 
 type errorResponse struct {
@@ -226,7 +234,7 @@ func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, 
 
 func streamErrorResponse(value safeError) errorResponse {
 	switch value.category {
-	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation, safeProviderStream:
+	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation, safeProviderStream, safePermission, safeUnavailable:
 	default:
 		value = safeError{category: safeInternal}
 	}

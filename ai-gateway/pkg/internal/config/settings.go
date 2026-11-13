@@ -31,6 +31,9 @@ const (
 	// MaxModelCatalogBytes bounds the model catalog setting. It stays well
 	// below the 128 KiB a single environment variable can hold on Linux.
 	MaxModelCatalogBytes = 64 << 10
+	// MaxExtensionsBytes bounds the operator extension setting, for the same
+	// reason.
+	MaxExtensionsBytes = 64 << 10
 	// ProviderResponseHeaderTimeout bounds the wait for a model provider's
 	// response headers.
 	ProviderResponseHeaderTimeout = 10 * time.Second
@@ -46,6 +49,10 @@ const (
 
 // ModelCatalogSetting is the setting key of the YAML model catalog document.
 const ModelCatalogSetting = "model_catalog"
+
+// ExtensionsSetting is the setting key of the YAML operator extension
+// configuration document.
+const ExtensionsSetting = "extensions"
 
 // AgentObservabilityTokenSetting is the setting key of the Agent
 // Observability bearer token. The token is read only by ResolveAuthSecret,
@@ -63,6 +70,7 @@ type AgentObservabilitySettings struct {
 // Settings contains every plugin setting.
 type Settings struct {
 	ModelCatalog       string
+	Extensions         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
 }
@@ -116,6 +124,7 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
 	settings := Settings{
 		ModelCatalog: env.string(ModelCatalogSetting, ""),
+		Extensions:   env.string(ExtensionsSetting, ""),
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:  env.bool("agento11y_enabled", false),
 			Protocol: AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),
