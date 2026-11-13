@@ -59,7 +59,7 @@ type Definition struct {
 	Keys             []KeyOwnership // nil: both; the only applicability filter
 	FailurePolicy    FailurePolicy
 	ConfigSchema     schema.Schema  // zero: only an empty configuration
-	Secrets          []string       // operator entry supplies <name>Env
+	Secrets          []string       // operator entry maps each to an env var under secrets
 	EnabledByDefault bool
 	New              func(config json.RawMessage, deps Dependencies) (any, error)
 }
@@ -235,13 +235,15 @@ Every call into extension code goes through one `invoke` helper with recover-to-
 quota:
   config:
     limit: 1000
-  apiKeyEnv: GF_PLUGIN_QUOTA_KEY
+  secrets:
+    apiKey: GF_PLUGIN_QUOTA_KEY
 audit:
   enabled: false
 ```
 
-- Parsed in `config` with the model catalog's rules: at most 64 KiB, string keys, no aliases, merge keys or trailing documents. Unknown names, tenant names, and keys other than `enabled`, `config` and declared `<secret>Env` fail. An entry defaults to `enabled: true`.
-- `config` is converted to JSON and validated with the compiled schema. A failure names the extension and the instance location, never the schema library's message, which can echo values.
+- Parsed in `config` with the model catalog's rules: at most 64 KiB, string keys, no aliases, merge keys or trailing documents. The entry is a fixed struct (`enabled`, `config`, `secrets`) decoded strictly by the YAML library, which refuses unknown and repeated keys; its errors can echo values, so the reason names only the setting. Unknown names, tenant names and undeclared secrets fail in the plan, naming the extension and the secret. An entry defaults to `enabled: true`.
+- `config` is decoded as a YAML mapping and marshaled to JSON, then validated with the compiled schema. JSON is the extension-facing form because `ConfigSchema` validates JSON and tenant configuration is stored as JSON, so factories decode one format for both scopes. A failure names the extension and the instance location, never the schema library's message, which can echo values.
+- Alternative: one `<secret>Env` key per secret, like the model catalog's `apiKeyEnv`. Rejected: dynamic keys need a hand-written node walker for strictness, while a fixed `secrets` mapping lets the YAML library do it.
 - Order in `New`: registration checks before the idle check; settings; catalog; extension config shape and schemas; then secrets (provider keys, Agent Observability token, extension secrets). Extension secret values join `configuredSecrets`.
 - Mandatory checks run on the parsed setting: no entry, `enabled: false`, an invalid config or a missing secret fails startup.
 

@@ -19,7 +19,7 @@ The root middleware denial option is delivered by the `record-middleware-denials
 
 ## 3. Operator configuration
 
-- [x] 3.1 Parse the `extensions` setting in `config` (bound, strict shape, entries, `<secret>Env`); verify `TestParseExtensions` and `TestParseExtensions_Refusals`.
+- [x] 3.1 Parse the `extensions` setting in `config` (bound, strict shape, typed entries with a `secrets` mapping); verify `TestParseExtensions` and `TestParseExtensions_Refusals`.
 - [x] 3.2 Apply entries to definitions (unknown, tenant, undeclared secrets, schema validation with location, mandatory) and resolve secrets after other validation; verify `TestNewPlan`, `TestNewPlan_Refusals` and `TestPlan_ResolveSecrets`.
 
 ## 4. Extension host

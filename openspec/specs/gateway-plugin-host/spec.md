@@ -336,15 +336,19 @@ The entrypoint options SHALL select only the distribution's extension definition
 - **THEN** the Gateway SHALL start idle without reading the extension setting or constructing any extension
 
 ### Requirement: Operator extension setting
-The Gateway SHALL read operator extension configuration from the `extensions` setting (`GF_PLUGIN_EXTENSIONS`): one strict YAML mapping from extension name to an entry with optional `enabled`, optional `config` and one `<secret>Env` key per declared secret. An unset or blank setting SHALL mean no entries. The setting SHALL be at most 64 KiB, and aliases, merge keys, unknown keys and trailing documents SHALL be refused.
+The Gateway SHALL read operator extension configuration from the `extensions` setting (`GF_PLUGIN_EXTENSIONS`): one strict YAML mapping from extension name to an entry with optional `enabled`, optional `config` and an optional `secrets` mapping from each declared secret's name to the environment variable holding it. An unset or blank setting SHALL mean no entries. The setting SHALL be at most 64 KiB, and aliases, merge keys, unknown or repeated keys and trailing documents SHALL be refused.
 
 #### Scenario: Entry with a secret
-- **WHEN** the setting is `quota: {config: {limit: 100}, apiKeyEnv: GF_PLUGIN_QUOTA_KEY}` and `quota` declares secret `apiKey`
+- **WHEN** the setting is `quota: {config: {limit: 100}, secrets: {apiKey: GF_PLUGIN_QUOTA_KEY}}` and `quota` declares secret `apiKey`
 - **THEN** the `quota` factory SHALL receive the configuration `{"limit": 100}` and the secret `apiKey` read from `GF_PLUGIN_QUOTA_KEY`
 
-#### Scenario: Unknown extension or key
-- **WHEN** the setting names an extension the distribution does not register, or an entry has an undeclared key
-- **THEN** startup SHALL fail naming the setting, the extension and the key, without their values
+#### Scenario: Unknown extension or secret
+- **WHEN** the setting names an extension the distribution does not register, or an entry names a secret its extension does not declare
+- **THEN** startup SHALL fail naming the setting, the extension and the secret, without their values
+
+#### Scenario: Unsupported entry key
+- **WHEN** an entry has a key other than `enabled`, `config` and `secrets`
+- **THEN** startup SHALL fail naming the setting, without the entry's values
 
 #### Scenario: Oversized or malformed setting
 - **WHEN** the setting is larger than 64 KiB, is not a mapping, or uses an alias
@@ -354,7 +358,7 @@ The Gateway SHALL read operator extension configuration from the `extensions` se
 Extension secrets SHALL be read from the environment only after every setting, the model catalog and the extension configuration are validated. An unset or empty secret variable of an enabled extension SHALL fail startup naming the variable, not its value. Resolved secret values SHALL be redacted from Gateway-produced failure summaries like configured provider keys.
 
 #### Scenario: Missing secret
-- **WHEN** an enabled extension's entry names `apiKeyEnv: GF_PLUGIN_QUOTA_KEY` and the variable is unset
+- **WHEN** an enabled extension's entry maps secret `apiKey` to `GF_PLUGIN_QUOTA_KEY` and the variable is unset
 - **THEN** startup SHALL fail naming `GF_PLUGIN_QUOTA_KEY`
 
 #### Scenario: Provider echoes an extension secret
