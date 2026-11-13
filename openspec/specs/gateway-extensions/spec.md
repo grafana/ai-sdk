@@ -466,7 +466,7 @@ A stored `Middleware` SHALL NOT change which extensions run, or with which confi
 - **THEN** the first SHALL not run and the second SHALL run, as without the resources
 
 ### Requirement: Tenant configuration documentation
-The extension guide SHALL describe the `Middleware` resource and its members, its roles, the admission rules, how to disable after a rollback, that creates and updates fail while the plugin is unavailable while deletes always work, that stored resources are not applied yet, how a public tenant type is added and projected, and that private extensions are operator-scope unless they implement a public type.
+The extension guide SHALL describe the `Middleware` resource and its members, its roles, the admission rules, how to disable after a rollback, that creates and updates fail while the plugin is unavailable while deletes always work, that stored resources are not applied yet, how a public tenant type is added and its member mirrored, and that private extensions are operator-scope unless they implement a public type.
 
 #### Scenario: Extension author reads the guide
 - **WHEN** an extension author reads the guide's tenant configuration section

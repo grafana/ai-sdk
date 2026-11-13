@@ -60,7 +60,8 @@ var namePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 var reservedMembers = []string{"type", "enabled"}
 
 // problems returns what is wrong with a registry: invalid or repeated names,
-// reserved or shared members, and examples that don't match the schema.
+// reserved or shared members, examples that don't match the schema, and
+// schema shapes a manifest member can't mirror.
 func problems(types []Type) []string {
 	var found []string
 	names := map[string]bool{}
@@ -155,7 +156,7 @@ func schemaProblems(node map[string]any, at string) []string {
 		}
 		found = append(found, schemaProblems(items, at+"/items")...)
 	case "integer":
-		for _, keyword := range []string{"minimum", "maximum"} {
+		for _, keyword := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"} {
 			value, declared := node[keyword]
 			if !declared {
 				continue
@@ -212,6 +213,7 @@ func TestProblems(t *testing.T) {
 		{name: "array without items", types: withSchema(t, object(`"a":{"type":"array"}`)), problem: `"shaped": /properties/a must declare items as one schema`},
 		{name: "nested open object", types: withSchema(t, object(`"a":{"type":"array","items":{"type":"object"}}`)), problem: `"shaped": /properties/a/items must declare properties and set additionalProperties to false`},
 		{name: "integer bound beyond the safe range", types: withSchema(t, object(`"a":{"type":"integer","maximum":9007199254740992}`)), problem: `"shaped": /properties/a must set maximum within ±9007199254740991`},
+		{name: "exclusive integer bound beyond the safe range", types: withSchema(t, object(`"a":{"type":"integer","exclusiveMaximum":1152921504606846976}`)), problem: `"shaped": /properties/a must set exclusiveMaximum within ±9007199254740991`},
 		{name: "fractional integer bound", types: withSchema(t, object(`"a":{"type":"integer","minimum":0.5}`)), problem: `"shaped": /properties/a must set minimum within ±9007199254740991`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

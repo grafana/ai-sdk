@@ -116,13 +116,13 @@ func TestMemberProblems(t *testing.T) {
 			"teams":{"type":"array","items":{"type":"string"}},
 			"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1,"maximum":9007199254740991}},"additionalProperties":false}
 		},"required":["models","teams"],"additionalProperties":false}},
-		"mode":{"type":"string","enum":["allow","deny"],"description":"Whether rules allow or deny."},
+		"mode":{"type":"string","enum":["allow","deny"],"description":"Whether rules allow or deny.\nApplies to every rule."},
 		"temperature":{"type":"number","maximum":2},
 		"strict":{"type":"boolean"}
 	},"required":["rules"],"additionalProperties":false}`
 	configSchema, err := schema.SchemaFromJSON(json.RawMessage(modelAccessSchema))
 	require.NoError(t, err)
-	modelAccess := tenanttype.Type{Name: "model-access", ConfigSchema: configSchema, Example: json.RawMessage(`{"rules":[{"models":["balanced"],"teams":["platform"],"limits":{"rpm":10}}],"mode":"deny","temperature":0.5,"strict":true}`)}
+	modelAccess := tenanttype.Type{Name: "model-access", Description: "Controls which models teams may use.", ConfigSchema: configSchema, Example: json.RawMessage(`{"rules":[{"models":["balanced"],"teams":["platform"],"limits":{"rpm":10}}],"mode":"deny","temperature":0.5,"strict":true}`)}
 
 	raw, err := os.ReadFile(filepath.Join("testdata", "generated-middleware-schemas.json"))
 	require.NoError(t, err)
@@ -156,6 +156,8 @@ func TestMemberProblems(t *testing.T) {
 		}), problem: `/properties/rules/items/properties/models/items has type "integer", the type "string"`},
 		{name: "different required fields", member: change(func(m map[string]any) { rule(m)["required"] = []any{"models"} }), problem: "/properties/rules/items requires [models], the type [models teams]"},
 		{name: "open object", member: change(func(m map[string]any) { delete(rule(m), "additionalProperties") }), problem: "/properties/rules/items must set additionalProperties to false"},
+		{name: "different description", member: change(func(m map[string]any) { properties(m)["mode"].(map[string]any)["description"] = "Other." }), problem: "/properties/mode has another description than the type"},
+		{name: "different member description", member: change(func(m map[string]any) { m["description"] = "Other." }), problem: "/ has another description than the type"},
 		{name: "value constraint", member: change(func(m map[string]any) { properties(m)["mode"].(map[string]any)["enum"] = []any{"allow"} }), problem: `/properties/mode declares "enum", which the manifest leaves to admission`},
 		{name: "example the member refuses", member: change(func(m map[string]any) { properties(m)["strict"] = map[string]any{"type": "string"} }), problem: "the member refuses the type's example"},
 	} {
@@ -182,8 +184,9 @@ func specMembers(t *testing.T, raw []byte) map[string]map[string]any {
 var structureKeywords = []string{"type", "description", "properties", "required", "items", "additionalProperties"}
 
 // memberProblems compares a type's schema with its manifest member: the same
-// properties, JSON types, required fields and items, closed objects, no value
-// constraints, and an example both accept.
+// properties, JSON types, required fields, items and descriptions, closed
+// objects, no value constraints, and an example both accept. The member's own
+// description is the type's Description.
 func memberProblems(t *testing.T, tenantType tenanttype.Type, member map[string]any) []string {
 	t.Helper()
 	if member == nil {
@@ -191,6 +194,10 @@ func memberProblems(t *testing.T, tenantType tenanttype.Type, member map[string]
 	}
 	var typeSchema map[string]any
 	require.NoError(t, json.Unmarshal(tenantType.ConfigSchema.JSON(), &typeSchema))
+	typeSchema["description"] = tenantType.Description
+	if tenantType.Description == "" {
+		delete(typeSchema, "description")
+	}
 	found := structureProblems(typeSchema, member, "")
 	encoded, err := json.Marshal(member)
 	require.NoError(t, err)
@@ -213,6 +220,9 @@ func structureProblems(want, got map[string]any, at string) []string {
 	}
 	if got["type"] != want["type"] {
 		return append(found, fmt.Sprintf("%s has type %q, the type %q", where, got["type"], want["type"]))
+	}
+	if got["description"] != want["description"] {
+		found = append(found, where+" has another description than the type")
 	}
 	switch want["type"] {
 	case "object":

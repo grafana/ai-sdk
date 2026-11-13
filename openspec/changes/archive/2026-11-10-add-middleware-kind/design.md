@@ -27,7 +27,7 @@ The same replay with typed optional members keeps nested configuration intact: e
 
 Generating candidate members with the pinned generator in a scratch copy (this design) confirmed:
 
-- a generated `kinds/middleware_members.cue` struct unified into `spec` emits each member as a `$ref`-free nested object, with `required` for non-optional fields, `additionalProperties: false`, typed maps from `[string]: T`, and `description` from CUE doc comments;
+- a `kinds/middleware_members.cue` struct unified into `spec` emits each member as a `$ref`-free nested object, with `required` for non-optional fields, `additionalProperties: false`, typed maps from `[string]: T`, and `description` from CUE doc comments;
 - an empty struct (`{}`, `close({})`, a struct with only hidden fields) always emits `{type: object, additionalProperties: {}}`, an open object whose value schema has no type. That is not structural, so the generator cannot emit a member for a type without configuration.
 
 ## Goals / Non-Goals
@@ -181,10 +181,10 @@ Member rules:
 Type schema rules, enforced by the `tenanttype` registry test:
 
 - one JSON type per node; closed objects with properties and `additionalProperties: false`; arrays with one `items` schema; no typed maps, `$ref`, `$defs`, `patternProperties` or combinators;
-- **Safe integers:** a declared integer bound must be within ±(2^53−1), the safe integers of a JavaScript `number`, which is how upstream types these settings; nobody declares a misleading ±2^63 bound. Within that range a `float64` represents every value exactly, so the standard schema validation compares bounds, enums and multiples exactly. Bounds aren't required: as upstream, integers beyond the safe range aren't compared exactly.
+- **Safe integers:** a declared integer bound (`minimum`, `maximum` or their exclusive forms) must be within ±(2^53−1), the safe integers of a JavaScript `number`, which is how upstream types these settings; nobody declares a misleading ±2^63 bound. Within that range a `float64` represents every value exactly, so the standard schema validation compares bounds, enums and multiples exactly. Bounds aren't required: as upstream, integers beyond the safe range aren't compared exactly.
 - **Not now:** typed maps and `$ref` would need location redaction (a map key is configuration data); add them with the first type that needs them. Operator schemas aren't checked this way, so a map an operator schema allows can put the operator's own keys in a startup reason; that stays within the operator's logs.
 
-Consistency: a `manifestdata` test compares each registry type's schema with its member in the committed manifest (properties, JSON types, required fields, items, closed objects, no value keywords) and checks that the member accepts the type's example. The comparison is proven against a fixture of the pinned app-sdk generator's output for a nested hand-written member, with mutations for each rule, because the registry is empty in this change. `mise run generate-ai-gateway-kinds` runs only `pnpm --filter ./ai-gateway generate:kinds`, and CI's existing "Verify generated app manifest" step fails when the manifest differs from the CUE.
+Consistency: a `manifestdata` test compares each registry type's schema with its member in the committed manifest (properties, JSON types, required fields, items, closed objects, no value keywords) and checks that the member accepts the type's example. The comparison, descriptions included, is proven against a fixture of the pinned app-sdk generator's output for a nested hand-written member, with mutations for each rule, because the registry is empty in this change; `testdata/README.md` records how to regenerate it. `mise run generate-ai-gateway-kinds` runs only `pnpm --filter ./ai-gateway generate:kinds`, and CI's existing "Verify generated app manifest" step fails when the manifest differs from the CUE.
 
 Alternative considered: generating the members from the registry with a projector that checked structural schemas and prune round-trips offline. Rejected: it cost about 530 build-time lines and a direct apiextensions dependency for a registry that is empty here and changes rarely, through reviewed public changes. #766's end-to-end round-trip proves pruning against Grafana itself.
 
@@ -266,7 +266,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 
 ### Documentation
 
-- `docs/guides/gateway-extensions.md` "Configure tenant extensions": the resource and member, roles, admission rules, rollback (disable with the member kept or removed), writes failing while the plugin is unavailable, stored resources not applied yet, and how to add a tenant type: a public type in `tenanttype`, its projection rules, regenerating, then binding an implementation. Private extensions are operator-scope by default; private tenant implementations bind to public types. Type schemas evolve additively.
+- `docs/guides/gateway-extensions.md` "Configure tenant extensions": the resource and member, roles, admission rules, rollback (disable with the member kept or removed), writes failing while the plugin is unavailable, stored resources not applied yet, and how to add a tenant type: a public type in `tenanttype`, its schema shape and member rules, writing the member, regenerating, then binding an implementation. Private extensions are operator-scope by default; private tenant implementations bind to public types. Type schemas evolve additively.
 - `tenanttype` package documentation, and the `ScopeTenant` godoc pointing to it.
 - Glossary: the Middleware kind entry describes typed members; a "tenant extension type" alias.
 - Architecture walkthrough: the manifest's two kinds, and that the Middleware members come from the public type registry.

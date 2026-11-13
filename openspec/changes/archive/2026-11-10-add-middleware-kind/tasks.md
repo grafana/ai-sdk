@@ -37,7 +37,7 @@
 ## 8. Members
 
 - [x] 8.1 Write `kinds/middleware_members.cue` by hand with its rule, import `middlewareMembers` in `kinds/middleware.cue`, and add the `generate-ai-gateway-kinds` mise task; verify the empty registry leaves the Middleware `spec` as `{type, enabled}` and `generate:kinds` leaves no diff.
-- [x] 8.2 Add the `manifestdata` consistency test over `tenanttype.All()`, proven against a fixture of the pinned generator's output for a nested hand-written member with a mutation per rule; verify it passes and each mutation fails it.
+- [x] 8.2 Add the `manifestdata` consistency test over `tenanttype.All()`, descriptions included, proven against a fixture of the pinned generator's output for a nested hand-written member with a mutation per rule; verify it passes and each mutation fails it.
 
 ## 9. Typed union admission
 
