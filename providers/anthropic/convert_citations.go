@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/grafana/ai-sdk/provider"
 )
 

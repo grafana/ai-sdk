@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
