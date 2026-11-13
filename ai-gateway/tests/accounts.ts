@@ -7,6 +7,7 @@ const TOKEN_SECONDS = 3600;
 export type Role = (typeof ROLES)[number];
 
 export const test = base.extend<object, { accounts: Record<Role, APIRequestContext> }>({
+  trace: ['off', { scope: 'worker' }],
   accounts: [
     async ({ playwright }, use, workerInfo) => {
       const baseURL = workerInfo.project.use.baseURL;

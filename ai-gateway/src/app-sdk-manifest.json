@@ -229,6 +229,75 @@
                             "spec": {
                                 "additionalProperties": false,
                                 "properties": {
+                                    "defaultInstructions": {
+                                        "additionalProperties": false,
+                                        "description": "Default system messages for calls that have none.",
+                                        "properties": {
+                                            "messages": {
+                                                "description": "System messages prepended, in order, to calls whose prompt has no system message.",
+                                                "items": {
+                                                    "additionalProperties": false,
+                                                    "properties": {
+                                                        "content": {
+                                                            "description": "The system message text.",
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "content"
+                                                    ],
+                                                    "type": "object"
+                                                },
+                                                "type": "array"
+                                            }
+                                        },
+                                        "required": [
+                                            "messages"
+                                        ],
+                                        "type": "object"
+                                    },
+                                    "defaultSettings": {
+                                        "additionalProperties": false,
+                                        "description": "Default sampling and limit settings for calls that leave them unset.",
+                                        "properties": {
+                                            "frequencyPenalty": {
+                                                "description": "The frequency penalty.",
+                                                "type": "number"
+                                            },
+                                            "maxOutputTokens": {
+                                                "description": "The maximum number of tokens to generate.",
+                                                "type": "integer"
+                                            },
+                                            "presencePenalty": {
+                                                "description": "The presence penalty.",
+                                                "type": "number"
+                                            },
+                                            "seed": {
+                                                "description": "The seed for deterministic sampling, where the model supports it.",
+                                                "type": "integer"
+                                            },
+                                            "stopSequences": {
+                                                "description": "Sequences that stop generation.",
+                                                "items": {
+                                                    "type": "string"
+                                                },
+                                                "type": "array"
+                                            },
+                                            "temperature": {
+                                                "description": "The sampling temperature.",
+                                                "type": "number"
+                                            },
+                                            "topK": {
+                                                "description": "The number of most likely tokens to sample from.",
+                                                "type": "integer"
+                                            },
+                                            "topP": {
+                                                "description": "The nucleus sampling probability mass.",
+                                                "type": "number"
+                                            }
+                                        },
+                                        "type": "object"
+                                    },
                                     "enabled": {
                                         "type": "boolean"
                                     },

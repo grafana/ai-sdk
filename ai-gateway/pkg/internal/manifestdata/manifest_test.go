@@ -91,6 +91,18 @@ func TestManifest_MiddlewareSchema(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, want, slices.Collect(maps.Keys(spec.Value.Properties)), "one member per tenant type with configuration")
+	assert.ElementsMatch(t, []string{"type", "enabled", "defaultInstructions", "defaultSettings"}, want, "the shipped members")
+
+	settings := spec.Value.Properties["defaultSettings"].Value
+	assert.ElementsMatch(t, []string{"temperature", "topP", "topK", "maxOutputTokens", "stopSequences", "seed", "presencePenalty", "frequencyPenalty"}, slices.Collect(maps.Keys(settings.Properties)), "default settings declare only sampling and limit fields")
+	require.NotNil(t, settings.AdditionalProperties.Has)
+	assert.False(t, *settings.AdditionalProperties.Has)
+	instructions := spec.Value.Properties["defaultInstructions"].Value
+	assert.ElementsMatch(t, []string{"messages"}, slices.Collect(maps.Keys(instructions.Properties)))
+	message := instructions.Properties["messages"].Value.Items.Value
+	assert.ElementsMatch(t, []string{"content"}, slices.Collect(maps.Keys(message.Properties)), "messages carry no provider options")
+	require.NotNil(t, message.AdditionalProperties.Has)
+	assert.False(t, *message.AdditionalProperties.Has)
 }
 
 func TestManifest_MiddlewareMembersMirrorTheirTypes(t *testing.T) {

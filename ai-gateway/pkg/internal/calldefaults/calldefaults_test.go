@@ -1,0 +1,269 @@
+package calldefaults
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/tenantconfig"
+	"github.com/grafana/ai-sdk/middleware"
+	"github.com/grafana/ai-sdk/provider"
+)
+
+var (
+	_ extension.RequestTransformer = instructionsTransformer{}
+	_ extension.RequestTransformer = settingsTransformer{}
+)
+
+// configured is a definition's process instance with one namespace's decoded
+// configuration, as the host passes it to each call.
+type configured struct {
+	transformer extension.RequestTransformer
+	config      any
+}
+
+func newTransformer(t *testing.T, definition extension.Definition, config string) configured {
+	t.Helper()
+	instance, err := definition.New(json.RawMessage(`{}`), extension.Dependencies{})
+	require.NoError(t, err)
+	transformer, ok := instance.(extension.RequestTransformer)
+	require.True(t, ok, "a request transform")
+	_, inspects := instance.(extension.RequestInspector)
+	assert.False(t, inspects, "only a request transform")
+	decoded, err := definition.Decode(json.RawMessage(config))
+	require.NoError(t, err)
+	return configured{transformer: transformer, config: decoded}
+}
+
+func transform(t *testing.T, bound configured, params provider.CallOptions) provider.CallOptions {
+	t.Helper()
+	result, err := bound.transformer.TransformRequest(context.Background(), &extension.Call{Config: bound.config}, params)
+	require.NoError(t, err)
+	return result
+}
+
+func TestDefinitions(t *testing.T) {
+	definitions := Definitions()
+	require.Len(t, definitions, 2)
+	for i, tenantType := range []tenanttype.Type{tenanttype.DefaultInstructions(), tenanttype.DefaultSettings()} {
+		definition := definitions[i]
+		assert.Equal(t, tenantType.Name, definition.Name)
+		assert.Equal(t, extension.ScopeTenant, definition.Scope)
+		assert.Nil(t, definition.Keys, "operator-owned and customer-owned calls")
+		assert.NotNil(t, definition.Decode)
+		assert.Equal(t, extension.FailSkip, definition.FailurePolicy)
+		assert.False(t, definition.EnabledByDefault)
+		assert.Equal(t, tenantType.ConfigSchema.JSON(), definition.ConfigSchema.JSON())
+		assert.Empty(t, definition.Secrets)
+		newTransformer(t, definition, string(tenantType.Example))
+	}
+}
+
+func TestInstructions(t *testing.T) {
+	user := provider.NewUserMessage(provider.TextPart("hello"))
+	assistant := provider.Message{Role: provider.RoleAssistant, Content: []provider.ContentPart{provider.TextPart("hi")}}
+	client := provider.NewSystemMessage("client instructions")
+	defaults := []provider.Message{provider.NewSystemMessage("first"), provider.NewSystemMessage("second")}
+	instructions := newTransformer(t, instructionsDefinition(), `{"messages":[{"content":"first"},{"content":"second"}]}`)
+
+	for _, tc := range []struct {
+		name   string
+		prompt []provider.Message
+		want   []provider.Message
+	}{
+		{name: "no system message", prompt: []provider.Message{user, assistant}, want: append(append([]provider.Message(nil), defaults...), user, assistant)},
+		{name: "system message first", prompt: []provider.Message{client, user}, want: []provider.Message{client, user}},
+		{name: "system message later", prompt: []provider.Message{user, client}, want: []provider.Message{user, client}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prompt := append([]provider.Message(nil), tc.prompt...)
+			result := transform(t, instructions, provider.CallOptions{Prompt: prompt, Temperature: new(0.5)})
+			assert.Equal(t, tc.want, result.Prompt)
+			assert.Equal(t, new(0.5), result.Temperature, "other parameters are kept")
+			assert.Equal(t, tc.prompt, prompt, "the call's prompt is not mutated")
+		})
+	}
+}
+
+func TestSettings(t *testing.T) {
+	all := `{"temperature":0.7,"topP":0.9,"topK":40,"maxOutputTokens":1024,"stopSequences":["a","b","c"],"seed":9007199254740991,"presencePenalty":0.1,"frequencyPenalty":0.2}`
+	for _, tc := range []struct {
+		name   string
+		config string
+		params provider.CallOptions
+		check  func(t *testing.T, result provider.CallOptions)
+	}{
+		{
+			name:   "fills unset fields",
+			config: all,
+			check: func(t *testing.T, result provider.CallOptions) {
+				assert.Equal(t, new(0.7), result.Temperature)
+				assert.Equal(t, new(0.9), result.TopP)
+				assert.Equal(t, new(40), result.TopK)
+				assert.Equal(t, new(1024), result.MaxOutputTokens)
+				assert.Equal(t, []string{"a", "b", "c"}, result.StopSequences)
+				assert.Equal(t, new(9007199254740991), result.Seed, "safe integers are exact")
+				assert.Equal(t, new(0.1), result.PresencePenalty)
+				assert.Equal(t, new(0.2), result.FrequencyPenalty)
+			},
+		},
+		{
+			name:   "call values take precedence",
+			config: all,
+			params: provider.CallOptions{Temperature: new(0.0), TopP: new(0.5), TopK: new(1), MaxOutputTokens: new(16), StopSequences: []string{}, Seed: new(0), PresencePenalty: new(0.0), FrequencyPenalty: new(0.0)},
+			check: func(t *testing.T, result provider.CallOptions) {
+				assert.Equal(t, new(0.0), result.Temperature, "a call's 0 is kept")
+				assert.Equal(t, new(0.5), result.TopP)
+				assert.Equal(t, new(1), result.TopK)
+				assert.Equal(t, new(16), result.MaxOutputTokens)
+				assert.Equal(t, []string{}, result.StopSequences, "a call's empty stop sequences are kept")
+				assert.Equal(t, new(0), result.Seed)
+				assert.Equal(t, new(0.0), result.PresencePenalty)
+				assert.Equal(t, new(0.0), result.FrequencyPenalty)
+			},
+		},
+		{
+			name:   "only configured fields",
+			config: `{"temperature":0.7}`,
+			params: provider.CallOptions{MaxOutputTokens: new(16)},
+			check: func(t *testing.T, result provider.CallOptions) {
+				assert.Equal(t, provider.CallOptions{Temperature: new(0.7), MaxOutputTokens: new(16)}, result)
+			},
+		},
+		{
+			name:   "other parameters unchanged",
+			config: all,
+			params: provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewUserMessage(provider.TextPart("hello"))},
+				Headers:         map[string]string{"x-call": "1"},
+				ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"a":1}`)}},
+				Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup"}},
+				ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceRequired},
+				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON},
+				Reasoning:       provider.ReasoningHigh,
+			},
+			check: func(t *testing.T, result provider.CallOptions) {
+				assert.Equal(t, []provider.Message{provider.NewUserMessage(provider.TextPart("hello"))}, result.Prompt)
+				assert.Equal(t, map[string]string{"x-call": "1"}, result.Headers)
+				assert.Equal(t, provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"a":1}`)}}, result.ProviderOptions)
+				assert.Equal(t, []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup"}}, result.Tools)
+				assert.Equal(t, &provider.ToolChoice{Type: provider.ToolChoiceRequired}, result.ToolChoice)
+				assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON}, result.ResponseFormat)
+				assert.Equal(t, provider.ReasoningHigh, result.Reasoning)
+			},
+		},
+		{
+			name:   "no call controls added",
+			config: all,
+			check: func(t *testing.T, result provider.CallOptions) {
+				assert.Nil(t, result.Headers)
+				assert.Nil(t, result.ProviderOptions)
+				assert.Nil(t, result.Tools)
+				assert.Nil(t, result.ToolChoice)
+				assert.Nil(t, result.ResponseFormat)
+				assert.Equal(t, provider.ReasoningProviderDefault, result.Reasoning)
+				assert.Nil(t, result.Prompt)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, transform(t, newTransformer(t, settingsDefinition(), tc.config), tc.params))
+		})
+	}
+}
+
+func TestSettings_AppendingToStopSequencesLeavesOtherCallsUnchanged(t *testing.T) {
+	settings := newTransformer(t, settingsDefinition(), `{"stopSequences":["a","b","c"]}`)
+	first := transform(t, settings, provider.CallOptions{})
+	first.StopSequences = append(first.StopSequences, "added")
+	first.StopSequences[0] = "changed"
+	assert.Equal(t, []string{"a", "b", "c"}, transform(t, settings, provider.CallOptions{}).StopSequences)
+}
+
+func TestFactories_RefuseUndecodableConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		definition extension.Definition
+		config     string
+	}{
+		{definition: instructionsDefinition(), config: `{"messages":"e2e-sentinel"}`},
+		{definition: settingsDefinition(), config: `{"topK":1e30}`},
+		{definition: settingsDefinition(), config: `{"temperature":"e2e-sentinel"}`},
+		{definition: settingsDefinition(), config: `{"topK":1.5}`},
+		{definition: settingsDefinition(), config: `{"temperature":1e400}`},
+	} {
+		_, err := tc.definition.Decode(json.RawMessage(tc.config))
+		require.Error(t, err, tc.config)
+		assert.NotContains(t, err.Error(), "e2e-sentinel")
+		assert.NotContains(t, err.Error(), "1e30")
+		assert.NotContains(t, err.Error(), "1e400")
+	}
+}
+
+// storedMember returns config as the host passes it to Decode: the member
+// of a stored spec, in canonical JSON.
+func storedMember(t *testing.T, config string) json.RawMessage {
+	t.Helper()
+	spec, err := tenantconfig.DecodeSpec(json.RawMessage(`{"type":"default-settings","enabled":true,"defaultSettings":` + config + `}`))
+	require.NoError(t, err)
+	return spec.Members["defaultSettings"]
+}
+
+func TestSettings_DecodeAcceptsWhatAdmissionAccepts(t *testing.T) {
+	for _, tc := range []struct {
+		config   string
+		accepted bool
+		check    func(t *testing.T, options middleware.DefaultSettingsOptions)
+	}{
+		{config: `{"temperature":1.7976931348623157e308}`, accepted: true},
+		{config: `{"temperature":-0}`, accepted: true},
+		{config: `{"temperature":1e-400}`, accepted: true},
+		{config: `{"topK":-0}`, accepted: true},
+		{config: `{"maxOutputTokens":1.0,"topK":4e1}`, accepted: true, check: func(t *testing.T, options middleware.DefaultSettingsOptions) {
+			assert.Equal(t, new(1), options.MaxOutputTokens)
+			assert.Equal(t, new(40), options.TopK)
+		}},
+		{config: `{"seed":9007199254740991,"topK":-9007199254740991}`, accepted: true, check: func(t *testing.T, options middleware.DefaultSettingsOptions) {
+			assert.Equal(t, new(9007199254740991), options.Seed)
+			assert.Equal(t, new(-9007199254740991), options.TopK)
+		}},
+		{config: `{"temperature":1e400}`},
+		{config: `{"frequencyPenalty":-1e400}`},
+		{config: `{"seed":9007199254740992}`},
+		{config: `{"seed":-9007199254740992}`},
+		{config: `{"maxOutputTokens":9007199254740992}`},
+		{config: `{"topK":4.5e0}`},
+	} {
+		t.Run(tc.config, func(t *testing.T) {
+			admitted := extensionhost.CheckConfig(settingsDefinition(), json.RawMessage(tc.config))
+			if !tc.accepted {
+				assert.Error(t, admitted)
+				return
+			}
+			require.NoError(t, admitted)
+			decoded, err := settingsDefinition().Decode(storedMember(t, tc.config))
+			require.NoError(t, err)
+			if tc.check != nil {
+				tc.check(t, decoded.(middleware.DefaultSettingsOptions))
+			}
+		})
+	}
+}
+
+func TestTransformers_RefuseACallWithoutTheirConfiguration(t *testing.T) {
+	params := provider.CallOptions{Prompt: []provider.Message{provider.NewUserMessage(provider.TextPart("hello"))}}
+	for _, definition := range Definitions() {
+		instance, err := definition.New(json.RawMessage(`{}`), extension.Dependencies{})
+		require.NoError(t, err)
+		for _, config := range []any{nil, json.RawMessage(`{}`)} {
+			result, err := instance.(extension.RequestTransformer).TransformRequest(context.Background(), &extension.Call{Config: config}, params)
+			assert.Error(t, err, definition.Name)
+			assert.Equal(t, params, result, "the parameters are returned unchanged, and the failure policy applies")
+		}
+	}
+}

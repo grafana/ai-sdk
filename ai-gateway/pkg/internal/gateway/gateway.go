@@ -323,7 +323,7 @@ func (g *Gateway) connectTenants(kubeConfig rest.Config, apiAccess bool) error {
 		g.logger.Warn("gateway tenant configuration is not applied: the plugin has no API access, so tenant extensions run with their defaults")
 		return nil
 	}
-	reader, err := tenantconfig.NewReader(kubeConfig)
+	reader, err := tenantconfig.NewReader(kubeConfig, g.logger)
 	if err != nil {
 		return err
 	}
