@@ -291,7 +291,7 @@ describe("candidate-source workflow gates", () => {
     }
   });
 
-  it("pins exactly the published version in dev after a successful publication", () => {
+  it("pins exactly the published version in both dev waves after a successful publication", () => {
     const job = publishing.jobs["update-plugin-version"]!;
     assert.equal(job.needs, "publish");
     assert.equal(job.if, "${{ github.repository == 'grafana/ai-sdk' }}", "no status function, so a failed or skipped publish skips the pin");
@@ -330,11 +330,10 @@ describe("candidate-source workflow gates", () => {
       pull_request_enabled: true,
       pull_request_existing_strategy: "replace",
       pull_request_message: "Created by https://github.com/grafana/ai-sdk/actions/runs/42. This PR will auto-merge once CI has passed.",
-      update_jsonnet_attribute_configs: [{
-        file_path: versionsFile,
-        jsonnet_key: "dev",
-        jsonnet_value: version,
-      }],
+      update_jsonnet_attribute_configs: [
+        { file_path: versionsFile, jsonnet_key: "dev0", jsonnet_value: version },
+        { file_path: versionsFile, jsonnet_key: "dev1", jsonnet_value: version },
+      ],
     });
 
     for (const mismatch of ["", `+${sha}`, "0.1.0-alpha.1", `0.1.0-alpha.1+${"f".repeat(40)}`, `${version}-dirty`]) {

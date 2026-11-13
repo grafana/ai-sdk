@@ -73,11 +73,11 @@ Maintainer documentation SHALL describe how a `main` commit becomes a dev catalo
 - **THEN** the documentation SHALL describe promoting an earlier dev-published commit or pinning an earlier ops version
 
 ### Requirement: Dev version pin request
-After a version is published to the dev catalog, the publish workflow SHALL open an auto-merge pull request in the deployment repository that pins the dev environment to exactly that version, replacing any earlier pin pull request that has not merged. It SHALL request the pin only while the published commit is the head of `main` and the version ends in `+` and that commit's SHA. Pull requests, forks and failed or skipped publications SHALL NOT request a pin.
+After a version is published to the dev catalog, the publish workflow SHALL open one auto-merge pull request in the deployment repository that pins each dev environment wave, `dev0` and `dev1`, to exactly that version, replacing any earlier pin pull request that has not merged. It SHALL request the pin only while the published commit is the head of `main` and the version ends in `+` and that commit's SHA. Pull requests, forks and failed or skipped publications SHALL NOT request a pin.
 
 #### Scenario: Publication requests the dev pin
 - **WHEN** commit `<sha>` is published to the dev catalog as `0.1.0-alpha.1+<sha>`
-- **THEN** a pull request SHALL pin the dev environment to `0.1.0-alpha.1+<sha>`
+- **THEN** one pull request SHALL pin both the `dev0` and `dev1` waves to `0.1.0-alpha.1+<sha>`
 
 #### Scenario: Newer publication replaces an open pin
 - **WHEN** a pin pull request for an earlier version has not merged and a newer version is published
