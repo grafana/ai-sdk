@@ -87,7 +87,8 @@ func TestNormalizeProviderCalls(t *testing.T) {
 		{Type: provider.PartError, APICallError: &provider.APICallError{Message: "go style", URL: "http://x"}},
 	}}
 
-	normalized := normalizeProviderCalls(t, "anthropic", calls)
+	normalized, err := normalizeProviderCalls("anthropic", calls)
+	require.NoError(t, err)
 
 	require.Len(t, normalized, 1)
 	parts := normalized[0]
@@ -103,7 +104,8 @@ func TestNormalizeProviderCalls(t *testing.T) {
 	assert.Equal(t, map[string]any{"type": "error"}, parts[9], "errors without a status are compared by position only")
 
 	t.Run("volatile timestamps are dropped for Bedrock", func(t *testing.T) {
-		bedrock := normalizeProviderCalls(t, "bedrock", calls[:1])
+		bedrock, err := normalizeProviderCalls("bedrock", calls[:1])
+		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"type": "response-metadata", "id": "msg_1", "modelId": "model"}, bedrock[0][1])
 	})
 }
@@ -260,7 +262,8 @@ func TestAnthropicSyntheticStreamParts(t *testing.T) {
 			for part := range result.Stream {
 				parts = append(parts, part)
 			}
-			actual := normalizeProviderCalls(t, "anthropic", [][]provider.StreamPart{parts})
+			actual, err := normalizeProviderCalls("anthropic", [][]provider.StreamPart{parts})
+			require.NoError(t, err)
 			if mismatch := providerPartsMismatch([]providerPartsCall{expectation.Parts}, actual); mismatch != "" {
 				require.Fail(t, "provider parts differ from upstream", mismatch)
 			}
