@@ -17,9 +17,12 @@ const (
 	// ScopeOperator extensions are configured by the operator, through the
 	// Gateway's extensions setting.
 	ScopeOperator Scope = "operator"
-	// ScopeTenant extensions are configured per namespace. Until namespace
-	// configuration exists, they run with their default state and an empty
-	// configuration.
+	// ScopeTenant extensions are configured per namespace, by Middleware
+	// resources named after the extension. A tenant-scope definition must
+	// bind to a public type in package tenanttype, which declares its
+	// configuration schema and default. The Gateway doesn't apply stored
+	// resources yet, so tenant extensions run with their default state and an
+	// empty configuration.
 	ScopeTenant Scope = "tenant"
 )
 

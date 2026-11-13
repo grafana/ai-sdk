@@ -125,6 +125,10 @@ Access to the namespace routes SHALL NOT require a Gateway-specific Grafana role
 - **WHEN** a caller without `aigateway:catalogreader` or `aigateway:catalogwriter` calls a namespace route
 - **THEN** the access decision SHALL be the same as for a caller holding them
 
+#### Scenario: Middleware roles do not gate the namespace routes
+- **WHEN** a caller without `aigateway:middlewarereader` or `aigateway:middlewarewriter` calls a namespace route
+- **THEN** the access decision SHALL be the same as for a caller holding them
+
 ### Requirement: Caller identity attribution
 The identity actor's typed UID SHALL be available to every extension, operator and tenant, and SHALL be emitted as the caller identity in Gateway logs and Agent Observability generation metadata for every selection source. It SHALL NOT become a metric label and SHALL NOT enter provider request headers, bodies or options.
 

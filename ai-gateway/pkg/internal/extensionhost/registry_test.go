@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/schema"
 )
 
 func validDefinition(name string) extension.Definition {
@@ -50,7 +52,7 @@ func TestValidateDefinitions(t *testing.T) {
 		{name: "repeated mandatory", definitions: []extension.Definition{validDefinition("quota")}, mandatory: []string{"quota", "quota"}, message: "listed twice"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateDefinitions(tc.definitions, tc.mandatory)
+			err := ValidateDefinitions(tc.definitions, tc.mandatory, typesOf(tc.definitions))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.message)
 		})
@@ -60,8 +62,53 @@ func TestValidateDefinitions(t *testing.T) {
 		customer := validDefinition("audit")
 		customer.Keys = []extension.KeyOwnership{extension.KeysCustomer}
 		customer.Secrets = []string{"apiKey", "endpointToken"}
-		assert.NoError(t, ValidateDefinitions([]extension.Definition{validDefinition("quota"), customer}, []string{"quota"}))
-		assert.NoError(t, ValidateDefinitions(nil, nil))
+		assert.NoError(t, ValidateDefinitions([]extension.Definition{validDefinition("quota"), customer}, []string{"quota"}, nil))
+		assert.NoError(t, ValidateDefinitions(nil, nil, nil))
+	})
+}
+
+func TestValidateDefinitions_TenantTypes(t *testing.T) {
+	configSchema := func(t *testing.T, raw string) schema.Schema {
+		t.Helper()
+		compiled, err := schema.SchemaFromJSON(json.RawMessage(raw))
+		require.NoError(t, err)
+		return compiled
+	}
+	instructionsSchema := configSchema(t, `{"type":"object","properties":{"text":{"type":"string","maxLength":4}},"additionalProperties":false}`)
+	instructions := tenanttype.Type{Name: "default-instructions", ConfigSchema: instructionsSchema, Example: json.RawMessage(`{"text":"hi"}`)}
+	marker := tenanttype.Type{Name: "marker", EnabledByDefault: true}
+	bound := func(tenantType tenanttype.Type, change ...func(*extension.Definition)) []extension.Definition {
+		definition := tenantType.Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: validDefinition("x").New})
+		for _, apply := range change {
+			apply(&definition)
+		}
+		return []extension.Definition{definition}
+	}
+	for _, tc := range []struct {
+		name        string
+		definitions []extension.Definition
+		types       []tenanttype.Type
+		message     string
+	}{
+		{name: "tenant definition without a type", definitions: bound(instructions), message: `tenant extension "default-instructions" has no public tenant type`},
+		{name: "different schema", definitions: bound(instructions, func(d *extension.Definition) {
+			d.ConfigSchema = configSchema(t, `{"type":"object","properties":{"text":{"type":"string"}},"additionalProperties":false}`)
+		}), types: []tenanttype.Type{instructions}, message: `tenant extension "default-instructions" differs from its public tenant type in its configuration schema`},
+		{name: "schema on a type without one", definitions: bound(marker, func(d *extension.Definition) { d.ConfigSchema = instructionsSchema }), types: []tenanttype.Type{marker}, message: "in its configuration schema"},
+		{name: "different default", definitions: bound(marker, func(d *extension.Definition) { d.EnabledByDefault = false }), types: []tenanttype.Type{marker}, message: `tenant extension "marker" differs from its public tenant type in its default state`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDefinitions(tc.definitions, nil, tc.types)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.message)
+		})
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		operator := validDefinition("default-instructions")
+		assert.NoError(t, ValidateDefinitions(append(bound(marker), bound(instructions)...), nil, []tenanttype.Type{instructions, marker}))
+		assert.NoError(t, ValidateDefinitions([]extension.Definition{operator}, nil, []tenanttype.Type{instructions}), "an operator definition may share a type's name")
+		assert.NoError(t, ValidateDefinitions(nil, nil, []tenanttype.Type{instructions}), "a type may have no implementation")
 	})
 }
 

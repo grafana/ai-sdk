@@ -75,6 +75,13 @@ pnpm --filter ./ai-gateway build
 (cd ai-gateway && mage -v buildPlugin)
 """
 
+[tasks.generate-ai-gateway-kinds]
+description = "Generate the AI Gateway app manifest and kind types from the CUE kinds"
+run = """
+mise deps install --only test
+pnpm --filter ./ai-gateway generate:kinds
+"""
+
 [tasks.test-ai-gateway-frontend]
 description = "Typecheck, lint and unit test the AI Gateway plugin frontend"
 run = """

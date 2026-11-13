@@ -84,10 +84,14 @@ production table matches the committed manifest: `GET {prefix}/config` and
 `POST {prefix}/language-model`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
-The manifest also declares one kind, `ModelCatalog`. Grafana stores catalog
-objects and their provider keys itself, and asks the plugin's admission
-validator to accept or refuse each create and update. Stored catalogs do not yet
-reach discovery or selection.
+The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
+stores their objects, and catalog provider keys, itself, and asks the plugin's
+admission validators to accept or refuse each create and update. The
+`Middleware` spec has one typed member per public tenant type in the
+`tenanttype` registry, and its validator checks each member against the
+tenant extensions the distribution implements. Stored catalogs do not yet reach
+discovery or selection, and stored `Middleware` resources do not yet change
+which extensions run.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery

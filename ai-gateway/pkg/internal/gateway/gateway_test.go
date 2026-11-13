@@ -72,7 +72,7 @@ func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 func (e *startupEnvironment) startWith(t *testing.T, extensions []extension.Definition, mandatory []string) (*Gateway, string, error) {
 	t.Helper()
 	var logs bytes.Buffer
-	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory})
+	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory, TenantTypes: typesOf(extensions)})
 	if gw != nil {
 		t.Cleanup(gw.Close)
 	}
@@ -406,17 +406,21 @@ func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
 	assert.Contains(t, body, "plugin has no authenticator configured")
 
 	catalog := catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})
-	code, body = sendCatalog(t, ctx, http.MethodPost, catalogURL(server.URL, ""), token, catalog)
+	code, body = sendObject(t, ctx, http.MethodPost, catalogURL(server.URL, ""), token, catalog)
 	assert.Equal(t, http.StatusInternalServerError, code, body)
 	assert.Contains(t, body, "admission hook for ModelCatalog failed")
-	code, body = sendCatalog(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
+	code, body = sendObject(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
 	assert.Equal(t, http.StatusNotFound, code, body)
+	code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(server.URL, ""), token, middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+middlewareSentinel+`"}`))
+	assert.Equal(t, http.StatusInternalServerError, code, body)
+	assert.Contains(t, body, "admission hook for Middleware failed")
 
 	process.Stop()
 	assert.Contains(t, logs.String(), `"event":"plugin_idle"`)
 	assert.Contains(t, logs.String(), "no authenticator configured")
 	assert.NotContains(t, logs.String(), "startup_failure")
 	assert.NotContains(t, logs.String(), catalogKey)
+	assert.NotContains(t, logs.String(), middlewareSentinel)
 }
 
 func TestPluginProcess_LogsThroughTheHostProtocol(t *testing.T) {

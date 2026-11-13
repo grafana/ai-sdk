@@ -200,6 +200,50 @@
                             }
                         ],
                         "conversion": false
+                    },
+                    {
+                        "kind": "Middleware",
+                        "plural": "Middlewares",
+                        "scope": "Namespaced",
+                        "userReadable": false,
+                        "folderScoped": false,
+                        "admission": {
+                            "validation": {
+                                "operations": [
+                                    "CREATE",
+                                    "UPDATE"
+                                ]
+                            }
+                        },
+                        "schemas": {
+                            "Middleware": {
+                                "properties": {
+                                    "spec": {
+                                        "$ref": "#/components/schemas/spec"
+                                    }
+                                },
+                                "required": [
+                                    "spec"
+                                ]
+                            },
+                            "spec": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "type",
+                                    "enabled"
+                                ],
+                                "type": "object"
+                            }
+                        },
+                        "conversion": false
                     }
                 ],
                 "routes": {
@@ -333,14 +377,36 @@
                         "permissionSet": "editor"
                     }
                 ]
+            },
+            "aigateway:middlewarereader": {
+                "title": "Middleware reader",
+                "description": "Read AI Gateway tenant extension configuration",
+                "kinds": [
+                    {
+                        "kind": "Middleware",
+                        "permissionSet": "viewer"
+                    }
+                ]
+            },
+            "aigateway:middlewarewriter": {
+                "title": "Middleware writer",
+                "description": "Create, update and delete AI Gateway tenant extension configuration",
+                "kinds": [
+                    {
+                        "kind": "Middleware",
+                        "permissionSet": "editor"
+                    }
+                ]
             }
         },
         "roleBindings": {
             "viewer": [
-                "aigateway:catalogreader"
+                "aigateway:catalogreader",
+                "aigateway:middlewarereader"
             ],
             "admin": [
-                "aigateway:catalogwriter"
+                "aigateway:catalogwriter",
+                "aigateway:middlewarewriter"
             ]
         }
     }
