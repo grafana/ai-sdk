@@ -34,6 +34,7 @@ func TestStreamWriter_RequestDeadline(t *testing.T) {
 	}{
 		{name: "preserve host deadline when request has none", status: 200},
 		{name: "apply request deadline", deadline: true, status: 200},
+		{name: "plugin writer need not support deadlines", deadline: true, err: http.ErrNotSupported, status: 200},
 		{name: "real writer failure", deadline: true, err: errors.New("write deadline failed"), status: 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
