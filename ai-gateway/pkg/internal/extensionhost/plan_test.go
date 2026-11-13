@@ -40,7 +40,7 @@ func TestNewPlan(t *testing.T) {
 	defaultOn.EnabledByDefault = true
 	off := validDefinition("off")
 
-	plan, err := NewPlan([]extension.Definition{quotaDefinition(t), tenant, defaultOn, off}, []string{"quota"}, parseEntries(t, "quota: {config: {limit: 3}, apiKeyEnv: QUOTA_KEY}\n"))
+	plan, err := NewPlan([]extension.Definition{quotaDefinition(t), tenant, defaultOn, off}, []string{"quota"}, parseEntries(t, "quota: {config: {limit: 3}, secrets: {apiKey: QUOTA_KEY}}\n"))
 	require.NoError(t, err)
 	enabled := map[string]json.RawMessage{}
 	for _, planned := range plan.enabled {
@@ -71,15 +71,17 @@ func TestNewPlan_Refusals(t *testing.T) {
 	}{
 		{name: "unknown extension", definitions: []extension.Definition{validDefinition("audit")}, document: "quota: {}", message: "GF_PLUGIN_EXTENSIONS.quota is not a registered extension"},
 		{name: "tenant extension", definitions: []extension.Definition{tenant}, document: "instructions: {}", message: "GF_PLUGIN_EXTENSIONS.instructions is a tenant extension"},
-		{name: "undeclared secret", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {tokenEnv: SECRET_VALUE}", message: "GF_PLUGIN_EXTENSIONS.quota.tokenEnv is not a declared secret"},
+		{name: "undeclared secret", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {secrets: {token: SECRET_VALUE}}", message: "GF_PLUGIN_EXTENSIONS.quota.secrets.token is not a declared secret"},
 		{name: "mandatory unconfigured", definitions: []extension.Definition{validDefinition("audit")}, mandatory: []string{"audit"}, message: "GF_PLUGIN_EXTENSIONS.audit is mandatory"},
 		{name: "mandatory enabled by default without an entry", definitions: []extension.Definition{defaultOnMandatory}, mandatory: []string{"audit"}, message: "GF_PLUGIN_EXTENSIONS.audit is mandatory"},
 		{name: "mandatory disabled", definitions: []extension.Definition{validDefinition("audit")}, mandatory: []string{"audit"}, document: "audit: {enabled: false}", message: "GF_PLUGIN_EXTENSIONS.audit is mandatory"},
-		{name: "mandatory invalid", definitions: []extension.Definition{quotaDefinition(t)}, mandatory: []string{"quota"}, document: "quota: {config: {limit: 0}, apiKeyEnv: QUOTA_KEY}", message: "GF_PLUGIN_EXTENSIONS.quota.config does not match the extension's schema at /limit"},
-		{name: "configuration of the wrong type", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: secret-value}, apiKeyEnv: QUOTA_KEY}", message: "does not match the extension's schema at /limit"},
+		{name: "mandatory invalid", definitions: []extension.Definition{quotaDefinition(t)}, mandatory: []string{"quota"}, document: "quota: {config: {limit: 0}, secrets: {apiKey: QUOTA_KEY}}", message: "GF_PLUGIN_EXTENSIONS.quota.config does not match the extension's schema at /limit"},
+		{name: "configuration of the wrong type", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: secret-value}, secrets: {apiKey: QUOTA_KEY}}", message: "does not match the extension's schema at /limit"},
 		{name: "configuration without a schema", definitions: []extension.Definition{validDefinition("audit")}, document: "audit: {config: {level: secret-value}}", message: "GF_PLUGIN_EXTENSIONS.audit.config is not accepted"},
-		{name: "missing secret", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: 1}}", message: "GF_PLUGIN_EXTENSIONS.quota.apiKeyEnv is required"},
-		{name: "default-enabled without its secret", definitions: []extension.Definition{withSecretDefault}, message: "GF_PLUGIN_EXTENSIONS.quota.apiKeyEnv is required"},
+		{name: "missing secret", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: 1}}", message: "GF_PLUGIN_EXTENSIONS.quota.secrets.apiKey must name an environment variable"},
+		{name: "blank secret variable", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: 1}, secrets: {apiKey: ' '}}", message: "GF_PLUGIN_EXTENSIONS.quota.secrets.apiKey must name an environment variable"},
+		{name: "configuration not representable as JSON", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: .inf}, secrets: {apiKey: QUOTA_KEY}}", message: "GF_PLUGIN_EXTENSIONS.quota.config is not representable as JSON"},
+		{name: "default-enabled without its secret", definitions: []extension.Definition{withSecretDefault}, message: "GF_PLUGIN_EXTENSIONS.quota.secrets.apiKey must name an environment variable"},
 		{name: "default-enabled with required configuration", definitions: []extension.Definition{withRequiredConfig}, message: "GF_PLUGIN_EXTENSIONS.quota.config does not match the extension's schema at /"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -101,7 +103,7 @@ func TestPlan_ResolveSecrets(t *testing.T) {
 		}
 	}
 
-	plan, err := NewPlan(definitions, nil, parseEntries(t, "quota: {config: {limit: 1}, apiKeyEnv: QUOTA_KEY}"))
+	plan, err := NewPlan(definitions, nil, parseEntries(t, "quota: {config: {limit: 1}, secrets: {apiKey: QUOTA_KEY}}"))
 	require.NoError(t, err)
 	require.NoError(t, plan.ResolveSecrets(lookup(map[string]string{"QUOTA_KEY": "resolved-secret"})))
 	assert.Equal(t, []string{"resolved-secret"}, plan.Secrets())
@@ -110,10 +112,10 @@ func TestPlan_ResolveSecrets(t *testing.T) {
 	for _, value := range map[string]map[string]string{"unset": {}, "blank": {"QUOTA_KEY": " "}} {
 		err := plan.ResolveSecrets(lookup(value))
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), `GF_PLUGIN_EXTENSIONS.quota.apiKeyEnv "QUOTA_KEY" is unset or empty`)
+		assert.Contains(t, err.Error(), `GF_PLUGIN_EXTENSIONS.quota.secrets.apiKey names "QUOTA_KEY", which is unset or empty`)
 	}
 
-	disabled, err := NewPlan(definitions, nil, parseEntries(t, "quota: {enabled: false, apiKeyEnv: UNSET_KEY}"))
+	disabled, err := NewPlan(definitions, nil, parseEntries(t, "quota: {enabled: false, secrets: {apiKey: UNSET_KEY}}"))
 	require.NoError(t, err)
 	assert.NoError(t, disabled.ResolveSecrets(lookup(map[string]string{})))
 	assert.Empty(t, disabled.Secrets())

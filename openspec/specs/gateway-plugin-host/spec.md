@@ -121,7 +121,7 @@ Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depe
 
 #### Scenario: Extension close shares the budget
 - **WHEN** an extension instance's close blocks, fails or panics during the final flush
-- **THEN** the Gateway SHALL stop waiting for it at the shared deadline, count the failure, and still flush the other sinks and exit before the budget ends
+- **THEN** the Gateway SHALL stop waiting for a blocked close at the shared deadline, count a close that fails or panics, and still flush the other sinks and exit before the budget ends
 
 ### Requirement: Protocol test host
 Deterministic tests SHALL serve the Gateway through the real plugin protocol, from HTTP through the plugin route and admission RPCs to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only, SHALL NOT be shipped or documented as a supported server or as evidence of the platform's deadline value or draining, and MAY apply a route deadline.
@@ -340,15 +340,19 @@ The entrypoint options SHALL select only the distribution's extension definition
 - **THEN** the Gateway SHALL start idle without reading the extension setting or constructing any extension
 
 ### Requirement: Operator extension setting
-The Gateway SHALL read operator extension configuration from the `extensions` setting (`GF_PLUGIN_EXTENSIONS`): one strict YAML mapping from extension name to an entry with optional `enabled`, optional `config` and one `<secret>Env` key per declared secret. An unset or blank setting SHALL mean no entries. The setting SHALL be at most 64 KiB, and aliases, merge keys, unknown keys and trailing documents SHALL be refused.
+The Gateway SHALL read operator extension configuration from the `extensions` setting (`GF_PLUGIN_EXTENSIONS`): one strict YAML mapping from extension name to an entry with optional `enabled`, optional `config` and an optional `secrets` mapping from each declared secret's name to the environment variable holding it. An unset or blank setting SHALL mean no entries. The setting SHALL be at most 64 KiB, and aliases, merge keys, unknown or repeated keys and trailing documents SHALL be refused.
 
 #### Scenario: Entry with a secret
-- **WHEN** the setting is `quota: {config: {limit: 100}, apiKeyEnv: GF_PLUGIN_QUOTA_KEY}` and `quota` declares secret `apiKey`
+- **WHEN** the setting is `quota: {config: {limit: 100}, secrets: {apiKey: GF_PLUGIN_QUOTA_KEY}}` and `quota` declares secret `apiKey`
 - **THEN** the `quota` factory SHALL receive the configuration `{"limit": 100}` and the secret `apiKey` read from `GF_PLUGIN_QUOTA_KEY`
 
-#### Scenario: Unknown extension or key
-- **WHEN** the setting names an extension the distribution does not register, or an entry has an undeclared key
-- **THEN** startup SHALL fail naming the setting, the extension and the key, without their values
+#### Scenario: Unknown extension or secret
+- **WHEN** the setting names an extension the distribution does not register, or an entry names a secret its extension does not declare
+- **THEN** startup SHALL fail naming the setting, the extension and the secret, without their values
+
+#### Scenario: Unsupported entry key
+- **WHEN** an entry has a key other than `enabled`, `config` and `secrets`
+- **THEN** startup SHALL fail naming the setting, without the entry's values
 
 #### Scenario: Oversized or malformed setting
 - **WHEN** the setting is larger than 64 KiB, is not a mapping, or uses an alias
@@ -358,7 +362,7 @@ The Gateway SHALL read operator extension configuration from the `extensions` se
 Extension secrets SHALL be read from the environment only after every setting, the model catalog and the extension configuration are validated. An unset or empty secret variable of an enabled extension SHALL fail startup naming the variable, not its value. Resolved secret values SHALL be redacted from Gateway-produced failure summaries like configured provider keys.
 
 #### Scenario: Missing secret
-- **WHEN** an enabled extension's entry names `apiKeyEnv: GF_PLUGIN_QUOTA_KEY` and the variable is unset
+- **WHEN** an enabled extension's entry maps secret `apiKey` to `GF_PLUGIN_QUOTA_KEY` and the variable is unset
 - **THEN** startup SHALL fail naming `GF_PLUGIN_QUOTA_KEY`
 
 #### Scenario: Provider echoes an extension secret

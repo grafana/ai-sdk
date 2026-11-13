@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -17,29 +16,23 @@ func TestParseExtensions(t *testing.T) {
 		want     map[string]ExtensionEntry
 	}{
 		{name: "blank", document: " \n"},
-		{name: "entries", document: "quota:\n  config:\n    limit: 100\n    tiers: [a, b]\n  apiKeyEnv: GF_PLUGIN_QUOTA_KEY\naudit:\n  enabled: false\nplain: {}\n", want: map[string]ExtensionEntry{
-			"quota": {Config: json.RawMessage(`{"limit":100,"tiers":["a","b"]}`), SecretEnv: map[string]string{"apiKey": "GF_PLUGIN_QUOTA_KEY"}},
+		{name: "entries", document: "quota:\n  config:\n    limit: 100\n    tiers: [a, b]\n  secrets:\n    apiKey: GF_PLUGIN_QUOTA_KEY\naudit:\n  enabled: false\nplain: {}\n", want: map[string]ExtensionEntry{
+			"quota": {Config: map[string]any{"limit": 100, "tiers": []any{"a", "b"}}, Secrets: map[string]string{"apiKey": "GF_PLUGIN_QUOTA_KEY"}},
 			"audit": {Enabled: &disabled},
 			"plain": {},
 		}},
+		{name: "null entry, configuration and enabled", document: "quota:\naudit: {config: null, enabled: null}\n", want: map[string]ExtensionEntry{
+			"quota": {},
+			"audit": {},
+		}},
 		{name: "explicit enable", document: "quota: {enabled: true, config: {}}", want: map[string]ExtensionEntry{
-			"quota": {Enabled: &enabled, Config: json.RawMessage(`{}`)},
+			"quota": {Enabled: &enabled, Config: map[string]any{}},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ParseExtensions(tc.document)
 			require.NoError(t, err)
-			require.Len(t, got, len(tc.want))
-			for name, want := range tc.want {
-				entry := got[name]
-				assert.Equal(t, want.Enabled, entry.Enabled, name)
-				assert.Equal(t, want.SecretEnv, entry.SecretEnv, name)
-				if want.Config == nil {
-					assert.Nil(t, entry.Config, name)
-				} else {
-					assert.JSONEq(t, string(want.Config), string(entry.Config), name)
-				}
-			}
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -52,18 +45,20 @@ func TestParseExtensions_Refusals(t *testing.T) {
 	}{
 		{name: "oversized", document: "quota: {config: {v: " + strings.Repeat("x", MaxExtensionsBytes) + "}}", message: "GF_PLUGIN_EXTENSIONS exceeds"},
 		{name: "not YAML", document: "quota: [", message: "GF_PLUGIN_EXTENSIONS is not valid YAML"},
-		{name: "sequence root", document: "- quota", message: "must be a mapping of extension names"},
-		{name: "trailing document", document: "quota: {}\n---\naudit: {}\n", message: "must be one YAML document"},
-		{name: "alias", document: "base: &b {config: {secret-value: 1}}\nquota: *b\n", message: "aliases are not supported"},
-		{name: "merge key", document: "quota:\n  <<: {enabled: true}\n", message: "aliases are not supported"},
-		{name: "entry not a mapping", document: "quota: secret-value", message: "GF_PLUGIN_EXTENSIONS.quota must be a mapping"},
-		{name: "unknown key", document: "quota: {limit: secret-value}", message: "GF_PLUGIN_EXTENSIONS.quota.limit is not a supported field"},
-		{name: "bare Env key", document: "quota: {Env: secret-value}", message: "GF_PLUGIN_EXTENSIONS.quota.Env is not a supported field"},
-		{name: "enabled not a boolean", document: "quota: {enabled: secret-value}", message: "GF_PLUGIN_EXTENSIONS.quota.enabled must be a boolean"},
-		{name: "config not a mapping", document: "quota: {config: [secret-value]}", message: "GF_PLUGIN_EXTENSIONS.quota.config must be a mapping"},
-		{name: "config with a non-string key", document: "quota: {config: {1: secret-value}}", message: "GF_PLUGIN_EXTENSIONS.quota.config must be a mapping"},
-		{name: "empty secret variable", document: "quota: {apiKeyEnv: ' '}", message: "GF_PLUGIN_EXTENSIONS.quota.apiKeyEnv must name an environment variable"},
-		{name: "repeated entry", document: "quota: {}\nquota: {}\n", message: "GF_PLUGIN_EXTENSIONS.quota is repeated"},
+		{name: "sequence root", document: "- quota", message: "YAML root must be a mapping in GF_PLUGIN_EXTENSIONS"},
+		{name: "non-string name", document: "1: {}", message: "YAML root mapping keys must be strings in GF_PLUGIN_EXTENSIONS"},
+		{name: "trailing document", document: "quota: {}\n---\naudit: {}\n", message: "GF_PLUGIN_EXTENSIONS must be one YAML document"},
+		{name: "alias", document: "base: &b {config: {secret-value: 1}}\nquota: *b\n", message: "aliases are not supported in GF_PLUGIN_EXTENSIONS"},
+		{name: "merge key", document: "quota:\n  <<: {enabled: true}\n", message: "aliases are not supported in GF_PLUGIN_EXTENSIONS"},
+		{name: "entry not a mapping", document: "quota: secret-value", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "unknown key", document: "quota: {limit: secret-value}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "enabled not a boolean", document: "quota: {enabled: secret-value}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "config not a mapping", document: "quota: {config: [secret-value]}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "secrets not a mapping", document: "quota: {secrets: [secret-value]}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "repeated entry", document: "quota: {}\nquota: {}\n", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "repeated entry key", document: "quota: {enabled: true, enabled: false}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "repeated secret", document: "quota: {secrets: {apiKey: A, apiKey: secret-value}}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "repeated config key", document: "quota: {config: {limit: 1, limit: secret-value}}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := ParseExtensions(tc.document)

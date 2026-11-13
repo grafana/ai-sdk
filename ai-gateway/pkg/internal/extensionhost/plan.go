@@ -55,9 +55,9 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 		if definition.Scope != extension.ScopeOperator {
 			return nil, fmt.Errorf("config: %s.%s is a tenant extension, which this setting does not configure", setting, name)
 		}
-		for _, secret := range slices.Sorted(maps.Keys(entries[name].SecretEnv)) {
+		for _, secret := range slices.Sorted(maps.Keys(entries[name].Secrets)) {
 			if !slices.Contains(definition.Secrets, secret) {
-				return nil, fmt.Errorf("config: %s.%s.%sEnv is not a declared secret", setting, name, secret)
+				return nil, fmt.Errorf("config: %s.%s.secrets.%s is not a declared secret", setting, name, secret)
 			}
 		}
 	}
@@ -85,19 +85,23 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 			continue
 		}
 		path := setting + "." + definition.Name
-		configuration := entry.Config
-		if configuration == nil {
-			configuration = emptyConfig
+		configuration := emptyConfig
+		if entry.Config != nil {
+			encoded, err := json.Marshal(entry.Config)
+			if err != nil {
+				return nil, fmt.Errorf("config: %s.config is not representable as JSON", path)
+			}
+			configuration = encoded
 		}
 		if err := CheckConfig(definition, configuration); err != nil {
 			return nil, fmt.Errorf("config: %s.config %w", path, err)
 		}
 		for _, secret := range definition.Secrets {
-			if _, ok := entry.SecretEnv[secret]; !ok {
-				return nil, fmt.Errorf("config: %s.%sEnv is required", path, secret)
+			if strings.TrimSpace(entry.Secrets[secret]) == "" {
+				return nil, fmt.Errorf("config: %s.secrets.%s must name an environment variable", path, secret)
 			}
 		}
-		plan.enabled = append(plan.enabled, planned{definition: definition, config: configuration, secretEnv: entry.SecretEnv})
+		plan.enabled = append(plan.enabled, planned{definition: definition, config: configuration, secretEnv: entry.Secrets})
 	}
 	return plan, nil
 }
@@ -229,7 +233,7 @@ func (p *Plan) ResolveSecrets(lookupEnv config.LookupEnv) error {
 			variable := planned.secretEnv[secret]
 			value, ok := lookupEnv(variable)
 			if !ok || strings.TrimSpace(value) == "" {
-				return fmt.Errorf("config: %s.%s.%sEnv %q is unset or empty", setting, planned.definition.Name, secret, variable)
+				return fmt.Errorf("config: %s.%s.secrets.%s names %q, which is unset or empty", setting, planned.definition.Name, secret, variable)
 			}
 			planned.secrets[secret] = value
 		}
