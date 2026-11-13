@@ -154,20 +154,21 @@ extensions = $__file{/etc/grafana/aigateway/extensions.yaml}
 quota:
   config:
     limit: 1000
-  apiKeyEnv: GF_PLUGIN_QUOTA_API_KEY
+  secrets:
+    apiKey: GF_PLUGIN_QUOTA_API_KEY
 business-hours:
   enabled: false
 ```
 
 - `config` is validated against the extension's `ConfigSchema`. Without a
   schema, an extension takes no configuration.
-- Each declared secret is named by `<secret>Env`. The Gateway reads it from the
-  environment after every other setting is validated, and redacts it from the
-  failure summaries it returns.
+- `secrets` maps each declared secret to the environment variable holding it.
+  The Gateway reads the variable after every other setting is validated, and
+  redacts its value from the failure summaries it returns.
 - An entry enables its extension unless it sets `enabled: false`. An extension
   without an entry uses `EnabledByDefault` and an empty configuration.
-- The setting is at most 64 KiB. Unknown names, keys, aliases and invalid
-  configuration fail startup with a reason that names the field, not its value.
+- The setting is at most 64 KiB. Unknown names, keys, secrets, aliases and
+  invalid configuration fail startup with a reason that never includes values.
 
 A distribution can list operator extensions in `Options.Mandatory`. Each must
 have an enabled entry with a valid configuration and its secrets, or startup

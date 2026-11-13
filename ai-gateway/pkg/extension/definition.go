@@ -53,7 +53,7 @@ type Definition struct {
 	// The zero value accepts only an empty configuration.
 	ConfigSchema schema.Schema
 	// Secrets names the secrets the extension needs. An operator configuration
-	// entry supplies each one as <name>Env, the environment variable holding
+	// entry maps each name, under secrets, to the environment variable holding
 	// it. Names are 1 to 63 ASCII letters or digits, starting with a lowercase
 	// letter.
 	Secrets []string

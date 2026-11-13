@@ -375,11 +375,11 @@ func candidates(expected []execution.ExpectedAttempt) []extension.Candidate {
 	return planned
 }
 
-// Close stops reading tenant configuration and accepting observations, waits
-// for reads and observations in flight, and closes every instance
-// concurrently, until ctx ends. Observations still running when ctx ends are
-// counted as dropped; close failures, and closes still running when ctx ends,
-// are counted and logged as failures. Later calls have no effect.
+// Close stops reading tenant configuration and waits for reads in flight,
+// then stops accepting observations and waits for those in flight, then
+// closes every instance concurrently, all until ctx ends. Observations still running when ctx ends are
+// counted as dropped; closes still running then are abandoned. Close
+// failures are counted and logged. Later calls have no effect.
 func (h *Host) Close(ctx context.Context) {
 	h.closeOnce.Do(func() { h.close(ctx) })
 }
@@ -394,34 +394,20 @@ func (h *Host) close(ctx context.Context) {
 }
 
 // closeInstances closes instances concurrently until ctx ends, counting
-// failures and closes still running then.
+// failures; closes still running then are abandoned.
 func (h *Host) closeInstances(ctx context.Context, instances []*instance) {
-	type closing struct {
-		definition extension.Definition
-		running    atomic.Bool
-	}
-	var started []*closing
 	var group sync.WaitGroup
 	for _, built := range instances {
 		if built.closer == nil {
 			continue
 		}
-		current := &closing{definition: built.definition}
-		current.running.Store(true)
-		started = append(started, current)
 		group.Go(func() {
-			err := contain(func() error { return built.closer.Close(ctx) })
-			if current.running.CompareAndSwap(true, false) && err != nil {
+			if err := contain(func() error { return built.closer.Close(ctx) }); err != nil {
 				h.recordFailure(built.definition, phaseClose, classOf(err), "")
 			}
 		})
 	}
 	waitUntil(ctx, &group)
-	for _, current := range started {
-		if current.running.CompareAndSwap(true, false) {
-			h.recordFailure(current.definition, phaseClose, classTimeout, "")
-		}
-	}
 }
 
 type failureClass string
@@ -430,8 +416,6 @@ const (
 	classError  failureClass = "error"
 	classPanic  failureClass = "panic"
 	classPolicy failureClass = "policy"
-	// classTimeout is a close still running at the shutdown deadline.
-	classTimeout failureClass = "timeout"
 	// classInvalid is a stored tenant configuration the extension does not
 	// accept.
 	classInvalid failureClass = "invalid"
