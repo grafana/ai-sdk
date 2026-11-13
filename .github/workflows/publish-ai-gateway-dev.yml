@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           version: "2026.5.4"
           install_args: node
@@ -108,9 +108,9 @@ jobs:
               pull_request_enabled: true,
               pull_request_existing_strategy: "replace",
               pull_request_message: $msg,
-              update_jsonnet_attribute_configs: [{
+              update_jsonnet_attribute_configs: [("dev0", "dev1") | {
                 file_path: "ksonnet/environments/appplugins/grafana-aigateway-app/versions.libsonnet",
-                jsonnet_key: "dev",
+                jsonnet_key: .,
                 jsonnet_value: $version
               }]
             }')

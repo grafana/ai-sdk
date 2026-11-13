@@ -602,21 +602,31 @@ SDK's Go module dependency graph.
   own credentials and runners. Publication does not publish to the ops or prod
   catalogs, or create tags or releases.
 - **Gateway dev rollout:** the deployment repository pins the plugin version that
-  each environment's plugin backend runs. After a successful dev publication, the
-  publish workflow opens an auto-merge pull request there that pins dev to exactly
-  the version just published; the pull request links back to the publish run. A
-  newer publication replaces a pin pull request that has not merged yet. Only a
-  commit that is still the head of `main` is pinned: a run whose commit was
-  superseded, including a rerun of an older run, skips the pin with a notice, so
-  it never moves dev back. Once the
-  pin merges and is applied, the dev plugin backend restarts on that version, so
-  dev runs a commit only after its pin pull request merged. Ops and prod pins are
-  not changed. The pin needs a one-time grant in the deployment repository that
-  lets this workflow open those pull requests, and an existing dev pin to update;
-  without the grant the pin job fails, and without the pin it opens no pull
-  request. To roll dev back, pin an earlier published `<version>+<sha>` in the
-  deployment repository. The next `main` publication replaces that pin, so also
-  revert the faulty commit on `main` to keep dev on a good version.
+  each environment's plugin backend runs. Dev is deployed in two waves, each with
+  its own pin. After a successful dev publication, the publish workflow opens one
+  auto-merge pull request there that pins both dev waves to exactly the version
+  just published, so they move together; the pull request links back to the
+  publish run. A newer publication replaces a pin pull request that has not merged
+  yet. Only a commit that is still the head of `main` is pinned: a run whose
+  commit was superseded, including a rerun of an older run, skips the pin with a
+  notice, so it never moves dev back. Once the pin merges and is applied, the dev
+  plugin backend restarts on that version, so dev runs a commit only after its pin
+  pull request merged. Ops and prod pins are not changed. The pin needs a one-time
+  grant in the deployment repository that lets this workflow open those pull
+  requests, and an existing pin for each dev wave to update; without the grant the
+  pin job fails, and a wave without a pin is left unchanged. To roll dev back, pin
+  both dev waves to an earlier published `<version>+<sha>` in the deployment
+  repository. The next `main` publication replaces those pins, so also revert the
+  faulty commit on `main` to keep dev on a good version.
+- **Gateway staging promotion:** to promote a commit that dev already runs,
+  dispatch the [promotion workflow](.github/workflows/publish-ai-gateway-ops.yml)
+  from `main` with its full SHA. The workflow requires the commit's CI run and
+  dev publication to have succeeded, publishes the same `<version>+<sha>` to the
+  staging catalog (`ops` in the shared workflow) and requests a staging version
+  pin that never merges automatically and needs review. Promotion needs a
+  one-time grant and an existing staging pin in the deployment repository;
+  without the grant the pin request fails after publishing. To roll staging
+  back, promote an earlier commit.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use

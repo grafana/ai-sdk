@@ -3,7 +3,10 @@ package anthropic
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/provider"
@@ -224,11 +227,56 @@ type Container struct {
 	Skills []ContainerSkill `json:"skills,omitempty"`
 }
 
+// ContainerSkillType identifies who owns a container skill.
+type ContainerSkillType string
+
+const (
+	// ContainerSkillAnthropic is an Anthropic-provided skill, such as pptx.
+	ContainerSkillAnthropic ContainerSkillType = "anthropic"
+	// ContainerSkillCustom is a skill uploaded to the caller's Anthropic
+	// workspace, identified by a provider reference.
+	ContainerSkillCustom ContainerSkillType = "custom"
+)
+
 // ContainerSkill configures a skill loaded into an Anthropic container.
+// Skills require the code-execution tool; the request carries a warning when
+// no code_execution_20250825 or code_execution_20260120 tool is present.
+//
+// An [ContainerSkillAnthropic] skill sets SkillID. A [ContainerSkillCustom]
+// skill sets ProviderReference, whose "anthropic" entry is the skill ID.
+// An empty Version is omitted, which selects the latest version.
 type ContainerSkill struct {
-	Type    string `json:"type"`
-	SkillID string `json:"skillId"`
-	Version string `json:"version,omitempty"`
+	Type              ContainerSkillType `json:"type"`
+	SkillID           string             `json:"skillId,omitempty"`
+	ProviderReference map[string]string  `json:"providerReference,omitempty"`
+	Version           string             `json:"version,omitempty"`
+}
+
+// ResolveSkillID returns the Anthropic skill ID the request sends: SkillID for
+// an Anthropic skill, and the "anthropic" provider-reference entry for a
+// custom skill. It fails for a custom skill without a non-empty "anthropic"
+// entry and for an unknown type.
+func (s ContainerSkill) ResolveSkillID() (string, error) {
+	switch s.Type {
+	case ContainerSkillAnthropic:
+		return s.SkillID, nil
+	case ContainerSkillCustom:
+		id, ok := s.ProviderReference["anthropic"]
+		if !ok {
+			providers := make([]string, 0, len(s.ProviderReference))
+			for name := range s.ProviderReference {
+				providers = append(providers, name)
+			}
+			sort.Strings(providers)
+			return "", fmt.Errorf("no provider reference found for provider anthropic; available providers: %s", strings.Join(providers, ", "))
+		}
+		if id == "" {
+			return "", errors.New("empty provider reference for provider anthropic")
+		}
+		return id, nil
+	default:
+		return "", fmt.Errorf("unsupported type %q", s.Type)
+	}
 }
 
 // ThinkingType identifies the thinking/reasoning mode.

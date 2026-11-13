@@ -56,11 +56,16 @@ flowchart LR
   go --> host
   ts --> host
   host --> pw
-  pw --> runtime --> select
-  select -->|private| catalog --> logical --> routing
-  catalog -->|routing controls| compose --> logical
+  pw --> runtime -->|first selects| select
+  select -->|private| catalog
+  catalog -->|no routing controls| routing
+  catalog -->|routing controls| compose
   select -->|Cloud| byok
   byok -->|routing controls| compose
+  compose --> routing
+  runtime -->|then observes the selection| logical
+  logical --> routing
+  logical --> byok
   byok --> anthropic
   byok --> openai
   routing --> anthropic --> apis
@@ -89,6 +94,13 @@ operational endpoints, so there are no separate listeners and no `/live`,
 [routes](../../ai-gateway/pkg/internal/gateway/routes.go) and
 [plugin composition](../../ai-gateway/pkg/internal/gateway/gateway.go).
 
+The plugin backend's `main` only calls `gateway.Run` from the public
+[composition package](../../ai-gateway/pkg/gateway/doc.go), which is v0 and
+experimental. `Run` owns the plugin runtime, the plugin ID, the authenticator,
+the app provider that receives the host's API access configuration, the
+lifecycle events and the final flush, so another Go module can build a
+Gateway distribution without repeating or missing any of them.
+
 **Other inbound protocols are not wired into this plugin backend.** In particular,
 `/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
 routes. An outbound Anthropic provider does not establish Claude Code support;
@@ -100,8 +112,10 @@ is separate work, not an additional path in the diagram.
 ## Follow one request
 
 Imagine `assistant` has an Anthropic primary and an OpenAI backup. The catalog
-and wrapped model objects are built at startup; selection below looks up those
-objects rather than constructing the whole chain for every request. This sequence
+and its model objects, which carry the canonical identity, are built at
+startup; selection below looks up those objects rather than constructing the
+whole chain for every request. The runtime then wraps the selected model in the
+logical observers, which are also built at startup, once for each call. This sequence
 follows the private configured-account path; Cloud selection is described below.
 
 ```mermaid
@@ -120,6 +134,7 @@ sequenceDiagram
   R->>R: Apply host request policy
   R->>M: Resolve public model under request deadline
   M-->>R: Canonical model and configured candidates
+  R->>R: Wrap the selection in its source's logical observers
   R->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
   P-->>M: Native result or native stream
@@ -163,20 +178,28 @@ sequenceDiagram
    composes one request chain from the candidates built at startup: each
    model's candidates in order, filtered by `only` and then moved to the front
    by `order`, with repeated models and destinations skipped and at most 8
-   attempts. That chain gets the same logical observation, under the requested
-   model's canonical identity, as a configured route. Invalid or unknown
+   attempts. That chain carries the requested model's canonical identity, like
+   a configured route. Every selection names its source, `operator-catalog`
+   or `request-byok`. Invalid or unknown
    controls fail here, before any provider call. This private path refuses
    request credentials; its caller cannot switch to request accounts. See
    [service selection](../../ai-gateway/pkg/internal/service/selection.go),
    [request routing](../../ai-gateway/pkg/internal/service/routed.go),
    [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
-4. **The wrapped model performs the call.** Logical observation surrounds the
-   configured primary/fallback chain. Candidate-specific option checks and
+4. **The wrapped model performs the call.** After selection, the runtime wraps
+   the selected model once in the logical observer chain of the selection's
+   source: the same observers for a configured, aliased or routed call, and a
+   BYOK chain with its own log redaction for request accounts. Logical
+   observation surrounds the configured primary/fallback chain. Candidate-specific option checks and
    native adapters run within that chain. When the inbound adapter supplied an
    option translator, each candidate first translates its own copy of the call
    options for its native protocol; host policy re-checks the result before the
-   candidate's native option validation runs. An adapter converts common call
+   candidate's native option validation runs. That validation is per
+   candidate: an Anthropic candidate applies its own skills and server-side
+   fallback (`serverFallbacks`) policies and, on configured accounts, refuses
+   caller container IDs, before its native I/O; request-account candidates
+   forward server-side fallback unchanged. An adapter converts common call
    options into its provider's HTTP request and converts the response back into
    SDK values. Native options remain provider-specific; not every candidate
    consumes every namespace. See
@@ -207,6 +230,11 @@ eligible setup failure or a stream that closes before its first part. The first
 received part selects the candidate, even if it is only `stream-start` or an
 error event. Later errors do not restart the chain. The SDK also offers opt-in
 complete-stream buffering, but the plugin backend's catalog does not enable it.
+When every candidate fails before selection, the
+[execution classifier](../../ai-gateway/internal/execution/classify.go) reports
+one category for the chain: the call's own cancellation or deadline first,
+otherwise the newest candidate failure that is not a refusal; the chain is an
+invalid request only when every candidate refused before native I/O.
 
 ```mermaid
 flowchart TD
@@ -300,7 +328,8 @@ token, not from a caller choosing a different model name:
   from the call-level `gateway.byok` controls, plus one destination per
   `gateway.models` selector. The [BYOK engine](../../ai-gateway/pkg/internal/byok/model.go)
   constructs one chain of request-local Anthropic or OpenAI accounts, ordered by
-  the same routing composition. The selection carries the destination expected
+  the same routing composition, under the requested selector as its logical
+  identity; the runtime observes it after selection like any other selection. The selection carries the destination expected
   at each attempt position, which the BYOK execution overview is checked
   against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
