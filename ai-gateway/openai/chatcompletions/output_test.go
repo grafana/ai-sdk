@@ -23,7 +23,17 @@ func TestPartialToolOutput(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, `{"city":`, out.Choices[0].Message.ToolCalls[0].Function.Arguments)
 			}
-
+			s := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+			for _, p := range []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "c", ToolName: "weather"}, {Type: provider.PartToolInputDelta, ID: "c", Delta: `{"city":`}, {Type: provider.PartToolInputEnd, ID: "c"}, {Type: provider.PartToolCall, ToolCallID: "c", ToolName: "weather", Input: `{"city":`}} {
+				_, err := s.consume(p, r)
+				require.NoError(t, err)
+			}
+			_, _, err = s.finish(provider.StreamPart{FinishReason: &result.FinishReason, Usage: &result.Usage}, r)
+			if finish == provider.FinishReasonToolCalls {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
@@ -35,4 +45,7 @@ func TestEmptyCompletion(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, out.Choices[0].Message.Content)
 	assert.Empty(t, *out.Choices[0].Message.Content)
+	s := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+	_, _, err = s.finish(provider.StreamPart{FinishReason: &result.FinishReason, Usage: &result.Usage}, r)
+	require.NoError(t, err)
 }
