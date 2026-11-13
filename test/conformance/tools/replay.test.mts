@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fixtureResponse, startReplay } from "./replay.mts";
+import { fixtureResponse, loadReplayFixture, startReplay, startReplayServer } from "./replay.mts";
 
 test("replay isolates multi-step attempts and captures extra requests", async () => {
   const dir = mkdtempSync(join(tmpdir(), "replay-unit-"));
@@ -45,4 +45,37 @@ test("replay frames SSE and Bedrock while retaining unary JSON", async () => {
       assert.deepEqual(await response.json(), { output: "unit" });
     } finally { await replay.close(); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("shared replay serves only the active row and reports requests outside it", async () => {
+  const dir = (name: string) => {
+    const path = mkdtempSync(join(tmpdir(), `replay-${name}-`));
+    writeFileSync(join(path, "input.chunks.txt"), `{"type":"${name}"}\n`);
+    return path;
+  };
+  const first = { name: "first", dir: dir("first"), provider: "anthropic" };
+  const second = { name: "second", dir: dir("second"), provider: "anthropic" };
+  const server = await startReplayServer("anthropic");
+  const call = () => fetch(`${server.url}/v1/messages`, { method: "POST", body: '{"model":"test"}' });
+  try {
+    assert.equal((await call()).status, 409);
+    const a = server.activate("row-a", loadReplayFixture(first));
+    assert.throws(() => server.activate("row-b", loadReplayFixture(second)), /already serving row-a/);
+    assert.match(await (await call()).text(), /first/);
+    assert.equal((await call()).status, 500);
+    server.deactivate();
+    assert.equal((await call()).status, 409);
+    const b = server.activate("row-b", loadReplayFixture(second));
+    assert.match(await (await call()).text(), /second/);
+    server.deactivate();
+    assert.equal(a.requests.length, 2);
+    assert.equal(b.requests.length, 1);
+    assert.equal(server.stray.length, 2);
+    assert.match(server.stray[0], /outside its row \(after no row\)/);
+    assert.match(server.stray[1], /outside its row \(after row-a\)/);
+    assert.throws(() => loadReplayFixture({ name: "empty", dir: mkdtempSync(join(tmpdir(), "replay-empty-")), provider: "anthropic" }), /no fixtures: empty/);
+  } finally {
+    await server.close();
+    for (const path of [first.dir, second.dir]) rmSync(path, { recursive: true, force: true });
+  }
 });

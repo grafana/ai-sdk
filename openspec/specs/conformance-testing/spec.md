@@ -1020,11 +1020,16 @@ Gateway conformance SHALL target the AI Gateway plugin package built from the ch
 #### Scenario: One stack serves every row
 - **WHEN** the full matrix runs
 - **THEN** a single Grafana stack serves all admitted rows after at most one boot per rejected provider type
-- **AND** each row has its own configured provider instance, public model and replay server
+- **AND** the catalog has one provider instance and replay server per provider type and one public model per provider and backend model, so its size does not grow with the number of fixtures
+
+#### Scenario: Catalog mirrors the direct provider setup
+- **WHEN** the harness generates the gateway catalog
+- **THEN** each provider instance enables the provider settings the direct baseline uses to construct that provider, such as structured outputs for the OpenAI-compatible provider
+- **AND** each public model admits exactly the union of Anthropic server-side fallback models and container skills that its fixtures request, and nothing else
 
 ### Requirement: Independent bounded gateway attempts
 
-The harness SHALL isolate replay counters, request capture, tool mock state, and provider configuration between fixture/client attempts by giving each row its own provider instance, public model and replay server in the shared catalog. It SHALL bound startup, readiness, execution, and teardown and release owned containers, listeners, processes and staging files on success, failure, timeout, and cancellation, including after ambiguous container creation failures. A provider setup failure or scenario failure SHALL NOT terminate unrelated rows. A provider unavailable before client invocation SHALL remain a failed row with explicit setup-stage evidence, not a claimed client execution.
+The harness SHALL isolate replay counters, request capture and tool mock state between fixture/client attempts by running rows one at a time and binding each provider's replay server to the active row's fixture for that row only. A replay request received while no row is active, including a late request from a finished row, SHALL be refused and SHALL fail the run with the provider and previous row recorded. It SHALL bound startup, readiness, execution, and teardown and release owned containers, listeners, processes and staging files on success, failure, timeout, and cancellation, including after ambiguous container creation failures. A provider setup failure or scenario failure SHALL NOT terminate unrelated rows. A provider unavailable before client invocation SHALL remain a failed row with explicit setup-stage evidence, not a claimed client execution.
 
 #### Scenario: Missing backend support
 - **WHEN** the plugin exits at startup with an explicit unsupported-type reason for a configured provider instance
@@ -1046,6 +1051,11 @@ The harness SHALL isolate replay counters, request capture, tool mock state, and
 - **WHEN** both clients run the same multi-step fixture
 - **THEN** each starts with the first provider response and fresh tool results
 - **AND** requests from one attempt cannot consume another attempt's responses
+
+#### Scenario: Request outside its row
+- **WHEN** a replay server receives a request after its row finished or before the next row starts
+- **THEN** the request is refused without consuming a fixture response
+- **AND** the run fails with a harness error naming the provider and the previous row
 
 #### Scenario: Scenario timeout
 - **WHEN** a client or stream exceeds its execution deadline
@@ -1071,7 +1081,8 @@ Both gateway clients SHALL be checked against the existing direct upstream expec
 
 #### Scenario: Registered gateway execution overview
 - **WHEN** a gateway finish part carries the plugin's `providerMetadata.gateway.execution` overview
-- **THEN** the gateway lane removes only that key before comparing provider parts, under the equivalence registered in `upstream.yaml`
+- **THEN** the gateway lane removes that key and the `gateway.routing` summary the plugin publishes with it before comparing provider parts, under the equivalence registered in `upstream.yaml`
+- **AND** a `gateway.routing` value on a finish part without an execution overview remains compared
 - **AND** other gateway keys, native provider metadata and all other parts remain compared exactly, and the direct suite applies no such removal
 
 #### Scenario: Existing normalization remains valid

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { stringify } from "yaml";
+import type { Config } from "./common.mts";
 import { replayAdapter } from "./replay.mts";
 
 const commandTimeout = 30_000;
@@ -70,6 +71,17 @@ export function command(file: string, args: string[], options: { cwd?: string; i
   });
 }
 
+export interface AllowedSkill {
+  type: string;
+  skillId: string;
+  versions?: string[];
+}
+
+export interface CandidatePolicy {
+  serverFallbacks?: { models?: string[]; allowDefault?: boolean };
+  skills?: { allow: AllowedSkill[] };
+}
+
 export interface Route {
   rowID: string;
   instance: string;
@@ -77,24 +89,68 @@ export interface Route {
   provider: string;
   model: string;
   replayURL: string;
+  policy: CandidatePolicy;
 }
 
-export function route(index: number, rowID: string, provider: string, model: string, replayPort: number): Route {
+export function route(rowID: string, provider: string, config: Pick<Config, "model" | "providerOptions">, replayPort: number): Route {
   return {
-    rowID, provider, model,
-    instance: `row-${index}`,
-    modelID: `conformance/row-${index}`,
+    rowID, provider, model: config.model,
+    instance: provider,
+    modelID: `conformance/${provider}/${config.model}`,
     replayURL: `http://${containerHost}:${replayPort}${replayAdapter(provider).basePath}`,
+    policy: candidatePolicy(provider, config.providerOptions),
   };
 }
 
+function candidatePolicy(provider: string, providerOptions: Config["providerOptions"]): CandidatePolicy {
+  if (provider !== "anthropic") return {};
+  const options = providerOptions?.anthropic as { fallbacks?: unknown; container?: { skills?: Array<{ type: string; skillId: string; version?: string }> } } | undefined;
+  const policy: CandidatePolicy = {};
+  if (options?.fallbacks === "default") policy.serverFallbacks = { allowDefault: true };
+  else if (Array.isArray(options?.fallbacks)) policy.serverFallbacks = { models: options.fallbacks.map(fallback => (fallback as { model: string }).model) };
+  const skills = options?.container?.skills;
+  if (skills?.length) policy.skills = { allow: skills.map(skill => ({ type: skill.type, skillId: skill.skillId, ...(skill.version ? { versions: [skill.version] } : {}) })) };
+  return policy;
+}
+
+function mergePolicies(policies: CandidatePolicy[]): CandidatePolicy {
+  const models = new Set<string>();
+  let allowDefault = false;
+  const skills = new Map<string, AllowedSkill>();
+  for (const policy of policies) {
+    policy.serverFallbacks?.models?.forEach(model => models.add(model));
+    allowDefault ||= policy.serverFallbacks?.allowDefault ?? false;
+    for (const skill of policy.skills?.allow ?? []) {
+      const key = `${skill.type}/${skill.skillId}`;
+      const existing = skills.get(key);
+      const versions = [...new Set([...existing?.versions ?? [], ...skill.versions ?? []])].sort();
+      skills.set(key, { type: skill.type, skillId: skill.skillId, ...(versions.length ? { versions } : {}) });
+    }
+  }
+  const merged: CandidatePolicy = {};
+  if (models.size || allowDefault) merged.serverFallbacks = { ...(models.size ? { models: [...models].sort() } : {}), ...(allowDefault ? { allowDefault } : {}) };
+  if (skills.size) merged.skills = { allow: [...skills.values()].sort((a, b) => `${a.type}/${a.skillId}`.localeCompare(`${b.type}/${b.skillId}`)) };
+  return merged;
+}
+
 export function catalog(routes: Route[]): string {
-  return stringify({
-    providers: Object.fromEntries(routes.map(r => [r.instance, {
+  const providers: Record<string, Record<string, unknown>> = {};
+  const models = new Map<string, Route[]>();
+  for (const r of routes) {
+    const backend = providers[r.instance];
+    if (backend && backend.baseURL !== r.replayURL) throw new Error(`provider instance ${r.instance} has more than one replay URL`);
+    providers[r.instance] = {
       type: r.provider, apiKeyEnv: providerKeyEnv, baseURL: r.replayURL,
-      ...(r.provider === "openai-compatible" ? { providerName: "openai-compatible" } : {}),
+      ...(r.provider === "openai-compatible" ? { providerName: "openai-compatible", supportsStructuredOutputs: true } : {}),
+    };
+    models.set(r.modelID, [...models.get(r.modelID) ?? [], r]);
+  }
+  return stringify({
+    providers,
+    models: Object.fromEntries([...models].map(([modelID, [first, ...rest]]) => [modelID, {
+      name: modelID,
+      primary: { provider: first.instance, model: first.model, ...mergePolicies([first, ...rest].map(r => r.policy)) },
     }])),
-    models: Object.fromEntries(routes.map(r => [r.modelID, { name: r.rowID, primary: { provider: r.instance, model: r.model } }])),
   });
 }
 

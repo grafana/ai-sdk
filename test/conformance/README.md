@@ -159,20 +159,27 @@ AI_GATEWAY_PLUGIN_DIR=ai-gateway/dist SCENARIO=anthropic/recorded/simple-text \
 
 How a run works:
 
-1. Every row (fixture and client) gets its own replay server on the Docker
-   bridge, provider instance and public model in one generated catalog. Rows
-   share no replay or tool state.
-2. One Grafana container loads the plugin package with that catalog, the
+1. Each provider type gets one replay server on the Docker bridge and one
+   provider instance in the generated catalog, with one public model per
+   backend model, so the catalog stays small as fixtures are added. Instances
+   mirror the direct baseline's provider setup (structured outputs for
+   OpenAI-compatible), and each model admits only the Anthropic server-side
+   fallbacks and container skills its fixtures request.
+2. Rows run one at a time. Before a row runs, its provider's replay server is
+   bound to that row's fixture, and it is unbound when the row's client
+   finishes. Rows share no replay or tool state; a request outside its row is
+   refused and fails the run.
+3. One Grafana container loads the plugin package with that catalog, the
    feature toggles from `ai-gateway/provisioning/grafana.ini`, a dummy backend
    key and `access_mode = self-hosted`. Plugin preinstallation and update checks
    are disabled; replay is reached through `host.docker.internal`. No live model
    API is contacted.
-3. If the plugin rejects a provider type at startup (Grafana then exits), every
+4. If the plugin rejects a provider type at startup (Grafana then exits), every
    row of that provider fails at `provider-setup` with the logged reason, and the
    stack boots again without it. Any other startup exit fails the run as a
    `harness` failure with container state and logs.
-4. The harness creates a Grafana service account token, waits until the
-   catalog lists every admitted model, then runs the rows one at a time.
+5. The harness creates a Grafana service account token, waits until the
+   catalog lists every admitted model, then runs the rows.
 
 Results are written to the ignored `test/conformance/gateway-results/` directory:
 
@@ -192,8 +199,9 @@ stack stops during the run, the remaining rows are reported as not executed.
 
 The plugin currently routes Anthropic, OpenAI Responses, and OpenAI-compatible
 backends; Bedrock rows fail at provider setup. The plugin always adds a compact
-execution overview under `providerMetadata.gateway.execution` to finish parts.
-The gateway lane removes only that key before comparing provider parts, as
+execution overview under `providerMetadata.gateway.execution` to finish parts,
+with its routing summary under `gateway.routing`. The gateway lane removes only
+those two keys before comparing provider parts, as
 registered in `upstream.yaml` (`gateway-execution-overview-metadata`); every
 other part and metadata key is compared exactly. The matrix is an executable compatibility backlog: a red row
 blocks merging until the underlying compatibility work lands or a reviewed

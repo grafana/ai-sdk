@@ -59,8 +59,17 @@ export function fixtureResponse(fixture: string, provider: string): Buffer {
   return Buffer.from(lines.map(line => `event: ${extractEventType(line)}\ndata: ${line}\n\n`).join(""));
 }
 
-export async function startReplay(tc: TestCase, host = "127.0.0.1") {
-  const adapter = replayAdapter(tc.provider);
+export interface ReplayFixture {
+  responses: Buffer[];
+  unary: boolean;
+}
+
+export interface ReplaySession {
+  requests: RequestSnapshot[];
+  errors: string[];
+}
+
+export function loadReplayFixture(tc: TestCase): ReplayFixture {
   const unary = existsSync(join(tc.dir, "input.response.json"));
   const responses: Buffer[] = [];
   if (unary) responses.push(readFileSync(join(tc.dir, "input.response.json")));
@@ -69,28 +78,39 @@ export async function startReplay(tc: TestCase, host = "127.0.0.1") {
     responses.push(fixtureResponse(readFileSync(join(tc.dir, `input-${i}.chunks.txt`), "utf8"), tc.provider));
   }
   if (!responses.length) throw new Error(`no fixtures: ${tc.name}`);
-  let index = 0;
-  const requests: RequestSnapshot[] = [];
-  const errors: string[] = [];
+  return { responses, unary };
+}
+
+export async function startReplayServer(provider: string, host = "127.0.0.1") {
+  const adapter = replayAdapter(provider);
+  let active: { fixture: ReplayFixture; index: number; session: ReplaySession } | undefined;
+  let previous = "no row";
+  const stray: string[] = [];
   const server = createServer((req, res) => {
+    const current = active;
     const chunks: Buffer[] = [];
-    req.on("error", error => { errors.push(String(error)); res.destroy(); });
+    req.on("error", error => { (current?.session.errors ?? stray).push(String(error)); res.destroy(); });
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
+      if (!current || current !== active) {
+        stray.push(`${provider} replay received ${req.method} ${req.url} outside its row (after ${previous})`);
+        res.writeHead(409).end("No active replay row");
+        return;
+      }
       try {
-        requests.push(normalizeRequestSnapshot(tc.provider, req, Buffer.concat(chunks).toString("utf8")));
+        current.session.requests.push(normalizeRequestSnapshot(provider, req, Buffer.concat(chunks).toString("utf8")));
       } catch (error) {
-        errors.push(String(error));
+        current.session.errors.push(String(error));
         res.writeHead(400).end("Invalid request snapshot");
         return;
       }
-      const response = responses[index++];
+      const response = current.fixture.responses[current.index++];
       if (!response) {
         res.writeHead(500).end("No more fixtures");
         return;
       }
       res.writeHead(200, {
-        "Content-Type": unary ? "application/json" : adapter.framing === "bedrock" ? "application/vnd.amazon.eventstream" : "text/event-stream",
+        "Content-Type": current.fixture.unary ? "application/json" : adapter.framing === "bedrock" ? "application/vnd.amazon.eventstream" : "text/event-stream",
         "Cache-Control": "no-cache",
       });
       res.end(response);
@@ -104,10 +124,27 @@ export async function startReplay(tc: TestCase, host = "127.0.0.1") {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("missing replay listener address");
   return {
-    url: `http://${host}:${address.port}`, requests, errors,
+    url: `http://${host}:${address.port}`, stray,
+    activate(row: string, fixture: ReplayFixture): ReplaySession {
+      if (active) throw new Error(`${provider} replay is already serving ${previous}`);
+      const session: ReplaySession = { requests: [], errors: [] };
+      active = { fixture, index: 0, session };
+      previous = row;
+      return session;
+    },
+    deactivate() { active = undefined; },
     close: () => new Promise<void>((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve());
       server.closeAllConnections();
     }),
   };
+}
+
+export type ReplayServer = Awaited<ReturnType<typeof startReplayServer>>;
+
+export async function startReplay(tc: TestCase, host = "127.0.0.1") {
+  const fixture = loadReplayFixture(tc);
+  const server = await startReplayServer(tc.provider, host);
+  const session = server.activate(tc.name, fixture);
+  return { url: server.url, requests: session.requests, errors: session.errors, close: server.close };
 }

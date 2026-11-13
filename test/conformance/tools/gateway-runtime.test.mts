@@ -17,19 +17,44 @@ test("commands fail on exit, timeout, cancellation and excessive output", async 
   assert.equal(await command(process.execPath, ["-e", "process.stderr.write('evidence')"], { includeStderr: true }), "evidence");
 });
 
-test("catalog isolates every row and never substitutes provider protocols", () => {
-  assert.throws(() => route(0, "future/x/go", "future", "m", 1), /missing replay\/configuration adapter/);
-  const routes = ["anthropic", "openai", "openai-compatible", "bedrock"].map((provider, index) => route(index, `${provider}/recorded/text/go`, provider, `${provider}-model`, 4000 + index));
+test("catalog shares one instance per provider and one model per backend model", () => {
+  assert.throws(() => route("future/x/go", "future", { model: "m" }, 1), /missing replay\/configuration adapter/);
+  const providers = ["anthropic", "openai", "openai-compatible", "bedrock"];
+  const routes = providers.flatMap((provider, index) => ["go", "typescript"].map(client => route(`${provider}/recorded/text/${client}`, provider, { model: `${provider}-model` }, 4000 + index)));
   const config = parse(catalog(routes));
-  assert.equal(Object.keys(config.providers).length, routes.length);
-  for (const [index, r] of routes.entries()) {
-    const backend = config.providers[r.instance];
-    assert.equal(backend.type, r.provider);
+  assert.deepEqual(Object.keys(config.providers), providers);
+  assert.equal(Object.keys(config.models).length, providers.length);
+  for (const [index, provider] of providers.entries()) {
+    const backend = config.providers[provider];
+    assert.equal(backend.type, provider);
     assert.equal(backend.apiKeyEnv, "GF_PLUGIN_CONFORMANCE_PROVIDER_KEY");
-    assert.equal(backend.baseURL, `http://host.docker.internal:${4000 + index}${["openai", "openai-compatible"].includes(r.provider) ? "/v1" : ""}`);
-    assert.equal(backend.providerName, r.provider === "openai-compatible" ? "openai-compatible" : undefined);
-    assert.deepEqual(config.models[r.modelID], { name: r.rowID, primary: { provider: r.instance, model: `${r.provider}-model` } });
+    assert.equal(backend.baseURL, `http://host.docker.internal:${4000 + index}${["openai", "openai-compatible"].includes(provider) ? "/v1" : ""}`);
+    assert.equal(backend.providerName, provider === "openai-compatible" ? "openai-compatible" : undefined);
+    assert.equal(backend.supportsStructuredOutputs, provider === "openai-compatible" ? true : undefined);
+    const modelID = `conformance/${provider}/${provider}-model`;
+    assert.deepEqual(config.models[modelID], { name: modelID, primary: { provider, model: `${provider}-model` } });
   }
+  assert.throws(() => catalog([route("a/go", "anthropic", { model: "m" }, 1), route("b/go", "anthropic", { model: "m" }, 2)]), /more than one replay URL/);
+});
+
+test("catalog admits the union of server fallbacks and skills its fixtures request", () => {
+  const anthropic = (providerOptions: Record<string, unknown>, model = "claude") => route("a/go", "anthropic", { model, providerOptions: { anthropic: providerOptions } }, 1);
+  const config = parse(catalog([
+    anthropic({ fallbacks: [{ model: "b", max_tokens: 1 }, { model: "a" }] }),
+    anthropic({ fallbacks: "default" }),
+    anthropic({ container: { skills: [{ type: "anthropic", skillId: "pptx" }, { type: "custom", skillId: "s", version: "2" }] } }),
+    anthropic({ container: { skills: [{ type: "custom", skillId: "s", version: "1" }] } }),
+    anthropic({}),
+    anthropic({ fallbacks: "default" }, "other"),
+    route("o/go", "openai", { model: "claude", providerOptions: { anthropic: { fallbacks: "default" } } }, 2),
+  ]));
+  assert.deepEqual(config.models["conformance/anthropic/claude"].primary, {
+    provider: "anthropic", model: "claude",
+    serverFallbacks: { models: ["a", "b"], allowDefault: true },
+    skills: { allow: [{ type: "anthropic", skillId: "pptx" }, { type: "custom", skillId: "s", versions: ["1", "2"] }] },
+  });
+  assert.deepEqual(config.models["conformance/anthropic/other"].primary, { provider: "anthropic", model: "other", serverFallbacks: { allowDefault: true } });
+  assert.deepEqual(config.models["conformance/openai/claude"].primary, { provider: "openai", model: "claude" });
 });
 
 test("settings keep the source toggles and replace only the plugin section", () => {
@@ -43,10 +68,10 @@ test("settings keep the source toggles and replace only the plugin section", () 
 });
 
 test("provider rejection needs the plugin startup reason for a configured instance", () => {
-  const routes = [route(0, "bedrock/recorded/a/go", "bedrock", "m", 1)];
-  const line = 'logger=plugin.grafana-aigateway-app level=error msg="gateway plugin failed to start" class=startup_failure reason="config: providers.row-0.type \\"bedrock\\" is unsupported (want anthropic, openai or openai-compatible)"';
+  const routes = [route("bedrock/recorded/a/go", "bedrock", { model: "m" }, 1)];
+  const line = 'logger=plugin.grafana-aigateway-app level=error msg="gateway plugin failed to start" class=startup_failure reason="config: providers.bedrock.type \\"bedrock\\" is unsupported (want anthropic, openai or openai-compatible)"';
   assert.deepEqual(providerRejection(`before\n${line}\nafter`, routes), { provider: "bedrock", evidence: line });
-  assert.equal(providerRejection(line.replace("row-0", "row-9"), routes), undefined);
+  assert.equal(providerRejection(line.replace("providers.bedrock", "providers.other"), routes), undefined);
   assert.equal(providerRejection(line.replace("gateway plugin failed to start", "other"), routes), undefined);
   assert.equal(providerRejection("plugin process exited", routes), undefined);
 });
@@ -82,8 +107,8 @@ function withPlugin<T>(body: (directory: string) => Promise<T>) {
 }
 
 const settingsSource = "[feature_toggles]\n[plugin.grafana-aigateway-app]\n";
-const routes = [route(0, "anthropic/recorded/a/go", "anthropic", "m", 1), route(1, "bedrock/recorded/b/go", "bedrock", "m", 2), route(2, "bedrock/recorded/c/go", "bedrock", "m", 3)];
-const rejectionLog = 'msg="gateway plugin failed to start" reason="config: providers.row-1.type \\"bedrock\\" is unsupported"';
+const routes = [route("anthropic/recorded/a/go", "anthropic", { model: "m" }, 1), route("bedrock/recorded/b/go", "bedrock", { model: "m" }, 2), route("bedrock/recorded/c/go", "bedrock", { model: "n" }, 2)];
+const rejectionLog = 'msg="gateway plugin failed to start" reason="config: providers.bedrock.type \\"bedrock\\" is unsupported"';
 
 test("stack drops an explicitly rejected provider and boots once more", () => withPlugin(async pluginDirectory => {
   const fake = fakeStack([{ running: false, logs: rejectionLog }, { running: true }]);
@@ -92,7 +117,7 @@ test("stack drops an explicitly rejected provider and boots once more", () => wi
   try {
     assert.equal(stack.url, "http://127.0.0.1:43210");
     assert.equal(stack.token, "service-token");
-    assert.deepEqual(stack.admitted.map(r => r.instance), ["row-0"]);
+    assert.deepEqual(stack.admitted.map(r => r.instance), ["anthropic"]);
     assert.deepEqual([...stack.rejected.keys()], ["bedrock"]);
     assert.deepEqual(stack.boots.map(b => b.outcome), ["rejected bedrock", "ready"]);
     assert.equal(fake.calls.filter(args => args[0] === "run").length, 2);

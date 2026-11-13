@@ -9,7 +9,7 @@ import { parse } from "yaml";
 import { createSourceIdNormalizer, loadConfig } from "./common.mts";
 import { discoverMatrix, reconcile, runMatrix, summarize, type Client, type Row, type RowResult, type Stage } from "./gateway-matrix.mts";
 import { backendKey, command, route, routePrefix, StackError, startStack, type Route, type Stack } from "./gateway-runtime.mts";
-import { startReplay } from "./replay.mts";
+import { loadReplayFixture, startReplayServer, type ReplayFixture, type ReplayServer, type ReplaySession } from "./replay.mts";
 import { normalizeOpenAIApprovalToolCallIds, type ScenarioResult } from "./scenario.mts";
 
 const tools = dirname(fileURLToPath(import.meta.url));
@@ -18,8 +18,6 @@ const repository = resolve(root, "../..");
 const clientTimeout = 65_000;
 const controller = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => controller.abort(new Error(signal)));
-
-type Replay = Awaited<ReturnType<typeof startReplay>>;
 
 const pluginArchitectures: Partial<Record<NodeJS.Architecture, string>> = { x64: "amd64", arm64: "arm64" };
 
@@ -39,7 +37,8 @@ async function main() {
     scope: values.scenario || values.client ? "filtered" : "full", filter: values, metadata: {}, rows: [], errors: [],
   };
   let rows: Row[] = [];
-  const replays = new Map<string, Replay>();
+  const replays = new Map<string, ReplayServer>();
+  const fixtures = new Map<string, ReplayFixture>();
   let stack: Stack | undefined;
   const buildDirectory = mkdtempSync(join(tmpdir(), "gateway-conformance-build-"));
   try {
@@ -53,11 +52,15 @@ async function main() {
     await command("go", ["build", "-mod=readonly", "-tags", "conformance", "-o", binary, "./cmd/gateway-client"], { cwd: root, timeout: 180_000, signal: controller.signal });
     const routes = new Map<string, Route>();
     const unrouted = new Map<string, string>();
-    for (const [index, row] of rows.entries()) {
+    for (const row of rows) {
       try {
-        const replay = await startReplay(row, bridge);
-        replays.set(row.id, replay);
-        routes.set(row.id, route(index, row.id, row.provider, loadConfig(row.dir).model, Number(new URL(replay.url).port)));
+        fixtures.set(row.id, loadReplayFixture(row));
+        let replay = replays.get(row.provider);
+        if (!replay) {
+          replay = await startReplayServer(row.provider, bridge);
+          replays.set(row.provider, replay);
+        }
+        routes.set(row.id, route(row.id, row.provider, loadConfig(row.dir), Number(new URL(replay.url).port)));
       } catch (error) {
         unrouted.set(row.id, String(error));
       }
@@ -76,14 +79,16 @@ async function main() {
     const attempt = async (row: Row): Promise<RowResult> => {
       if (stopped) return { ...row, outcome: "not-executed", stage: "harness", invoked: false, errors: [stopped] };
       const result: RowResult = { ...row, outcome: "failed", stage: "harness", invoked: false, errors: [], artifact: `row-${index++}.json` };
-      const replay = replays.get(row.id);
+      const replay = replays.get(row.provider);
+      const fixture = fixtures.get(row.id);
+      let session: ReplaySession | undefined;
       const target = routes.get(row.id);
       const evidence: Record<string, unknown> = { route: target };
       let capture: ScenarioResult = { chunks: [], usage: [], object: null };
       let stage: Stage = "harness";
       const started = new Date();
       try {
-        if (!replay || !target) throw new Error(unrouted.get(row.id) ?? "row has no replay route");
+        if (!replay || !fixture || !target) throw new Error(unrouted.get(row.id) ?? "row has no replay route");
         const rejection = stack!.rejected.get(row.provider);
         if (rejection) {
           stage = "provider-setup";
@@ -91,6 +96,7 @@ async function main() {
           throw new Error(`gateway rejected the ${row.provider} provider configuration at startup; client not invoked`);
         }
         if (!admitted.has(row.id)) throw new Error("row is missing from the admitted gateway catalog");
+        session = replay.activate(row.id, fixture);
         stage = "execution";
         result.invoked = true;
         const input = { operation: "execute", directory: row.dir, testCase: { name: row.name, dir: row.dir, provider: row.provider }, baseURL: `${stack!.url}${routePrefix}`, token: stack!.token, modelID: target.modelID };
@@ -107,18 +113,19 @@ async function main() {
       } catch (error) {
         result.errors.push(String(error));
       } finally {
+        if (session) replay!.deactivate();
         evidence.capture = capture;
-        evidence.requests = replay?.requests ?? [];
+        evidence.requests = session?.requests ?? [];
         try {
-          const errors = JSON.parse(await command(binary, [], { input: { operation: "compare", directory: row.dir, result: capture, requests: replay?.requests ?? [], gateway: true } })) as string[];
+          const errors = JSON.parse(await command(binary, [], { input: { operation: "compare", directory: row.dir, result: capture, requests: session?.requests ?? [], gateway: true } })) as string[];
           result.errors.push(...errors);
         } catch (error) {
           stage = "harness";
           result.errors.push(`comparison failed: ${error}`);
         }
-        if (replay?.errors.length) {
+        if (session?.errors.length) {
           stage = "harness";
-          result.errors.push(...replay.errors);
+          result.errors.push(...session.errors);
         }
         if (result.invoked) {
           try { evidence.gatewayLogs = await stack!.logs(started, new Date()); }
@@ -146,6 +153,7 @@ async function main() {
       catch (error) { report.errors.push(`gateway stack cleanup: ${error}`); }
     }
     for (const replay of replays.values()) {
+      report.errors.push(...replay.stray);
       try { await replay.close(); }
       catch (error) { report.errors.push(`replay cleanup: ${error}`); }
     }
