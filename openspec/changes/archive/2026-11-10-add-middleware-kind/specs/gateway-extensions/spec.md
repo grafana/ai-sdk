@@ -56,7 +56,7 @@ Each manifest member SHALL be projected from its type's schema of closed objects
 - **THEN** the type SHALL be refused before it reaches the manifest
 
 #### Scenario: Integer field bounds
-- **WHEN** a type's schema has an integer field without a `minimum` and a `maximum` within ±(2^53−1)
+- **WHEN** a type's schema declares a `minimum` or `maximum` on an integer field outside ±(2^53−1)
 - **THEN** the type SHALL be refused before it reaches the manifest
 
 #### Scenario: Drift
@@ -91,8 +91,8 @@ Admission SHALL accept a create or update only when the spec sets no member othe
 - **THEN** the write SHALL be refused with the reason given for an unregistered type
 
 #### Scenario: Safe integer
-- **WHEN** a member holds an integer within ±(2^53−1), the bound every integer field declares
-- **THEN** admission SHALL compare it exactly against the type's schema
+- **WHEN** a member holds an integer within ±(2^53−1)
+- **THEN** admission SHALL compare it exactly against the type's schema, and MAY round integers beyond that range as upstream does
 
 #### Scenario: Shipped build
 - **WHEN** the shipped Gateway, which implements no tenant extension, reviews a `Middleware` create

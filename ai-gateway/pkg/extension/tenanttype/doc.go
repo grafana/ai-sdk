@@ -19,9 +19,9 @@
 // constraints, which admission checks instead. A schema uses closed objects
 // and arrays only: every object declares properties with additionalProperties
 // false, and every node has exactly one JSON type. Typed maps, $ref and
-// combinators are not supported. Integer fields declare a minimum and a
-// maximum within ±(2^53−1), the safe integers of a JavaScript number, so
-// validation compares them exactly.
+// combinators are not supported. A bound an integer field declares must be
+// within ±(2^53−1), the safe integers of a JavaScript number. As upstream,
+// integers beyond that range are not compared exactly.
 //
 // The tests of this package check the registry: names, unique and
 // unreserved members, and examples the schemas accept.

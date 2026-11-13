@@ -253,8 +253,9 @@ from its type in schema or default. To add a type:
    Schemas use closed objects and arrays only: every node needs exactly one
    JSON type, and every object declares properties with
    `additionalProperties: false`. Typed maps, `$ref` and combinators such as
-   `oneOf` aren't supported. Integer fields need a `minimum` and a `maximum`
-   within ±(2^53−1), the safe integers of a JavaScript `number`. The
+   `oneOf` aren't supported. A `minimum` or `maximum` on an integer field
+   must be within ±(2^53−1), the safe integers of a JavaScript `number`; as
+   upstream, integers beyond that range aren't compared exactly. The
    generator also refuses a type whose example doesn't survive Grafana's
    pruning.
 

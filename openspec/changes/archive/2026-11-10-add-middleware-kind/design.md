@@ -175,8 +175,8 @@ Projection rules, applied recursively from the member root:
 
 - **Keep:** `type` (`string`, `integer`, `number`, `boolean`, `array`, `object`), `properties`, `items`, `additionalProperties: false`, `required` within the member, `description`. Schemas use closed objects and arrays only.
 - **Drop:** `enum`, `const`, `pattern`, `format`, `minimum`/`maximum` and their exclusive forms, `multipleOf`, length and item and property count bounds, `uniqueItems`, `default`, `examples`, `title`. Admission checks them against the full schema. Dropping them keeps Grafana's own validation messages to field paths and JSON types, and dropping `default` keeps Grafana from writing values into stored objects.
-- **Refuse:** a node without a single `type` (missing, an array of types, `null`); `oneOf`, `anyOf`, `allOf`, `not`, `if`, `patternProperties`, `dependentSchemas`, `$ref`, `$defs`; an object without properties, including the member root; an object whose `additionalProperties` is not explicitly `false`, including a typed map; an array without `items`; an integer without a `minimum` and a `maximum` within ±(2^53−1).
-- **Safe integers:** integer fields are bounded to ±(2^53−1), the safe integers of a JavaScript `number`, which is how upstream types these settings. Within that bound a `float64` represents every value exactly, so the standard schema validation compares bounds, enums and multiples exactly, and the canonical member encoding loses nothing.
+- **Refuse:** a node without a single `type` (missing, an array of types, `null`); `oneOf`, `anyOf`, `allOf`, `not`, `if`, `patternProperties`, `dependentSchemas`, `$ref`, `$defs`; an object without properties, including the member root; an object whose `additionalProperties` is not explicitly `false`, including a typed map; an array without `items`; a `minimum` or `maximum` on an integer field outside ±(2^53−1).
+- **Safe integers:** a declared integer bound must be within ±(2^53−1), the safe integers of a JavaScript `number`, which is how upstream types these settings; nobody declares a misleading ±2^63 bound. Within that range a `float64` represents every value exactly, so the standard schema validation compares bounds, enums and multiples exactly. Bounds aren't required: as upstream, integers beyond the safe range aren't compared exactly.
 - **Not now:** typed maps and `$ref` would need location redaction (a map key is configuration data) and reference resolution in the projection; add them with the first type that needs them. Operator schemas aren't projected, so a map an operator schema allows can put the operator's own keys in a startup reason; that stays within the operator's logs.
 - **Never generated:** an enum on `spec.type`, a union across members, a required member.
 - A type without a `ConfigSchema` has no member.
@@ -269,7 +269,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 | Operator types refused | Unit and protocol tests with an operator definition. |
 | Editors can't write; Viewers can read | Roles test. **CI-e2e:** permissions per role; Viewer and Editor list `200`, creates refused, nothing stored. |
 | `DELETE` always works | Validation operations are `CREATE` and `UPDATE` only; other actions allowed; protocol test deletes a stored resource while the plugin no longer answers reviews. **CI-e2e:** authorization only (`404`, not `403`). |
-| Nested `config` isn't pruned | Projection tests (rules, refusals including typed maps, `$ref` and unbounded integers, structural and prune round-trip of nested examples with arrays of objects); manifest test per registry type; protocol test round-trips a nested member through the test host (not platform evidence). Platform round-trip moves to #766. |
+| Nested `config` isn't pruned | Projection tests (rules, refusals including typed maps, `$ref` and out-of-range integer bounds, structural and prune round-trip of nested examples with arrays of objects); manifest test per registry type; protocol test round-trips a nested member through the test host (not platform evidence). Platform round-trip moves to #766. |
 | Tenant types are public | `ValidateDefinitions` tests: unknown tenant name, differing schema or default; `tenanttype` registry test over `All()`: invalid and repeated names, reserved and shared members, examples; `Bind` tests; startup through `gateway.New`. |
 | Manifest equals the projection | Drift test over `tenanttype.All()`; CI's manifest regeneration step. |
 | `ModelCatalog` roles and behavior unchanged | Roles test with literal catalog roles; catalog tests unchanged. **CI-e2e:** `catalog.spec.ts`, `routes.spec.ts`. |
@@ -293,7 +293,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 - [After a rollback to a manifest without a member, Grafana refuses writes that still carry it] → The disable-only rule accepts the member removed; documented.
 - [The kind store keeps and refuses unknown keys under `additionalProperties: false` because it skips CRD schema checks] → If that changes, unknown keys would be pruned silently instead of refused; admission's full schema still validates what remains.
 - [The generator path changes with app-sdk upgrades] → The manifest test converts the committed manifest as Grafana does and round-trips every example, so a generator change that breaks a member fails CI.
-- [The schema package decodes instances as `float64`] → Tenant integer fields are bounded to ±(2^53−1), so `float64` validation is exact for every value a type accepts. A value outside the bound is refused by the bound itself; an operator schema that doesn't bound its integers keeps today's behavior.
+- [The schema package decodes instances as `float64`] → Declared integer bounds are within ±(2^53−1), so `float64` validation is exact for every bound a type declares. Values beyond the safe range aren't compared exactly, as upstream's `number`; unbounded fields accept them as written to the platform.
 - [Admission fails closed while the plugin is down or idle] → Creates and updates fail, deletes work; documented.
 - [The accept paths have no Grafana evidence until #766] → Go evidence runs through the real adapter; CI-e2e proves wiring, roles and refusals.
 
@@ -309,7 +309,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 ## Risks for #766
 
 - Its two types go into `tenanttype` with descriptions and examples, implementations use `Bind`, and it runs `mise run generate-ai-gateway-kinds`.
-- Their schemas must pass the projection: explicit `additionalProperties: false`, no empty objects, no typed maps, `$ref`, type arrays or combinators, and integer fields bounded within ±(2^53−1).
+- Their schemas must pass the projection: explicit `additionalProperties: false`, no empty objects, no typed maps, `$ref`, type arrays or combinators, and integer bounds, where declared, within ±(2^53−1).
 - Member names are `defaultInstructions` and `defaultSettings`.
 
 ## Migration Plan
@@ -332,7 +332,7 @@ No migration: the kind starts empty. Rolling back to a build without the kind st
 - **Structural and prune checks:** in the generator and tests only; startup keeps only the binding check, and the registry's own checks are a `tenanttype` test. The drift check guarantees the committed manifest equals the projection.
 - **Objects without an explicit `additionalProperties: false`:** refused, so the full schema and the projection agree.
 - **`TenantTypes`:** explicit in the composition options; nil means no types.
-- **Closed objects and arrays only; safe integers:** no typed maps or `$ref` until a type needs them, and integer fields bounded to ±(2^53−1), so validation needs no exact-number decoding and locations need no redaction.
+- **Closed objects and arrays only; safe integers:** no typed maps or `$ref` until a type needs them, and declared integer bounds within ±(2^53−1), so validation needs no exact-number decoding and locations need no redaction; values beyond the safe range aren't exact, as upstream.
 - **Additive evolution:** Grafana validates every write against the current schema with no ratcheting, so a public type's schema changes only additively and an incompatible change takes a new type name. Stated in the spec, the guide and the `tenanttype` package doc.
 
 ## Follow-ups

@@ -27,8 +27,8 @@ const (
 var jsonTypes = []JSONType{TypeString, TypeInteger, TypeNumber, TypeBoolean, TypeArray, TypeObject}
 
 // MaxSafeInteger is the largest integer a float64, and a JavaScript number,
-// represents exactly. Integer fields are bounded to ±MaxSafeInteger, so
-// validation compares them exactly.
+// represents exactly. A bound an integer field declares must be within
+// ±MaxSafeInteger; values beyond it aren't compared exactly, as upstream.
 const MaxSafeInteger = 1<<53 - 1
 
 // droppedKeywords are value constraints, defaults and annotations that
@@ -117,7 +117,7 @@ func project(schema map[string]any, location string) (*Node, error) {
 	switch node.Type {
 	case TypeInteger:
 		for _, bound := range []string{"minimum", "maximum"} {
-			if !safeInteger(schema[bound]) {
+			if value, declared := schema[bound]; declared && !safeInteger(value) {
 				return nil, at("must set %s to an integer within ±%d", bound, MaxSafeInteger)
 			}
 		}

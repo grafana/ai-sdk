@@ -53,7 +53,7 @@
 
 ## 11. Simplified configuration validation
 
-- [x] 11.1 Bound tenant integer fields to ±(2^53−1) in the projection, validate with the standard schema check, and remove exact-number decoding; verify projection refusals for unbounded and out-of-range integers and the validator and protocol tests.
+- [x] 11.1 Refuse declared integer bounds outside ±(2^53−1) in the projection, validate with the standard schema check, and remove exact-number decoding; verify projection refusals for out-of-range bounds, accepted unbounded integers, and the validator and protocol tests.
 - [x] 11.2 Refuse typed maps and `$ref` in the projection and remove location redaction; verify projection refusals and `CheckConfig` locations.
 - [x] 11.3 Move the registry checks into a `tenanttype` test over `All()` and keep the binding check at startup; verify the registry and binding tests.
 

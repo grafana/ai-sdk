@@ -90,6 +90,13 @@ func TestProject(t *testing.T) {
 	assert.False(t, ok, "a type without configuration has no member")
 }
 
+func TestProject_IntegerBounds(t *testing.T) {
+	for _, bounds := range []string{``, `,"minimum":0`, `,"maximum":9007199254740991`, `,"minimum":-9007199254740991,"maximum":9007199254740991`} {
+		_, _, err := Project(tenantType(t, "bounded", `{"type":"object","properties":{"a":{"type":"integer"`+bounds+`}},"additionalProperties":false}`, `{}`))
+		assert.NoError(t, err, "bounds %q", bounds)
+	}
+}
+
 func TestProject_Refuses(t *testing.T) {
 	object := func(properties string) string {
 		return `{"type":"object","properties":` + properties + `,"additionalProperties":false}`
@@ -119,8 +126,6 @@ func TestProject_Refuses(t *testing.T) {
 		{name: "properties on a scalar", schema: object(`{"a":{"type":"string","properties":{}}}`), message: `declares "properties" on a string`},
 		{name: "reference", schema: object(`{"a":{"$ref":"#/properties/b"},"b":{"type":"string"}}`), message: `at /properties/a uses "$ref"`},
 		{name: "definitions", schema: `{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false,"$defs":{"x":{"type":"string"}}}`, message: `at / uses "$defs"`},
-		{name: "unbounded integer", schema: object(`{"a":{"type":"integer"}}`), message: "at /properties/a must set minimum to an integer within ±9007199254740991"},
-		{name: "integer without a maximum", schema: object(`{"a":{"type":"integer","minimum":0}}`), message: "at /properties/a must set maximum to an integer within ±9007199254740991"},
 		{name: "integer bound above 2^53", schema: object(`{"a":{"type":"integer","minimum":0,"maximum":9007199254740992}}`), message: "at /properties/a must set maximum to an integer within ±9007199254740991"},
 		{name: "integer bound below -2^53", schema: object(`{"a":{"type":"integer","minimum":-9007199254740992,"maximum":0}}`), message: "at /properties/a must set minimum to an integer within ±9007199254740991"},
 		{name: "fractional integer bound", schema: object(`{"a":{"type":"integer","minimum":0,"maximum":1.5}}`), message: "must set maximum to an integer"},
