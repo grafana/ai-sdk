@@ -21,6 +21,10 @@ func TestParseExtensions(t *testing.T) {
 			"audit": {Enabled: &disabled},
 			"plain": {},
 		}},
+		{name: "null entry, configuration and enabled", document: "quota:\naudit: {config: null, enabled: null}\n", want: map[string]ExtensionEntry{
+			"quota": {},
+			"audit": {},
+		}},
 		{name: "explicit enable", document: "quota: {enabled: true, config: {}}", want: map[string]ExtensionEntry{
 			"quota": {Enabled: &enabled, Config: map[string]any{}},
 		}},
@@ -52,6 +56,8 @@ func TestParseExtensions_Refusals(t *testing.T) {
 		{name: "config not a mapping", document: "quota: {config: [secret-value]}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
 		{name: "secrets not a mapping", document: "quota: {secrets: [secret-value]}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
 		{name: "repeated entry", document: "quota: {}\nquota: {}\n", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "repeated entry key", document: "quota: {enabled: true, enabled: false}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
+		{name: "repeated secret", document: "quota: {secrets: {apiKey: A, apiKey: secret-value}}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
 		{name: "repeated config key", document: "quota: {config: {limit: 1, limit: secret-value}}", message: "GF_PLUGIN_EXTENSIONS has invalid fields or values"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

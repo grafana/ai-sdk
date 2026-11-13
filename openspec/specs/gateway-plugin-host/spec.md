@@ -121,7 +121,7 @@ Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depe
 
 #### Scenario: Extension close shares the budget
 - **WHEN** an extension instance's close blocks, fails or panics during the final flush
-- **THEN** the Gateway SHALL stop waiting for it at the shared deadline, count the failure, and still flush the other sinks and exit before the budget ends
+- **THEN** the Gateway SHALL stop waiting for a blocked close at the shared deadline, count a close that fails or panics, and still flush the other sinks and exit before the budget ends
 
 ### Requirement: Protocol test host
 Deterministic tests SHALL serve the Gateway through the real plugin protocol, from HTTP through the plugin route and admission RPCs to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only, SHALL NOT be shipped or documented as a supported server or as evidence of the platform's deadline value or draining, and MAY apply a route deadline.

@@ -19,7 +19,7 @@ Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depe
 
 #### Scenario: Extension close shares the budget
 - **WHEN** an extension instance's close blocks, fails or panics during the final flush
-- **THEN** the Gateway SHALL stop waiting for it at the shared deadline, count the failure, and still flush the other sinks and exit before the budget ends
+- **THEN** the Gateway SHALL stop waiting for a blocked close at the shared deadline, count a close that fails or panics, and still flush the other sinks and exit before the budget ends
 
 ### Requirement: Public composition entrypoint
 A public Go package in the Gateway module SHALL expose one entrypoint that runs the plugin backend from an options value. The entrypoint SHALL own the plugin runtime, the plugin ID, the platform authenticator, the process logger, environment and metrics registerer, the app provider callback that receives the host's API access configuration, the lifecycle events and the final flush. Options SHALL NOT override any of them.

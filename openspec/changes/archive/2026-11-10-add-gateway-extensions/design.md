@@ -219,14 +219,14 @@ Alternative: a numeric transform priority. Rejected: the planned transforms don'
 
 ### Failure policies and panics
 
-Every call into extension code goes through one `invoke` helper with recover-to-error. A failure is a non-denial error, a panic or a policy refusal. Under `fail-closed`, the call ends with `ErrUnavailable`: from `DoGenerate`/`DoStream` before entry, as an unary error after entry, or as an in-band part for streams. Under `skip`, the phase's effect is discarded: transforms keep their input, admit and inspectors count as passed. Every failure, including a discarded `skip` policy violation, increments `extension_events_total{event="failed"}` and logs one warning. Observe and close failures are counted and logged only. Factory failures and panics fail startup.
+Every call into extension code goes through one `contain` helper with recover-to-error. A failure is a non-denial error, a panic or a policy refusal. Under `fail-closed`, the call ends with `ErrUnavailable`: from `DoGenerate`/`DoStream` before entry, as an unary error after entry, or as an in-band part for streams. Under `skip`, the phase's effect is discarded: transforms keep their input, admit and inspectors count as passed. Every failure, including a discarded `skip` policy violation, increments `extension_events_total{event="failed"}` and logs one warning. Observe and close failures are counted and logged only. Factory failures and panics fail startup.
 
 ### Denied outcome in the observers
 
 - The root middlewares' `IsDenied` (from `record-middleware-denials`): Prometheus status `denied` with `error_type` `none`; logger outcome and class `denied` at `Level`. A generic denial hook keeps both middlewares free of Gateway types.
 - `NewModelObservers` sets both to `errors.Is(err, extension.ErrDenied)`, and the Gateway log allowlist accepts `denied` for `ai_sdk.outcome` and `ai_sdk.error.type`.
 - Agent Observability is unchanged: a denied call records a generation without a finish, like any failed call, and its `CallError` is already cleared by the Gateway filter.
-- Extension events: `grafana_ai_gateway_extension_events_total{extension, phase, event}`, where event is `denied` or `failed` whatever the failure policy, and `grafana_ai_gateway_extension_observations_dropped_total`, both registered once in `service.Telemetry`.
+- Extension events: `grafana_ai_gateway_extension_events_total{extension, phase, event}`, where event is `denied` or `failed` whatever the failure policy, and `grafana_ai_gateway_extension_observations_dropped_total`, both registered once by the host when it is built.
 
 ### Operator config
 
