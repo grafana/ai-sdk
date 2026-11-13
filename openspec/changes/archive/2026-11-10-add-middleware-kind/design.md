@@ -161,12 +161,9 @@ func (t Type) Bind(impl Implementation) extension.Definition
 
 The composition `Options` gain `TenantTypes []tenanttype.Type`. The public `gateway.Run` passes `tenanttype.All()`; tests pass their own types. The public `gateway.Options` are unchanged, so no distribution can add a type that the manifest doesn't describe.
 
-`extensionhost.ValidateDefinitions(definitions, mandatory, types)` adds, before any setting is read and on idle hosts too:
+`extensionhost.ValidateDefinitions(definitions, mandatory, types)` adds, before any setting is read and on idle hosts too, the binding check: every tenant-scope definition's name is a type's name, and its `ConfigSchema` bytes and `EnabledByDefault` equal the type's. Failures name the extension and the field: "tenant extension %q has no public type", "tenant extension %q differs from its public type in %s".
 
-- every type: name is a DNS label, not repeated; member is not `type` or `enabled` and not shared with another type; a schema compiles and has an `Example` that it accepts, and no schema means no `Example`;
-- every tenant-scope definition: its name is a type's name, and its `ConfigSchema` bytes and `EnabledByDefault` equal the type's. Failures name the extension and the field: "tenant extension %q has no public type", "tenant extension %q differs from its public type in %s".
-
-The structural and prune checks need apiextensions and run in the generator and in tests, not at startup (see Projection), so they stay out of the plugin binary.
+The registry itself is a fixed list in code, so its checks are tests, not startup work: a `tenanttype` test over `All()` checks that names are DNS labels and not repeated, members are not `type` or `enabled` and not shared, and every schema has an `Example` it accepts (no schema means no `Example`). The structural and prune checks need apiextensions and run in the generator and in tests (see Projection), so they stay out of the plugin binary.
 
 Policy: private extensions are operator-scope by default. A private tenant implementation binds to a public type, which needs a public change for the type first. A tenant type whose schema can't be public is not supported; an opaque member can be added later as a new optional field.
 
@@ -176,16 +173,17 @@ Policy: private extensions are operator-scope by default. A private tenant imple
 
 Projection rules, applied recursively from the member root:
 
-- **Keep:** `type` (`string`, `integer`, `number`, `boolean`, `array`, `object`), `properties`, `items`, `additionalProperties: false`, a typed `additionalProperties` schema (a typed map), `required` within the member, `description`.
+- **Keep:** `type` (`string`, `integer`, `number`, `boolean`, `array`, `object`), `properties`, `items`, `additionalProperties: false`, `required` within the member, `description`. Schemas use closed objects and arrays only.
 - **Drop:** `enum`, `const`, `pattern`, `format`, `minimum`/`maximum` and their exclusive forms, `multipleOf`, length and item and property count bounds, `uniqueItems`, `default`, `examples`, `title`. Admission checks them against the full schema. Dropping them keeps Grafana's own validation messages to field paths and JSON types, and dropping `default` keeps Grafana from writing values into stored objects.
-- **Resolve:** local `$ref` into `$defs`/`definitions`; a recursive reference is refused.
-- **Refuse:** a node without a single `type` (missing, an array of types, `null`); `oneOf`, `anyOf`, `allOf`, `not`, `if`, `patternProperties`, `dependentSchemas`; an object with neither properties nor a typed `additionalProperties`, including the member root; an object with properties whose `additionalProperties` is not explicitly `false`; `additionalProperties: true`; an array without `items`.
+- **Refuse:** a node without a single `type` (missing, an array of types, `null`); `oneOf`, `anyOf`, `allOf`, `not`, `if`, `patternProperties`, `dependentSchemas`, `$ref`, `$defs`; an object without properties, including the member root; an object whose `additionalProperties` is not explicitly `false`, including a typed map; an array without `items`; an integer without a `minimum` and a `maximum` within ±(2^53−1).
+- **Safe integers:** integer fields are bounded to ±(2^53−1), the safe integers of a JavaScript `number`, which is how upstream types these settings. Within that bound a `float64` represents every value exactly, so the standard schema validation compares bounds, enums and multiples exactly, and the canonical member encoding loses nothing.
+- **Not now:** typed maps and `$ref` would need location redaction (a map key is configuration data) and reference resolution in the projection; add them with the first type that needs them.
 - **Never generated:** an enum on `spec.type`, a union across members, a required member.
 - A type without a `ConfigSchema` has no member.
 
 The member root must be an object. The generator refuses a type whose projection fails these rules, whose projection is not structural (`structuralschema.NewStructural` plus `ValidateStructural`), or whose `Example` does not survive a prune round-trip under the projection (`structuralpruning.Prune` of `{spec: {type, enabled, <member>: Example}}` returns it unchanged). Messages name the type and the schema location.
 
-Rendering maps the projection to CUE: `string`, `int`, `number`, `bool`, `[...T]`, `{field: T, optional?: T}`, `{[string]: T}`, with descriptions as doc comments, and the member doc comment from `Type.Description`.
+Rendering maps the projection to CUE: `string`, `int`, `number`, `bool`, `[...T]`, `{field: T, optional?: T}`, with descriptions as doc comments, and the member doc comment from `Type.Description`.
 
 Flow and outputs:
 
@@ -212,8 +210,8 @@ type Spec struct {
 }
 ```
 
-- Members stay raw JSON, so integers above 2^53 pass through exactly, and test-only types, which are not in the generated Go types, are seen.
-- Spec decode errors never reach the caller: the validator refuses them with a fixed message. The codec reads exactly `apiVersion`, `kind`, `metadata` and `spec`, so a field that only case-folds to `spec` is ignored, and refuses a malformed object with a fixed `400`. The generated codec would decode typed members into Go fields and return messages such as `cannot unmarshal number 9223372036854775808 into ... int64`, which echo values.
+- Members stay raw JSON, so test-only types, which are not in the generated Go types, are seen.
+- Spec decode errors never reach the caller: the validator refuses them with a fixed message. The codec reads exactly `apiVersion`, `kind`, `metadata` and `spec`, so a field that only case-folds to `spec` is ignored, and refuses a malformed object with a fixed `400`. The generated codec would decode typed members into Go fields and return messages that can echo values.
 - #765's reader uses `DecodeSpec` on the listed objects' raw `spec`.
 
 ### Where the validator gets its types and definitions
@@ -232,7 +230,7 @@ type Spec struct {
 2. Assert the object types and decode the incoming spec; a failure is refused with a fixed message. A stored spec that can't be decoded counts as having no member, so it can still be disabled.
 3. `metadata.name` must equal `spec.type`.
 4. Let `m = lowerCamel(spec.type)`, derived from the name alone. The spec may hold at most one member, and only `m`: "middleware: spec may set only spec.<m>, the member of spec.type". The reason names only `m`.
-5. **Disable-only update:** on update, `enabled: false`, and the member absent or equal to the stored one. Accept. Equality compares canonical encodings (sorted keys, numbers as written). This runs before every remaining check, so a rollback, a removed or rescoped implementation, a tightened schema or a lowered bound never blocks disabling, and "absent" covers a member the client removed because an older manifest no longer declares it.
+5. **Disable-only update:** on update, `enabled: false`, and the member absent or equal to the stored one. Accept. Equality compares canonical encodings (sorted keys). This runs before every remaining check, so a rollback, a removed or rescoped implementation, a tightened schema or a lowered bound never blocks disabling, and "absent" covers a member the client removed because an older manifest no longer declares it.
 6. The member's canonical encoding is at most 64 KiB, measured without HTML escaping.
 7. A tenant definition for `spec.type` must exist: otherwise "middleware: spec.type %q is not a tenant extension of this Gateway", the same for unregistered, unimplemented and operator types; on update with "; an update may only set spec.enabled to false and keep or remove spec.<m>".
 8. A type without configuration takes no member: "middleware: spec.type %q takes no configuration member".
@@ -240,11 +238,10 @@ type Spec struct {
 10. `CheckConfig(definition, member)`, refused as `middleware: spec.<m> <reason>`.
 11. Every refusal is `apierrors.NewBadRequest`.
 
-Reasons are built from fixed text, the type (equal to the already validated name), the derived member and schema locations, never from member values or the schema library's messages. A location keeps declared property names and array indexes and replaces every other segment, such as a typed map's key, with `*`, so it never names configuration data.
+Reasons are built from fixed text, the type (equal to the already validated name), the derived member and schema locations, never from member values or the schema library's messages. With closed objects and arrays only, a location names only declared properties and array indexes, so it never names configuration data.
 
 ### Test host
 
-- Request bodies are decoded with `UseNumber`, so numbers are stored and sent to admission as written. This is the only host change; it keeps integers above 2^53 exact for the protocol tests.
 - Gateway tests get one harness option to serve a second Gateway against an existing host, so stored objects survive a "rollback" to a build with different types and definitions.
 - Host behavior stays out of the platform evidence, as the existing requirement states.
 
@@ -272,9 +269,8 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 | Operator types refused | Unit and protocol tests with an operator definition. |
 | Editors can't write; Viewers can read | Roles test. **CI-e2e:** permissions per role; Viewer and Editor list `200`, creates refused, nothing stored. |
 | `DELETE` always works | Validation operations are `CREATE` and `UPDATE` only; other actions allowed; protocol test deletes a stored resource while the plugin no longer answers reviews. **CI-e2e:** authorization only (`404`, not `403`). |
-| Nested `config` isn't pruned | Projection tests (rules, refusals, structural and prune round-trip of nested examples with typed maps and arrays of objects); manifest test per registry type; protocol test round-trips a nested member through the test host (not platform evidence). Platform round-trip moves to #766. |
-| Members decoded exactly | `DecodeSpec` and validator tests with integers above 2^53; protocol disable-only test with such a member. |
-| Tenant types are public | `ValidateDefinitions` tests: unknown tenant name, differing schema or default, invalid types, repeated and reserved members; `Bind` tests; startup through `gateway.New`. |
+| Nested `config` isn't pruned | Projection tests (rules, refusals including typed maps, `$ref` and unbounded integers, structural and prune round-trip of nested examples with arrays of objects); manifest test per registry type; protocol test round-trips a nested member through the test host (not platform evidence). Platform round-trip moves to #766. |
+| Tenant types are public | `ValidateDefinitions` tests: unknown tenant name, differing schema or default; `tenanttype` registry test over `All()`: invalid and repeated names, reserved and shared members, examples; `Bind` tests; startup through `gateway.New`. |
 | Manifest equals the projection | Drift test over `tenanttype.All()`; CI's manifest regeneration step. |
 | `ModelCatalog` roles and behavior unchanged | Roles test with literal catalog roles; catalog tests unchanged. **CI-e2e:** `catalog.spec.ts`, `routes.spec.ts`. |
 | A stored resource has no runtime effect | Protocol test with counting tenant extensions, one off and one on by default. |
@@ -297,7 +293,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 - [After a rollback to a manifest without a member, Grafana refuses writes that still carry it] → The disable-only rule accepts the member removed; documented.
 - [The kind store keeps and refuses unknown keys under `additionalProperties: false` because it skips CRD schema checks] → If that changes, unknown keys would be pruned silently instead of refused; admission's full schema still validates what remains.
 - [The generator path changes with app-sdk upgrades] → The manifest test converts the committed manifest as Grafana does and round-trips every example, so a generator change that breaks a member fails CI.
-- [The schema package decodes instances as `float64`] → `CheckConfig` compiles the schema once per process for exact validation and decodes the instance with exact numbers, so bounds, enums and multiples above 2^53 are checked against the stored value; operator configuration gets the same.
+- [The schema package decodes instances as `float64`] → Tenant integer fields are bounded to ±(2^53−1), so `float64` validation is exact for every value a type accepts. A value outside the bound is refused by the bound itself; an operator schema that doesn't bound its integers keeps today's behavior.
 - [Admission fails closed while the plugin is down or idle] → Creates and updates fail, deletes work; documented.
 - [The accept paths have no Grafana evidence until #766] → Go evidence runs through the real adapter; CI-e2e proves wiring, roles and refusals.
 
@@ -313,7 +309,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 ## Risks for #766
 
 - Its two types go into `tenanttype` with descriptions and examples, implementations use `Bind`, and it runs `mise run generate-ai-gateway-kinds`.
-- Their schemas must pass the projection: explicit `additionalProperties: false`, no empty objects, no type arrays or combinators.
+- Their schemas must pass the projection: explicit `additionalProperties: false`, no empty objects, no typed maps, `$ref`, type arrays or combinators, and integer fields bounded within ±(2^53−1).
 - Member names are `defaultInstructions` and `defaultSettings`.
 
 ## Migration Plan
@@ -333,9 +329,10 @@ No migration: the kind starts empty. Rolling back to a build without the kind st
 - **End-to-end accept paths:** Go only; no test code in the backend.
 - **Types without configuration have no member (deliberate deviation from the brief's "`{}` for a schema-less type").** The generator cannot emit a closed empty object, and an open one is not structural, which turns pruning off for the whole kind. Such a type takes no member, `enabled: true` needs none, and any member is refused.
 - **Disabled without a member:** accepted without `CheckConfig`.
-- **Structural and prune checks:** in the generator and tests only; startup keeps the cheap type and binding checks. The drift check guarantees the committed manifest equals the projection.
+- **Structural and prune checks:** in the generator and tests only; startup keeps only the binding check, and the registry's own checks are a `tenanttype` test. The drift check guarantees the committed manifest equals the projection.
 - **Objects without an explicit `additionalProperties: false`:** refused, so the full schema and the projection agree.
 - **`TenantTypes`:** explicit in the composition options; nil means no types.
+- **Closed objects and arrays only; safe integers:** no typed maps or `$ref` until a type needs them, and integer fields bounded to ±(2^53−1), so validation needs no exact-number decoding and locations need no redaction.
 - **Additive evolution:** Grafana validates every write against the current schema with no ratcheting, so a public type's schema changes only additively and an incompatible change takes a new type name. Stated in the spec, the guide and the `tenanttype` package doc.
 
 ## Follow-ups
