@@ -250,19 +250,39 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 	}{
 		{"CAP", func(c *TokenExchangeConfig) { c.CAPToken = " " }},
 		{"namespace", func(c *TokenExchangeConfig) { c.Namespace = " " }},
+		{"uppercase namespace", func(c *TokenExchangeConfig) { c.Namespace = "Stacks-1" }},
+		{"dotted namespace", func(c *TokenExchangeConfig) { c.Namespace = "stacks.1" }},
+		{"path namespace", func(c *TokenExchangeConfig) { c.Namespace = "stacks-1/config" }},
+		{"long namespace", func(c *TokenExchangeConfig) { c.Namespace = strings.Repeat("a", 64) }},
+		{"namespaced base URL", func(c *TokenExchangeConfig) {
+			c.BaseURL = "https://gateway.test/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1"
+		}},
+		{"namespaces segment", func(c *TokenExchangeConfig) { c.BaseURL = "https://gateway.test/namespaces" }},
 		{"audience", func(c *TokenExchangeConfig) { c.Audience = " " }},
 		{"omitted audience", func(c *TokenExchangeConfig) { c.Audience = "" }},
 		{"exchange URL", func(c *TokenExchangeConfig) { c.TokenExchangeURL = "https://secret@host" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", BaseURL: "https://gateway.test", TokenExchangeURL: "https://auth.test"}
+			cfg := TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: testAudience, BaseURL: "https://gateway.test", TokenExchangeURL: "https://auth.test"}
 			tc.change(&cfg)
 			_, err := NewWithTokenExchange(cfg)
 			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "stacks-1")
+		})
+	}
+	t.Run("namespaced base URL error names the API root", func(t *testing.T) {
+		_, err := NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Audience: testAudience, BaseURL: "https://gateway.test/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1", TokenExchangeURL: "https://auth.test"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Gateway API root")
+	})
+	for _, namespace := range []string{"", "*", "default", "stacks-1", strings.Repeat("a", 63)} {
+		t.Run("accepts namespace "+namespace, func(t *testing.T) {
+			_, err := NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: namespace, Audience: testAudience, BaseURL: "https://gateway.test/apis/aigateway.ext.grafana.app/v1alpha1", TokenExchangeURL: "https://auth.test"})
+			require.NoError(t, err)
 		})
 	}
 	t.Run("exchange", func(t *testing.T) {
-		const audience = "grafana-aigateway-app"
+		const audience = testAudience
 		var exchanges, gateway atomic.Int32
 		claims, _ := json.Marshal(map[string]any{"exp": time.Now().Add(time.Hour).Unix()})
 		token := "eyJhbGciOiJFUzI1NiJ9." + base64.RawURLEncoding.EncodeToString(claims) + ".c2lnbmF0dXJl"
@@ -280,6 +300,7 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 				return
 			}
 			gateway.Add(1)
+			assert.Equal(t, "/api/namespaces/stacks-1/config", r.URL.Path)
 			assert.Equal(t, token, r.Header.Get("X-Access-Token"))
 			_, _ = io.WriteString(w, discoveryFixture)
 		}))
@@ -303,7 +324,7 @@ func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
 	}))
 	defer server.Close()
 	p, err := NewWithTokenExchange(TokenExchangeConfig{
-		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", BaseURL: server.URL + "/api",
+		CAPToken: "cap", Namespace: "stacks-1", Audience: testAudience, BaseURL: server.URL + "/api",
 		TokenExchangeURL: server.URL + "/exchange", HTTPClient: server.Client(),
 	})
 	require.NoError(t, err)
@@ -457,7 +478,7 @@ func TestOnBehalfOf_ExchangesSubjectToken(t *testing.T) {
 			var request authn.TokenExchangeRequest
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
 			assert.Equal(t, "stacks-1", request.Namespace)
-			assert.Equal(t, []string{"grafana-aigateway-app"}, request.Audiences)
+			assert.Equal(t, []string{testAudience}, request.Audiences)
 			mu.Lock()
 			exchanges[request.SubjectToken]++
 			token := exchangedToken(t, request.SubjectToken)
@@ -484,7 +505,7 @@ func TestOnBehalfOf_ExchangesSubjectToken(t *testing.T) {
 	}))
 	defer srv.Close()
 	p, err := NewWithTokenExchange(TokenExchangeConfig{
-		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app",
+		CAPToken: "cap", Namespace: "stacks-1", Audience: testAudience,
 		BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client(),
 	})
 	require.NoError(t, err)
@@ -531,7 +552,7 @@ func TestOnBehalfOf_ExchangesForDifferentSubjectsConcurrently(t *testing.T) {
 	}))
 	defer srv.Close()
 	p, err := NewWithTokenExchange(TokenExchangeConfig{
-		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app",
+		CAPToken: "cap", Namespace: "stacks-1", Audience: testAudience,
 		BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client(),
 	})
 	require.NoError(t, err)
@@ -556,28 +577,35 @@ func TestOnBehalfOf_RefusedBeforeIO(t *testing.T) {
 	})}
 	exchange := func(namespace string) func() (*Provider, error) {
 		return func() (*Provider, error) {
-			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: namespace, Audience: "grafana-aigateway-app", BaseURL: "https://gateway.invalid", TokenExchangeURL: "https://exchange.invalid", HTTPClient: transport})
+			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: namespace, Audience: testAudience, BaseURL: "https://gateway.invalid", TokenExchangeURL: "https://exchange.invalid", HTTPClient: transport})
 		}
 	}
 	for _, tc := range []struct {
-		name    string
-		new     func() (*Provider, error)
-		subject string
+		name      string
+		new       func() (*Provider, error)
+		subject   string
+		namespace string
 	}{
 		{"access token flow", func() (*Provider, error) {
 			return NewWithAccessToken(AccessTokenConfig{AccessToken: "access", BaseURL: "https://gateway.invalid", HTTPClient: transport})
-		}, "subject-token"},
+		}, "subject-token", ""},
 		{"service account flow", func() (*Provider, error) {
 			return NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_token", BaseURL: "https://gateway.invalid", HTTPClient: transport})
-		}, "subject-token"},
-		{"wildcard namespace", exchange("*"), "subject-token"},
-		{"empty subject", exchange("stacks-1"), ""},
-		{"unsafe subject", exchange("stacks-1"), "subject\r\ntoken"},
+		}, "subject-token", ""},
+		{"wildcard namespace", exchange("*"), "subject-token", ""},
+		{"wildcard namespace with call namespace", exchange("*"), "subject-token", "stacks-1"},
+		{"empty namespace without call namespace", exchange(""), "subject-token", ""},
+		{"empty subject", exchange("stacks-1"), "", ""},
+		{"unsafe subject", exchange("stacks-1"), "subject\r\ntoken", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := tc.new()
 			require.NoError(t, err)
-			_, err = p.ListModels(WithOnBehalfOf(context.Background(), tc.subject))
+			ctx := WithOnBehalfOf(context.Background(), tc.subject)
+			if tc.namespace != "" {
+				ctx = WithNamespace(ctx, tc.namespace)
+			}
+			_, err = p.ListModels(ctx)
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), "subject-token")
 		})
@@ -594,7 +622,7 @@ func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {
 			return NewWithAccessToken(AccessTokenConfig{AccessToken: "dummy-access", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
 		{"exchange", func(headers http.Header) (*Provider, error) {
-			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "dummy-cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", TokenExchangeURL: "https://exchange.invalid", BaseURL: "https://gateway.invalid", Headers: headers})
+			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "dummy-cap", Namespace: "stacks-1", Audience: testAudience, TokenExchangeURL: "https://exchange.invalid", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
 		{"service account", func(headers http.Header) (*Provider, error) {
 			return NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: "https://gateway.invalid", Headers: headers})

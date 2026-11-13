@@ -30,6 +30,7 @@ const ROUTE_DEADLINE = "60s";
 const TEST_TOKEN = "glsa_integration_service_account_token";
 const TEST_NAMESPACE = "stacks-27038";
 const INTERNAL_SERVICE = "integration-internal-service";
+const GATEWAY_AUDIENCE = "aigateway.ext.grafana.app";
 
 let buildDirectory: string;
 let binaryPath: string;
@@ -1735,7 +1736,7 @@ describe("authenticated Anthropic Gateway command", () => {
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
       const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
       const exchangeURL = `${gateway.url}/platformhost/exchange`;
-      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: exchangeURL } });
+      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: exchangeURL } });
       assert.equal(result.error, undefined);
       assert.deepEqual(result.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
       assert.equal(fake.requests.length, 0);
@@ -2518,7 +2519,7 @@ describe("platform caller access in cloud mode", () => {
     try {
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
       const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
-      const tokenExchange = { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
+      const tokenExchange = { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
       const userIDToken = await gateway.credential({ kind: "id-token", identityType: "user", uid: "private-user-uid" });
       const delegated = await gateway.credential({ kind: "delegated", service: "other-app", identityType: "user", uid: "private-user-uid" });
       for (const onBehalfOf of [undefined, userIDToken, delegated]) {
@@ -2549,6 +2550,47 @@ describe("platform caller access in cloud mode", () => {
     }
   });
 
+  it("serves configured models for several namespaces through one internal Go client", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
+      const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
+      const namespaces = [TEST_NAMESPACE, "stacks-41557"];
+      const users = await Promise.all(namespaces.map((namespace) => gateway!.credential({ kind: "id-token", identityType: "user", uid: "private-user-uid", namespace })));
+      const options = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 32 };
+      const exchange = { CAPToken: cap, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
+      const perStack = await captureGoClient(goClientBinaryPath, {
+        mode: "namespaces", modelID: "assistant", options, tokenExchange: exchange,
+        namespaceCalls: [...namespaces.map((namespace) => ({ namespace })), ...namespaces.map((namespace, index) => ({ namespace, onBehalfOf: users[index] }))],
+      });
+      const wildcard = await captureGoClient(goClientBinaryPath, {
+        mode: "namespaces", modelID: "assistant", options, tokenExchange: { ...exchange, Namespace: "*" },
+        namespaceCalls: namespaces.map((namespace) => ({ namespace })),
+      });
+      for (const [capture, expected] of [[perStack, [...namespaces, ...namespaces]], [wildcard, namespaces]] as const) {
+        assert.equal(capture.error, undefined);
+        assert.deepEqual(capture.namespaceCalls.map((call: { namespace: string }) => call.namespace), expected);
+        for (const call of capture.namespaceCalls) {
+          assert.deepEqual(call.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
+          assert.deepEqual(call.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+          assert.equal(call.parts.at(-1).type, "finish");
+        }
+        assertConsumerSecretsAbsent([capture], [cap, ...users]);
+      }
+      assert.equal(fake.requests.length, 12);
+      const metrics = await gateway.metrics();
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 18$/m);
+      assert.doesNotMatch(metrics, /decision="(?:byok|refused)"/);
+      await gateway.stop();
+      for (const namespace of namespaces) assert.ok(gateway.stderr.includes(namespace), `Gateway observed ${namespace}`);
+      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, ...users, "private-user-uid"]);
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop());
+    }
+  });
+
   it("refuses relayed, anonymous and unauthenticated callers before any work", async () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
@@ -2568,7 +2610,7 @@ describe("platform caller access in cloud mode", () => {
         assert.equal(inference.status, 403);
       }
       await assert.rejects(gateway.accessTokenClient(relayed).getAvailableModels());
-      const go = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: unlisted, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: `${gateway.url}/platformhost/exchange` } });
+      const go = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: unlisted, Namespace: TEST_NAMESPACE, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: `${gateway.url}/platformhost/exchange` } });
       assert.equal(go.error?.statusCode, 403);
       assert.equal((await fetch(`${gateway.baseURL}/config`)).status, 401);
       assert.equal(fake.requests.length, 0);
@@ -3854,7 +3896,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 type Topology = "cloud" | "self-hosted";
-type CredentialRequest = { kind: "service" | "id-token" | "relay" | "delegated" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string };
+type CredentialRequest = { kind: "service" | "id-token" | "relay" | "delegated" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string; namespace?: string };
 
 function flagEnvironment(args: string[]): Record<string, string> {
   const environment: Record<string, string> = {};
@@ -3887,6 +3929,7 @@ class GatewayProcess {
   readonly process: ChildProcess;
   readonly url: string;
   readonly baseURL: string;
+  readonly apiRoot: string;
   readonly directory: string;
   nativeProxy?: Awaited<ReturnType<typeof startNativeProviderProxy>>;
   private stopped = false;
@@ -3900,6 +3943,7 @@ class GatewayProcess {
     this.output = output;
     this.url = url;
     this.baseURL = `${url}${routePrefix}`;
+    this.apiRoot = `${url}${routePrefix.slice(0, routePrefix.indexOf("/namespaces/"))}`;
   }
 
   get stderr(): string {
