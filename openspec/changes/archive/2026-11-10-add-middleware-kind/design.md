@@ -177,7 +177,7 @@ Projection rules, applied recursively from the member root:
 - **Drop:** `enum`, `const`, `pattern`, `format`, `minimum`/`maximum` and their exclusive forms, `multipleOf`, length and item and property count bounds, `uniqueItems`, `default`, `examples`, `title`. Admission checks them against the full schema. Dropping them keeps Grafana's own validation messages to field paths and JSON types, and dropping `default` keeps Grafana from writing values into stored objects.
 - **Refuse:** a node without a single `type` (missing, an array of types, `null`); `oneOf`, `anyOf`, `allOf`, `not`, `if`, `patternProperties`, `dependentSchemas`, `$ref`, `$defs`; an object without properties, including the member root; an object whose `additionalProperties` is not explicitly `false`, including a typed map; an array without `items`; an integer without a `minimum` and a `maximum` within ±(2^53−1).
 - **Safe integers:** integer fields are bounded to ±(2^53−1), the safe integers of a JavaScript `number`, which is how upstream types these settings. Within that bound a `float64` represents every value exactly, so the standard schema validation compares bounds, enums and multiples exactly, and the canonical member encoding loses nothing.
-- **Not now:** typed maps and `$ref` would need location redaction (a map key is configuration data) and reference resolution in the projection; add them with the first type that needs them.
+- **Not now:** typed maps and `$ref` would need location redaction (a map key is configuration data) and reference resolution in the projection; add them with the first type that needs them. Operator schemas aren't projected, so a map an operator schema allows can put the operator's own keys in a startup reason; that stays within the operator's logs.
 - **Never generated:** an enum on `spec.type`, a union across members, a required member.
 - A type without a `ConfigSchema` has no member.
 
@@ -238,7 +238,7 @@ type Spec struct {
 10. `CheckConfig(definition, member)`, refused as `middleware: spec.<m> <reason>`.
 11. Every refusal is `apierrors.NewBadRequest`.
 
-Reasons are built from fixed text, the type (equal to the already validated name), the derived member and schema locations, never from member values or the schema library's messages. With closed objects and arrays only, a location names only declared properties and array indexes, so it never names configuration data.
+Reasons are built from fixed text, the type (equal to the already validated name), the derived member and locations within the member, never from member values or the schema library's messages. With closed objects and arrays only, a location names only declared properties and array indexes, so it never names configuration data.
 
 ### Test host
 

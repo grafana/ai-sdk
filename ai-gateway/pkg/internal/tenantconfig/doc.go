@@ -14,7 +14,8 @@
 // whatever the stored type, with the member kept or removed, so a build that
 // no longer implements an extension never strands its stored resources.
 //
-// Refusals name field paths, the type, its member and schema locations. They
+// Refusals name field paths, the type, its member and locations within the
+// member. They
 // never contain configuration values, undeclared keys or the schema
 // validator's message.
 package tenantconfig

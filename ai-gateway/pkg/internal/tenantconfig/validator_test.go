@@ -23,7 +23,7 @@ var _ simple.KindValidator = Validator{}
 
 const sentinel = "sentinel-tenant-config-value"
 
-const accessSchema = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string","maxLength":20}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
+const accessSchema = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string","maxLength":20}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1,"maximum":9007199254740991}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
 
 func bind(t *testing.T, name string, scope extension.Scope, configSchema string) extension.Definition {
 	t.Helper()
@@ -91,6 +91,8 @@ func TestValidator_Validate(t *testing.T) {
 		{name: "member not an object", action: resource.AdmissionActionCreate, object: access(true, `"`+sentinel+`"`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /"},
 		{name: "null member", action: resource.AdmissionActionCreate, object: access(true, `null`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /"},
 		{name: "constraint the manifest drops", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{"models":["`+sentinel+sentinel+`"]}]}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /rules/0/models/0"},
+		{name: "largest safe integer", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{"models":[],"limits":{"rpm":9007199254740991}}]}`)},
+		{name: "integer over the safe bound", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{"models":[],"limits":{"rpm":9007199254740992}}]}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /rules/0/limits/rpm"},
 		{name: "nested location", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{"models":[],"limits":{"rpm":0}}]}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /rules/0/limits/rpm"},
 		{name: "missing nested required field", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{}]}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /rules/0"},
 		{name: "undeclared key", action: resource.AdmissionActionCreate, object: access(true, `{"`+sentinel+`":"`+sentinel+`"}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /"},

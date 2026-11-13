@@ -93,7 +93,9 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 // schema. A definition without a schema accepts only an empty object. The
 // error names the deepest failing instance location, never a value or the
 // schema validator's message, so callers can prefix it with their own field
-// path.
+// path. A location names object keys: with closed schemas, as tenant types
+// use, only declared properties and array indexes; an operator schema that
+// allows maps can surface the operator's own keys.
 func CheckConfig(definition extension.Definition, configuration json.RawMessage) error {
 	if definition.ConfigSchema.JSON() == nil {
 		if string(configuration) != string(emptyConfig) {

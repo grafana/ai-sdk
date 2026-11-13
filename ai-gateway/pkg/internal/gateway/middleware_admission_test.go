@@ -25,7 +25,7 @@ import (
 
 const (
 	middlewareSentinel = "sentinel-middleware-config-value"
-	accessSchema       = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string"}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
+	accessSchema       = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string"}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1,"maximum":9007199254740991}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
 	accessMember       = `{"note":"Answer concisely.","rules":[{"limits":{"rpm":9007199254740991},"models":["balanced"]},{"models":["fast","small"]}]}`
 )
 
