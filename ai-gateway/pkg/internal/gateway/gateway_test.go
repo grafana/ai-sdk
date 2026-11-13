@@ -312,7 +312,7 @@ type pluginProcess struct {
 func launchPlugin(t *testing.T, binary string, env map[string]string) *pluginProcess {
 	t.Helper()
 	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion})
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, Kinds: data.Versions[0].Kinds})
 	require.NoError(t, err)
 	fake := newFakeAnthropic(t)
 	environment := []string{
@@ -371,7 +371,7 @@ func TestPluginProcess_ServesThroughThePluginProtocol(t *testing.T) {
 func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
 	binary := buildPlugin(t)
 	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion})
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, Kinds: data.Versions[0].Kinds})
 	require.NoError(t, err)
 	logs := &syncBuffer{}
 	process, err := host.LaunchPlugin(platformhost.PluginConfig{
@@ -399,10 +399,18 @@ func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, code, body)
 	assert.Contains(t, body, "plugin has no authenticator configured")
 
+	catalog := catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})
+	code, body = sendCatalog(t, ctx, http.MethodPost, catalogURL(server.URL, ""), token, catalog)
+	assert.Equal(t, http.StatusInternalServerError, code, body)
+	assert.Contains(t, body, "admission hook for ModelCatalog failed")
+	code, body = sendCatalog(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
+	assert.Equal(t, http.StatusNotFound, code, body)
+
 	process.Stop()
 	assert.Contains(t, logs.String(), `"event":"plugin_idle"`)
 	assert.Contains(t, logs.String(), "no authenticator configured")
 	assert.NotContains(t, logs.String(), "startup_failure")
+	assert.NotContains(t, logs.String(), catalogKey)
 }
 
 func TestPluginProcess_LogsThroughTheHostProtocol(t *testing.T) {

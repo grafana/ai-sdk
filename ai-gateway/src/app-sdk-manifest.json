@@ -12,7 +12,196 @@
             {
                 "name": "v1alpha1",
                 "served": true,
-                "kinds": [],
+                "kinds": [
+                    {
+                        "kind": "ModelCatalog",
+                        "plural": "ModelCatalogs",
+                        "scope": "Namespaced",
+                        "userReadable": false,
+                        "folderScoped": false,
+                        "admission": {
+                            "validation": {
+                                "operations": [
+                                    "CREATE",
+                                    "UPDATE"
+                                ]
+                            }
+                        },
+                        "schemas": {
+                            "Model": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "aliases": {
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "type": "array"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    },
+                                    "fallback": {
+                                        "items": {
+                                            "$ref": "#/components/schemas/Target"
+                                        },
+                                        "type": "array"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "primary": {
+                                        "$ref": "#/components/schemas/Target"
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "primary"
+                                ],
+                                "type": "object"
+                            },
+                            "ModelCatalog": {
+                                "properties": {
+                                    "secure": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "description": "Provider API key, keyed by the provider name",
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/com.github.grafana.grafana-app-sdk.resource.InlineSecureValue"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "spec": {
+                                        "$ref": "#/components/schemas/spec"
+                                    }
+                                },
+                                "required": [
+                                    "spec"
+                                ]
+                            },
+                            "Provider": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "baseURL": {
+                                        "type": "string"
+                                    },
+                                    "providerName": {
+                                        "type": "string"
+                                    },
+                                    "supportsStructuredOutputs": {
+                                        "type": "boolean"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "type"
+                                ],
+                                "type": "object"
+                            },
+                            "Target": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "model": {
+                                        "type": "string"
+                                    },
+                                    "provider": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "provider",
+                                    "model"
+                                ],
+                                "type": "object"
+                            },
+                            "com.github.grafana.grafana-app-sdk.resource.InlineSecureValue": {
+                                "type": "object",
+                                "oneOf": [
+                                    {
+                                        "required": [
+                                            "create"
+                                        ]
+                                    },
+                                    {
+                                        "required": [
+                                            "name"
+                                        ]
+                                    },
+                                    {
+                                        "required": [
+                                            "remove"
+                                        ]
+                                    }
+                                ],
+                                "not": {
+                                    "required": [
+                                        "description"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "create"
+                                        ]
+                                    }
+                                },
+                                "properties": {
+                                    "create": {
+                                        "description": "Plaintext value to create in the secret service. Used only in create or update requests.",
+                                        "type": "string",
+                                        "maxLength": 24576,
+                                        "minLength": 1
+                                    },
+                                    "description": {
+                                        "description": "Optional description for a newly created secret. Only valid when create is set.",
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "description": "Reference to an existing value in the secret service.",
+                                        "type": "string",
+                                        "maxLength": 253,
+                                        "minLength": 1
+                                    },
+                                    "remove": {
+                                        "description": "Remove this entry from the secure value map, deleting the secret if it is owned by this resource.",
+                                        "type": "boolean"
+                                    }
+                                },
+                                "additionalProperties": false
+                            },
+                            "spec": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "models": {
+                                        "additionalProperties": {
+                                            "$ref": "#/components/schemas/Model"
+                                        },
+                                        "type": "object"
+                                    },
+                                    "providers": {
+                                        "additionalProperties": {
+                                            "$ref": "#/components/schemas/Provider"
+                                        },
+                                        "type": "object"
+                                    }
+                                },
+                                "required": [
+                                    "providers",
+                                    "models"
+                                ],
+                                "type": "object"
+                            }
+                        },
+                        "secure": [
+                            {
+                                "key": "*",
+                                "description": "Provider API key, keyed by the provider name"
+                            }
+                        ],
+                        "conversion": false
+                    }
+                ],
                 "routes": {
                     "namespaced": {
                         "/config": {
@@ -125,28 +314,33 @@
         ],
         "preferredVersion": "v1alpha1",
         "roles": {
-            "aigateway:admin": {
-                "title": "AI Gateway Admin",
-                "description": "Allows all actions on "
+            "aigateway:catalogreader": {
+                "title": "Model catalog reader",
+                "description": "Read AI Gateway model catalogs",
+                "kinds": [
+                    {
+                        "kind": "ModelCatalog",
+                        "permissionSet": "viewer"
+                    }
+                ]
             },
-            "aigateway:editor": {
-                "title": "AI Gateway Editor",
-                "description": "Create, Read, Update, and Delete "
-            },
-            "aigateway:reader": {
-                "title": "AI Gateway Reader",
-                "description": "Read "
+            "aigateway:catalogwriter": {
+                "title": "Model catalog writer",
+                "description": "Create, update and delete AI Gateway model catalogs",
+                "kinds": [
+                    {
+                        "kind": "ModelCatalog",
+                        "permissionSet": "editor"
+                    }
+                ]
             }
         },
         "roleBindings": {
             "viewer": [
-                "aigateway:reader"
-            ],
-            "editor": [
-                "aigateway:editor"
+                "aigateway:catalogreader"
             ],
             "admin": [
-                "aigateway:admin"
+                "aigateway:catalogwriter"
             ]
         }
     }

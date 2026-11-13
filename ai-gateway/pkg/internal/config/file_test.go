@@ -358,6 +358,63 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 	})
 }
 
+func TestFileValidateShape(t *testing.T) {
+	withoutKey := func(file File) File {
+		file.Providers = map[string]Provider{"provider": {Type: "anthropic"}}
+		return file
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*File)
+		wantErr string
+	}{
+		{name: "no key reference", mutate: func(*File) {}},
+		{name: "no providers", mutate: func(file *File) { file.Providers = nil }, wantErr: "config: at least one provider is required"},
+		{name: "unsupported type", mutate: func(file *File) { file.Providers["provider"] = Provider{Type: "unsupported"} }, wantErr: `config: providers.provider.type "unsupported" is unsupported (want anthropic, openai or openai-compatible)`},
+		{name: "no models", mutate: func(file *File) { file.Models = nil }, wantErr: "config: at least one model is required"},
+		{name: "missing name", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Name = ""
+			file.Models["canonical"] = model
+		}, wantErr: "config: models.canonical.name is required"},
+		{name: "unknown provider", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Primary.Provider = "missing"
+			file.Models["canonical"] = model
+		}, wantErr: `config: models.canonical.primary.provider references unknown provider "missing"`},
+		{name: "repeated candidate", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Fallback = []Primary{model.Primary}
+			file.Models["canonical"] = model
+		}, wantErr: "config: models.canonical.fallback[0] repeats a candidate"},
+		{name: "alias collision", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Aliases = []string{"canonical"}
+			file.Models["canonical"] = model
+		}, wantErr: `config: alias "canonical" collides with canonical model`},
+		{name: "too many candidates", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			for i := range MaxProviderAttempts {
+				model.Fallback = append(model.Fallback, Primary{Provider: "provider", Model: fmt.Sprintf("native-%d", i)})
+			}
+			file.Models["canonical"] = model
+		}, wantErr: "config: configured discovery cardinality exceeds limit"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			file := withoutKey(cloneFile(testModelConfig()))
+			tc.mutate(&file)
+			err := file.ValidateShape()
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.EqualError(t, file.Validate(), "config: providers.provider.apiKeyEnv is required")
+				return
+			}
+			assert.EqualError(t, err, tc.wantErr)
+		})
+	}
+}
+
 func TestParseModelCatalog_ServerFallbacksPolicy(t *testing.T) {
 	const primaryModel = "      model: claude-test\n"
 	withPrimaryPolicy := func(policy string) string {
