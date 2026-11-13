@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/middleware/agentobservability
 go 1.27.3
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.9.0
 	github.com/grafana/agento11y/go v0.20.0
 	github.com/grafana/agento11y/go-providers/anthropic v0.20.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.5
@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/anthropics/anthropic-sdk-go v1.27.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

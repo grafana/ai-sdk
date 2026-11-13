@@ -13,7 +13,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicProvider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"

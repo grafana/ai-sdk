@@ -8,7 +8,7 @@ ignore (
 )
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.9.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/grafana/agento11y/go v0.20.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.5
@@ -35,7 +35,7 @@ require (
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/grpc v1.84.0
 	k8s.io/apimachinery v0.37.1
 	k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098
@@ -46,6 +46,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/anthropics/anthropic-sdk-go v1.80.0 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

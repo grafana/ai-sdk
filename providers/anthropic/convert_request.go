@@ -12,9 +12,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
+	"github.com/anthropics/anthropic-sdk-go/v2/packages/param"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )

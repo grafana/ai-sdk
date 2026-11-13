@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
 // Credential contains exactly one API key or Microsoft Entra bearer token.

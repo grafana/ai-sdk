@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
 func captureRequestBody(body *json.RawMessage) option.Middleware {

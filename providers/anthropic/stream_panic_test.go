@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"

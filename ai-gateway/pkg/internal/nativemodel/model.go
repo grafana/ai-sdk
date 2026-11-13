@@ -3,7 +3,7 @@ package nativemodel
 import (
 	"net/http"
 
-	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
