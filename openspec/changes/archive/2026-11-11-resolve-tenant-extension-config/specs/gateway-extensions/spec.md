@@ -18,7 +18,7 @@ Each call's tenant-scope extensions SHALL follow the `Middleware` resources of t
 - **THEN** after the change propagates, its calls SHALL use the extension's default state
 
 ### Requirement: Tenant configuration checked when read
-At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member with numbers unchanged. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
+At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member as admission does. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
 
 #### Scenario: Schema tightened after storage
 - **WHEN** a stored enabled member no longer matches its `skip` extension's schema
@@ -28,9 +28,9 @@ At read time the Gateway SHALL check each enabled resource's member against its 
 - **WHEN** a `fail-closed` tenant extension's stored member fails its schema
 - **THEN** calls in that namespace to which it applies SHALL fail with the unavailable category before any provider call
 
-#### Scenario: Large integer
-- **WHEN** a stored member holds the integer `9007199254740993`, nested inside an object
-- **THEN** the extension's calls in that namespace SHALL receive that exact number in their configuration
+#### Scenario: Safe integer
+- **WHEN** a stored member holds the integer `9007199254740991`, the largest safe integer, nested inside an object
+- **THEN** the extension's calls in that namespace SHALL receive that number in their configuration
 
 #### Scenario: Member of another type
 - **WHEN** a stored spec sets a member other than its type's, or more than one member

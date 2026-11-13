@@ -36,26 +36,31 @@
 
 ## 8. Projection and generator
 
-- [x] 8.1 Add `pkg/internal/tenantschema` with the projection, the structural and prune round-trip check and the CUE rendering; verify table tests for each keep, drop, resolve and refuse rule, nested objects, arrays of objects and typed maps, descriptions, and that a projected example survives pruning.
+- [x] 8.1 Add `pkg/internal/tenantschema` with the projection, the structural and prune round-trip check and the CUE rendering; verify table tests for each keep, drop and refuse rule, nested objects, arrays of objects, descriptions, and that a projected example survives pruning.
 - [x] 8.2 Add the generator command, `kinds/middleware_members.cue`, the `middlewareMembers` import in `kinds/middleware.cue`, and the `generate-ai-gateway-kinds` mise task; regenerate; verify the drift test passes, the empty registry leaves the Middleware `spec` as `{type, enabled}`, and `generate:kinds` leaves no diff.
 - [x] 8.3 In a scratch copy, generate members for the test types and the manifest with the pinned app-sdk, and verify the manifest test's Grafana-path conversion keeps each example; commit the generated schema as a test fixture and record the result in the pull request.
 
 ## 9. Typed union admission
 
-- [x] 9.1 Add `tenantconfig.DecodeSpec`, the raw-spec `Middleware` object and codec, and `Kind()`; verify tests for metadata, type, enabled and raw members, integers above 2^53 kept exactly, and fixed messages for undecodable specs.
+- [x] 9.1 Add `tenantconfig.DecodeSpec`, the raw-spec `Middleware` object and codec, and `Kind()`; verify tests for metadata, type, enabled and canonical raw members, and fixed messages for undecodable specs.
 - [x] 9.2 Rework `NewValidator` and the admission algorithm for members; verify table tests for one member only and only the type's, disable-only updates with the member equal, reformatted or absent, the member required when enabled, no member for a type without configuration, unimplemented, unregistered and operator types with one reason, the member size bound, schema failures with nested locations, and no sentinel in any reason.
-- [x] 9.3 Keep numbers as written in the test host; verify a host test that an integer above 2^53 is stored and reviewed exactly.
-- [x] 9.4 Update the protocol tests to test types and members: nested member round-trip, refusals, rollback with the member kept and removed, shipped types refusing every create, no runtime effect; verify they pass with `-race`.
-- [x] 9.5 Update the manifest test for members (properties equal the registry's members, no enum or union, and the Grafana-path prune round-trip per type); verify it passes.
+- [x] 9.3 Update the protocol tests to test types and members: nested member round-trip, refusals, rollback with the member kept and removed, shipped types refusing every create, no runtime effect; verify they pass with `-race`.
+- [x] 9.4 Update the manifest test for members (properties equal the registry's members, no enum or union, and the Grafana-path prune round-trip per type); verify it passes.
 
 ## 10. Documentation for typed members
 
 - [x] 10.1 Rework the guide's "Configure tenant extensions", the `ScopeTenant` godoc, the glossary entry and the architecture sentence for typed members, public tenant types and the private-extension policy; verify `mise run lint-docs` passes.
 
-## 11. Integration checks
+## 11. Simplified configuration validation
 
-- [x] 11.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test`, `test-ai-gateway`, `test-integration`, `test-providerwire-v4`, `test-ai-gateway-frontend`, `verify-ai-gateway-boundary`, `verify-module-requirements`, `release-check`, `lint-docs`, `generate-ai-gateway-kinds` with a clean tree, and the end-to-end type checks; verify all pass, and record the checks only CI can run.
-- [x] 11.2 Run `openspec validate --strict` on `gateway-extensions`, `gateway-plugin-host` and `gateway-caller-access`; verify they pass.
+- [x] 11.1 Refuse declared integer bounds outside ±(2^53−1) in the projection, validate with the standard schema check, and remove exact-number decoding; verify projection refusals for out-of-range bounds, accepted unbounded integers, and the validator and protocol tests.
+- [x] 11.2 Refuse typed maps and `$ref` in the projection and remove location redaction; verify projection refusals and `CheckConfig` locations.
+- [x] 11.3 Move the registry checks into a `tenanttype` test over `All()` and keep the binding check at startup; verify the registry and binding tests.
+
+## 12. Integration checks
+
+- [x] 12.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test`, `test-ai-gateway`, `test-integration`, `test-providerwire-v4`, `test-ai-gateway-frontend`, `verify-ai-gateway-boundary`, `verify-module-requirements`, `release-check`, `lint-docs`, `generate-ai-gateway-kinds` with a clean tree, and the end-to-end type checks; verify all pass, and record the checks only CI can run.
+- [x] 12.2 Run `openspec validate --strict` on `gateway-extensions`, `gateway-plugin-host` and `gateway-caller-access`; verify they pass.
 
 ## Workflow follow-up
 

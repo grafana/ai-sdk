@@ -95,9 +95,6 @@ func expression(node *Node, depth int) string {
 	case TypeArray:
 		return "[..." + expression(node.Items, depth) + "]"
 	}
-	if node.Values != nil {
-		return "{[string]: " + expression(node.Values, depth) + "}"
-	}
 	var out bytes.Buffer
 	out.WriteString("{\n")
 	for _, name := range slices.Sorted(maps.Keys(node.Properties)) {

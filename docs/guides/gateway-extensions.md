@@ -263,11 +263,15 @@ from its type in schema or default. To add a type:
    manifest and regenerates the kind. The projection keeps JSON types,
    properties, items, required fields and descriptions, and drops value
    constraints and defaults.
-3. The generator refuses schemas the platform would prune or can't express:
-   every node needs exactly one JSON type, every object either declares
-   properties with `additionalProperties: false` or declares a typed
-   `additionalProperties`, and combinators such as `oneOf` aren't supported.
-   It also refuses a type whose example doesn't survive Grafana's pruning.
+3. The generator refuses schemas the platform would prune or can't express.
+   Schemas use closed objects and arrays only: every node needs exactly one
+   JSON type, and every object declares properties with
+   `additionalProperties: false`. Typed maps, `$ref` and combinators such as
+   `oneOf` aren't supported. A `minimum` or `maximum` on an integer field
+   must be within ±(2^53−1), the safe integers of a JavaScript `number`; as
+   upstream, integers beyond that range aren't compared exactly. The
+   generator also refuses a type whose example doesn't survive Grafana's
+   pruning.
 
 Grafana validates every write against the current schema, including fields
 the write doesn't change. A type's schema can therefore only grow: add

@@ -3,9 +3,10 @@
 // written.
 //
 // [Project] keeps a type schema's JSON types, properties, items, closed
-// objects, typed maps, required fields and descriptions, drops value
-// constraints and defaults, and refuses what the platform would prune or
-// what the manifest generator cannot emit. [Render] writes the members as
+// objects, required fields and descriptions, drops value constraints and
+// defaults, and refuses what the platform would prune, what the manifest
+// generator cannot emit, typed maps, references and integer bounds beyond
+// ±[MaxSafeInteger]. [Render] writes the members as
 // the CUE the kind imports, after checking that each projection is
 // structural and keeps the type's example through pruning. [ManifestKind]
 // derives the structural schema a kind store builds from a manifest, so

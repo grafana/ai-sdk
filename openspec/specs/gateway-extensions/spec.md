@@ -310,7 +310,7 @@ The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v
 - **THEN** the write SHALL be refused
 
 #### Scenario: Nested configuration kept as written
-- **WHEN** a writer stores a valid `Middleware` whose member holds nested objects, arrays of objects and typed maps
+- **WHEN** a writer stores a valid `Middleware` whose member holds nested objects and arrays of objects
 - **THEN** reads SHALL return that member unchanged
 
 ### Requirement: Public tenant extension types
@@ -322,7 +322,7 @@ Tenant extension types SHALL be declared in a public, experimental package: each
 
 #### Scenario: Invalid type
 - **WHEN** a type has an invalid or repeated name, a member that collides with another type's or with `type` or `enabled`, a schema without an example it accepts, or an example without a schema
-- **THEN** startup SHALL fail naming the type and the field
+- **THEN** the repository checks SHALL fail naming the type
 
 ### Requirement: Additive tenant type evolution
 Because the platform validates every write against the current schema without exempting unchanged fields, a public type's schema SHALL change only additively: new optional fields and nothing narrower. An incompatible change SHALL use a new type name.
@@ -343,14 +343,18 @@ Startup SHALL fail, before any setting is read and also on hosts that start idle
 - **THEN** startup SHALL fail naming the extension and the differing field
 
 ### Requirement: Tenant configuration member projection
-Each manifest member SHALL be projected from its type's schema, keeping JSON types, properties, items, closed objects, typed maps, required fields and descriptions, and dropping value constraints and defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. A type whose projection is not structural, or whose example pruning changes, SHALL be refused. A drift check SHALL guarantee the committed manifest equals the projection.
+Each manifest member SHALL be projected from its type's schema of closed objects and arrays, keeping JSON types, properties, items, required fields and descriptions, and dropping value constraints and defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. A type whose projection is not structural, or whose example pruning changes, SHALL be refused. A drift check SHALL guarantee the committed manifest equals the projection.
 
 #### Scenario: Value constraints stay in admission
 - **WHEN** a type's schema has an enum, a pattern or a bound on a field
 - **THEN** the manifest member SHALL declare only the field's JSON type, and admission SHALL check the constraint
 
 #### Scenario: Schema the platform would prune
-- **WHEN** a type's schema has an open object, an empty object, an object without an explicit `additionalProperties: false`, an untyped node or a combinator
+- **WHEN** a type's schema has an open object, an empty object, an object without an explicit `additionalProperties: false`, a typed map, a `$ref`, an untyped node or a combinator
+- **THEN** the type SHALL be refused before it reaches the manifest
+
+#### Scenario: Integer field bounds
+- **WHEN** a type's schema declares a `minimum` or `maximum` on an integer field outside ±(2^53−1)
 - **THEN** the type SHALL be refused before it reaches the manifest
 
 #### Scenario: Drift
@@ -358,7 +362,7 @@ Each manifest member SHALL be projected from its type's schema, keeping JSON typ
 - **THEN** the repository checks SHALL fail
 
 ### Requirement: Tenant configuration admission
-Admission SHALL accept a create or update only when the spec sets no member other than its type's, `spec.type` names a tenant-scope extension the distribution implements, a type with configuration has its member when `enabled` is `true`, a type without configuration has no member, and a present member matches that type's full schema. Operator-scope, unregistered and unimplemented types SHALL be refused with the same reason. Members SHALL be decoded as written, so numbers are not rounded.
+Admission SHALL accept a create or update only when the spec sets no member other than its type's, `spec.type` names a tenant-scope extension the distribution implements, a type with configuration has its member when `enabled` is `true`, a type without configuration has no member, and a present member matches that type's full schema. Operator-scope, unregistered and unimplemented types SHALL be refused with the same reason.
 
 #### Scenario: Valid configuration
 - **WHEN** a writer creates a `Middleware` for an implemented tenant type with a member its schema accepts
@@ -384,9 +388,9 @@ Admission SHALL accept a create or update only when the spec sets no member othe
 - **WHEN** `spec.type` names an operator-scope extension, or a public type this build does not implement
 - **THEN** the write SHALL be refused with the reason given for an unregistered type
 
-#### Scenario: Large integer
-- **WHEN** a member holds an integer above 2^53 and the write is accepted
-- **THEN** admission and the stored resource SHALL keep its exact value
+#### Scenario: Safe integer
+- **WHEN** a member holds an integer within ±(2^53−1)
+- **THEN** admission SHALL compare it exactly against the type's schema, and MAY round integers beyond that range as upstream does
 
 #### Scenario: Shipped build
 - **WHEN** the shipped Gateway, which implements no tenant extension, reviews a `Middleware` create
@@ -459,7 +463,7 @@ The extension guide SHALL describe the `Middleware` resource and its members, ro
 - **THEN** they SHALL find the TTL, that replicas converge independently, and that a failed read never falls back to a more permissive default
 
 ### Requirement: Tenant configuration evidence
-Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, exact numbers, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
+Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
 
 #### Scenario: End-to-end suite with the shipped build
 - **WHEN** the plugin end-to-end suite runs against the pinned Grafana image
@@ -489,7 +493,7 @@ Each call's tenant-scope extensions SHALL follow the `Middleware` resources of t
 - **THEN** after the change propagates, its calls SHALL use the extension's default state
 
 ### Requirement: Tenant configuration checked when read
-At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member with numbers unchanged. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
+At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member as admission does. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
 
 #### Scenario: Schema tightened after storage
 - **WHEN** a stored enabled member no longer matches its `skip` extension's schema
@@ -499,9 +503,9 @@ At read time the Gateway SHALL check each enabled resource's member against its 
 - **WHEN** a `fail-closed` tenant extension's stored member fails its schema
 - **THEN** calls in that namespace to which it applies SHALL fail with the unavailable category before any provider call
 
-#### Scenario: Large integer
-- **WHEN** a stored member holds the integer `9007199254740993`, nested inside an object
-- **THEN** the extension's calls in that namespace SHALL receive that exact number in their configuration
+#### Scenario: Safe integer
+- **WHEN** a stored member holds the integer `9007199254740991`, the largest safe integer, nested inside an object
+- **THEN** the extension's calls in that namespace SHALL receive that number in their configuration
 
 #### Scenario: Member of another type
 - **WHEN** a stored spec sets a member other than its type's, or more than one member

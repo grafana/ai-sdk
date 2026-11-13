@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
+	"strconv"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 )
@@ -26,6 +26,11 @@ const (
 
 var jsonTypes = []JSONType{TypeString, TypeInteger, TypeNumber, TypeBoolean, TypeArray, TypeObject}
 
+// MaxSafeInteger is the largest integer a float64, and a JavaScript number,
+// represents exactly. A bound an integer field declares must be within
+// ±MaxSafeInteger; values beyond it aren't compared exactly, as upstream.
+const MaxSafeInteger = 1<<53 - 1
+
 // droppedKeywords are value constraints, defaults and annotations that
 // admission checks or that the manifest doesn't need.
 var droppedKeywords = []string{
@@ -33,20 +38,19 @@ var droppedKeywords = []string{
 	"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
 	"minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties", "uniqueItems",
 	"default", "examples", "title", "deprecated", "readOnly", "writeOnly",
-	"contentEncoding", "contentMediaType", "$schema", "$id", "$comment", "$defs", "definitions",
+	"contentEncoding", "contentMediaType", "$schema", "$id", "$comment",
 }
 
 var keptKeywords = []string{"type", "description", "properties", "required", "items", "additionalProperties"}
 
 // Node is a projected schema node: exactly one JSON type, and for objects
-// either declared properties or a typed value schema.
+// declared properties.
 type Node struct {
 	Type        JSONType
 	Description string
 	Properties  map[string]*Node
 	Required    []string
 	Items       *Node
-	Values      *Node
 }
 
 // Member is a tenant type's projected spec member. Its schema's description
@@ -70,8 +74,7 @@ func Project(tenantType tenanttype.Type) (Member, bool, error) {
 	if err := decoder.Decode(&root); err != nil {
 		return Member{}, false, fmt.Errorf("tenant type %q: the configuration schema is not a JSON object", tenantType.Name)
 	}
-	p := projector{root: root, resolving: map[string]bool{}}
-	node, err := p.node(root, "")
+	node, err := project(root, "")
 	if err != nil {
 		return Member{}, false, fmt.Errorf("tenant type %q: the configuration schema %w", tenantType.Name, err)
 	}
@@ -84,17 +87,9 @@ func Project(tenantType tenanttype.Type) (Member, bool, error) {
 	return Member{Type: tenantType.Name, Name: tenantType.Member(), Schema: node}, true, nil
 }
 
-type projector struct {
-	root      map[string]any
-	resolving map[string]bool
-}
-
-func (p projector) node(schema map[string]any, location string) (*Node, error) {
+func project(schema map[string]any, location string) (*Node, error) {
 	at := func(format string, args ...any) error {
 		return fmt.Errorf("at %s "+format, append([]any{locationOrRoot(location)}, args...)...)
-	}
-	if ref, ok := schema["$ref"]; ok {
-		return p.reference(schema, ref, location)
 	}
 	for _, keyword := range slices.Sorted(maps.Keys(schema)) {
 		if !slices.Contains(keptKeywords, keyword) && !slices.Contains(droppedKeywords, keyword) {
@@ -109,82 +104,76 @@ func (p projector) node(schema map[string]any, location string) (*Node, error) {
 	if description, ok := schema["description"].(string); ok {
 		node.Description = description
 	}
-	switch node.Type {
-	case TypeArray:
-		items, ok := schema["items"].(map[string]any)
-		if !ok {
-			return nil, at("must declare items as one schema")
-		}
-		child, err := p.node(items, location+"/items")
-		if err != nil {
-			return nil, err
-		}
-		node.Items = child
-	case TypeObject:
-		if err := p.object(node, schema, location); err != nil {
-			return nil, err
-		}
-	default:
-		for _, keyword := range []string{"properties", "required", "items", "additionalProperties"} {
+	if node.Type != TypeObject {
+		for _, keyword := range []string{"properties", "required", "additionalProperties"} {
 			if _, ok := schema[keyword]; ok {
 				return nil, at("declares %q on a %s", keyword, node.Type)
 			}
 		}
 	}
+	if _, ok := schema["items"]; ok && node.Type != TypeArray {
+		return nil, at("declares \"items\" on a %s", node.Type)
+	}
+	switch node.Type {
+	case TypeInteger:
+		for _, bound := range []string{"minimum", "maximum"} {
+			if value, declared := schema[bound]; declared && !safeInteger(value) {
+				return nil, at("must set %s to an integer within ±%d", bound, MaxSafeInteger)
+			}
+		}
+	case TypeArray:
+		items, ok := schema["items"].(map[string]any)
+		if !ok {
+			return nil, at("must declare items as one schema")
+		}
+		child, err := project(items, location+"/items")
+		if err != nil {
+			return nil, err
+		}
+		node.Items = child
+	case TypeObject:
+		if err := object(node, schema, location); err != nil {
+			return nil, err
+		}
+	}
 	return node, nil
 }
 
-func (p projector) object(node *Node, schema map[string]any, location string) error {
+func object(node *Node, schema map[string]any, location string) error {
 	at := func(format string, args ...any) error {
 		return fmt.Errorf("at %s "+format, append([]any{locationOrRoot(location)}, args...)...)
 	}
-	properties, hasProperties := schema["properties"].(map[string]any)
-	if _, declared := schema["properties"]; declared && !hasProperties {
-		return at("must declare properties as an object")
+	properties, _ := schema["properties"].(map[string]any)
+	if closed, ok := schema["additionalProperties"].(bool); len(properties) == 0 || !ok || closed {
+		return at("must declare properties and set additionalProperties to false")
 	}
-	additional, hasAdditional := schema["additionalProperties"]
-	if _, isItems := schema["items"]; isItems {
-		return at("declares \"items\" on an object")
-	}
-	switch {
-	case len(properties) > 0:
-		if closed, ok := additional.(bool); !hasAdditional || !ok || closed {
-			return at("must set additionalProperties to false")
-		}
-		node.Properties = make(map[string]*Node, len(properties))
-		for _, name := range slices.Sorted(maps.Keys(properties)) {
-			property, ok := properties[name].(map[string]any)
-			if !ok {
-				return at("must declare property %q as a schema", name)
-			}
-			child, err := p.node(property, location+"/properties/"+name)
-			if err != nil {
-				return err
-			}
-			node.Properties[name] = child
-		}
-		required, err := requiredFields(schema["required"], properties)
-		if err != nil {
-			return at("%s", err)
-		}
-		node.Required = required
-	case hasAdditional:
-		values, ok := additional.(map[string]any)
+	node.Properties = make(map[string]*Node, len(properties))
+	for _, name := range slices.Sorted(maps.Keys(properties)) {
+		property, ok := properties[name].(map[string]any)
 		if !ok {
-			return at("must declare properties, or additionalProperties as a schema")
+			return at("must declare property %q as a schema", name)
 		}
-		if _, ok := schema["required"]; ok {
-			return at("declares required without properties")
-		}
-		child, err := p.node(values, location+"/additionalProperties")
+		child, err := project(property, location+"/properties/"+name)
 		if err != nil {
 			return err
 		}
-		node.Values = child
-	default:
-		return at("must declare properties, or additionalProperties as a schema")
+		node.Properties[name] = child
 	}
+	required, err := requiredFields(schema["required"], properties)
+	if err != nil {
+		return at("%s", err)
+	}
+	node.Required = required
 	return nil
+}
+
+func safeInteger(value any) bool {
+	number, ok := value.(json.Number)
+	if !ok {
+		return false
+	}
+	bound, err := strconv.ParseInt(number.String(), 10, 64)
+	return err == nil && bound >= -MaxSafeInteger && bound <= MaxSafeInteger
 }
 
 func requiredFields(value any, properties map[string]any) ([]string, error) {
@@ -207,48 +196,6 @@ func requiredFields(value any, properties map[string]any) ([]string, error) {
 	return slices.Compact(required), nil
 }
 
-func (p projector) reference(schema map[string]any, value any, location string) (*Node, error) {
-	ref, ok := value.(string)
-	for keyword := range schema {
-		if keyword != "$ref" && keyword != "description" {
-			ok = false
-		}
-	}
-	if !ok {
-		return nil, fmt.Errorf("at %s must use $ref alone", locationOrRoot(location))
-	}
-	target, found := p.resolve(ref)
-	if !found {
-		return nil, fmt.Errorf("at %s references %q, which isn't a local definition", locationOrRoot(location), ref)
-	}
-	if p.resolving[ref] {
-		return nil, fmt.Errorf("at %s references %q recursively", locationOrRoot(location), ref)
-	}
-	p.resolving[ref] = true
-	defer delete(p.resolving, ref)
-	node, err := p.node(target, location)
-	if err != nil {
-		return nil, err
-	}
-	if description, ok := schema["description"].(string); ok {
-		node.Description = description
-	}
-	return node, nil
-}
-
-func (p projector) resolve(ref string) (map[string]any, bool) {
-	for _, key := range []string{"$defs", "definitions"} {
-		name, ok := strings.CutPrefix(ref, "#/"+key+"/")
-		if !ok {
-			continue
-		}
-		definitions, _ := p.root[key].(map[string]any)
-		target, ok := definitions[name].(map[string]any)
-		return target, ok
-	}
-	return nil, false
-}
-
 func locationOrRoot(location string) string {
 	if location == "" {
 		return "/"
@@ -265,8 +212,6 @@ func (n *Node) JSONSchema() map[string]any {
 	switch {
 	case n.Items != nil:
 		schema["items"] = n.Items.JSONSchema()
-	case n.Values != nil:
-		schema["additionalProperties"] = n.Values.JSONSchema()
 	case n.Properties != nil:
 		properties := make(map[string]any, len(n.Properties))
 		for name, property := range n.Properties {
