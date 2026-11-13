@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/bedrock/v0.1.0-alpha.2...providers/bedrock/v0.1.0-alpha.3) (2026-11-13)
+
+
+### Features
+
+* **bedrock:** type and validate request metadata ([#626](https://github.com/grafana/ai-sdk/issues/626)) ([ec69af5](https://github.com/grafana/ai-sdk/commit/ec69af57a1cbb3ba281dda1786c1bb4445236519))
+
+
+### Bug Fixes
+
+* **bedrock:** honor explicit reasoning overrides ([#599](https://github.com/grafana/ai-sdk/issues/599)) ([ee6cf40](https://github.com/grafana/ai-sdk/commit/ee6cf40a1f195c2885d83f150ce093b5c51605c3))
+* **bedrock:** use instruction fallback for unknown Claude structured output ([#559](https://github.com/grafana/ai-sdk/issues/559)) ([88bd0e2](https://github.com/grafana/ai-sdk/commit/88bd0e287681bf5e7116e98e81cc8971420703ce))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/bedrock/v0.1.0-alpha.1...providers/bedrock/v0.1.0-alpha.2) (2026-10-28)
 
 

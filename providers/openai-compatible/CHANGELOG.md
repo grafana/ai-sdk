@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.2...providers/openai-compatible/v0.1.0-alpha.3) (2026-11-13)
+
+
+### Features
+
+* **ai-gateway:** configure openai-compatible structured outputs per provider ([#597](https://github.com/grafana/ai-sdk/issues/597)) ([25932dd](https://github.com/grafana/ai-sdk/commit/25932ddaeeb9764a4ab1b01a9e49b2850f02bbaf))
+* **openai-compatible:** report warnings from request transforms ([#625](https://github.com/grafana/ai-sdk/issues/625)) ([7c9e949](https://github.com/grafana/ai-sdk/commit/7c9e94965d35a35d9d8e828b2c4b4ac4a96b413a))
+* **openai-compatible:** support uploaded user-file references ([#598](https://github.com/grafana/ai-sdk/issues/598)) ([4fdb70a](https://github.com/grafana/ai-sdk/commit/4fdb70afbe91ee6044c5d75e8cea81cc0f6b5aa0))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.1...providers/openai-compatible/v0.1.0-alpha.2) (2026-10-28)
 
 
