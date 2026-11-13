@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/azure/v0.1.0-alpha.1...providers/azure/v0.1.0-alpha.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **security/unknown/providers/azure:** update module golang.org/x/crypto to v0.59.0 [security] ([#787](https://github.com/grafana/ai-sdk/issues/787)) ([498f951](https://github.com/grafana/ai-sdk/commit/498f95142a56067bb03f24fdba29c5d8345eef02))
+* **security/unknown/providers/azure:** update module golang.org/x/net to v0.62.0 [security] ([#574](https://github.com/grafana/ai-sdk/issues/574)) ([4530460](https://github.com/grafana/ai-sdk/commit/45304609e5d7eb53b20a3fb090057c6c8fc39cd8))
+
 ## 0.1.0-alpha.1 (2026-10-28)
 
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.0-alpha.4](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.3...providers/anthropic/v0.1.0-alpha.4) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* allow Anthropic container skills under a per-candidate Gateway policy ([#755](https://github.com/grafana/ai-sdk/issues/755))
+
+### Features
+
+* allow Anthropic container skills under a per-candidate Gateway policy ([#755](https://github.com/grafana/ai-sdk/issues/755)) ([7b02319](https://github.com/grafana/ai-sdk/commit/7b0231908a881ec1d7f791fd00be8a3e63c3cb96))
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+
+
+### Bug Fixes
+
+* **anthropic:** retain tool-search errors during assistant-history replay ([#560](https://github.com/grafana/ai-sdk/issues/560)) ([e55060c](https://github.com/grafana/ai-sdk/commit/e55060c7732364b08908115f465703caac13dcef))
+* **security/unknown/providers/anthropic:** update module golang.org/x/crypto to v0.59.0 [security] ([#786](https://github.com/grafana/ai-sdk/issues/786)) ([ca84a18](https://github.com/grafana/ai-sdk/commit/ca84a18aa4d33b6b613bc47b2ddbd2e07b33f2bd))
+* **security/unknown/providers/anthropic:** update module golang.org/x/net to v0.62.0 [security] ([#573](https://github.com/grafana/ai-sdk/issues/573)) ([91bfaf6](https://github.com/grafana/ai-sdk/commit/91bfaf66901e116e3a6fdf5dc5c1470ca794e74e))
+
 ## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.2...providers/anthropic/v0.1.0-alpha.3) (2026-10-28)
 
 
