@@ -99,7 +99,7 @@ func quotaWithSecret(t *testing.T, received *string) extension.Definition {
 }
 
 func TestNew_ExtensionStartup(t *testing.T) {
-	validSetting := "quota: {config: {limit: 5}, apiKeyEnv: " + extensionSecretVariable + "}"
+	validSetting := "quota: {config: {limit: 5}, secrets: {apiKey: " + extensionSecretVariable + "}}"
 	instructions := gatewayDefinition("instructions", gatewayExtension{}, func(d *extension.Definition) { d.Scope = extension.ScopeTenant })
 	for _, tc := range []struct {
 		name        string
@@ -116,12 +116,12 @@ func TestNew_ExtensionStartup(t *testing.T) {
 		{name: "mandatory tenant extension", extensions: func(*testing.T) []extension.Definition { return []extension.Definition{instructions} }, mandatory: []string{"instructions"}, message: `mandatory extension "instructions" must have operator scope`},
 		{name: "unknown mandatory extension", extensions: func(*testing.T) []extension.Definition { return nil }, mandatory: []string{"quota"}, message: `mandatory extension "quota" is not registered`},
 		{name: "mandatory unconfigured", extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, mandatory: []string{"quota"}, message: "GF_PLUGIN_EXTENSIONS.quota is mandatory"},
-		{name: "mandatory disabled", extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, mandatory: []string{"quota"}, setting: "quota: {enabled: false, apiKeyEnv: " + extensionSecretVariable + "}", message: "GF_PLUGIN_EXTENSIONS.quota is mandatory"},
-		{name: "mandatory invalid", extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, mandatory: []string{"quota"}, setting: "quota: {config: {limit: config-private}, apiKeyEnv: " + extensionSecretVariable + "}", message: "GF_PLUGIN_EXTENSIONS.quota.config does not match the extension's schema at /limit"},
+		{name: "mandatory disabled", extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, mandatory: []string{"quota"}, setting: "quota: {enabled: false, secrets: {apiKey: " + extensionSecretVariable + "}}", message: "GF_PLUGIN_EXTENSIONS.quota is mandatory"},
+		{name: "mandatory invalid", extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, mandatory: []string{"quota"}, setting: "quota: {config: {limit: config-private}, secrets: {apiKey: " + extensionSecretVariable + "}}", message: "GF_PLUGIN_EXTENSIONS.quota.config does not match the extension's schema at /limit"},
 		{name: "unknown extension", extensions: func(*testing.T) []extension.Definition { return nil }, setting: "quota: {}", message: "GF_PLUGIN_EXTENSIONS.quota is not a registered extension"},
 		{name: "tenant extension configured", extensions: func(*testing.T) []extension.Definition { return []extension.Definition{instructions} }, setting: "instructions: {}", message: "GF_PLUGIN_EXTENSIONS.instructions is a tenant extension"},
-		{name: "malformed setting", extensions: func(*testing.T) []extension.Definition { return nil }, setting: "- config-private", message: "GF_PLUGIN_EXTENSIONS must be a mapping"},
-		{name: "missing secret variable", secretReads: true, extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, setting: strings.Replace(validSetting, extensionSecretVariable, "QUOTA_UNSET", 1), message: `GF_PLUGIN_EXTENSIONS.quota.apiKeyEnv "QUOTA_UNSET" is unset or empty`},
+		{name: "malformed setting", extensions: func(*testing.T) []extension.Definition { return nil }, setting: "- config-private", message: "YAML root must be a mapping in GF_PLUGIN_EXTENSIONS"},
+		{name: "missing secret variable", secretReads: true, extensions: func(t *testing.T) []extension.Definition { return []extension.Definition{quotaWithSecret(t, nil)} }, setting: strings.Replace(validSetting, extensionSecretVariable, "QUOTA_UNSET", 1), message: `GF_PLUGIN_EXTENSIONS.quota.secrets.apiKey names "QUOTA_UNSET", which is unset or empty`},
 		{name: "factory failure", secretReads: true, extensions: func(t *testing.T) []extension.Definition {
 			failing := quotaWithSecret(t, nil)
 			failing.New = func(json.RawMessage, extension.Dependencies) (any, error) { return nil, errors.New(extensionSecret) }
@@ -283,7 +283,7 @@ func TestGateway_Extensions(t *testing.T) {
 	})
 
 	t.Run("extension secrets are redacted from failure summaries", func(t *testing.T) {
-		h, internal := newExtensionHarness(t, map[string]string{"GF_PLUGIN_EXTENSIONS": "quota: {config: {limit: 1}, apiKeyEnv: " + extensionSecretVariable + "}", extensionSecretVariable: extensionSecret}, quotaWithSecret(t, nil))
+		h, internal := newExtensionHarness(t, map[string]string{"GF_PLUGIN_EXTENSIONS": "quota: {config: {limit: 1}, secrets: {apiKey: " + extensionSecretVariable + "}}", extensionSecretVariable: extensionSecret}, quotaWithSecret(t, nil))
 		h.anthropic.failModel.Store("backend-private")
 		h.anthropic.failMessage.Store(extensionSecret)
 		status, body := do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, internal))
