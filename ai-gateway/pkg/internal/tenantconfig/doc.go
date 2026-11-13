@@ -15,7 +15,6 @@
 // no longer implements an extension never strands its stored resources.
 //
 // Refusals name field paths, the type, its member and locations within the
-// member. They
-// never contain configuration values, undeclared keys or the schema
-// validator's message.
+// member. They never contain configuration values, undeclared keys or the
+// schema validator's message.
 package tenantconfig
