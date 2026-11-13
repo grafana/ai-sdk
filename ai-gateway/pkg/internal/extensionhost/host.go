@@ -375,9 +375,9 @@ func candidates(expected []execution.ExpectedAttempt) []extension.Candidate {
 	return planned
 }
 
-// Close stops reading tenant configuration and accepting observations, waits
-// for reads and observations in flight, and closes every instance
-// concurrently, until ctx ends. Observations still running when ctx ends are
+// Close stops reading tenant configuration and waits for reads in flight,
+// then stops accepting observations and waits for those in flight, then
+// closes every instance concurrently, all until ctx ends. Observations still running when ctx ends are
 // counted as dropped; closes still running then are abandoned. Close
 // failures are counted and logged. Later calls have no effect.
 func (h *Host) Close(ctx context.Context) {
