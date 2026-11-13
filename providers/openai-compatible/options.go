@@ -133,3 +133,9 @@ type OpenAIOptions struct {
 
 // ProviderKey returns the provider option namespace.
 func (OpenAIOptions) ProviderKey() string { return "openaiCompatible" }
+
+// WithChatCompletionMetadata retains refusal and logprobs in the resolved provider
+// metadata namespace, accumulated at stream finish. It does not alter request options.
+func WithChatCompletionMetadata() Option {
+	return func(m *model) { m.preserveChatCompletionMetadata = true }
+}
