@@ -26,7 +26,6 @@ const (
 type pipeline struct {
 	provider.LanguageModel
 	host       *Host
-	lists      *lists
 	source     extension.Source
 	requested  string
 	canonical  string
@@ -56,16 +55,27 @@ const (
 	verdictFailClosed
 )
 
-func (p *pipeline) newCall(ctx context.Context) *call {
+// newCall resolves the extensions that apply to a call from its namespace
+// configuration. It fails only when the call ends before the namespace's
+// first read completes, or after shutdown has begun.
+func (p *pipeline) newCall(ctx context.Context) (*call, error) {
 	base := p.host.requestInfo(ctx)
+	applicable, err := p.host.resolve(ctx, base.Namespace, p.source.Keys())
+	if errors.Is(err, errTenantsClosed) {
+		return nil, extension.ErrUnavailable
+	}
+	if err != nil {
+		return nil, err
+	}
 	base.Keys, base.Source, base.RequestedModel, base.CanonicalModel = p.source.Keys(), p.source, p.requested, p.canonical
-	views := make([]*extension.Call, len(p.lists.byName))
+	views := make([]*extension.Call, len(applicable.byName))
 	for i := range views {
 		view := base
 		view.Candidates = slices.Clone(p.candidates)
+		view.Config = applicable.configs[i]
 		views[i] = &view
 	}
-	return &call{host: p.host, lists: p.lists, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}
+	return &call{host: p.host, lists: applicable, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}, nil
 }
 
 // run runs one phase of the extension at position i and applies its outcome:
@@ -104,6 +114,9 @@ func verdictErr(result verdict) error {
 // request runs admit, the request transforms with the host policy check, and
 // request inspection, and returns the parameters the model receives.
 func (c *call) request(ctx context.Context, options provider.CallOptions) (provider.CallOptions, error) {
+	if len(c.lists.unavailable) != 0 {
+		return provider.CallOptions{}, extension.ErrUnavailable
+	}
 	for i, built := range c.lists.byName {
 		if built.admitter == nil {
 			continue
@@ -245,7 +258,13 @@ func invoked[T any](ctx context.Context, c *call, invoke func() (T, error)) (T, 
 }
 
 func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
-	c := p.newCall(ctx)
+	c, err := p.newCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.lists.empty() {
+		return p.LanguageModel.DoGenerate(ctx, options)
+	}
 	params, err := c.request(ctx, options)
 	if err != nil {
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, err)
@@ -256,7 +275,7 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, modelError(err))
 		return result, err
 	}
-	if !p.lists.checksOutput() {
+	if !c.lists.checksOutput() {
 		return result, nil
 	}
 	history, _ := execution.RebuildToolHistory(options.Prompt)
@@ -264,7 +283,7 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		c.settle(ctx, extension.OutcomeInvalidOutput, result.Usage)
 		return result, nil
 	}
-	if p.lists.responseInspector {
+	if c.lists.responseInspector {
 		for _, part := range normalizeResult(result) {
 			if err := c.inspect(ctx, part); err != nil {
 				c.finish(ctx, outcomeOf(ctx, err), result.Usage, ctx.Err())
@@ -288,13 +307,19 @@ func (c *call) settle(ctx context.Context, outcome extension.Outcome, usage prov
 }
 
 func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-	c := p.newCall(ctx)
+	c, err := p.newCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.lists.empty() {
+		return p.LanguageModel.DoStream(ctx, options)
+	}
 	params, err := c.request(ctx, options)
 	if err != nil {
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, err)
 		return nil, err
 	}
-	if !p.lists.checksOutput() {
+	if !c.lists.checksOutput() {
 		return p.LanguageModel.DoStream(ctx, params)
 	}
 	modelContext, cancel := context.WithCancel(ctx)
@@ -341,7 +366,7 @@ loop:
 			if !invalid && validator.Check(part) != nil {
 				invalid = true
 			}
-			if normalized, inspected := normalizePart(part); inspected && !invalid && p.lists.responseInspector {
+			if normalized, inspected := normalizePart(part); inspected && !invalid && c.lists.responseInspector {
 				if err := c.inspect(ctx, normalized); err != nil {
 					outcome = outcomeOf(ctx, err)
 					cancel()

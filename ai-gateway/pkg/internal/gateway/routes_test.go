@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,7 @@ import (
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
 	"github.com/grafana/grafana-app-sdk/app"
+	"github.com/grafana/grafana-app-sdk/k8s"
 	"github.com/grafana/grafana-app-sdk/plugin/appadapter"
 	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,6 +35,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -177,6 +180,36 @@ type harness struct {
 	registry  *prometheus.Registry
 	logs      *syncBuffer
 	anthropic *fakeAnthropic
+	exchanges *exchangeLog
+}
+
+// exchangeLog records the platform token exchanges the plugin makes for its
+// own API access.
+type exchangeLog struct {
+	mu       sync.Mutex
+	subjects []string
+}
+
+func (e *exchangeLog) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err == nil {
+			var request authn.TokenExchangeRequest
+			if json.Unmarshal(body, &request) == nil {
+				e.mu.Lock()
+				e.subjects = append(e.subjects, request.SubjectToken)
+				e.mu.Unlock()
+			}
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (e *exchangeLog) recorded() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.subjects...)
 }
 
 func lookup(values map[string]string) func(string) (string, bool) {
@@ -193,6 +226,9 @@ type harnessOptions struct {
 	tenantTypes   []tenanttype.Type
 	env           map[string]string
 	host          *platformhost.Host
+	// noAPIAccess builds the app without the host's API access
+	// configuration, as a self-hosted Grafana that gives the plugin none.
+	noAPIAccess bool
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -228,20 +264,33 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	registry := prometheus.NewRegistry()
 	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions, TenantTypes: options.tenantTypes})
 	require.NoError(t, err)
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	exchanges := &exchangeLog{}
+	var kubeConfig rest.Config
+	if !options.noAPIAccess {
+		configured, err := k8s.NewTokenExchangeRestConfig(
+			k8s.TokenExchangeCredentials{Token: host.AddAccessPolicy(PluginID), TokenExchangeURL: server.URL + "/platformhost/exchange"},
+			k8s.RemoteServiceTarget{Host: server.URL, Audiences: []string{manifestdata.LocalManifest().ManifestData.Group}},
+		)
+		require.NoError(t, err)
+		kubeConfig = *configured
+	}
 	provider := gw.Provider()
-	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
+	built, err := provider.NewApp(app.Config{KubeConfig: kubeConfig, ManifestData: *provider.Manifest().ManifestData})
 	require.NoError(t, err)
 	opts := appadapter.ServeOpts(built)
 	opts.Authenticator, opts.PluginID = gw.Authenticator(), PluginID
 	served, err := host.ServeInProcess(opts)
 	require.NoError(t, err)
-	server := httptest.NewServer(served.Handler())
+	mux.Handle("POST /platformhost/exchange", exchanges.wrap(host.TokenExchangeHandler()))
+	mux.Handle("/", served.Handler())
 	t.Cleanup(func() {
 		server.Close()
 		served.Close()
 		gw.Close()
 	})
-	return &harness{host: host, served: served, server: server, gateway: gw, registry: registry, logs: logs, anthropic: anthropic}
+	return &harness{host: host, served: served, server: server, gateway: gw, registry: registry, logs: logs, anthropic: anthropic, exchanges: exchanges}
 }
 
 func (h *harness) url(route string) string {

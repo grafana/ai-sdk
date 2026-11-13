@@ -125,12 +125,17 @@ func skip(definition *extension.Definition) { definition.FailurePolicy = extensi
 func tenant(definition *extension.Definition) { definition.Scope = extension.ScopeTenant }
 
 // typesOf returns the public tenant types the tenant-scope definitions bind
-// to.
+// to. A type with a schema gets the empty example, which its schema must
+// accept.
 func typesOf(definitions []extension.Definition) []tenanttype.Type {
 	var types []tenanttype.Type
 	for _, definition := range definitions {
 		if definition.Scope == extension.ScopeTenant {
-			types = append(types, tenanttype.Type{Name: definition.Name, ConfigSchema: definition.ConfigSchema, EnabledByDefault: definition.EnabledByDefault})
+			tenantType := tenanttype.Type{Name: definition.Name, ConfigSchema: definition.ConfigSchema, EnabledByDefault: definition.EnabledByDefault}
+			if definition.ConfigSchema.JSON() != nil {
+				tenantType.Example = json.RawMessage(`{}`)
+			}
+			types = append(types, tenantType)
 		}
 	}
 	return types
@@ -145,12 +150,18 @@ type harness struct {
 
 func newHarness(t *testing.T, definitions ...extension.Definition) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil, definitions...)
+}
+
+// newHarnessWith is newHarness with adjust applied to the host configuration.
+func newHarnessWith(t *testing.T, adjust func(*Config), definitions ...extension.Definition) *harness {
+	t.Helper()
 	require.NoError(t, ValidateDefinitions(definitions, nil, typesOf(definitions)))
 	plan, err := NewPlan(definitions, nil, nil)
 	require.NoError(t, err)
 	registry := prometheus.NewRegistry()
 	logs := &lockedWriter{buffer: &bytes.Buffer{}}
-	host, err := New(Config{
+	config := Config{
 		Plan:       plan,
 		Logger:     slog.New(slog.NewJSONHandler(logs, nil)),
 		Registerer: registry,
@@ -159,7 +170,11 @@ func newHarness(t *testing.T, definitions ...extension.Definition) *harness {
 			return extension.Call{Namespace: "stacks-1", Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1"}
 		},
 		DrainTimeout: 50 * time.Millisecond,
-	})
+	}
+	if adjust != nil {
+		adjust(&config)
+	}
+	host, err := New(config)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)

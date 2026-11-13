@@ -14,6 +14,12 @@
 // whatever the stored type, with the member kept or removed, so a build that
 // no longer implements an extension never strands its stored resources.
 //
+// Reader lists a namespace's resources through the host's API access
+// configuration, as the plugin, and decodes each with DecodeSpec. Without
+// API access, [WithoutAPIAccess] replaces [Validator] and refuses every
+// create and update, because the Gateway could not apply what it would
+// store.
+//
 // Refusals name field paths, the type, its member and locations within the
 // member. They never contain configuration values, undeclared keys or the
 // schema validator's message.

@@ -120,3 +120,20 @@ func decode(object resource.Object) (Spec, string, error) {
 }
 
 func badRequest(message string) error { return apierrors.NewBadRequest(message) }
+
+// noAPIAccessReason is the refusal of every write on a Gateway that cannot
+// read what it would store.
+const noAPIAccessReason = "middleware: this Gateway cannot read Middleware resources on this host, so stored configuration would not be applied"
+
+// WithoutAPIAccess is the Middleware admission validator of a Gateway the
+// host gives no API access. It refuses every create and update, because
+// stored configuration would not be applied. Other actions are accepted.
+type WithoutAPIAccess struct{}
+
+// Validate refuses creates and updates.
+func (WithoutAPIAccess) Validate(_ context.Context, request *app.AdmissionRequest) error {
+	if request.Action != resource.AdmissionActionCreate && request.Action != resource.AdmissionActionUpdate {
+		return nil
+	}
+	return badRequest(noAPIAccessReason)
+}

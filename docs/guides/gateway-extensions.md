@@ -196,9 +196,17 @@ spec:
         teams: [platform]
 ```
 
-The Gateway doesn't apply stored resources yet. Until it does, a tenant
-extension runs everywhere it applies when it is enabled by default, with an
-empty configuration, whatever its namespace stores.
+Each call's tenant extensions follow its namespace's resources:
+
+| Namespace stores | The extension |
+|---|---|
+| No resource | Uses its default: on with `{}` when `EnabledByDefault`, off otherwise |
+| `enabled: false` | Is off |
+| `enabled: true` with a valid member | Runs with that member as its configuration |
+| A member its schema no longer accepts, a missing or foreign member, or a failing `Decode` | Applies its failure policy, logged and counted |
+| An enabled resource for a type this build doesn't implement | Is skipped, logged once per namespace and type, and counted |
+
+The rules for writing resources:
 
 - `metadata.name` must equal `spec.type`, so a namespace holds one resource per
   extension. `enabled` is required.
@@ -212,9 +220,9 @@ empty configuration, whatever its namespace stores.
   unknown fields. The Gateway then checks it against the type's full schema,
   including enums, patterns and bounds, and limits it to 64 KiB. Refusals name
   the field and the failing location, never a value.
-- An update that sets `enabled: false` and keeps or removes the member is
-  always accepted, even after a rollback to a build without the extension.
-  After a rollback to a release whose manifest no longer declares the member,
+- When the plugin has API access, an update that sets `enabled: false` and
+  keeps or removes the member is always accepted, even after a rollback to a
+  build without the extension. After a rollback to a release whose manifest no longer declares the member,
   Grafana refuses writes that still carry it, so remove the member when you
   disable the resource. Any other change to a resource whose extension isn't
   implemented is refused.
@@ -238,8 +246,12 @@ extensions.
 definition := modelAccessType.Bind(tenanttype.Implementation{
 	FailurePolicy: extension.FailSkip,
 	New:           newModelAccess,
+	Decode:        decodeModelAccess,
 })
 ```
+
+`newModelAccess` builds the one instance, and `decodeModelAccess` parses a
+namespace's stored member into the value its calls receive in `call.Config`.
 
 Startup fails when a tenant-scope definition has no public type, or differs
 from its type in schema or default. To add a type:
@@ -250,8 +262,9 @@ from its type in schema or default. To add a type:
    `additionalProperties: false`. Typed maps, `$ref` and combinators such as
    `oneOf` aren't supported. A `minimum` or `maximum` on an integer field
    must be within ±(2^53−1), the safe integers of a JavaScript `number`; as
-   upstream, integers beyond that range aren't compared exactly. The
-   registry's tests check these rules.
+   upstream, integers beyond that range aren't compared exactly. A type
+   enabled by default runs with `{}` in namespaces without a resource, so its
+   schema must accept it. The registry's tests check these rules.
 2. Add its member to `ai-gateway/kinds/middleware_members.cue` by hand, named
    after the type in lowerCamel case. Mirror the schema's structure: the same
    properties, JSON types, array items, required fields and descriptions,
@@ -270,11 +283,66 @@ Prefer operator scope for private extensions. Use a tenant type only when
 tenants need to configure the extension, and remember that its schema becomes
 part of the public manifest.
 
+### How stored configuration takes effect
+
+The Gateway reads a namespace's resources as the plugin itself, never as the
+caller, so callers need no access to `Middleware` resources. It reads only for
+calls that a tenant extension applies to, and caches each namespace:
+
+- A namespace's first call waits for its read, which is bounded at 5 seconds.
+  Concurrent first calls share one read.
+- After one minute, calls keep using the cached configuration while one
+  refresh runs in the background. A change therefore applies within about a
+  minute of the namespace's next call.
+- Each Gateway replica caches on its own, so replicas can disagree for up to
+  that window.
+- A failed read is never treated as "no resources". The last configuration
+  read successfully keeps applying for up to 10 minutes, and failed reads are
+  retried every 30 seconds. After that, or when the first read fails, every
+  tenant extension in the namespace applies its failure policy: `skip`
+  extensions are off and `fail-closed` ones refuse calls with the unavailable
+  error. The Gateway never falls back to the more permissive default.
+
+Prefer `skip` for tenant extensions. A `fail-closed` tenant extension turns an
+outage of Grafana's API into refused calls in every namespace it applies to.
+A gate that must always run is a mandatory operator extension instead.
+
+The plugin needs API access from Grafana to read resources. On a self-hosted
+Grafana that gives it none, tenant extensions run with their defaults in every
+namespace, the Gateway logs this once at startup, and it refuses every
+`Middleware` create and update with a `400` that says stored configuration
+would not be applied. Deletes still work.
+
+### Write tenant extensions
+
+- A tenant extension has one instance per process, like an operator one. Its
+  factory runs once at startup with an empty configuration, and its `Close`
+  runs once at shutdown.
+- Each call carries the namespace's configuration in `call.Config`. Without
+  `Decode`, it is the member as stored, a `json.RawMessage`. Set `Decode` on
+  the implementation to parse it once, into the type your phases
+  type-assert: the Gateway decodes each namespace's member once per change,
+  never per call. A decoding error applies the failure policy in that
+  namespace. For a type enabled by default, `Decode` also runs once at startup
+  on `{}`, and its failure fails startup. A type without a configuration
+  schema gets `nil`.
+- The decoded value is shared by every call in the namespace. Treat it as
+  read-only, and keep per-call data in `call.State`.
+- Tenant extensions see the same request information as operator extensions,
+  including the caller's identity, and the provider instances and provider
+  models of operator-catalog candidates and attempts.
+
 ## Observe extensions
 
 Logs and model metrics record a denial as the outcome `denied`, not as an
 error, so error rates exclude it. `grafana_ai_gateway_extension_events_total`
-counts denials and failures by extension, phase and event. Extension instances
+counts denials and failures by extension, phase and event, including phase
+`configure` for a namespace configuration its extension refuses.
+`grafana_ai_gateway_tenant_config_reads_total` counts namespace reads by
+`result` (`success` or `failed`), and
+`grafana_ai_gateway_tenant_config_unimplemented_types_total` counts enabled
+resources of types the build doesn't implement. Read failures are logged with
+the namespace and a fixed class, such as `refused` or `timeout`. Extension instances
 that implement `Close` are closed within the Gateway's final one-second flush,
 after in-flight observations finish.
 

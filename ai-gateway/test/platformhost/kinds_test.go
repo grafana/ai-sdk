@@ -204,3 +204,73 @@ func TestKindStore_RefusesWritesToAChangedObject(t *testing.T) {
 	delete(store.objects, key)
 	assert.False(t, store.unchanged(key, reviewed))
 }
+
+func TestHost_ListsManifestKinds(t *testing.T) {
+	host, server, token := newKindHost(t, &stubAdmission{})
+	for _, name := range []string{"b", "a"} {
+		code, created := sendWidget(t, http.MethodPost, widgetURL(server, ""), token, `{"metadata":{"name":"`+name+`"},"spec":{"size":7}}`)
+		require.Equal(t, http.StatusCreated, code, created)
+	}
+
+	request, err := http.NewRequest(http.MethodGet, widgetURL(server, ""), nil)
+	require.NoError(t, err)
+	request.Header.Set("X-Access-Token", token)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	var list struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+		Items      []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Spec json.RawMessage `json:"spec"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&list))
+	assert.Equal(t, testGroup+"/"+testVersion, list.APIVersion)
+	assert.Equal(t, "WidgetList", list.Kind)
+	require.Len(t, list.Items, 2)
+	assert.Equal(t, "a", list.Items[0].Metadata.Name)
+	assert.Equal(t, "b", list.Items[1].Metadata.Name)
+	assert.JSONEq(t, `{"size":7}`, string(list.Items[0].Spec))
+
+	wildcard, err := host.ServiceToken("svc", "*")
+	require.NoError(t, err)
+	other := strings.Replace(widgetURL(server, ""), testNamespace, "stacks-2", 1)
+	code, empty := sendWidget(t, http.MethodGet, other, wildcard, "")
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, []any{}, empty["items"])
+	refused, err := http.NewRequest(http.MethodGet, other, nil)
+	require.NoError(t, err)
+	refused.Header.Set("X-Access-Token", token)
+	forbidden, err := http.DefaultClient.Do(refused)
+	require.NoError(t, err)
+	_ = forbidden.Body.Close()
+	assert.Equal(t, http.StatusForbidden, forbidden.StatusCode)
+}
+
+func TestHost_AcceptsTheAccessTokenRepeatedAsBearer(t *testing.T) {
+	_, server, token := newKindHost(t, &stubAdmission{})
+	for _, tc := range []struct {
+		name          string
+		authorization string
+		expected      int
+	}{
+		{name: "same token", authorization: "Bearer " + token, expected: http.StatusOK},
+		{name: "different token", authorization: "Bearer other", expected: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodGet, widgetURL(server, ""), nil)
+			require.NoError(t, err)
+			request.Header.Set("X-Access-Token", token)
+			request.Header.Set("Authorization", tc.authorization)
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			_ = response.Body.Close()
+			assert.Equal(t, tc.expected, response.StatusCode)
+		})
+	}
+}
