@@ -39,8 +39,12 @@ The public tenant type `default-settings` SHALL be off by default. Its member `d
 - **THEN** the write SHALL be refused and nothing SHALL be stored
 
 #### Scenario: Invalid values
-- **WHEN** the member sets `maxOutputTokens: 0`, a fraction for an integer field, an integer outside ±(2^53−1), a number beyond the float64 range, or no field at all
+- **WHEN** the member sets `maxOutputTokens: 0`, a fraction for an integer field, an integer outside ±(2^53−1), or no field at all
 - **THEN** the write SHALL be refused naming the member and, for a field, its location
+
+#### Scenario: Number beyond the float64 range
+- **WHEN** the member sets a number beyond the float64 range, such as `1e400`
+- **THEN** the write SHALL be refused, by Grafana or admission, and nothing SHALL be stored
 
 ### Requirement: Default settings applied
 When enabled, `default-settings` SHALL set each configured field only when the call leaves it unset, so the call's own value, including `0` and an empty stop sequence list, takes precedence. It SHALL NOT change the prompt, headers, provider options, tools, tool choice, response format or reasoning.

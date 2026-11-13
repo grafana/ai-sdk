@@ -85,8 +85,8 @@ spec:
 
 | Setting | JSON type | Accepted values |
 | --- | --- | --- |
-| `temperature`, `topP` | number | any |
-| `presencePenalty`, `frequencyPenalty` | number | any |
+| `temperature`, `topP` | number | any finite number |
+| `presencePenalty`, `frequencyPenalty` | number | any finite number |
 | `topK`, `seed` | integer | ±9007199254740991 (2^53−1) |
 | `maxOutputTokens` | integer | 1 to 9007199254740991 |
 | `stopSequences` | list of strings | any |

@@ -76,7 +76,7 @@
 ```
 
 - Example: `{"messages":[{"content":"You are an assistant for this Grafana stack. Answer concisely."}]}`.
-- Shape: upstream accepts a string, a system message or a list of them (`Instructions`). The projection can't express a union, so the member uses the list form with `content` only. Multiple messages keep upstream's ordering. Fields can be added later, optionally, as the additive evolution rule allows.
+- Shape: upstream accepts a string, a system message or a list of them (`Instructions`). The manifest member can't express a union, so the member uses the list form with `content` only. Multiple messages keep upstream's ordering. Fields can be added later, optionally, as the additive evolution rule allows.
 - No `providerOptions` per message. Upstream keeps them, but tenants mustn't set provider options on calls with operator-owned keys.
 
 ### Type: `default-settings`
@@ -107,31 +107,7 @@
 | Dropped into admission | `minItems`, `minLength` | `minimum`, `maximum`, `minProperties` |
 | Example accepted by the member | only declared fields | only declared fields |
 
-Hand-written members:
-
-```cue
-middlewareMembers: {
-	// Default system messages for calls that have none.
-	defaultInstructions?: {
-		// System messages prepended, in order, ...
-		messages: [...{
-			// The system message text.
-			content: string
-		}]
-	}
-	// Default sampling and limit settings for calls that leave them unset.
-	defaultSettings?: {
-		frequencyPenalty?: number
-		maxOutputTokens?:  int
-		presencePenalty?:  number
-		seed?:             int
-		stopSequences?: [...string]
-		temperature?: number
-		topK?:        int
-		topP?:        number
-	}
-}
-```
+The hand-written members are in `ai-gateway/kinds/middleware_members.cue`: `defaultInstructions` with `messages: [...{content: string}]`, and `defaultSettings` with the eight optional fields, each with its schema description.
 
 Undeclared keys, including `headers`, `providerOptions`, `tools`, `toolChoice`, `responseFormat` and `reasoning`, are refused twice: by Grafana's validation of the closed member, and by admission's full schema.
 
@@ -232,7 +208,7 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 |---|---|
 | End to end: create, call and see it applied, then disable and see it removed | **CI e2e:** the runtime-effect test. **Go:** a gateway test through the test host with the shipped definitions. Namespace `a` enables both, `b` disables instructions and deletes settings after creating them, and `c` stores nothing. Each catalog call's fake-Anthropic body shows the system blocks and `temperature`, `max_tokens` and `stop_sequences` for `a` only. Transitions within one namespace are covered by #765's `synctest` pipeline tests. |
 | A client system message suppresses `default-instructions` | **Unit (`calldefaults`):** a system message first, a system message later, none (prepends both, in order), unary and stream; the input prompt isn't mutated. **Gateway:** a call with a system message reaches the fake with only its own system block. |
-| The `default-settings` schema refuses headers, provider options, tools, tool choice and response format | **`tenantconfig` admission table with the shipped definitions:** each of those, plus `reasoning`, an unknown key, a wrong type, `maxOutputTokens: 0`, `1.5` for `topK`, `seed: 9007199254740992`, `{}`, and for instructions an empty list, an empty content and an extra key. Each refusal names the location and holds no sentinel. Boundary values are accepted: `seed` at ±(2^53−1), `maxOutputTokens: 1`. **Manifest test:** the projected properties are exactly the eight fields. **CI e2e:** `headers` refused by Grafana. |
+| The `default-settings` schema refuses headers, provider options, tools, tool choice and response format | **`tenantconfig` admission table with the shipped definitions:** each of those, plus `reasoning`, an unknown key, a wrong type, `maxOutputTokens: 0`, `1.5` for `topK`, `seed: 9007199254740992`, `{}`, and for instructions an empty list, an empty content and an extra key. Each refusal names the location and holds no sentinel. Boundary values are accepted: `seed` at ±(2^53−1), `maxOutputTokens: 1`. **Manifest test:** the manifest member's properties are exactly the eight fields. **CI e2e:** `headers` refused by Grafana. |
 | Both apply to operator-owned and customer-owned calls | **Pipeline test (`extensionhost` or `service`)** with the shipped definitions and a fake reader that enables both: an operator-catalog call and a request-BYOK call, unary and stream, each reaching the model with the defaults. **Definition test:** nil `Keys`, a `Decode`, failure policy `skip`, tenant scope. Stack catalogs need #757. |
 | Settings precedence (parity rows 1–5, 14) | **Unit tests** ported from upstream's `temperature` and "other settings" cases: a call's `0`, `stopSequences: []`, unset fields, and headers, provider options, tools, tool choice and response format unchanged. A later `append` to the stop sequences doesn't change another call's defaults. |
 | Registry and binding | **`tenanttype`:** `All()` returns both types in name order; each example passes its schema, and the members are `defaultInstructions` and `defaultSettings`. **The `manifestdata` member-mirror test** covers both members. **`pkg/gateway`:** `DefaultExtensions()` passes `ValidateDefinitions` against `tenanttype.All()`. |

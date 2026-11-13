@@ -25,7 +25,7 @@
 - [x] 4.1 `tests/fake-anthropic.mjs`: a unary call whose last user text is `e2e-echo-request` gets back the JSON of `system`, `temperature`, `max_tokens` and `stop_sequences`. Every other call keeps the fixed text. Update the file comment.
 - [x] 4.2 `tests/middleware.spec.ts`: the serial shipped-types block from design.md's end-to-end plan, covering:
   - the folder and folderless saves;
-  - the round-trip, including the raw `seed` text;
+  - the round-trip, with `seed` at `Number.MAX_SAFE_INTEGER`, read back deep-equal;
   - Grafana refusals with sentinels, including `headers`;
   - the admission refusals with their locations;
   - a valid update, a disable-only update and a delete;
