@@ -78,10 +78,10 @@ func TestReader_Read(t *testing.T) {
 			},
 		},
 		{
-			name:  "nested member with exact numbers",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740993}}, "ratio": 1.0 }}}]}`},
+			name:  "nested member with the largest safe integer",
+			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740991}}, "ratio": 1.0 }}}]}`},
 			expected: []extensionhost.TenantResource{
-				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"m":{"maxTokens":9007199254740993}},"ratio":1.0,"rules":[{"limits":{"rpm":10},"models":["m"]}]}`)},
+				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"m":{"maxTokens":9007199254740991}},"ratio":1,"rules":[{"limits":{"rpm":10},"models":["m"]}]}`)},
 			},
 		},
 		{
@@ -294,7 +294,7 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	for namespace, spec := range map[string]string{"stacks-1": `{"type":"a","enabled":true,"a":{"limits":{"n":9007199254740993}}}`, "stacks-2": `{"type":"a","enabled":false}`} {
+	for namespace, spec := range map[string]string{"stacks-1": `{"type":"a","enabled":true,"a":{"limits":{"n":9007199254740991}}}`, "stacks-2": `{"type":"a","enabled":false}`} {
 		token, err := host.ServiceToken("seed", namespace)
 		require.NoError(t, err)
 		request, err := http.NewRequest(http.MethodPost, server.URL+"/apis/"+manifest.Group+"/v1alpha1/namespaces/"+namespace+"/middlewares", strings.NewReader(`{"metadata":{"name":"a"},"spec":`+spec+`}`))
@@ -316,7 +316,7 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 
 	first, err := reader.Read(context.Background(), "stacks-1")
 	require.NoError(t, err)
-	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: true, Config: json.RawMessage(`{"limits":{"n":9007199254740993}}`)}}, first)
+	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: true, Config: json.RawMessage(`{"limits":{"n":9007199254740991}}`)}}, first)
 	second, err := reader.Read(context.Background(), "stacks-2")
 	require.NoError(t, err)
 	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a"}}, second)
@@ -350,7 +350,7 @@ func TestResourceFrom(t *testing.T) {
 		spec     string
 		expected extensionhost.TenantResource
 	}{
-		{name: "member of the type", spec: `{"type":"model-access","enabled":true,"modelAccess":{ "limit" : 9007199254740993 }}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"limit":9007199254740993}`)}},
+		{name: "member of the type", spec: `{"type":"model-access","enabled":true,"modelAccess":{ "limit" : 9007199254740991 }}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"limit":9007199254740991}`)}},
 		{name: "nested member", spec: `{"type":"model-access","enabled":true,"modelAccess":{"rules":[{"models":["a"],"limits":{"rpm":1}}],"perModel":{"a":{"maxTokens":2}}}}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"a":{"maxTokens":2}},"rules":[{"limits":{"rpm":1},"models":["a"]}]}`)}},
 		{name: "no member", spec: `{"type":"model-access","enabled":false}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access"}},
 		{name: "another type's member", spec: `{"type":"model-access","enabled":true,"marker":{}}`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},

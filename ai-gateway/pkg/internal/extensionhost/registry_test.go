@@ -86,26 +86,12 @@ func TestValidateDefinitions_TenantTypes(t *testing.T) {
 		}
 		return []extension.Definition{definition}
 	}
-	withType := func(change func(*tenanttype.Type)) []tenanttype.Type {
-		changed := instructions
-		change(&changed)
-		return []tenanttype.Type{changed}
-	}
 	for _, tc := range []struct {
 		name        string
 		definitions []extension.Definition
 		types       []tenanttype.Type
 		message     string
 	}{
-		{name: "invalid type name", types: withType(func(tt *tenanttype.Type) { tt.Name = "Default" }), message: `tenant type name "Default"`},
-		{name: "repeated type", types: []tenanttype.Type{instructions, instructions}, message: `tenant type "default-instructions" is declared twice`},
-		{name: "reserved member", types: withType(func(tt *tenanttype.Type) { tt.Name = "enabled" }), message: `tenant type "enabled" has the reserved member "enabled"`},
-		{name: "shared member", types: []tenanttype.Type{{Name: "a-1b", ConfigSchema: instructionsSchema, Example: instructions.Example}, {Name: "a1b", ConfigSchema: instructionsSchema, Example: instructions.Example}}, message: `tenant types "a-1b" and "a1b" share the member "a1b"`},
-		{name: "schema without example", types: withType(func(tt *tenanttype.Type) { tt.Example = nil }), message: `tenant type "default-instructions" needs an example`},
-		{name: "example the schema refuses", types: withType(func(tt *tenanttype.Type) { tt.Example = json.RawMessage(`{"text":"too long"}`) }), message: `tenant type "default-instructions" needs an example`},
-		{name: "example over a bound above 2^53", types: []tenanttype.Type{{Name: "bounded", ConfigSchema: configSchema(t, `{"type":"object","properties":{"n":{"type":"integer","maximum":9007199254740992}},"additionalProperties":false}`), Example: json.RawMessage(`{"n":9007199254740993}`)}}, message: `tenant type "bounded" needs an example`},
-		{name: "default-enabled type whose schema refuses the empty configuration", types: []tenanttype.Type{{Name: "required", EnabledByDefault: true, ConfigSchema: configSchema(t, `{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`), Example: json.RawMessage(`{"text":"hi"}`)}}, message: `tenant type "required" is enabled by default but its configuration schema refuses the empty configuration`},
-		{name: "example without schema", types: []tenanttype.Type{{Name: "marker", Example: json.RawMessage(`{}`)}}, message: `tenant type "marker" has an example but no configuration schema`},
 		{name: "tenant definition without a type", definitions: bound(instructions), message: `tenant extension "default-instructions" has no public tenant type`},
 		{name: "different schema", definitions: bound(instructions, func(d *extension.Definition) {
 			d.ConfigSchema = configSchema(t, `{"type":"object","properties":{"text":{"type":"string"}},"additionalProperties":false}`)

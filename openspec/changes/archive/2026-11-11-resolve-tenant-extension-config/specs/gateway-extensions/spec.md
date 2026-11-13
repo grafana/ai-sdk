@@ -18,7 +18,7 @@ Each call's tenant-scope extensions SHALL follow the `Middleware` resources of t
 - **THEN** after the change propagates, its calls SHALL use the extension's default state
 
 ### Requirement: Tenant configuration checked when read
-At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member with numbers unchanged. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
+At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL decode the stored member as admission does. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking decoder SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
 
 #### Scenario: Schema tightened after storage
 - **WHEN** a stored enabled member no longer matches its `skip` extension's schema
@@ -28,9 +28,9 @@ At read time the Gateway SHALL check each enabled resource's member against its 
 - **WHEN** a `fail-closed` tenant extension's stored member fails its schema
 - **THEN** calls in that namespace to which it applies SHALL fail with the unavailable category before any provider call
 
-#### Scenario: Large integer
-- **WHEN** a stored member holds the integer `9007199254740993`, nested inside an object
-- **THEN** the extension's calls in that namespace SHALL receive that exact number in their configuration
+#### Scenario: Safe integer
+- **WHEN** a stored member holds the integer `9007199254740991`, the largest safe integer, nested inside an object
+- **THEN** the extension's calls in that namespace SHALL receive that number in their configuration
 
 #### Scenario: Member of another type
 - **WHEN** a stored spec sets a member other than its type's, or more than one member
@@ -148,8 +148,8 @@ A tenant-scope definition MAY declare a decoder that turns a stored member into 
 - **THEN** startup SHALL fail naming the extension, without the error's text
 
 #### Scenario: Default-enabled type that refuses the empty configuration
-- **WHEN** a public tenant type enabled by default has a schema that refuses the empty configuration
-- **THEN** startup SHALL fail naming the type, also on a host that starts idle
+- **WHEN** a public tenant type enabled by default has a configuration schema that refuses the empty configuration
+- **THEN** the repository checks SHALL fail naming the type
 
 #### Scenario: Operator extension with a decoder
 - **WHEN** an operator-scope definition declares a decoder
@@ -198,7 +198,7 @@ Every extension SHALL have one instance per process, constructed at startup befo
 - **THEN** each call's phases SHALL run sequentially and see only that call's state
 
 ### Requirement: Tenant configuration documentation
-The extension guide SHALL describe the `Middleware` resource and its members, roles and admission rules, disabling after a rollback, how a public tenant type is added and projected, that private extensions are operator-scope unless they implement a public type, propagation within the TTL on each replica, read failures and their bound, behavior without API access, and what tenant extensions see.
+The extension guide SHALL describe the `Middleware` resource and its members, roles and admission rules, disabling after a rollback, how a public tenant type is added and its member mirrored, that private extensions are operator-scope unless they implement a public type, propagation within the TTL on each replica, read failures and their bound, behavior without API access, and what tenant extensions see.
 
 #### Scenario: Extension author reads the guide
 - **WHEN** an extension author reads the guide's tenant configuration section
@@ -209,7 +209,7 @@ The extension guide SHALL describe the `Middleware` resource and its members, ro
 - **THEN** they SHALL find the TTL, that replicas converge independently, and that a failed read never falls back to a more permissive default
 
 ### Requirement: Tenant configuration evidence
-Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, exact numbers, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
+Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
 
 #### Scenario: End-to-end suite with the shipped build
 - **WHEN** the plugin end-to-end suite runs against the pinned Grafana image

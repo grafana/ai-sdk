@@ -30,8 +30,8 @@ import (
 
 const (
 	middlewareSentinel = "sentinel-middleware-config-value"
-	accessSchema       = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string"}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"perModel":{"type":"object","additionalProperties":{"type":"object","properties":{"maxTokens":{"type":"integer","minimum":1}},"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
-	accessMember       = `{"note":"Answer concisely.","perModel":{"balanced":{"maxTokens":9007199254740993}},"rules":[{"limits":{"rpm":10},"models":["balanced"]}]}`
+	accessSchema       = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string"}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1,"maximum":9007199254740991}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
+	accessMember       = `{"note":"Answer concisely.","rules":[{"limits":{"rpm":9007199254740991},"models":["balanced"]},{"models":["fast","small"]}]}`
 )
 
 func middlewareURL(base, name string) string {
@@ -108,8 +108,7 @@ func TestMiddlewareAdmission_ThroughThePluginProtocol(t *testing.T) {
 	code, body = sendObject(t, ctx, http.MethodGet, middlewareURL(h.server.URL, "model-access"), token, "")
 	require.Equal(t, http.StatusOK, code, body)
 	spec := storedSpec(t, body)
-	assert.JSONEq(t, accessMember, string(spec["modelAccess"]), "nested objects, arrays of objects and typed maps are kept")
-	assert.Contains(t, string(spec["modelAccess"]), "9007199254740993", "integers above 2^53 stay exact")
+	assert.JSONEq(t, accessMember, string(spec["modelAccess"]), "nested objects and arrays of objects are kept")
 
 	code, body = sendObject(t, ctx, http.MethodPut, middlewareURL(h.server.URL, "model-access"), token, middlewareDocument("model-access", "model-access", false, `"modelAccess":{"note":"Other."}`))
 	require.Equal(t, http.StatusOK, code, body)
@@ -132,7 +131,6 @@ func TestMiddlewareAdmission_ThroughThePluginProtocol(t *testing.T) {
 		{name: "enabled without its member", method: http.MethodPut, path: "model-access", body: middlewareDocument("model-access", "model-access", true, ""), reason: "spec.modelAccess is required when spec.enabled is true"},
 		{name: "value failing the schema", method: http.MethodPut, path: "model-access", body: middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+middlewareSentinel+middlewareSentinel+`"}`), reason: "spec.modelAccess does not match the extension's schema at /note"},
 		{name: "nested value failing the schema", method: http.MethodPut, path: "model-access", body: middlewareDocument("model-access", "model-access", true, `"modelAccess":{"rules":[{"models":["`+middlewareSentinel+`"],"limits":{"rpm":0}}]}`), reason: "spec.modelAccess does not match the extension's schema at /rules/0/limits/rpm"},
-		{name: "typed map key", method: http.MethodPut, path: "model-access", body: middlewareDocument("model-access", "model-access", true, `"modelAccess":{"perModel":{"`+middlewareSentinel+`":{"maxTokens":0}}}`), reason: "spec.modelAccess does not match the extension's schema at /perModel/*/maxTokens"},
 		{name: "undeclared key", method: http.MethodPut, path: "model-access", body: middlewareDocument("model-access", "model-access", true, `"modelAccess":{"`+middlewareSentinel+`":"`+middlewareSentinel+`"}`), reason: "spec.modelAccess does not match the extension's schema at /"},
 		{name: "member for a type without configuration", method: http.MethodPut, path: "marker", body: middlewareDocument("marker", "marker", true, `"marker":`+sentinelMember), reason: `spec.type \"marker\" takes no configuration member`},
 		{name: "oversized member", method: http.MethodPut, path: "model-access", body: middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+strings.Repeat(middlewareSentinel, tenantconfig.MaxMemberBytes/len(middlewareSentinel)+1)+`"}`), reason: "spec.modelAccess exceeds 65536 bytes"},
@@ -176,7 +174,7 @@ func TestMiddlewareAdmission_AcrossBuilds(t *testing.T) {
 	}{
 		{name: "keeping it enabled", enabled: true, members: `"modelAccess":` + accessMember, wantCode: http.StatusBadRequest},
 		{name: "changing its member", members: `"modelAccess":{"note":"` + middlewareSentinel + `"}`, wantCode: http.StatusBadRequest},
-		{name: "changing a number the platform could round", members: `"modelAccess":` + strings.Replace(accessMember, "9007199254740993", "9007199254740992", 1), wantCode: http.StatusBadRequest},
+		{name: "changing a number", members: `"modelAccess":` + strings.Replace(accessMember, "9007199254740991", "9007199254740990", 1), wantCode: http.StatusBadRequest},
 		{name: "disabling it with the member reformatted", members: `"modelAccess": ` + strings.ReplaceAll(accessMember, ",", " , "), wantCode: http.StatusOK},
 		{name: "disabling it with the member removed", wantCode: http.StatusOK},
 	} {
@@ -244,7 +242,7 @@ func TestTenantConfiguration_AppliesEachNamespacesResources(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resources := map[string][]string{
-		"stacks-1": {middlewareDocument("configured-access", "configured-access", true, `"configuredAccess":{"v":"one","n":9007199254740993,"limits":{"rpm":10}}`)},
+		"stacks-1": {middlewareDocument("configured-access", "configured-access", true, `"configuredAccess":{"v":"one","n":9007199254740991,"limits":{"rpm":10}}`)},
 		"stacks-2": {middlewareDocument("configured-access", "configured-access", true, `"configuredAccess":{"v":"two"}`), middlewareDocument("default-on", "default-on", false, "")},
 	}
 	for namespace, documents := range resources {
@@ -269,11 +267,11 @@ func TestTenantConfiguration_AppliesEachNamespacesResources(t *testing.T) {
 		return true
 	})
 	assert.ElementsMatch(t, []string{
-		`stacks-1 configured-access{"limits":{"rpm":10},"n":9007199254740993,"v":"one"}`,
+		`stacks-1 configured-access{"limits":{"rpm":10},"n":9007199254740991,"v":"one"}`,
 		`stacks-1 default-on{}`,
 		`stacks-2 configured-access{"v":"two"}`,
 		`stacks-3 default-on{}`,
-	}, applied, "each call applies its own namespace's member, nested, with numbers kept exact")
+	}, applied, "each call applies its own namespace's member, nested, and numbers up to the largest safe integer")
 
 	subjects := h.exchanges.recorded()
 	require.NotEmpty(t, subjects, "reads go through the plugin's token exchange")

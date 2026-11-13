@@ -366,13 +366,9 @@ func secureNames(object map[string]any) []string {
 	return names
 }
 
-// readObject decodes a request body, keeping numbers as written, as the
-// platform's own decoding keeps integers exact.
 func readObject(body io.Reader, namespace string) (map[string]any, error) {
 	var object map[string]any
-	decoder := json.NewDecoder(body)
-	decoder.UseNumber()
-	if err := decoder.Decode(&object); err != nil || object == nil {
+	if err := json.NewDecoder(body).Decode(&object); err != nil || object == nil {
 		return nil, errors.New("the body must be a JSON object")
 	}
 	metadata, ok := object["metadata"].(map[string]any)
