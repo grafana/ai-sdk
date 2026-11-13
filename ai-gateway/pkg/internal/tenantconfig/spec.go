@@ -35,14 +35,14 @@ type Spec struct {
 	Type    string
 	Enabled bool
 	// Members holds every spec field other than type and enabled, keyed by
-	// name, each in canonical JSON: compact, with object keys sorted, numbers
-	// as written and no HTML escaping. Equal configurations encode equally.
+	// name, each in canonical JSON: compact, with object keys sorted and no
+	// HTML escaping. Equal configurations encode equally.
 	Members map[string]json.RawMessage
 }
 
-// DecodeSpec decodes a Middleware spec without decoding its members into Go
-// types, so numbers keep their exact value. Errors never contain spec
-// content.
+// DecodeSpec decodes a Middleware spec without decoding its members into the
+// generated Go types, so it sees members of any type. Errors never contain
+// spec content.
 func DecodeSpec(raw json.RawMessage) (Spec, error) {
 	fields, err := decodeObject(raw)
 	if err != nil {
@@ -102,10 +102,8 @@ func decodeObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 }
 
 func canonical(raw json.RawMessage) (json.RawMessage, error) {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
 	var value any
-	if err := decoder.Decode(&value); err != nil {
+	if err := json.Unmarshal(raw, &value); err != nil {
 		return nil, err
 	}
 	var encoded bytes.Buffer

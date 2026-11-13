@@ -23,18 +23,6 @@
             "description": "Whether rules allow or deny.\nApplies to every rule.",
             "type": "string"
           },
-          "perModel": {
-            "additionalProperties": {
-              "additionalProperties": false,
-              "properties": {
-                "maxTokens": {
-                  "type": "integer"
-                }
-              },
-              "type": "object"
-            },
-            "type": "object"
-          },
           "rules": {
             "items": {
               "additionalProperties": false,

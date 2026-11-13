@@ -28,23 +28,21 @@ const modelAccessSchema = `{
 				"properties": {
 					"models": {"type": "array", "items": {"type": "string", "pattern": "^[a-z]+$"}},
 					"teams": {"type": "array", "items": {"type": "string"}},
-					"limits": {"$ref": "#/$defs/limits"}
+					"limits": {"type": "object", "properties": {"rpm": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}}, "additionalProperties": false}
 				},
 				"required": ["models", "teams"],
 				"additionalProperties": false
 			}
 		},
-		"perModel": {"type": "object", "additionalProperties": {"type": "object", "properties": {"maxTokens": {"type": "integer", "minimum": 1}}, "additionalProperties": false}},
 		"mode": {"type": "string", "enum": ["allow", "deny"], "default": "allow", "description": "Whether rules allow or deny.\nApplies to every rule."},
 		"temperature": {"type": "number", "maximum": 2},
 		"strict": {"type": "boolean"}
 	},
 	"required": ["rules"],
-	"additionalProperties": false,
-	"$defs": {"limits": {"type": "object", "properties": {"rpm": {"type": "integer"}}, "additionalProperties": false}}
+	"additionalProperties": false
 }`
 
-const modelAccessExample = `{"rules":[{"models":["balanced"],"teams":["platform"],"limits":{"rpm":10}}],"perModel":{"balanced":{"maxTokens":9007199254740993}},"mode":"deny","temperature":0.5,"strict":true}`
+const modelAccessExample = `{"rules":[{"models":["balanced"],"teams":["platform"],"limits":{"rpm":9007199254740991}}],"mode":"deny","temperature":0.5,"strict":true}`
 
 func tenantType(t *testing.T, name, configSchema, example string) tenanttype.Type {
 	t.Helper()
@@ -79,14 +77,13 @@ func TestProject(t *testing.T) {
 				"required": ["models", "teams"],
 				"additionalProperties": false
 			}},
-			"perModel": {"type": "object", "additionalProperties": {"type": "object", "properties": {"maxTokens": {"type": "integer"}}, "additionalProperties": false}},
 			"mode": {"type": "string", "description": "Whether rules allow or deny.\nApplies to every rule."},
 			"temperature": {"type": "number"},
 			"strict": {"type": "boolean"}
 		},
 		"required": ["rules"],
 		"additionalProperties": false
-	}`, string(got), "value constraints, defaults and definitions are dropped; references are resolved; the type's description replaces the schema's")
+	}`, string(got), "value constraints and defaults are dropped; the type's description replaces the schema's")
 
 	_, ok, err = Project(tenanttype.Type{Name: "marker"})
 	require.NoError(t, err)
@@ -109,18 +106,24 @@ func TestProject_Refuses(t *testing.T) {
 		{name: "oneOf", schema: object(`{"a":{"type":"string","oneOf":[{"type":"string"}]}}`), message: `at /properties/a uses "oneOf"`},
 		{name: "anyOf", schema: object(`{"a":{"anyOf":[{"type":"string"}]}}`), message: `uses "anyOf"`},
 		{name: "patternProperties", schema: object(`{"a":{"type":"object","patternProperties":{"x":{"type":"string"}}}}`), message: `uses "patternProperties"`},
-		{name: "open object", schema: object(`{"a":{"type":"object"}}`), message: "at /properties/a must declare properties, or additionalProperties as a schema"},
-		{name: "additionalProperties true", schema: object(`{"a":{"type":"object","additionalProperties":true}}`), message: "at /properties/a must declare properties, or additionalProperties as a schema"},
+		{name: "open object", schema: object(`{"a":{"type":"object"}}`), message: "at /properties/a must declare properties and set additionalProperties to false"},
+		{name: "additionalProperties true", schema: object(`{"a":{"type":"object","properties":{"b":{"type":"string"}},"additionalProperties":true}}`), message: "at /properties/a must declare properties and set additionalProperties to false"},
+		{name: "typed map", schema: object(`{"a":{"type":"object","additionalProperties":{"type":"string"}}}`), message: "at /properties/a must declare properties and set additionalProperties to false"},
 		{name: "empty object", schema: object(`{"a":{"type":"object","properties":{},"additionalProperties":false}}`), message: "at /properties/a must declare properties"},
 		{name: "empty root", schema: `{"type":"object","properties":{},"additionalProperties":false}`, message: "at / must declare properties"},
-		{name: "properties without closing", schema: `{"type":"object","properties":{"a":{"type":"string"}}}`, message: "at / must set additionalProperties to false"},
-		{name: "properties with a typed map", schema: `{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":{"type":"string"}}`, message: "at / must set additionalProperties to false"},
+		{name: "properties without closing", schema: `{"type":"object","properties":{"a":{"type":"string"}}}`, message: "at / must declare properties and set additionalProperties to false"},
+		{name: "properties with a typed map", schema: `{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":{"type":"string"}}`, message: "at / must declare properties and set additionalProperties to false"},
 		{name: "array without items", schema: object(`{"a":{"type":"array"}}`), message: "at /properties/a must declare items as one schema"},
+		{name: "items on an object", schema: object(`{"a":{"type":"object","properties":{"b":{"type":"string"}},"additionalProperties":false,"items":{"type":"string"}}}`), message: `at /properties/a declares "items" on a object`},
 		{name: "required undeclared field", schema: `{"type":"object","properties":{"a":{"type":"string"}},"required":["b"],"additionalProperties":false}`, message: "requires a field it doesn't declare"},
 		{name: "properties on a scalar", schema: object(`{"a":{"type":"string","properties":{}}}`), message: `declares "properties" on a string`},
-		{name: "reference outside definitions", schema: object(`{"a":{"$ref":"#/properties/b"},"b":{"type":"string"}}`), message: "isn't a local definition"},
-		{name: "reference with siblings", schema: `{"type":"object","properties":{"a":{"$ref":"#/$defs/x","type":"object"}},"additionalProperties":false,"$defs":{"x":{"type":"string"}}}`, message: "must use $ref alone"},
-		{name: "recursive reference", schema: `{"type":"object","properties":{"a":{"$ref":"#/$defs/node"}},"additionalProperties":false,"$defs":{"node":{"type":"object","properties":{"child":{"$ref":"#/$defs/node"}},"additionalProperties":false}}}`, message: "recursively"},
+		{name: "reference", schema: object(`{"a":{"$ref":"#/properties/b"},"b":{"type":"string"}}`), message: `at /properties/a uses "$ref"`},
+		{name: "definitions", schema: `{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false,"$defs":{"x":{"type":"string"}}}`, message: `at / uses "$defs"`},
+		{name: "unbounded integer", schema: object(`{"a":{"type":"integer"}}`), message: "at /properties/a must set minimum to an integer within ±9007199254740991"},
+		{name: "integer without a maximum", schema: object(`{"a":{"type":"integer","minimum":0}}`), message: "at /properties/a must set maximum to an integer within ±9007199254740991"},
+		{name: "integer bound above 2^53", schema: object(`{"a":{"type":"integer","minimum":0,"maximum":9007199254740992}}`), message: "at /properties/a must set maximum to an integer within ±9007199254740991"},
+		{name: "integer bound below -2^53", schema: object(`{"a":{"type":"integer","minimum":-9007199254740992,"maximum":0}}`), message: "at /properties/a must set minimum to an integer within ±9007199254740991"},
+		{name: "fractional integer bound", schema: object(`{"a":{"type":"integer","minimum":0,"maximum":1.5}}`), message: "must set maximum to an integer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := Project(tenantType(t, "broken", tc.schema, `{}`))
@@ -167,9 +170,6 @@ func TestRender(t *testing.T) {
 		// Whether rules allow or deny.
 		// Applies to every rule.
 		"mode"?: string
-		"perModel"?: {[string]: {
-			"maxTokens"?: int
-		}}
 		"rules": [...{
 			"limits"?: {
 				"rpm"?: int

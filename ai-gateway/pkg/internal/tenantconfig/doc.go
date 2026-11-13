@@ -5,8 +5,8 @@
 // A Middleware spec holds the extension's type, whether it is enabled, and at
 // most one member: the type's configuration, named after the type (see
 // [tenanttype.Type.Member]). [DecodeSpec] decodes a spec from raw JSON
-// without decoding members into Go types, so numbers stay exact; admission
-// and the read path share it.
+// without decoding members into the generated Go types; admission and the
+// read path share it.
 //
 // [Validator] is the Middleware admission validator, used with [Kind]. A
 // resource is named after its type, sets no member but its type's, and its
