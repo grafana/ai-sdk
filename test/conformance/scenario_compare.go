@@ -49,7 +49,7 @@ func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapsh
 		CompareChunks(log, expected, result.Chunks)
 		actualParts := result.ProviderParts
 		if gateway {
-			actualParts = withoutGatewayExecution(actualParts)
+			actualParts = withoutGatewayOverview(actualParts)
 		}
 		if err := compareProviderParts(log, filepath.Join(dir, providerPartsFile), actualParts); err != nil {
 			return nil, err
@@ -103,7 +103,7 @@ func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapsh
 	return log.errors, nil
 }
 
-func withoutGatewayExecution(calls []providerPartsCall) []providerPartsCall {
+func withoutGatewayOverview(calls []providerPartsCall) []providerPartsCall {
 	normalized := make([]providerPartsCall, len(calls))
 	for i, call := range calls {
 		normalized[i] = make(providerPartsCall, len(call))
@@ -119,6 +119,7 @@ func withoutGatewayExecution(calls []providerPartsCall) []providerPartsCall {
 			}
 			rest := maps.Clone(gateway)
 			delete(rest, "execution")
+			delete(rest, "routing")
 			metadata = maps.Clone(metadata)
 			if len(rest) == 0 {
 				delete(metadata, "gateway")

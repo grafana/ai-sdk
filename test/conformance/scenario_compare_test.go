@@ -84,6 +84,7 @@ func TestCompareScenario_GatewayExecutionMetadata(t *testing.T) {
 	}
 	execution := map[string]any{"attempts": []any{map[string]any{"outcome": "selected"}}}
 	native := map[string]any{"anthropic": map[string]any{"stopSequence": nil}}
+	routing := map[string]any{"originalModelId": "conformance/test", "modelAttemptCount": 1}
 	for _, tc := range []struct {
 		name     string
 		expected map[string]any
@@ -92,6 +93,8 @@ func TestCompareScenario_GatewayExecutionMetadata(t *testing.T) {
 		want     string
 	}{
 		{"gateway lane ignores execution", nil, map[string]any{"gateway": map[string]any{"execution": execution}}, true, ""},
+		{"gateway lane ignores routing published with execution", nil, map[string]any{"gateway": map[string]any{"execution": execution, "routing": routing}}, true, ""},
+		{"routing without execution stays compared", nil, map[string]any{"gateway": map[string]any{"routing": routing}}, true, "provider parts differ"},
 		{"gateway lane keeps native metadata", native, map[string]any{"anthropic": native["anthropic"], "gateway": map[string]any{"execution": execution}}, true, ""},
 		{"direct lane stays strict", nil, map[string]any{"gateway": map[string]any{"execution": execution}}, false, "provider parts differ"},
 		{"other gateway keys stay compared", nil, map[string]any{"gateway": map[string]any{"execution": execution, "nativeMetadata": map[string]any{}}}, true, "provider parts differ"},
