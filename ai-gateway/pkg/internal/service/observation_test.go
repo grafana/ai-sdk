@@ -24,7 +24,7 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 
 	untrusted := []string{
 		"header-correlation", "header-region", "header-user",
-		"arbitrary-context", "acting-user", "raw-claim", "access-secret",
+		"arbitrary-context", "raw-claim", "access-secret",
 	}
 	type arbitraryContextKey struct{}
 	var retained requestObservation
@@ -53,24 +53,26 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), request)
 
 	assert.Equal(t, requestObservation{
-		correlationID: "generated-correlation",
-		callerService: "verified-service",
-		namespace:     "verified-namespace",
+		correlationID:  "generated-correlation",
+		callerService:  "verified-service",
+		namespace:      "verified-namespace",
+		callerIdentity: "user:acting-user",
 	}, retained)
 	assert.Equal(t, map[string]any{
-		"gateway.correlation_id": "generated-correlation",
-		"gateway.caller_service": "verified-service",
-		"gateway.namespace":      "verified-namespace",
+		"gateway.correlation_id":  "generated-correlation",
+		"gateway.caller_service":  "verified-service",
+		"gateway.namespace":       "verified-namespace",
+		"gateway.caller_identity": "user:acting-user",
 	}, metadata)
 	assert.Equal(t, originalHeaders, options.Headers["X-Existing"])
 	assert.Equal(t, originalOption, []byte(options.ProviderOptions["provider"].(provider.RawProviderOption).Raw))
 
 	serialized := logs.String()
-	for _, expected := range []string{"generated-correlation", "verified-service", "verified-namespace"} {
+	for _, expected := range []string{"generated-correlation", "verified-service", "verified-namespace", `"caller_identity":"user:acting-user"`} {
 		assert.Contains(t, serialized, expected)
 	}
 	for _, value := range untrusted {
-		assert.NotContains(t, retained.correlationID+retained.callerService+retained.namespace, value)
+		assert.NotContains(t, retained.correlationID+retained.callerService+retained.namespace+retained.callerIdentity, value)
 		assert.NotContains(t, serialized, value)
 	}
 }
@@ -84,23 +86,29 @@ func TestRequestObservation_OptionalAndInvalidValuesAreOmitted(t *testing.T) {
 	tests := []struct {
 		name      string
 		service   string
+		identity  string
 		namespace string
 	}{
 		{name: "empty", service: "", namespace: ""},
-		{name: "blank", service: "blank value", namespace: "\tnamespace"},
-		{name: "over limit", service: tooLong, namespace: tooLong},
+		{name: "blank", service: "blank value", identity: "user:blank value", namespace: "\tnamespace"},
+		{name: "over limit", service: tooLong, identity: "user:" + tooLong, namespace: tooLong},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var got requestObservation
 			handler := telemetry.Middleware(fixedRoute("config"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-				telemetry.ObserveAccess(request.Context(), verifiedCaller(gatewayauth.AccessModeCloud, []string{test.service}, test.service, "", test.namespace))
+				caller := verifiedCaller(gatewayauth.AccessModeCloud, []string{test.service}, test.service, test.identity, test.namespace)
+				if test.identity != "" {
+					require.Equal(t, test.identity, caller.Identity)
+				}
+				telemetry.ObserveAccess(request.Context(), caller)
 				got = observationFromContext(request.Context())
 			}))
 			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/live", nil))
 			assert.Equal(t, "correlation", got.correlationID)
 			assert.Empty(t, got.callerService)
 			assert.Empty(t, got.namespace)
+			assert.Empty(t, got.callerIdentity)
 		})
 	}
 }
@@ -124,7 +132,7 @@ func TestRequestObservation_RefusedAccessCannotProjectCaller(t *testing.T) {
 	assert.Empty(t, got.namespace)
 }
 
-func TestRequestObservation_NonConfiguredCallsCarryNoCallerService(t *testing.T) {
+func TestRequestObservation_NonConfiguredCallsCarryNoCallerServiceButTheirIdentity(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		mode     gatewayauth.AccessMode
@@ -155,8 +163,9 @@ func TestRequestObservation_NonConfiguredCallsCarryNoCallerService(t *testing.T)
 			assert.Equal(t, "stacks-1", got.namespace)
 			assert.NotContains(t, metadata, "gateway.caller_service")
 			assert.NotContains(t, logs.String(), tc.service)
-			assert.NotContains(t, logs.String(), "u1")
-			assert.NotContains(t, logs.String(), "sa1")
+			assert.Equal(t, tc.identity, got.callerIdentity)
+			assert.Equal(t, tc.identity, metadata["gateway.caller_identity"])
+			assert.Contains(t, logs.String(), `"caller_identity":"`+tc.identity+`"`)
 		})
 	}
 }
@@ -177,12 +186,14 @@ func TestRequestObservation_MetadataIsDefensivelyCopied(t *testing.T) {
 
 func TestObservationBridge_SnapshotsApprovedValueAndPreservesProviderContext(t *testing.T) {
 	state := &telemetryState{}
-	state.observation.Store(&requestObservation{correlationID: "initial", callerService: "approved"})
+	state.observation.Store(&requestObservation{correlationID: "initial", callerService: "approved", callerIdentity: "user:approved"})
 	type providerKey struct{}
 	ctx := context.WithValue(context.Background(), telemetryStateKey{}, state)
 	ctx = context.WithValue(ctx, providerKey{}, "provider-context")
 	var observed requestObservation
-	model := &observabilityTestModel{generate: func(inner context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+	var received provider.CallOptions
+	model := &observabilityTestModel{generate: func(inner context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		received = options
 		state.observation.Store(&requestObservation{correlationID: "mutated", callerService: "mutated"})
 		observed = observationFromContext(inner)
 		assert.Equal(t, "provider-context", inner.Value(providerKey{}))
@@ -193,9 +204,11 @@ func TestObservationBridge_SnapshotsApprovedValueAndPreservesProviderContext(t *
 		Middleware: []middleware.Middleware{observationBridgeMiddleware()},
 	})
 
-	_, err := wrapped.DoGenerate(ctx, provider.CallOptions{})
+	sent := provider.CallOptions{Headers: map[string]string{"X-Existing": "provider-header"}}
+	_, err := wrapped.DoGenerate(ctx, sent)
 	require.NoError(t, err)
-	assert.Equal(t, requestObservation{correlationID: "initial", callerService: "approved"}, observed)
+	assert.Equal(t, requestObservation{correlationID: "initial", callerService: "approved", callerIdentity: "user:approved"}, observed)
+	assert.Equal(t, sent, received, "the bridge adds no header or provider option")
 }
 
 func TestNewRequestCorrelationID_IsBoundedOpaqueAndUnique(t *testing.T) {

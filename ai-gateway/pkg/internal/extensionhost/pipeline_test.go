@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -98,17 +100,45 @@ func TestPipeline_PartialImplementationAndPerCallState(t *testing.T) {
 }
 
 func TestPipeline_RequestInfo(t *testing.T) {
-	calls := make(chan extension.Call, 2)
-	h := newHarness(t, define("info", &recorder{admit: func(_ context.Context, call *extension.Call) error {
-		calls <- *call
-		return nil
-	}}))
-	for _, source := range []extension.Source{extension.SourceOperatorCatalog, extension.SourceRequestBYOK} {
-		_, err := h.compose(t, source).DoGenerate(t.Context(), provider.CallOptions{})
-		require.NoError(t, err)
+	admitted := func(calls chan extension.Call, change func(*extension.Call)) *recorder {
+		return &recorder{admit: func(_ context.Context, call *extension.Call) error {
+			if change != nil {
+				change(call)
+			}
+			calls <- *call
+			return nil
+		}}
 	}
-	assert.Equal(t, extension.Call{Namespace: "stacks-1", Keys: extension.KeysOperator, Source: extension.SourceOperatorCatalog, Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1", Model: "canonical"}, <-calls)
-	assert.Equal(t, extension.Call{Namespace: "stacks-1", Keys: extension.KeysCustomer, Source: extension.SourceRequestBYOK, Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1", Model: "canonical"}, <-calls)
+	base := extension.Call{Namespace: "stacks-1", Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1"}
+
+	t.Run("configured", func(t *testing.T) {
+		calls := make(chan extension.Call, 2)
+		h := newHarness(t,
+			define("a", admitted(calls, func(call *extension.Call) { call.Candidates[0].ProviderModel = "changed" })),
+			define("b", admitted(calls, nil)),
+		)
+		h.run(t, execution.ConfiguredSelection("canonical", h.model, configuredExpected("primary", "secondary")), "alias", false)
+		want := base
+		want.Keys, want.Source, want.RequestedModel, want.CanonicalModel = extension.KeysOperator, extension.SourceOperatorCatalog, "alias", "canonical"
+		want.Candidates = []extension.Candidate{
+			{Model: "alias", CanonicalModel: "canonical", Provider: "native", ProviderInstance: "instance-primary", ProviderModel: "primary"},
+			{Model: "alias", CanonicalModel: "canonical", Provider: "native", ProviderInstance: "instance-secondary", ProviderModel: "secondary"},
+		}
+		changed := <-calls
+		assert.Equal(t, "changed", changed.Candidates[0].ProviderModel)
+		assert.Equal(t, want, <-calls, "each extension gets its own candidates")
+	})
+
+	t.Run("request BYOK", func(t *testing.T) {
+		calls := make(chan extension.Call, 1)
+		h := newHarness(t, define("a", admitted(calls, nil)))
+		expected := []execution.ExpectedAttempt{{ModelID: "openai/gpt-5", Destination: catalog.ConfiguredCandidate{Provider: "openai", ModelID: "gpt-5"}}}
+		h.run(t, execution.AccountSelection("openai/gpt-5", h.model, expected), "openai/gpt-5", false)
+		want := base
+		want.Keys, want.Source, want.RequestedModel = extension.KeysCustomer, extension.SourceRequestBYOK, "openai/gpt-5"
+		want.Candidates = []extension.Candidate{{Model: "openai/gpt-5", Provider: "openai", ProviderModel: "gpt-5"}}
+		assert.Equal(t, want, <-calls)
+	})
 }
 
 func TestPipeline_GatesStopAtFirstDenial(t *testing.T) {
@@ -699,4 +729,175 @@ func TestHost_CloseCountsAbandonedObservations(t *testing.T) {
 	defer cancel()
 	h.host.Close(ctx)
 	assert.Equal(t, 1.0, h.dropped())
+}
+
+func TestPipeline_RecordAttempts(t *testing.T) {
+	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "private overloaded", IsRetryable: new(true)})
+	internal := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500, Message: "private failure"})
+	failing := func() *fakeModel {
+		return &fakeModel{
+			generate: func(context.Context) (*provider.GenerateResult, error) { return nil, unavailable },
+			stream:   func(context.Context) (*provider.StreamResult, error) { return nil, unavailable },
+		}
+	}
+	selected := func(model string) extension.Attempt {
+		return extension.Attempt{Provider: "native", ProviderInstance: "instance-" + model, ProviderModel: model, Outcome: extension.AttemptSelected}
+	}
+	failed := func(model string, status int) extension.Attempt {
+		return extension.Attempt{Provider: "native", ProviderInstance: "instance-" + model, ProviderModel: model, Outcome: extension.AttemptFailed, StatusCode: status}
+	}
+	denyAt := func(phase extension.Phase) *recorder {
+		switch phase {
+		case extension.PhaseAdmit:
+			return &recorder{admit: func(context.Context, *extension.Call) error { return extension.ErrDenied }}
+		case extension.PhaseInspectRequest:
+			return &recorder{inspectRequest: func(context.Context, *extension.Call, provider.CallOptions) error { return extension.ErrDenied }}
+		default:
+			return &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return extension.ErrDenied }}
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		stream   bool
+		fallback bool
+		model    func(*fakeModel)
+		deny     extension.Phase
+		want     []extension.Attempt
+	}{
+		{name: "single candidate", want: []extension.Attempt{selected("primary")}},
+		{name: "single candidate stream", stream: true, want: []extension.Attempt{selected("primary")}},
+		{name: "single candidate fails", model: func(m *fakeModel) {
+			m.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, internal }
+		}, want: []extension.Attempt{failed("primary", 500)}},
+		{name: "single candidate stream closes before its first part", stream: true, model: func(m *fakeModel) {
+			m.stream = func(context.Context) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: streamOf()}, nil
+			}
+		}, want: []extension.Attempt{failed("primary", 0)}},
+		{name: "fallback", fallback: true, want: []extension.Attempt{failed("primary", 503), selected("secondary")}},
+		{name: "stream fallback", stream: true, fallback: true, want: []extension.Attempt{failed("primary", 503), selected("secondary")}},
+		{name: "denied at admit", fallback: true, deny: extension.PhaseAdmit},
+		{name: "denied at request inspection", stream: true, deny: extension.PhaseInspectRequest},
+		{name: "output denied", deny: extension.PhaseInspectResponse, want: []extension.Attempt{selected("primary")}},
+		{name: "stream output denied after fallback", stream: true, fallback: true, deny: extension.PhaseInspectResponse, want: []extension.Attempt{failed("primary", 503), selected("secondary")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			definitions := []extension.Definition{define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				records <- record
+				return nil
+			}})}
+			if tc.deny != "" {
+				definitions = append(definitions, define("gate", denyAt(tc.deny)))
+			}
+			h := newHarness(t, definitions...)
+			if tc.model != nil {
+				tc.model(h.model)
+			}
+			model, expected := provider.LanguageModel(h.model), configuredExpected("primary")
+			if tc.fallback {
+				chain, err := fallback.New(failing(), h.model)
+				require.NoError(t, err)
+				model, expected = chain, configuredExpected("primary", "secondary")
+			}
+			outcome := h.run(t, execution.ConfiguredSelection("canonical", model, expected), "alias", tc.stream)
+			h.flush()
+			record := <-records
+			assert.Equal(t, tc.want, record.Attempts)
+			if len(tc.want) == 0 {
+				assert.Nil(t, outcome.Overview)
+				return
+			}
+			require.NotNil(t, outcome.Overview)
+			require.Len(t, outcome.Overview.Attempts, len(tc.want))
+			for i, attempt := range outcome.Overview.Attempts {
+				assert.Equal(t, string(tc.want[i].Outcome), string(attempt.Outcome), "the record agrees with the overview")
+			}
+		})
+	}
+}
+
+func TestPipeline_RecordReportsAnAnsweredAttemptAfterCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fallback bool
+		overview bool
+	}{
+		{name: "single candidate", overview: true},
+		{name: "fallback chain", fallback: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			h := newHarness(t, define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				records <- record
+				return nil
+			}}))
+			ctx, cancel := context.WithCancel(t.Context())
+			h.model.generate = func(context.Context) (*provider.GenerateResult, error) {
+				cancel()
+				return textResult("answered"), nil
+			}
+			model, expected := provider.LanguageModel(h.model), configuredExpected("primary")
+			if tc.fallback {
+				chain, err := fallback.New(h.model, &fakeModel{})
+				require.NoError(t, err)
+				model, expected = chain, configuredExpected("primary", "secondary")
+			}
+			outcome := h.runContext(t, ctx, execution.ConfiguredSelection("canonical", model, expected), "alias", false)
+			h.flush()
+
+			record := <-records
+			assert.Equal(t, extension.OutcomeCancelled, record.Outcome)
+			assert.Equal(t, []extension.Attempt{{Provider: "native", ProviderInstance: "instance-primary", ProviderModel: "primary", Outcome: extension.AttemptCanceled}}, record.Attempts)
+			if !tc.overview {
+				assert.Nil(t, outcome.Overview, "the runtime discards a cancelled call's observed attempts")
+				return
+			}
+			require.NotNil(t, outcome.Overview)
+			require.Len(t, outcome.Overview.Attempts, 1)
+			assert.Equal(t, fallback.AttemptCanceled, outcome.Overview.Attempts[0].Outcome)
+		})
+	}
+}
+
+func TestPipeline_AttemptCaptureCannotBeReplaced(t *testing.T) {
+	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "overloaded", IsRetryable: new(true)})
+	steal := func(ctx context.Context) {
+		_ = fallback.WithAttemptObserver(ctx, func(context.Context, fallback.Attempt) { t.Error("an extension observed an attempt") })
+	}
+	records := make(chan extension.Record, 2)
+	observe := func(change bool) *recorder {
+		return &recorder{
+			admit: func(ctx context.Context, _ *extension.Call) error {
+				steal(ctx)
+				return nil
+			},
+			transform: func(ctx context.Context, _ *extension.Call, params provider.CallOptions) (provider.CallOptions, error) {
+				steal(ctx)
+				return params, nil
+			},
+			observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				if change {
+					record.Attempts[0].Outcome = extension.AttemptSelected
+					record.Attempts[0].StatusCode = 0
+				}
+				records <- record
+				return nil
+			},
+		}
+	}
+	h := newHarness(t, define("a", observe(true)), define("b", observe(false)))
+	chain, err := fallback.New(&fakeModel{generate: func(context.Context) (*provider.GenerateResult, error) { return nil, unavailable }}, h.model)
+	require.NoError(t, err)
+	outcome := h.run(t, execution.ConfiguredSelection("canonical", chain, configuredExpected("primary", "secondary")), "alias", false)
+	h.flush()
+
+	<-records
+	unchanged := <-records
+	require.Len(t, unchanged.Attempts, 2)
+	assert.Equal(t, extension.AttemptFailed, unchanged.Attempts[0].Outcome)
+	assert.Equal(t, 503, unchanged.Attempts[0].StatusCode)
+	require.NotNil(t, outcome.Overview)
+	require.Len(t, outcome.Overview.Attempts, 2)
+	assert.Equal(t, fallback.AttemptFailed, outcome.Overview.Attempts[0].Outcome)
 }

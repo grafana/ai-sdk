@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/grafana/ai-sdk/fallback"
@@ -54,13 +55,25 @@ func (a *attemptCapture) enter() {
 	}
 }
 
+// seal ends observation. The first seal returns the observed attempts; later
+// seals return none, so the call's outcome is projected once. The attempts
+// stay readable through observed.
 func (a *attemptCapture) seal() (bool, []fallback.Attempt) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.sealed {
+		return a.entered, nil
+	}
 	a.sealed = true
-	attempts := a.attempts
-	a.attempts = nil
-	return a.entered, attempts
+	return a.entered, a.attempts
+}
+
+// observed returns whether the model was entered and a copy of the attempts
+// observed before sealing, without sealing.
+func (a *attemptCapture) observed() (bool, []fallback.Attempt) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.entered, slices.Clone(a.attempts)
 }
 
 // discard seals the capture without projecting it.
@@ -72,12 +85,36 @@ func (a *attemptCapture) discard() {
 // or succeeded when err is nil or [ErrInvalidOutput]. An extension outcome
 // after entry can only refuse output the selected model returned, so it also
 // projects as success. Attempts observed afterwards are ignored.
-func (a *attemptCapture) view(err error) (view View) {
+func (a *attemptCapture) view(err error) View {
 	entered, attempts := a.seal()
-	view = View{redactor: a.redactor}
+	overview := a.project(entered, attempts, err)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.overview = overview
+	a.applyServed()
+	return View{Overview: overview, redactor: a.redactor}
+}
+
+// current returns the attempts so far, projected for err like the published
+// overview, including the model that served the selected output, without
+// sealing the capture or publishing an overview.
+func (a *attemptCapture) current(err error) *Overview {
+	entered, attempts := a.observed()
+	overview := a.project(entered, attempts, err)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	markServed(overview, a.served)
+	return overview
+}
+
+// project returns the overview of attempts for an outcome that failed with
+// err, with failure summaries redacted, or nil when none can be published. A
+// single expected configured candidate that was entered without an observed
+// attempt gets one synthesized attempt.
+func (a *attemptCapture) project(entered bool, attempts []fallback.Attempt, err error) (overview *Overview) {
 	defer func() {
 		if recover() != nil {
-			view.Overview = nil
+			overview = nil
 		}
 	}()
 	if len(attempts) == 0 && a.attribution == attributionConfigured && len(a.expected) == 1 && entered {
@@ -90,18 +127,14 @@ func (a *attemptCapture) view(err error) (view View) {
 		}
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: source}}
 	}
-	view.Overview = projectExpected(a.requested, a.canonical, attempts, a.attribution, a.expected)
-	if view.Overview != nil {
-		for i := range view.Overview.Attempts {
-			attempt := &view.Overview.Attempts[i]
+	overview = projectExpected(a.requested, a.canonical, attempts, a.attribution, a.expected)
+	if overview != nil {
+		for i := range overview.Attempts {
+			attempt := &overview.Attempts[i]
 			attempt.Error = a.redactor.Redact(attempt.Error)
 		}
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.overview = view.Overview
-	a.applyServed()
-	return view
+	return overview
 }
 
 // serve records the model that served the selected output. It updates the
@@ -114,12 +147,15 @@ func (a *attemptCapture) serve(model string) {
 	a.applyServed()
 }
 
-func (a *attemptCapture) applyServed() {
-	if a.overview == nil || a.served == "" {
+func (a *attemptCapture) applyServed() { markServed(a.overview, a.served) }
+
+// markServed records served on overview's selected attempt, when there is one.
+func markServed(overview *Overview, served string) {
+	if overview == nil || served == "" {
 		return
 	}
-	if last := &a.overview.Attempts[len(a.overview.Attempts)-1]; last.Outcome == fallback.AttemptSelected {
-		last.ServedModelID = a.served
+	if last := &overview.Attempts[len(overview.Attempts)-1]; last.Outcome == fallback.AttemptSelected {
+		last.ServedModelID = served
 	}
 }
 

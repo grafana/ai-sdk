@@ -129,6 +129,7 @@ func (telemetry *Telemetry) ObserveAccess(ctx context.Context, caller gatewayaut
 		current := observationFromContext(ctx)
 		current.callerService = boundedObservationValue(caller.AttributedService())
 		current.namespace = boundedObservationValue(caller.Namespace)
+		current.callerIdentity = boundedObservationValue(caller.Identity)
 		state.observation.Store(&current)
 	}
 }

@@ -16,6 +16,10 @@ Each request writes one `http request completed` line:
 | `status` | Status class, such as `2xx` or `4xx` |
 | `access` | `configured`, `byok` (bring your own key) or `refused` |
 | `correlation_id` | ID that links the request to its attempt logs |
+| `caller_identity` | The user or service account that called, as `user:<uid>` or `service-account:<uid>`, including when a Grafana service calls on its behalf. Absent when there is none, or when it is too long to log. |
+
+Each model call also writes a start line and an end line with the model, the
+outcome, usage, timing and the same `correlation_id` and `caller_identity`.
 
 Each model the Gateway tries for a request writes a `gateway_physical_attempt`
 line with the same `correlation_id`, the provider and model it tried, the
@@ -71,9 +75,9 @@ agento11y_token = $__file{/run/secrets/agento11y-token}
 | `agento11y_tls` | Defaults to `true`. Set `false` only for a collector without TLS. |
 | `agento11y_token` | Token for the collector. Required when exporting. |
 
-The export includes the model, timing, token usage and how the call ended, but
-no content. When one stream carries several messages or responses, one export
-covers all of them, with the last finish reason and the last message's usage,
+The export includes the model, timing, token usage, how the call ended and the
+caller in the `gateway.caller_identity` metadata, but no content. When one
+stream carries several messages or responses, one export covers all of them, with the last finish reason and the last message's usage,
 the same usage that logs and metrics report. If a stream stalls or is canceled
 after a message finished, the export records the finished messages without a
 timeout or cancellation error; logs and metrics still record the timeout or
@@ -89,10 +93,11 @@ The Gateway's logs, metrics and exports never include:
 
 - prompts, responses, generated files, tool calls or citations;
 - provider keys, Grafana tokens or request headers;
-- user or service account IDs.
+- names, email addresses or other user details.
 
-In `cloud` mode, records of configured-model calls also name the Grafana
-service that made the call.
+Logs and exports name the calling user or service account by its ID; metrics
+never do. In `cloud` mode, records of configured-model calls also name the
+Grafana service that made the call.
 
 Your application still receives everything the model returns, including
 warnings, citations and response details. If you log those in your

@@ -133,7 +133,7 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 			return true
 		}
 		return attr.Value.Kind() == slog.KindString && boundedObservationValue(attr.Value.String()) != ""
-	case "ai_sdk.call.id", "correlation_id", "caller_service", "namespace":
+	case "ai_sdk.call.id", "correlation_id", "caller_service", "namespace", "caller_identity":
 		return attr.Value.Kind() == slog.KindString && boundedObservationValue(attr.Value.String()) != ""
 	case "ai_sdk.warnings.types":
 		values, ok := attr.Value.Any().([]string)

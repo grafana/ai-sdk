@@ -1936,7 +1936,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.deepEqual(observer.violations, []);
       assert.equal(observer.generations.length, 5);
       const allowedMetadata = new Set([
-        "gateway.caller_service", "gateway.correlation_id", "gateway.namespace",
+        "gateway.caller_service", "gateway.correlation_id", "gateway.namespace", "gateway.caller_identity",
         "agento11y.sdk.content_capture_mode", "agento11y.sdk.name", "call_error",
       ]);
       for (const generation of observer.generations) {
@@ -1947,6 +1947,7 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.equal(metadata["gateway.caller_service"], undefined);
         assert.equal(metadata["gateway.namespace"], "stacks-27038");
         assert.equal(typeof metadata["gateway.correlation_id"], "string");
+        assert.match(metadata["gateway.caller_identity"] as string, /^service-account:\S+$/);
         assert.ok(Object.keys(metadata).every((key) => allowedMetadata.has(key)));
         assert.ok([undefined, "server_error", "canceled"].includes(metadata.call_error as string | undefined));
       }
@@ -2542,7 +2543,9 @@ describe("platform caller access in cloud mode", () => {
       assert.doesNotMatch(metrics, /decision="(?:byok|refused)"/);
       await gateway.stop();
       assert.ok(gateway.stderr.includes(`"caller_service":"${INTERNAL_SERVICE}"`));
-      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, userIDToken, delegated, "private-user-uid", "other-app"]);
+      assert.ok(gateway.stderr.includes(`"caller_identity":"user:private-user-uid"`));
+      assertPrivateValuesAbsent([metrics], fake, ["private-user-uid"]);
+      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, userIDToken, delegated, "other-app"]);
       assert.deepEqual(fake.violations, []);
     } finally {
       await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop());

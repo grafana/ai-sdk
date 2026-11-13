@@ -192,9 +192,87 @@ func TestAttemptCapture_RejectRecordedFallbackOutcome(t *testing.T) {
 	attempts.discard()
 	view := attempts.view(ctx.Err())
 	assert.Nil(t, view.Overview)
-	assert.Empty(t, attempts.attempts)
 	assert.True(t, attempts.sealed)
 	assert.Zero(t, second.callCount())
+}
+
+func TestAttemptCapture_Observed(t *testing.T) {
+	failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "configured-secret overloaded", IsRetryable: new(true)})
+	fallbackAttempts := []fallback.Attempt{
+		{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true},
+		{Index: 2, Outcome: fallback.AttemptSelected},
+	}
+	for _, tc := range []struct {
+		name       string
+		candidates int
+		entered    bool
+		attempts   []fallback.Attempt
+		err        error
+		end        func(*attemptCapture)
+		outcomes   []fallback.AttemptOutcome
+	}{
+		{name: "not entered", candidates: 1},
+		{name: "single candidate answered", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{name: "single candidate failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
+		{name: "fallback before sealing", candidates: 2, entered: true, attempts: fallbackAttempts, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
+		{name: "fallback after view", candidates: 2, entered: true, attempts: fallbackAttempts, end: func(a *attemptCapture) { a.view(nil) }, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
+		{name: "fallback after discard", candidates: 2, entered: true, attempts: fallbackAttempts, end: (*attemptCapture).discard, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
+		{name: "attempt after sealing", candidates: 2, entered: true, attempts: fallbackAttempts[:1], end: func(a *attemptCapture) {
+			a.discard()
+			a.observe(t.Context(), fallbackAttempts[1])
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolved := catalog.ResolvedModel{ID: "canonical"}
+			for i := range tc.candidates {
+				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i), ProviderInstance: "instance"})
+			}
+			attempts := newAttemptCapture("alias", selectConfigured(t, resolved), NewSummaryRedactor([]string{"configured-secret"}))
+			if tc.entered {
+				attempts.enter()
+			}
+			for _, attempt := range tc.attempts {
+				attempts.observe(t.Context(), attempt)
+			}
+			if tc.end != nil {
+				tc.end(attempts)
+			}
+			entered, observed := attempts.observed()
+			overview := attempts.project(entered, observed, tc.err)
+			if len(tc.outcomes) == 0 {
+				assert.Nil(t, overview)
+				return
+			}
+			require.NotNil(t, overview)
+			require.Len(t, overview.Attempts, len(tc.outcomes))
+			for i, outcome := range tc.outcomes {
+				assert.Equal(t, outcome, overview.Attempts[i].Outcome)
+				assert.Equal(t, fmt.Sprint(i), overview.Attempts[i].ModelID)
+				assert.Equal(t, "instance", overview.Attempts[i].ProviderInstance)
+			}
+			if tc.outcomes[0] == fallback.AttemptFailed {
+				require.NotNil(t, overview.Attempts[0].Error)
+				assert.Equal(t, 503, overview.Attempts[0].Error.StatusCode)
+				assert.NotContains(t, overview.Attempts[0].Error.Message, "configured-secret")
+			}
+		})
+	}
+}
+
+func TestAttemptCapture_ObservedDoesNotSeal(t *testing.T) {
+	attempts := newAttemptCapture("alias", selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}), SummaryRedactor{})
+	attempts.enter()
+	attempts.observe(t.Context(), fallback.Attempt{Index: 1, Outcome: fallback.AttemptFailed, WillFallback: true})
+	_, early := attempts.observed()
+	early[0].Outcome = fallback.AttemptSelected
+	attempts.observe(t.Context(), fallback.Attempt{Index: 2, Outcome: fallback.AttemptSelected})
+	assert.False(t, attempts.sealed)
+
+	view := attempts.view(nil)
+	require.NotNil(t, view.Overview)
+	require.Len(t, view.Overview.Attempts, 2)
+	assert.Equal(t, fallback.AttemptFailed, view.Overview.Attempts[0].Outcome)
+	assert.Nil(t, attempts.view(nil).Overview, "a second view projects nothing")
 }
 
 type projectionError struct {
@@ -511,4 +589,21 @@ func TestServedModel(t *testing.T) {
 		assert.Empty(t, view.Overview.Attempts[0].ServedModelID)
 		assert.Equal(t, "claude-b", view.Overview.Attempts[1].ServedModelID)
 	})
+}
+
+func TestAttemptCapture_CurrentReportsTheServedModel(t *testing.T) {
+	attempts := newAttemptCapture("alias", selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "anthropic", ModelID: "backend"}}}), SummaryRedactor{})
+	attempts.enter()
+	assert.Empty(t, attempts.current(nil).Attempts[0].ServedModelID)
+	attempts.servePart("anthropic.fallback", fallbackMarker(`{"type":"fallback","to":{"model":"claude-b"}}`))
+	current := attempts.current(nil)
+	require.Len(t, current.Attempts, 1)
+	assert.Equal(t, "claude-b", current.Attempts[0].ServedModelID)
+	view := attempts.view(nil)
+	require.NotNil(t, view.Overview)
+	assert.Equal(t, view.Overview.Attempts, current.Attempts)
+	assert.Equal(t, current.Attempts, attempts.current(nil).Attempts, "the read after the view is unchanged")
+	failed := attempts.current(errors.New("failure"))
+	require.Len(t, failed.Attempts, 1)
+	assert.Empty(t, failed.Attempts[0].ServedModelID, "only a selected attempt reports the served model")
 }

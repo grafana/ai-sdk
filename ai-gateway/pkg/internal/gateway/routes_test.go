@@ -368,11 +368,16 @@ func TestGateway_CloudAccess(t *testing.T) {
 		for _, private := range []string{testNamespace, testInternalService, "svc-b", "private-user-uid", "private-account-uid", "front-door", providerSecret} {
 			assert.NotContains(t, metrics, private)
 		}
-		sinks := strings.Join(append(h.anthropic.recorded(), h.logs.String()), "\n")
+		providerRequests := strings.Join(h.anthropic.recorded(), "\n")
 		for _, private := range []string{"private-user-uid", "private-account-uid", "front-door", "svc-b"} {
-			assert.NotContains(t, sinks, private)
+			assert.NotContains(t, providerRequests, private)
+		}
+		for _, private := range []string{"front-door", "svc-b"} {
+			assert.NotContains(t, h.logs.String(), private)
 		}
 		assert.Contains(t, h.logs.String(), `"caller_service":"`+testInternalService+`"`)
+		assert.Contains(t, h.logs.String(), `"caller_identity":"user:private-user-uid"`)
+		assert.Contains(t, h.logs.String(), `"caller_identity":"service-account:private-account-uid"`)
 	})
 }
 

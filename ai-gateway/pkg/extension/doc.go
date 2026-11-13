@@ -39,6 +39,15 @@
 // phases run and it gets no record. The call's source is informational and
 // does not decide where an extension applies.
 //
+// # Request information
+//
+// Every phase receives the call's [Call]: who called, including the verified
+// caller's typed UID, which model was requested and its canonical ID, and the
+// planned [Candidate] list, including provider instances. Every applicable
+// extension, operator or tenant, sees the same information. It never carries
+// credentials or other user claims. The [Record] adds the physical attempts,
+// from the Gateway's own attempt capture.
+//
 // # Failures
 //
 // A phase that returns an error other than [ErrDenied], panics, or returns

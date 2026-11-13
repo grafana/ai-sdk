@@ -59,12 +59,12 @@ For each call, the Gateway runs the phases in this order:
 
 | Phase | Sees | Can |
 |---|---|---|
-| Admit | Namespace, key ownership, source, caller type, correlation ID and model. No prompt. | Deny |
+| Admit | The [request information](#know-who-called-and-what-the-call-may-try). No prompt. | Deny |
 | Transform request | The request information and the call parameters | Change the parameters |
 | Inspect request | The parameters the model will receive | Deny |
 | *Model call* | One call to the selected model, with its fallback chain | — |
 | Inspect response | Each normalized output part: text, reasoning, a complete tool call, finish | Abort |
-| Observe | One record per call: outcome, the denying extension and phase, usage and timing | Nothing |
+| Observe | One record per call: outcome, the denying extension and phase, usage, physical attempts and timing | Nothing |
 
 - Admit and both inspectors run in name order and stop at the first
   `ErrDenied`. The caller gets the Gateway's fixed permission error; your error
@@ -85,6 +85,35 @@ For each call, the Gateway runs the phases in this order:
 Extension outcomes sit above fallback, so a denial is never retried on another
 candidate. A call refused before the model is called makes no provider request
 and carries no `gateway.execution` overview.
+
+## Know who called and what the call may try
+
+Every phase receives the same `Call` for the call. It tells an extension who
+called: the route namespace, the caller type (`user`, `service-account` or
+`internal-service`) and the caller's identity as `user:<uid>` or
+`service-account:<uid>`, which is also set when an internal service calls on
+behalf of a user or service account. It tells what was asked for: the model ID
+as sent, which can be an alias or a BYOK `provider/model` selector, and its
+canonical ID, which BYOK calls don't have. And it lists the candidates the call
+may try, in order, each with the model or `models` entry it belongs to, its
+provider, provider instance and provider model. See the
+[`Call` reference](https://pkg.go.dev/github.com/grafana/ai-sdk/ai-gateway/pkg/extension#Call)
+for every field.
+
+The `Record` that observers get adds `Attempts`: the attempts the call
+actually made, in the order of `Candidates`, each with its provider, provider
+instance, provider model, outcome (`selected`, `failed` or `canceled`) and
+HTTP status when known. A call with one candidate reports one attempt; a call
+refused before the model was called reports none; a stream reports its
+attempts when it ends. Attempts come from the Gateway's own record of the call,
+the same record behind the `gateway.execution` overview, and never carry error
+text.
+
+Every extension that applies, operator or tenant, sees the same information,
+including the caller's identity and the operator's provider instances. It
+never includes credentials or other user details, such as names or email
+addresses. The Gateway also writes the caller's identity to its logs and Agent
+Observability exports; it never becomes a metric label or reaches a provider.
 
 ## Choose where an extension applies
 

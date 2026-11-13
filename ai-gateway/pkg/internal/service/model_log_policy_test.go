@@ -38,6 +38,7 @@ func TestAllowModelLogAttrs_ClosedPolicy(t *testing.T) {
 		slog.String("correlation_id", "correlation"),
 		slog.String("caller_service", "service"),
 		slog.String("namespace", "stack-1"),
+		slog.String("caller_identity", "user:u1"),
 	}
 	assert.Equal(t, allowed, allowModelLogAttrs(allowed, gatewayauth.ConfiguredAccounts))
 }
@@ -82,6 +83,8 @@ func TestAllowModelLogAttrs_DropsInvalidValuesUnderAllowedKeys(t *testing.T) {
 		slog.Float64("ai_sdk.duration_ms", math.NaN()),
 		slog.String("correlation_id", strings.Repeat("x", maxObservationValueLen+1)),
 		slog.String("caller_service", "line\nbreak"),
+		slog.String("caller_identity", "user:"+strings.Repeat("x", maxObservationValueLen)),
+		slog.Int("caller_identity", 1),
 		slog.Any("ai_sdk.warnings.types", []string{"unsupported", "provider-private"}),
 	}
 	assert.Empty(t, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts))
