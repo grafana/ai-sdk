@@ -6555,3 +6555,98 @@ func TestBuildParams_CustomToolResultContent(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildParams_ContainerSkills(t *testing.T) {
+	codeExecution := func(id string) []provider.Tool {
+		return []provider.Tool{{Type: provider.ToolTypeProvider, ID: id, Name: "code_execution"}}
+	}
+	skillsWarning := provider.Warning{Type: provider.WarnOther, Message: "code execution tool is required when using skills"}
+	tests := []struct {
+		name          string
+		options       string
+		tools         []provider.Tool
+		wantContainer string
+		wantBetas     []sdk.AnthropicBeta
+		wantWarnings  []provider.Warning
+		wantErr       string
+	}{
+		{
+			name:          "anthropic and custom skills",
+			options:       `{"container":{"id":"test-container-id","skills":[{"type":"anthropic","skillId":"pptx","version":"latest"},{"type":"custom","providerReference":{"anthropic":"skill_01Xud7kLMsjLfc7Aa6RvigZf"},"version":"1.0"}]}}`,
+			tools:         codeExecution("anthropic.code_execution_20250825"),
+			wantContainer: `{"id":"test-container-id","skills":[{"skill_id":"pptx","type":"anthropic","version":"latest"},{"skill_id":"skill_01Xud7kLMsjLfc7Aa6RvigZf","type":"custom","version":"1.0"}]}`,
+			wantBetas:     []sdk.AnthropicBeta{"code-execution-2025-08-25", "skills-2025-10-02", filesAPIBeta},
+		},
+		{
+			name:          "code execution 20260120 needs no warning",
+			options:       `{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]}}`,
+			tools:         codeExecution("anthropic.code_execution_20260120"),
+			wantContainer: `{"skills":[{"skill_id":"pptx","type":"anthropic"}]}`,
+			wantBetas:     []sdk.AnthropicBeta{"code-execution-2025-08-25", "skills-2025-10-02", filesAPIBeta},
+		},
+		{
+			name:          "skills without code execution warn",
+			options:       `{"container":{"id":"test-container-id","skills":[{"type":"anthropic","skillId":"pptx","version":"latest"},{"type":"custom","providerReference":{"anthropic":"skill_01Xud7kLMsjLfc7Aa6RvigZf"},"version":"1.0"}]}}`,
+			wantContainer: `{"id":"test-container-id","skills":[{"skill_id":"pptx","type":"anthropic","version":"latest"},{"skill_id":"skill_01Xud7kLMsjLfc7Aa6RvigZf","type":"custom","version":"1.0"}]}`,
+			wantBetas:     []sdk.AnthropicBeta{"code-execution-2025-08-25", "skills-2025-10-02", filesAPIBeta},
+			wantWarnings:  []provider.Warning{skillsWarning},
+		},
+		{
+			name:          "empty version is omitted",
+			options:       `{"container":{"skills":[{"type":"anthropic","skillId":"pptx","version":""}]}}`,
+			tools:         codeExecution("anthropic.code_execution_20250825"),
+			wantContainer: `{"skills":[{"skill_id":"pptx","type":"anthropic"}]}`,
+			wantBetas:     []sdk.AnthropicBeta{"code-execution-2025-08-25", "skills-2025-10-02", filesAPIBeta},
+		},
+		{
+			name:          "container ID without skills is unchanged",
+			options:       `{"container":{"id":"test-container-id"}}`,
+			wantContainer: `{"id":"test-container-id"}`,
+		},
+		{
+			name:    "custom reference without anthropic",
+			options: `{"container":{"skills":[{"type":"anthropic","skillId":"pptx"},{"type":"custom","providerReference":{"openai":"skill_1"}}]}}`,
+			wantErr: "anthropic: invalid provider options: container skill 1: no provider reference found for provider anthropic; available providers: openai",
+		},
+		{
+			name:    "custom skill by skill ID",
+			options: `{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`,
+			wantErr: "anthropic: invalid provider options: container skill 0: no provider reference found for provider anthropic; available providers: ",
+		},
+		{
+			name:    "empty custom reference",
+			options: `{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":""}}]}}`,
+			wantErr: "anthropic: invalid provider options: container skill 0: empty provider reference for provider anthropic",
+		},
+		{
+			name:    "null custom reference",
+			options: `{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":null}}]}}`,
+			wantErr: "anthropic: invalid provider options: container skill 0: empty provider reference for provider anthropic",
+		},
+		{
+			name:    "unknown skill type",
+			options: `{"container":{"skills":[{"type":"workspace","skillId":"pptx"}]}}`,
+			wantErr: `anthropic: invalid provider options: container skill 0: unsupported type "workspace"`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-5", provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("Hello")},
+				Tools:           tc.tools,
+				ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(tc.options)}},
+			}, false)
+			if tc.wantErr != "" {
+				require.EqualError(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, p.Container.OfContainers)
+			container, err := json.Marshal(p.Container.OfContainers)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantContainer, string(container))
+			assert.ElementsMatch(t, tc.wantBetas, p.Betas)
+			assert.Equal(t, tc.wantWarnings, warnings)
+		})
+	}
+}

@@ -5,7 +5,9 @@ import { readFileSync } from 'node:fs';
 import { fixture, base, config } from './authorization-fixture.mjs';
 import { GATEWAY_PUBLICATION_JOBS, SOURCE_JOBS } from './authorization-evidence.mjs';
 import { activationContext, selectInventory, verifyProtections, waitForToolingCI, preparationTransport, prepareLibraries } from './activation.mjs';
-import { main as publicationGate, publicationCommit, requireSourceCI } from './gateway-publication-gate.mjs';
+import { DEV_PUBLICATION_JOB, main as publicationGate, promotionCommit, publicationCommit, requireDevPublication,
+  requireSourceCI } from './gateway-publication-gate.mjs';
+import { REPOSITORY_ID } from './merged-candidates.mjs';
 
 const approval = { id: 1, updatedAt: '2026-10-22T00:00:00Z' };
 const env = { RELEASE_LIBRARY_MODE: 'root', GITHUB_REPOSITORY: 'grafana/ai-sdk',
@@ -342,4 +344,46 @@ test('Gateway publication gate runs only for canonical main pushes', async () =>
     assert.throws(() => publicationCommit({ ...push, ...change }), { code: 'ERR_ASSERTION' }, JSON.stringify(change));
   }
   await assert.rejects(publicationGate(push), /Actions read credential/);
+});
+
+test('Gateway promotion gate runs only for canonical main dispatches of a full commit SHA', async () => {
+  const dispatch = { GITHUB_REPOSITORY: 'grafana/ai-sdk', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: 'd'.repeat(40), GATEWAY_PROMOTED_COMMIT: 'c'.repeat(40) };
+  assert.equal(promotionCommit(dispatch), dispatch.GATEWAY_PROMOTED_COMMIT);
+  for (const change of [{ GITHUB_REPOSITORY: 'fork/ai-sdk' }, { GITHUB_EVENT_NAME: 'push' },
+    { GITHUB_REF: 'refs/heads/other' }, { GATEWAY_PROMOTED_COMMIT: undefined }, { GATEWAY_PROMOTED_COMMIT: 'main' },
+    { GATEWAY_PROMOTED_COMMIT: 'c'.repeat(7) }, { GATEWAY_PROMOTED_COMMIT: 'C'.repeat(40) }]) {
+    assert.throws(() => promotionCommit({ ...dispatch, ...change }), { code: 'ERR_ASSERTION' }, JSON.stringify(change));
+  }
+  await assert.rejects(publicationGate({ ...dispatch, GATEWAY_PROMOTED_COMMIT: 'main' }), /full commit SHA/);
+  await assert.rejects(publicationGate(dispatch), /Actions read credential/);
+});
+
+test('Gateway promotion requires a successful dev publication of the same main commit', async () => {
+  const sha = 'c'.repeat(40);
+  const repo = { id: REPOSITORY_ID, full_name: 'grafana/ai-sdk' };
+  const state = { runs: 1, conclusion: 'success', job: 'success', jobs: 1 };
+  const github = { octokit: {
+    actions: { getWorkflow: async ({ workflow_id }) => ({ data: { id: workflow_id === 'publish-ai-gateway-dev.yml' ? 300 : 0 } }),
+      listWorkflowRuns() {} },
+    checks: { getSuite: async () => ({ data: { app: { slug: 'github-actions', id: 15368 } } }) },
+    paginate: async (route, params) => {
+      if (route === github.octokit.actions.listWorkflowRuns) {
+        assert.deepEqual([params.workflow_id, params.event, params.head_sha], [300, 'push', sha]);
+        return Array.from({ length: state.runs }, () => ({ id: 7, run_attempt: 2, workflow_id: 300,
+          path: '.github/workflows/publish-ai-gateway-dev.yml', event: 'push', head_sha: sha, head_branch: 'main',
+          repository: repo, head_repository: repo, status: 'completed', conclusion: state.conclusion, check_suite_id: 9 }));
+      }
+      assert.equal(params.attempt_number, 2);
+      return Array.from({ length: state.jobs }, () => ({ name: DEV_PUBLICATION_JOB, run_id: 7, head_sha: sha,
+        status: 'completed', conclusion: state.job }));
+    },
+  } };
+  assert.deepEqual(await requireDevPublication(github, sha), { id: 7, attempt: 2, workflowId: 300, headSha: sha });
+  for (const [change, error] of [[{ runs: 0 }, /missing publish-ai-gateway-dev.yml/],
+    [{ conclusion: 'cancelled' }, /usable job evidence/], [{ conclusion: 'failure' }, /usable job evidence/],
+    [{ job: 'skipped' }, /must succeed/], [{ jobs: 0 }, /expected exactly one/]]) {
+    Object.assign(state, { runs: 1, conclusion: 'success', job: 'success', jobs: 1 }, change);
+    await assert.rejects(requireDevPublication(github, sha), error, JSON.stringify(change));
+  }
 });

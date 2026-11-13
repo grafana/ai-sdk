@@ -11,7 +11,10 @@
 //   - tool-history reconstruction: [Runtime.Call] rebuilds the prompt's
 //     [ToolHistory] before anything else and fails inconsistent history with
 //     [ErrInvalidToolHistory];
-//   - selection, validated and contained, under the request context;
+//   - selection, validated and contained, under the request context, and the
+//     composition of the model each call invokes from its selection, so
+//     per-call layers such as logical observers wrap every selection at one
+//     point whatever its [Source];
 //   - invocation of DoGenerate or DoStream, with panics and missing results
 //     failing as internal;
 //   - stream waits, the idle duration and one drain bounded by the drain
@@ -26,7 +29,9 @@
 //     since is [WaitClosedAfterError], and any other close is [WaitClosed];
 //   - the closed failure categories and reasons;
 //   - request-local attempt capture, projected into an overview from the
-//     expected attempts of [ConfiguredSelection] and [AccountSelection].
+//     expected attempts of [ConfiguredSelection] and [AccountSelection], with
+//     the served model the selected output reports after an Anthropic
+//     server-side fallback.
 //
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,

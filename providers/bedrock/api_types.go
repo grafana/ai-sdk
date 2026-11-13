@@ -19,6 +19,7 @@ type converseInput struct {
 	InferenceConfig                   *inferenceConfig     `json:"inferenceConfig,omitempty"`
 	AdditionalModelRequestFields      map[string]any       `json:"additionalModelRequestFields,omitempty"`
 	AdditionalModelResponseFieldPaths []string             `json:"additionalModelResponseFieldPaths,omitempty"`
+	RequestMetadata                   map[string]string    `json:"requestMetadata,omitzero"`
 	ServiceTier                       *serviceTier         `json:"serviceTier,omitempty"`
 }
 

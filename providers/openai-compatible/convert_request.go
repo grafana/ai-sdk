@@ -122,7 +122,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	}
 
 	if m.transformRequestBody != nil {
-		transformed, err := m.transformRequestBody(body)
+		transformed, transformedWarnings, err := m.transformRequestBody(body, warnings)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("openai: transforming request body: %w", err)
 		}
@@ -130,6 +130,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 			return nil, warnings, fmt.Errorf("openai: transforming request body returned nil")
 		}
 		body = transformed
+		warnings = transformedWarnings
 	}
 
 	return body, warnings, nil

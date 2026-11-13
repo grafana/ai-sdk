@@ -65,6 +65,14 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	hasBudgetTokens := bo.ReasoningConfig != nil && (bo.ReasoningConfig.budgetTokensPresent || bo.ReasoningConfig.BudgetTokens != 0)
 	isAnthropic := isAnthropicModelForCall(modelID, family, hasBudgetTokens)
 	bo.ReasoningConfig = resolveReasoningConfig(modelID, isAnthropic, opts.Reasoning, bo.ReasoningConfig, &warnings)
+	if isAnthropic && supportsBetweenToolsThinking(modelID) && bo.ReasoningConfig != nil && bo.ReasoningConfig.Type == "disabled" {
+		bo.ReasoningConfig.Type = reasoningTypeBetweenTools
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.amazonBedrock.reasoningConfig",
+			Details: fmt.Sprintf("thinking cannot be disabled for %s. Using 'between_tools' thinking instead.", modelID),
+		})
+	}
 
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
@@ -204,6 +212,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 		ToolConfig:                        pt.toolConfig,
 		AdditionalModelRequestFields:      compactMap(addRequestFields),
 		AdditionalModelResponseFieldPaths: addRespPaths,
+		RequestMetadata:                   bo.RequestMetadata,
 		ServiceTier:                       st,
 	}
 
@@ -443,7 +452,14 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 
 func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
 	if reasoning == provider.ReasoningProviderDefault {
-		return explicit
+		return cloneReasoningConfig(explicit)
+	}
+	if explicit != nil && explicit.Type == "disabled" {
+		resolved := cloneReasoningConfig(explicit)
+		resolved.BudgetTokens = 0
+		resolved.budgetTokensPresent = false
+		resolved.MaxReasoningEffort = ""
+		return resolved
 	}
 
 	var resolved *ReasoningConfig
@@ -462,15 +478,10 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			})
 			return nil
 		}
-		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
+		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, explicit, warnings), explicit)
 		if !isAnthropic && isNova2ReasoningModel(modelID) && resolved != nil && resolved.Type == "" {
 			resolved.Type = "enabled"
 		}
-	}
-	if resolved != nil && resolved.Type == "disabled" {
-		resolved.BudgetTokens = 0
-		resolved.budgetTokensPresent = false
-		resolved.MaxReasoningEffort = ""
 	}
 	return resolved
 }
@@ -479,11 +490,6 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 // reject disabled thinking; see supportsBetweenToolsThinking.
 const reasoningTypeBetweenTools = "between_tools"
 
-// anthropicNoneReasoningType returns the thinking type for reasoning "none".
-// Upstream @ai-sdk/amazon-bedrock 5.0.99 uses "disabled", which omits the
-// thinking field and runs claude-sonnet-5-5 at its default adaptive effort.
-// This intentionally sends between_tools instead so "none" keeps up-front
-// thinking off, as the Anthropic provider does.
 func anthropicNoneReasoningType(modelID string) string {
 	if supportsBetweenToolsThinking(modelID) {
 		return reasoningTypeBetweenTools
@@ -523,7 +529,7 @@ func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
 	return merged
 }
 
-func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, warnings *[]provider.Warning) *ReasoningConfig {
+func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
 	if reasoning == provider.ReasoningProviderDefault {
 		return nil
 	}
@@ -535,6 +541,9 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 	}
 	if isAnthropic {
 		if supportsAdaptiveThinking(modelID) {
+			if explicit != nil && explicit.MaxReasoningEffort != "" {
+				return &ReasoningConfig{Type: "adaptive"}
+			}
 			effort, ok := reasoningEffort(reasoning, warnings)
 			if !ok {
 				*warnings = append(*warnings, provider.Warning{
@@ -546,6 +555,9 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 			}
 			return &ReasoningConfig{Type: "adaptive", MaxReasoningEffort: effort}
 		}
+		if explicit != nil && (explicit.BudgetTokens != 0 || explicit.budgetTokensPresent) {
+			return &ReasoningConfig{Type: "enabled"}
+		}
 		budget, ok := reasoningBudget(modelID, reasoning)
 		if !ok {
 			*warnings = append(*warnings, provider.Warning{
@@ -556,6 +568,9 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 			return nil
 		}
 		return &ReasoningConfig{Type: "enabled", BudgetTokens: budget}
+	}
+	if explicit != nil && explicit.MaxReasoningEffort != "" {
+		return nil
 	}
 	effortReasoning := reasoning
 	if isNova2ReasoningModel(modelID) && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {

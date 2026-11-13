@@ -299,7 +299,7 @@ When a non-streaming Converse response reports `stopReason: guardrail_intervened
 
 ### Requirement: Top-level Converse provider option pass-through
 
-The provider SHALL pass additional raw `amazonBedrock` properties to the Converse request top level. Absent/null `amazonBedrock` SHALL fall back to legacy `bedrock`; non-null modern options SHALL take complete precedence without merging. `reasoningConfig`, `additionalModelRequestFields`, and `serviceTier` SHALL be excluded from direct pass-through so specialized conversion remains authoritative.
+The provider SHALL pass additional raw `amazonBedrock` properties to the Converse request top level. Absent/null `amazonBedrock` SHALL fall back to legacy `bedrock`; non-null modern options SHALL take complete precedence without merging. `reasoningConfig`, `additionalModelRequestFields`, `serviceTier`, `structuredOutputMode`, and `requestMetadata` SHALL be excluded from direct pass-through so specialized conversion remains authoritative.
 
 #### Scenario: Guardrail configuration pass-through
 
@@ -869,30 +869,61 @@ For Bedrock models identified as Anthropic with custom root reasoning other than
 
 ### Requirement: Converse adaptive effort mapping
 
-Adaptive reasoning SHALL map `minimal`/`low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max` in `additionalModelRequestFields.output_config.effort`. Changed level names SHALL emit a compatibility warning.
+When deriving adaptive effort without an explicit effort override, reasoning SHALL map `minimal`/`low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max` in `additionalModelRequestFields.output_config.effort`. Changed level names SHALL emit a compatibility warning only when that mapping supplies the effective effort.
 
 #### Scenario: Converse adaptive effort mapping
 
-- **WHEN** custom root reasoning is `minimal`, `low`, `medium`, `high`, or `xhigh` on an adaptive model
+- **WHEN** custom root reasoning is `minimal`, `low`, `medium`, `high`, or `xhigh` on an adaptive model without explicit effort
 - **THEN** effort SHALL be `low`, `low`, `medium`, `high`, or `max` respectively; only changed names SHALL warn
 
 ### Requirement: Converse explicit reasoning configuration merge
 
-For custom reasoning other than `none`, non-zero explicit `reasoningConfig` fields SHALL override derived fields; unspecified fields SHALL remain derived. Raw `budgetTokens:0` SHALL override to `thinking.budget_tokens=0`; a typed zero field with `omitempty` SHALL represent omission. Merged type `disabled` SHALL remove derived budget and effort.
+Explicit disabled config SHALL suppress custom reasoning before derivation. Otherwise explicit effort or budget SHALL take precedence over portable derivation, with no diagnostic for an overridden value. Missing type and controls SHALL retain capability-based defaults. Raw `budgetTokens:0` SHALL remain explicit; typed zero SHALL mean omission. Request preparation SHALL NOT mutate caller reasoning config, including provider-default calls.
 
 #### Scenario: Converse explicit reasoning configuration merge
 
 - **WHEN** root reasoning supplies a derived budget and raw config explicitly sets zero, or a typed config leaves budget zero
 - **THEN** raw zero SHALL override the budget while typed zero SHALL leave it derived; merged disabled thinking SHALL clear derived budget and effort
 
+#### Scenario: Disabled thinking suppresses unused diagnostics
+
+- **WHEN** custom root reasoning including `none`, `minimal`, `xhigh` or `max` is combined with explicit type `disabled`, budget and effort on models that accept disabled thinking
+- **THEN** the request SHALL omit thinking, budget and effort without warnings from the suppressed reasoning settings, and caller config SHALL remain unchanged
+
+#### Scenario: Explicit effort prevents portable mapping diagnostics
+
+- **WHEN** an adaptive Anthropic, Nova 2 Lite or OpenAI model receives portable `minimal`, `xhigh` or `max` with explicit effort `low`
+- **THEN** the request SHALL use `low` without portable mapping warnings, filling absent type with `adaptive` for Anthropic or `enabled` for Nova and retaining the output token limit for Nova low effort
+
+#### Scenario: Budget-only override retains enabled type and explicit zero
+
+- **WHEN** a budget-based Anthropic model receives custom reasoning with explicit budget only, including raw zero
+- **THEN** thinking SHALL be enabled with that budget, the output token limit SHALL increase by exactly that budget, and overridden budget derivation SHALL emit no diagnostic
+
+#### Scenario: Namespace precedence is preserved
+
+- **WHEN** explicit reasoning config is supplied under either modern or legacy namespace
+- **THEN** both SHALL resolve identically; non-null modern options SHALL take complete precedence and absent/null modern options SHALL fall back to legacy
+
+#### Scenario: Provider-default and repeated or concurrent calls preserve ownership
+
+- **WHEN** caller options are reused by sequential or concurrent calls, including omitted/provider-default reasoning and between-tools effort capping
+- **THEN** native requests and warnings SHALL remain deterministic and caller options SHALL remain unchanged
+- **AND** provider-default reasoning SHALL retain explicit controls without portable derivation or disabled-field cleanup
+
 ### Requirement: Converse none thinking and pinned deviation
 
-Anthropic root reasoning `none` SHALL replace explicit partial config with disabled thinking, except IDs containing `claude-sonnet-5-5`, which SHALL use `between_tools`. This intentional deviation from `@ai-sdk/amazon-bedrock` 5.0.99 is recorded in `test/conformance/upstream.yaml`: upstream disabled thinking omits `thinking`, allowing default-effort adaptive thinking.
+Anthropic root reasoning `none` SHALL replace partial config with disabled thinking. Sonnet 5.5 SHALL normalize disabled thinking to `between_tools`, with an unsupported warning for explicit disabled config. Provider-default calls SHALL preserve effort capped at high; custom reasoning SHALL clear budget and effort. Accepting explicit `between_tools` remains a Go extension recorded in `knownGaps`.
 
 #### Scenario: Converse none thinking and pinned deviation
 
 - **WHEN** root reasoning `none` accompanies partial provider config on Sonnet 5.5 and on another Anthropic model
 - **THEN** Sonnet 5.5 SHALL send between-tools thinking; the other model SHALL use disabled thinking with no derived budget or effort
+
+#### Scenario: Explicit disabled normalizes to the Sonnet 5.5 minimum
+
+- **WHEN** root reasoning `none` accompanies explicit type `disabled` on Sonnet 5.5
+- **THEN** the request SHALL send between-tools thinking with an unsupported warning, omit the budget and effort removed by custom portable reasoning
 
 ### Requirement: Converse auto native-output exclusions
 
@@ -1009,3 +1040,41 @@ Bedrock Converse prompt-conversion errors whose registered upstream counterpart 
 #### Scenario: Warning sites unchanged
 - **WHEN** a request hits an existing Bedrock warning, such as separated system messages or unsupported tool-result file data
 - **THEN** the adapter SHALL keep warning and SHALL NOT return an error
+
+### Requirement: Converse request metadata
+
+The provider SHALL expose optional string-to-string request metadata as `BedrockOptions.RequestMetadata` and accept equivalent raw options. Both Converse APIs SHALL send it at the request top level, with nil omitted and empty maps retained. Selected raw metadata SHALL be validated before HTTP without exposing its contents in errors. Existing namespace precedence and duplicate raw member last-value semantics SHALL be preserved.
+
+#### Scenario: Typed and raw string metadata
+
+- **WHEN** a caller supplies string request metadata using typed or raw options in either supported namespace
+- **THEN** both generation and streaming requests include the same top-level requestMetadata object
+
+#### Scenario: Omitted and empty metadata
+
+- **WHEN** request metadata is absent or a typed map is nil
+- **THEN** requestMetadata is absent from the request
+- **AND** an explicitly empty map is instead serialized as an empty object
+
+#### Scenario: Modern namespace selects the entire option object
+
+- **WHEN** modern options are present with an empty metadata map or no metadata field and legacy options contain metadata
+- **THEN** the selected modern options determine metadata presence without merging legacy values
+- **AND** absent or null modern options instead permit legacy metadata
+
+#### Scenario: Malformed metadata fails locally
+
+- **WHEN** the selected raw requestMetadata is null, is not an object, or contains a non-string value including null
+- **THEN** generation and streaming fail before HTTP
+- **AND** the error names requestMetadata without exposing metadata keys or values
+
+#### Scenario: Ordinary JSON member matching
+
+- **WHEN** raw metadata uses a case-insensitive struct-field spelling or duplicate members
+- **THEN** decoding follows ordinary encoding/json struct-field matching, and the last duplicate field or record entry wins
+- **AND** valid typed metadata uses canonical requestMetadata spelling when emitted
+
+#### Scenario: SDK does not add service limits
+
+- **WHEN** a string record exceeds sixteen entries or contains keys or values longer than 256 characters
+- **THEN** the SDK SHALL preserve the record without adding entry-count or string-length validation beyond the registered upstream schema
