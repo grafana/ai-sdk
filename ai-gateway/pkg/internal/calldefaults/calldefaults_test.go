@@ -11,6 +11,8 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/tenantconfig"
+	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -90,7 +92,7 @@ func TestInstructions(t *testing.T) {
 }
 
 func TestSettings(t *testing.T) {
-	all := `{"temperature":0.7,"topP":0.9,"topK":40,"maxOutputTokens":1024,"stopSequences":["a","b","c"],"seed":9007199254740993,"presencePenalty":0.1,"frequencyPenalty":0.2}`
+	all := `{"temperature":0.7,"topP":0.9,"topK":40,"maxOutputTokens":1024,"stopSequences":["a","b","c"],"seed":9007199254740991,"presencePenalty":0.1,"frequencyPenalty":0.2}`
 	for _, tc := range []struct {
 		name   string
 		config string
@@ -106,7 +108,7 @@ func TestSettings(t *testing.T) {
 				assert.Equal(t, new(40), result.TopK)
 				assert.Equal(t, new(1024), result.MaxOutputTokens)
 				assert.Equal(t, []string{"a", "b", "c"}, result.StopSequences)
-				assert.Equal(t, new(9007199254740993), result.Seed, "integers are exact")
+				assert.Equal(t, new(9007199254740991), result.Seed, "safe integers are exact")
 				assert.Equal(t, new(0.1), result.PresencePenalty)
 				assert.Equal(t, new(0.2), result.FrequencyPenalty)
 			},
@@ -124,15 +126,6 @@ func TestSettings(t *testing.T) {
 				assert.Equal(t, new(0), result.Seed)
 				assert.Equal(t, new(0.0), result.PresencePenalty)
 				assert.Equal(t, new(0.0), result.FrequencyPenalty)
-			},
-		},
-		{
-			name:   "integers written with a fraction or an exponent",
-			config: `{"maxOutputTokens":1.0,"topK":4e1,"seed":-9.223372036854775808e18}`,
-			check: func(t *testing.T, result provider.CallOptions) {
-				assert.Equal(t, new(1), result.MaxOutputTokens)
-				assert.Equal(t, new(40), result.TopK)
-				assert.Equal(t, new(-9223372036854775808), result.Seed)
 			},
 		},
 		{
@@ -212,23 +205,38 @@ func TestFactories_RefuseUndecodableConfiguration(t *testing.T) {
 	}
 }
 
-func TestSettings_FactoryAcceptsWhatAdmissionAccepts(t *testing.T) {
+// storedMember returns config as the host passes it to Decode: the member
+// of a stored spec, in canonical JSON.
+func storedMember(t *testing.T, config string) json.RawMessage {
+	t.Helper()
+	spec, err := tenantconfig.DecodeSpec(json.RawMessage(`{"type":"default-settings","enabled":true,"defaultSettings":` + config + `}`))
+	require.NoError(t, err)
+	return spec.Members["defaultSettings"]
+}
+
+func TestSettings_DecodeAcceptsWhatAdmissionAccepts(t *testing.T) {
 	for _, tc := range []struct {
 		config   string
 		accepted bool
+		check    func(t *testing.T, options middleware.DefaultSettingsOptions)
 	}{
 		{config: `{"temperature":1.7976931348623157e308}`, accepted: true},
-		{config: `{"presencePenalty":-1.7976931348623157e308}`, accepted: true},
 		{config: `{"temperature":-0}`, accepted: true},
 		{config: `{"temperature":1e-400}`, accepted: true},
 		{config: `{"topK":-0}`, accepted: true},
-		{config: `{"maxOutputTokens":1.0,"topK":4e1}`, accepted: true},
-		{config: `{"seed":-9.223372036854775808e18}`, accepted: true},
-		{config: `{"seed":9223372036854775807}`, accepted: true},
+		{config: `{"maxOutputTokens":1.0,"topK":4e1}`, accepted: true, check: func(t *testing.T, options middleware.DefaultSettingsOptions) {
+			assert.Equal(t, new(1), options.MaxOutputTokens)
+			assert.Equal(t, new(40), options.TopK)
+		}},
+		{config: `{"seed":9007199254740991,"topK":-9007199254740991}`, accepted: true, check: func(t *testing.T, options middleware.DefaultSettingsOptions) {
+			assert.Equal(t, new(9007199254740991), options.Seed)
+			assert.Equal(t, new(-9007199254740991), options.TopK)
+		}},
 		{config: `{"temperature":1e400}`},
-		{config: `{"temperature":1.7976931348623158e308}`},
 		{config: `{"frequencyPenalty":-1e400}`},
-		{config: `{"seed":9223372036854775808}`},
+		{config: `{"seed":9007199254740992}`},
+		{config: `{"seed":-9007199254740992}`},
+		{config: `{"maxOutputTokens":9007199254740992}`},
 		{config: `{"topK":4.5e0}`},
 	} {
 		t.Run(tc.config, func(t *testing.T) {
@@ -238,8 +246,11 @@ func TestSettings_FactoryAcceptsWhatAdmissionAccepts(t *testing.T) {
 				return
 			}
 			require.NoError(t, admitted)
-			_, err := settingsDefinition().Decode(json.RawMessage(tc.config))
-			assert.NoError(t, err)
+			decoded, err := settingsDefinition().Decode(storedMember(t, tc.config))
+			require.NoError(t, err)
+			if tc.check != nil {
+				tc.check(t, decoded.(middleware.DefaultSettingsOptions))
+			}
 		})
 	}
 }

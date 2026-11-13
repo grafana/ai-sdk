@@ -18,7 +18,7 @@ import (
 
 const (
 	defaultInstructionsMember = `"defaultInstructions":{"messages":[{"content":"Be brief."},{"content":"Cite sources."}]}`
-	defaultSettingsMember     = `"defaultSettings":{"temperature":0.25,"maxOutputTokens":48,"stopSequences":["END"],"seed":9007199254740993}`
+	defaultSettingsMember     = `"defaultSettings":{"temperature":0.25,"maxOutputTokens":48,"stopSequences":["END"],"seed":9007199254740991}`
 	promptOnlyBody            = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}`
 	clientSystemBody          = `{"prompt":[{"role":"system","content":"Client instructions."},{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16,"temperature":0}`
 )
@@ -134,10 +134,9 @@ func TestMiddlewareAdmission_ShippedTypes(t *testing.T) {
 		{name: "settings empty", document: settings(`{}`), reason: "spec.defaultSettings does not match the extension's schema at /"},
 		{name: "settings wrong type", document: settings(`{"temperature":` + quoted + `}`), reason: "spec.defaultSettings does not match the extension's schema at /temperature"},
 		{name: "settings zero output tokens", document: settings(`{"maxOutputTokens":0,"stopSequences":[` + quoted + `]}`), reason: "spec.defaultSettings does not match the extension's schema at /maxOutputTokens"},
-		{name: "settings number out of range", document: settings(`{"temperature":1e400,"stopSequences":[` + quoted + `]}`), reason: "spec.defaultSettings does not match the extension's schema at /temperature"},
 		{name: "settings fractional top k", document: settings(`{"topK":1.5}`), reason: "spec.defaultSettings does not match the extension's schema at /topK"},
-		{name: "settings seed above int64", document: settings(`{"seed":9223372036854775808}`), reason: "spec.defaultSettings does not match the extension's schema at /seed"},
-		{name: "settings seed below int64", document: settings(`{"seed":-9223372036854775809}`), reason: "spec.defaultSettings does not match the extension's schema at /seed"},
+		{name: "settings seed above the safe range", document: settings(`{"seed":9007199254740992}`), reason: "spec.defaultSettings does not match the extension's schema at /seed"},
+		{name: "settings seed below the safe range", document: settings(`{"seed":-9007199254740992}`), reason: "spec.defaultSettings does not match the extension's schema at /seed"},
 		{name: "settings stop sequence type", document: settings(`{"stopSequences":[1]}`), reason: "spec.defaultSettings does not match the extension's schema at /stopSequences/0"},
 		{name: "instructions empty list", document: instructions(`{"messages":[]}`), reason: "spec.defaultInstructions does not match the extension's schema at /messages"},
 		{name: "instructions empty content", document: instructions(`{"messages":[{"content":` + quoted + `},{"content":""}]}`), reason: "spec.defaultInstructions does not match the extension's schema at /messages/1/content"},
@@ -163,7 +162,7 @@ func TestMiddlewareAdmission_ShippedTypes(t *testing.T) {
 	}{
 		{name: "instructions example", document: instructions(string(tenanttype.DefaultInstructions().Example))},
 		{name: "settings example", document: settings(string(tenanttype.DefaultSettings().Example))},
-		{name: "settings bounds", document: settings(`{"maxOutputTokens":1,"seed":9223372036854775807,"topK":-9223372036854775808,"stopSequences":[]}`)},
+		{name: "settings bounds", document: settings(`{"maxOutputTokens":1,"seed":9007199254740991,"topK":-9007199254740991,"stopSequences":[]}`)},
 		{name: "settings integers with a fraction or an exponent", document: settings(`{"maxOutputTokens":1.0,"topK":4e1}`)},
 		{name: "settings disabled without a member", document: middlewareDocument("default-settings", "default-settings", false, "")},
 	} {

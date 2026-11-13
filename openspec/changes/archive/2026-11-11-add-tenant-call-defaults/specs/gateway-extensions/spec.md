@@ -20,14 +20,14 @@ Tenant extension types SHALL be declared in a public, experimental package: each
 
 #### Scenario: Invalid type
 - **WHEN** a type has an invalid or repeated name, a member that collides with another type's or with `type` or `enabled`, a schema without an example it accepts, or an example without a schema
-- **THEN** startup SHALL fail naming the type and the field
+- **THEN** the repository checks SHALL fail naming the type
 
 #### Scenario: Shipped registry
 - **WHEN** the committed manifest is inspected
 - **THEN** the `Middleware` spec SHALL declare exactly `type`, `enabled`, `defaultInstructions` and `defaultSettings`
 
 ### Requirement: Tenant configuration admission
-Admission SHALL accept a create or update only when the spec sets no member other than its type's, `spec.type` names a tenant-scope extension the distribution implements, a type with configuration has its member when `enabled` is `true`, a type without configuration has no member, and a present member matches that type's full schema. Operator-scope, unregistered and unimplemented types SHALL be refused with the same reason. Members SHALL be decoded as written, so numbers are not rounded.
+Admission SHALL accept a create or update only when the spec sets no member other than its type's, `spec.type` names a tenant-scope extension the distribution implements, a type with configuration has its member when `enabled` is `true`, a type without configuration has no member, and a present member matches that type's full schema. Operator-scope, unregistered and unimplemented types SHALL be refused with the same reason.
 
 #### Scenario: Valid configuration
 - **WHEN** a writer creates a `Middleware` for an implemented tenant type with a member its schema accepts
@@ -53,9 +53,9 @@ Admission SHALL accept a create or update only when the spec sets no member othe
 - **WHEN** `spec.type` names an operator-scope extension, or a public type this build does not implement
 - **THEN** the write SHALL be refused with the reason given for an unregistered type
 
-#### Scenario: Large integer
-- **WHEN** a member holds an integer above 2^53 and the write is accepted
-- **THEN** admission and the stored resource SHALL keep its exact value
+#### Scenario: Safe integer
+- **WHEN** a member holds an integer within ±(2^53−1)
+- **THEN** admission SHALL compare it exactly against the type's schema, and MAY round integers beyond that range as upstream does
 
 #### Scenario: Shipped build
 - **WHEN** the shipped Gateway reviews `Middleware` creates for `default-instructions` and `default-settings` with valid members, and one for any other type
@@ -87,6 +87,6 @@ The Gateway SHALL read a namespace's configuration only for a call to which at l
 - **WHEN** the shipped backend serves calls in a namespace that stores no `Middleware` resource
 - **THEN** it SHALL read that namespace's configuration at most once per cache TTL, and the calls SHALL reach the model unchanged
 
-#### Scenario: Extension narrowed to another source
+#### Scenario: Extension limited to another key ownership
 - **WHEN** the only tenant extension declares ownership `operator`, and a request BYOK call runs
 - **THEN** that call SHALL NOT read the namespace's configuration

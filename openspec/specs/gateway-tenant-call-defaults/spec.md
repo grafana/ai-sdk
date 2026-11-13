@@ -32,14 +32,14 @@ When enabled for a namespace, `default-instructions` SHALL prepend its messages,
 - **THEN** the model SHALL receive the call's prompt unchanged, without default messages
 
 ### Requirement: Default settings type
-The public tenant type `default-settings` SHALL be off by default. Its member `defaultSettings` SHALL set at least one of, and nothing beyond: numbers `temperature`, `topP`, `presencePenalty` and `frequencyPenalty`, within the 64-bit float range; integers `topK`, `maxOutputTokens` (at least 1) and `seed`, within the signed 64-bit range, also when written as `1.0` or `4e1`; and `stopSequences`, a list of strings.
+The public tenant type `default-settings` SHALL be off by default. Its member `defaultSettings` SHALL set at least one of, and nothing beyond: numbers `temperature`, `topP`, `presencePenalty` and `frequencyPenalty`; integers `topK`, `maxOutputTokens` (at least 1) and `seed`, within ±(2^53−1), also when written as `1.0` or `4e1`; and `stopSequences`, a list of strings.
 
 #### Scenario: Refused call controls
 - **WHEN** the member sets `headers`, `providerOptions`, `tools`, `toolChoice`, `responseFormat`, `reasoning` or any other undeclared key
 - **THEN** the write SHALL be refused and nothing SHALL be stored
 
 #### Scenario: Invalid values
-- **WHEN** the member sets `maxOutputTokens: 0`, a fraction for an integer field, an integer outside the signed 64-bit range, a number outside the 64-bit float range, or no field at all
+- **WHEN** the member sets `maxOutputTokens: 0`, a fraction for an integer field, an integer outside ±(2^53−1), a number beyond the float64 range, or no field at all
 - **THEN** the write SHALL be refused naming the member and, for a field, its location
 
 ### Requirement: Default settings applied

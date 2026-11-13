@@ -14,8 +14,8 @@
   - Neither middleware reads `TransformParamsInput.Type` or `Model`.
 - **Tenant extension path:**
   - `tenanttype` is the public registry. It ships empty, and `Type.Bind` returns the tenant definition.
-  - The generator projects schemas into `kinds/middleware_members.cue`. Drift and prune tests cover `tenanttype.All()`.
-  - Admission runs `CheckConfig` with exact numbers.
+  - `kinds/middleware_members.cue` is hand-written, one structural member per type. A `manifestdata` test checks that each member mirrors its type's schema and accepts its example.
+  - Tenant schemas use closed objects and arrays only, and bound integers to ±(2^53−1). Admission validates through float64, as upstream's JS numbers do.
   - #765's cache reads each namespace as the plugin, with a 1-minute TTL. `TenantCacheConfig` is reachable only from Go tests, not from the built plugin.
 - **Transforms.** Tenant transforms run before operator transforms. The host checks each result against request policy (no protected headers, no `gateway` provider-option namespace). A transform must return copies, and the host clones only the top-level header, provider-option and prompt containers.
 - **ProviderWire decoding:**
@@ -87,16 +87,16 @@
 
 | Field | Type | Constraints (admission only) |
 |---|---|---|
-| `temperature`, `topP`, `presencePenalty`, `frequencyPenalty` | `number` | the finite float64 range |
-| `topK`, `seed` | `integer` | signed 64-bit range |
-| `maxOutputTokens` | `integer` | 1 to 2^63−1 |
+| `temperature`, `topP`, `presencePenalty`, `frequencyPenalty` | `number` | none |
+| `topK`, `seed` | `integer` | ±(2^53−1) |
+| `maxOutputTokens` | `integer` | 1 to 2^53−1 |
 | `stopSequences` | array of `string` | none |
 
 - The root is an object with `additionalProperties: false` and `minProperties: 1`. Nothing is required.
 - Example: `{"temperature":0.2,"maxOutputTokens":2048,"stopSequences":["END"]}`.
-- The factory converts integers exactly, so `1.0` and `4e1`, which JSON Schema treats as integers, apply as `1` and `40`. The bounds keep admission from accepting values the factory can't represent as `int` or `float64`, and mirror upstream's `maxOutputTokens >= 1` call-setting rule. `minProperties` refuses a configuration that would do nothing.
+- The integer bounds are the safe-integer range, which upstream's JS numbers can represent exactly. The host canonicalizes the member through float64, so `1.0` and `4e1`, which JSON Schema treats as integers, reach `Decode` as `1` and `40`. A number beyond the float64 range, such as `1e400`, fails admission's decoding. The `maxOutputTokens` bound mirrors upstream's `maxOutputTokens >= 1` call-setting rule. `minProperties` refuses a configuration that would do nothing.
 
-### Projection check
+### Member mirror
 
 | Rule | `defaultInstructions` | `defaultSettings` |
 |---|---|---|
@@ -105,9 +105,9 @@
 | No empty object, open object or combinator | none | none |
 | Arrays declare `items` | `messages` | `stopSequences` |
 | Dropped into admission | `minItems`, `minLength` | `minimum`, `maximum`, `minProperties` |
-| Example survives pruning | only declared fields | only declared fields |
+| Example accepted by the member | only declared fields | only declared fields |
 
-Expected generated members:
+Hand-written members:
 
 ```cue
 middlewareMembers: {
@@ -148,19 +148,18 @@ Undeclared keys, including `headers`, `providerOptions`, `tools`, `toolChoice`, 
   - It exposes `Definitions() []extension.Definition` and returns `[instructions, settings]`.
   - `gateway.DefaultExtensions()` returns that list.
   - Internal Gateway tests use the package directly, because `pkg/gateway` imports `pkg/internal/gateway`.
-- Each definition is `tenanttype.X().Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: ...})`:
-  - Keys, Sources and Priority keep their zero values: both key ownerships, every source, priority 0, ordered by name.
+- Each definition is `tenanttype.X().Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: ..., Decode: ...})`:
+  - `Keys` stays nil, so both key ownerships apply, whatever the call's source. Transforms are ordered tenant scope first, then by name.
   - No secrets and no collectors.
-- One unexported adapter, `transformer`, holds a `middleware.Middleware` and implements only `RequestTransformer`. It calls `TransformParams(ctx, TransformParamsInput{Params: params})`. `Type` and `Model` stay zero, and neither middleware reads them.
-- **`default-instructions` factory:**
-  - decodes `{messages: [{content}]}`;
-  - builds `provider.NewSystemMessage(content)` for each item;
-  - returns `transformer{middleware.DefaultInstructions(messages...)}`.
-- **`default-settings` factory:**
-  - decodes into a struct with `*float64`, `*int` and `[]string` fields;
-  - clips `StopSequences` with `slices.Clip`, so a later transform's `append` never writes into the backing array shared across calls;
-  - returns `transformer{middleware.DefaultSettings(...)}` with only those eight fields set. Headers, provider options, tools, tool choice, response format and reasoning are never set. When the defaults have none, `mergeMaps` returns a copy of the call's map, which is equivalent.
-- Factories do no I/O, so they meet #765's factory rules.
+- Each extension has one instance per process. `New` returns a stateless transformer that implements only `RequestTransformer`.
+- `Decode` turns a namespace's stored member, which the host passes in canonical JSON, into typed data once per change. The host puts it in `Call.Config` for each call.
+- **`default-instructions`:** `Decode` reads `{messages: [{content}]}` and builds `provider.NewSystemMessage(content)` for each item. The transform applies `middleware.DefaultInstructions` with those messages.
+- **`default-settings`:**
+  - `Decode` reads a struct with `*float64`, `*int` and `[]string` fields into `middleware.DefaultSettingsOptions`, with only those eight fields set;
+  - it clips `StopSequences` with `slices.Clip`, so a later transform's `append` never writes into the backing array every call of the namespace shares;
+  - the transform applies `middleware.DefaultSettings`. Headers, provider options, tools, tool choice, response format and reasoning are never set. When the defaults have none, `mergeMaps` returns a copy of the call's map, which is equivalent.
+- A call without the expected configuration is a transform error, so the `skip` policy applies.
+- `TransformParamsInput.Type` and `Model` stay zero, and neither middleware reads them.
 
 ### Parity: `default-settings` against `defaultSettingsMiddleware`
 
@@ -174,7 +173,7 @@ Upstream is `mergeObjects(settings, params)`. A defined call value wins. Nested 
 | 4 | `stopSequences: []` from the call | call's empty array wins | the non-nil empty slice wins | parity |
 | 5 | Arrays (`stopSequences`) | replaced, never merged | replaced | parity |
 | 6 | `topK` type | `number` | integer (`*int` in `CallOptions` and ProviderWire) | parity-preserving Go adaptation, already in the provider contract |
-| 7 | Validation of defaults | none in the middleware; upstream checks a call's `maxOutputTokens` (integer ≥ 1) and `seed` (integer) only in `prepareLanguageModelCallOptions`, which defaults bypass | admission: `maxOutputTokens` ≥ 1, integers in int64 range, at least one field | intentional deviation, Gateway-owned. Recorded in `gateway-tenant-call-defaults` |
+| 7 | Validation of defaults | none in the middleware; upstream checks a call's `maxOutputTokens` (integer ≥ 1) and `seed` (integer) only in `prepareLanguageModelCallOptions`, which defaults bypass | admission: `maxOutputTokens` ≥ 1, integers within ±(2^53−1), at least one field | intentional deviation, Gateway-owned. Recorded in `gateway-tenant-call-defaults` |
 | 8 | Allowed fields | also `responseFormat`, `tools`, `toolChoice`, `headers`, `providerOptions`, and at runtime any key | only the eight sampling and limit fields | intentional deviation, Gateway-owned (issue #766). Recorded in `gateway-tenant-call-defaults` |
 | 9 | Headers merge | one level, per key; call wins | `mergeMaps`, the same | parity in the library; tenants can't set headers |
 | 10 | Provider options merge | recursive deep merge across provider namespaces and nested keys | root `DefaultSettings` merges per provider key only, so the call's whole namespace replaces the default's. The root spec says "no deep merge", and no known gap is recorded | root-library divergence, unreachable from the tenant schema. Unrecorded; tracked in [#791](https://github.com/grafana/ai-sdk/issues/791) |
@@ -194,7 +193,7 @@ A new `test.describe` in `tests/middleware.spec.ts` with `mode: 'serial'` and an
 | Deferred check | How |
 |---|---|
 | Save without a folder; folder refused | Admin `POST` of a valid `default-settings` with `metadata.annotations["grafana.app/folder"]`: a non-2xx response and a `404` on `GET`. The same object without the annotation: `201`. The refused status is recorded from CI. |
-| Member round-trip through Grafana | `GET` returns `defaultInstructions.messages` with two items (an array of objects), deep-equal to what was sent. The raw body of `default-settings` contains `"seed":9007199254740993`, checked as text so JSON parsing can't round it. |
+| Member round-trip through Grafana | `GET` returns `defaultInstructions.messages` with two items (an array of objects), deep-equal to what was sent. The `default-settings` member, with `seed` at `Number.MAX_SAFE_INTEGER`, reads back deep-equal. |
 | Grafana's messages don't echo values | Creates refused before admission (the message lacks "admission hook for Middleware"), each with the sentinel `e2e-middleware-sentinel-value` as a value: `defaultSettings.temperature: SENTINEL` (wrong type); `defaultInstructions.messages: [{content: SENTINEL}, {}]` (missing required); `defaultInstructions.messages[0].note: SENTINEL` and `defaultSettings.headers: {x: SENTINEL}` (undeclared keys, which also shows headers refused end to end). The status is `400` or `422`, with no sentinel in the body and nothing stored. |
 | Schema-failing write with a location | An admission refusal with `400`: `messages: [{content: SENTINEL}, {content: ""}]` names `spec.defaultInstructions` and `/messages/1/content`. An update with `maxOutputTokens: 0` and `stopSequences: [SENTINEL]` names `/maxOutputTokens`. No sentinel in either body. |
 | Valid update and disable | A `PUT` with the read `resourceVersion` changes `temperature` (`200`). A disable-only `PUT` of `default-instructions` with its member kept (`200`). |
@@ -233,13 +232,13 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 |---|---|
 | End to end: create, call and see it applied, then disable and see it removed | **CI e2e:** the runtime-effect test. **Go:** a gateway test through the test host with the shipped definitions. Namespace `a` enables both, `b` disables instructions and deletes settings after creating them, and `c` stores nothing. Each catalog call's fake-Anthropic body shows the system blocks and `temperature`, `max_tokens` and `stop_sequences` for `a` only. Transitions within one namespace are covered by #765's `synctest` pipeline tests. |
 | A client system message suppresses `default-instructions` | **Unit (`calldefaults`):** a system message first, a system message later, none (prepends both, in order), unary and stream; the input prompt isn't mutated. **Gateway:** a call with a system message reaches the fake with only its own system block. |
-| The `default-settings` schema refuses headers, provider options, tools, tool choice and response format | **`tenantconfig` admission table with the shipped definitions:** each of those, plus `reasoning`, an unknown key, a wrong type, `maxOutputTokens: 0`, `1.5` for `topK`, `seed: 9223372036854775808`, `{}`, and for instructions an empty list, an empty content and an extra key. Each refusal names the location and holds no sentinel. Boundary values are accepted: `seed` at ±(2^63−1), `maxOutputTokens: 1`. **Manifest test:** the projected properties are exactly the eight fields. **CI e2e:** `headers` refused by Grafana. |
-| Both apply to operator-owned and customer-owned calls | **Pipeline test (`extensionhost` or `service`)** with the shipped definitions and a fake reader that enables both: an operator-catalog call and a request-BYOK call, unary and stream, each reaching the model with the defaults. **Definition test:** nil `Keys` and `Sources`, failure policy `skip`, tenant scope. Stack catalogs need #757. |
+| The `default-settings` schema refuses headers, provider options, tools, tool choice and response format | **`tenantconfig` admission table with the shipped definitions:** each of those, plus `reasoning`, an unknown key, a wrong type, `maxOutputTokens: 0`, `1.5` for `topK`, `seed: 9007199254740992`, `{}`, and for instructions an empty list, an empty content and an extra key. Each refusal names the location and holds no sentinel. Boundary values are accepted: `seed` at ±(2^53−1), `maxOutputTokens: 1`. **Manifest test:** the projected properties are exactly the eight fields. **CI e2e:** `headers` refused by Grafana. |
+| Both apply to operator-owned and customer-owned calls | **Pipeline test (`extensionhost` or `service`)** with the shipped definitions and a fake reader that enables both: an operator-catalog call and a request-BYOK call, unary and stream, each reaching the model with the defaults. **Definition test:** nil `Keys`, a `Decode`, failure policy `skip`, tenant scope. Stack catalogs need #757. |
 | Settings precedence (parity rows 1–5, 14) | **Unit tests** ported from upstream's `temperature` and "other settings" cases: a call's `0`, `stopSequences: []`, unset fields, and headers, provider options, tools, tool choice and response format unchanged. A later `append` to the stop sequences doesn't change another call's defaults. |
-| Registry and binding | **`tenanttype`:** `All()` returns both types in name order; each example passes its schema, and the members are `defaultInstructions` and `defaultSettings`. **Existing drift, prune and manifest tests** now cover real members. **`pkg/gateway`:** `DefaultExtensions()` passes `ValidateDefinitions` against `tenanttype.All()`. |
+| Registry and binding | **`tenanttype`:** `All()` returns both types in name order; each example passes its schema, and the members are `defaultInstructions` and `defaultSettings`. **The `manifestdata` member-mirror test** covers both members. **`pkg/gateway`:** `DefaultExtensions()` passes `ValidateDefinitions` against `tenanttype.All()`. |
 | Shipped behavior changes | Update `TestMiddlewareAdmission_ShippedTypesRefuseEveryCreate` to the new shipped scenario. `TestTenantConfiguration_ShippedDefinitionsReadNothing` becomes "reads once per namespace, calls unchanged without resources", plus a test with no tenant definitions that makes no reads. The self-hosted test logs the no-access warning with the shipped build. |
 | Read-time failure applies `skip` | **Snapshot test:** a stored `default-settings` member that fails the schema (injected through the fake reader) drops the extension, the call runs, and the configure failure is counted. |
-| Factory | Decoding keeps `9007199254740993`. A malformed member at read time is a factory error under `skip`. No collectors are registered. |
+| Decode | Safe integers stay exact, and every member admission accepts decodes. A malformed member at read time is a `Decode` error under `skip`. No collectors are registered. |
 
 ## Risks / Trade-offs
 
@@ -270,7 +269,7 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 ## Resolved questions
 
 1. **`defaultInstructions` shape:** `messages: [{content}]`. It matches `middleware.DefaultInstructions(...provider.Message)` and upstream's array form. The guide shows the one-message case first.
-2. **Bounds:** only `maxOutputTokens` ≥ 1, the int64 ranges, non-empty messages and content, and at least one setting. No `temperature` or `topP` ranges.
+2. **Bounds:** only `maxOutputTokens` ≥ 1, the safe-integer ranges, non-empty messages and content, and at least one setting. No `temperature` or `topP` ranges.
 3. **Root-library divergences:** no root-library change in this change. The `upstream-sync` issue is [#791](https://github.com/grafana/ai-sdk/issues/791).
 4. **Trace hygiene:** `trace: 'off'` as a worker-scoped override in the `accounts` fixture. Verified locally: with `trace: 'on'` forced in a scratch configuration, a test using the `accounts` test object wrote no trace, and a test using the base fixtures wrote one whose network log contained the scratch bearer token.
 
@@ -288,7 +287,7 @@ The shipped tenant extensions apply to every call, so the shipped Gateway reads 
 
   The same steps go into the PR body.
 - **List kind label.** Against the pinned Grafana nightly, listing `middlewares` returns `kind: ModelCatalogList`, the list kind of the manifest's first kind, with media type `application/json`. The reader therefore no longer requires `kind: MiddlewareList`: the request path identifies the resource, a JSON object with an `items` array is a list unless its `kind` names a non-list such as `Status`, and each item needs a name and, when present, the Middleware group and version. A platform bug report is drafted for the maintainers.
-- Stack-catalog coverage when #757 lands. No code change is expected, because `Sources` is nil.
+- Stack-catalog coverage when #757 lands. No code change is expected, because `Keys` is nil.
 - Root `DefaultSettings` alignment: [#791](https://github.com/grafana/ai-sdk/issues/791).
 
 ### `upstream-sync` issue, filed as [#791](https://github.com/grafana/ai-sdk/issues/791)

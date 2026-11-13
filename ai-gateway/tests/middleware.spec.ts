@@ -13,8 +13,12 @@ const ECHO_MARKER = 'e2e-echo-request';
 const INSTRUCTIONS = 'default-instructions';
 const SETTINGS = 'default-settings';
 const INSTRUCTIONS_MEMBER = { messages: [{ content: 'Be brief.' }, { content: 'Cite sources.' }] };
-const SEED = '9007199254740993';
-const SETTINGS_MEMBER_JSON = `{"temperature":0.25,"maxOutputTokens":48,"stopSequences":["END"],"seed":${SEED}}`;
+const SETTINGS_MEMBER = {
+  temperature: 0.25,
+  maxOutputTokens: 48,
+  stopSequences: ['END'],
+  seed: Number.MAX_SAFE_INTEGER,
+};
 const PROPAGATION = { timeout: 70_000, intervals: [2_000] };
 const RUNTIME_TEST_TIMEOUT = 240_000;
 
@@ -45,7 +49,7 @@ async function expectRefusedByGrafana(response: APIResponse) {
 async function stored(request: APIRequestContext, name: string) {
   const response = await request.get(`${MIDDLEWARES}/${name}`);
   expect(response.status(), await response.text()).toBe(200);
-  return { text: await response.text(), object: await response.json() };
+  return { object: await response.json() };
 }
 
 async function update(request: APIRequestContext, name: string, spec: object): Promise<APIResponse> {
@@ -218,14 +222,11 @@ test.describe('Middleware with the shipped types', () => {
       middleware(INSTRUCTIONS, INSTRUCTIONS, { defaultInstructions: INSTRUCTIONS_MEMBER })
     );
     expect(instructions.status(), await instructions.text()).toBe(201);
-    const settings = await accounts.Admin.post(MIDDLEWARES, {
-      headers: { 'Content-Type': 'application/json' },
-      data: `{"apiVersion":"${API_GROUP}/${API_VERSION}","kind":"Middleware","metadata":{"name":"${SETTINGS}"},"spec":{"type":"${SETTINGS}","enabled":true,"defaultSettings":${SETTINGS_MEMBER_JSON}}}`,
-    });
+    const settings = await create(accounts.Admin, middleware(SETTINGS, SETTINGS, { defaultSettings: SETTINGS_MEMBER }));
     expect(settings.status(), await settings.text()).toBe(201);
 
     expect((await stored(accounts.Admin, INSTRUCTIONS)).object.spec.defaultInstructions).toEqual(INSTRUCTIONS_MEMBER);
-    expect((await stored(accounts.Admin, SETTINGS)).text).toMatch(new RegExp(`"seed":\\s*${SEED}\\b`));
+    expect((await stored(accounts.Admin, SETTINGS)).object.spec.defaultSettings).toEqual(SETTINGS_MEMBER);
 
     for (const role of ['Viewer', 'Editor'] as const) {
       const { object } = await stored(accounts[role], INSTRUCTIONS);

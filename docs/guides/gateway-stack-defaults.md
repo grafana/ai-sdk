@@ -85,10 +85,10 @@ spec:
 
 | Setting | JSON type | Accepted values |
 | --- | --- | --- |
-| `temperature`, `topP` | number | within the 64-bit float range |
-| `presencePenalty`, `frequencyPenalty` | number | within the 64-bit float range |
-| `topK`, `seed` | integer | signed 64-bit |
-| `maxOutputTokens` | integer | at least 1 |
+| `temperature`, `topP` | number | any |
+| `presencePenalty`, `frequencyPenalty` | number | any |
+| `topK`, `seed` | integer | ±9007199254740991 (2^53−1) |
+| `maxOutputTokens` | integer | 1 to 9007199254740991 |
 | `stopSequences` | list of strings | any |
 
 Set at least one. Headers, provider options, tools, tool choice, response

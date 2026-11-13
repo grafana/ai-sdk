@@ -10,27 +10,23 @@ var defaultSettings = newType(
   "properties": {
     "temperature": {
       "type": "number",
-      "description": "The sampling temperature.",
-      "minimum": -1.7976931348623157e308,
-      "maximum": 1.7976931348623157e308
+      "description": "The sampling temperature."
     },
     "topP": {
       "type": "number",
-      "description": "The nucleus sampling probability mass.",
-      "minimum": -1.7976931348623157e308,
-      "maximum": 1.7976931348623157e308
+      "description": "The nucleus sampling probability mass."
     },
     "topK": {
       "type": "integer",
       "description": "The number of most likely tokens to sample from.",
-      "minimum": -9223372036854775808,
-      "maximum": 9223372036854775807
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
     },
     "maxOutputTokens": {
       "type": "integer",
       "description": "The maximum number of tokens to generate.",
       "minimum": 1,
-      "maximum": 9223372036854775807
+      "maximum": 9007199254740991
     },
     "stopSequences": {
       "type": "array",
@@ -42,20 +38,16 @@ var defaultSettings = newType(
     "seed": {
       "type": "integer",
       "description": "The seed for deterministic sampling, where the model supports it.",
-      "minimum": -9223372036854775808,
-      "maximum": 9223372036854775807
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
     },
     "presencePenalty": {
       "type": "number",
-      "description": "The presence penalty.",
-      "minimum": -1.7976931348623157e308,
-      "maximum": 1.7976931348623157e308
+      "description": "The presence penalty."
     },
     "frequencyPenalty": {
       "type": "number",
-      "description": "The frequency penalty.",
-      "minimum": -1.7976931348623157e308,
-      "maximum": 1.7976931348623157e308
+      "description": "The frequency penalty."
     }
   },
   "minProperties": 1,

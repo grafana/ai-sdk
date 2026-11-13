@@ -3,15 +3,15 @@
 ## 1. Public types
 
 - [x] 1.1 Add `default_instructions.go` and `default_settings.go` to `ai-gateway/pkg/extension/tenanttype`: the schema and example JSON, descriptions, `EnabledByDefault: false`, and the exported `DefaultInstructions()` and `DefaultSettings()` accessors. Compile schemas without panicking, and add both types to `registry`. Update the `All` and package godoc. Verify with `tenanttype` tests: `All()` returns both, in name order; the members are `defaultInstructions` and `defaultSettings`; each example passes its schema; and each schema accepts and refuses the boundary values in design.md.
-- [x] 1.2 Run `mise run generate-ai-gateway-kinds`. Verify that `kinds/middleware_members.cue` matches the expected members in design.md, and that the drift, projection, prune and manifest tests pass (`tenantschema`, `manifestdata`). Update `TestManifest_MiddlewareSchema` to expect `type`, `enabled` and the two members.
+- [x] 1.2 Hand-write the `defaultInstructions` and `defaultSettings` members in `kinds/middleware_members.cue`, then run `mise run generate-ai-gateway-kinds`. Verify that the `manifestdata` member-mirror and manifest tests pass for both types, and update `TestManifest_MiddlewareSchema` to expect `type`, `enabled` and the two members.
 
 ## 2. Implementations
 
 - [x] 2.1 Add `ai-gateway/pkg/internal/calldefaults`: the `transformer` adapter, the two factories (stop sequences clipped) and `Definitions()`, each bound with `FailSkip`. Verify with unit tests:
   - Instructions: a system message first, a system message later, none (both prepended, in order), and the input prompt not mutated.
   - Settings, ported from upstream's cases: unset fields filled; a call's `0` and `stopSequences: []` kept; headers, provider options, tools, tool choice, response format and reasoning unchanged; an append to the returned stop sequences leaves the next call unaffected.
-  - Factories: exact `9007199254740993`, a malformed member returned as an error, and no collectors registered.
-  - Definitions: tenant scope, nil `Keys` and `Sources`, `skip`.
+  - Decode: safe integers exact, every member admission accepts decodes, a malformed member returned as an error, and no collectors registered.
+  - Definitions: tenant scope, nil `Keys`, a `Decode`, `skip`.
 - [x] 2.2 Return `calldefaults.Definitions()` from `gateway.DefaultExtensions()` and update its godoc. Verify with the `pkg/gateway` tests: the shipped definitions pass `ValidateDefinitions` against `tenanttype.All()`, and the `Empty` assertion is replaced.
 
 ## 3. Gateway evidence in Go
