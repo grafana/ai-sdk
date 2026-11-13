@@ -6,6 +6,31 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestModelFamily_Claude5StrictAndNativeSupport(t *testing.T) {
+	tests := []struct {
+		modelID   string
+		supported bool
+	}{
+		{"anthropic.claude-opus-5", true},
+		{"anthropic.claude-opus-5-5", true},
+		{"anthropic.claude-sonnet-5", true},
+		{"anthropic.claude-sonnet-5-5", true},
+		{"global.anthropic.claude-sonnet-5-5", true},
+		{"global.anthropic.claude-haiku-5-5", true},
+		{"anthropic.claude-haiku-5", false},
+		{"anthropic.claude-haiku-5-5-preview", false},
+		{"anthropic.claude-haiku-5-5-9", false},
+		{"anthropic.claude-sonnet-5-9", false},
+		{"anthropic.claude-opus-5-60-v1", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.modelID, func(t *testing.T) {
+			assert.Equal(t, tc.supported, supportsNativeStructuredOutput(tc.modelID), "native")
+			assert.Equal(t, tc.supported, supportsStrictTools(tc.modelID), "strict")
+		})
+	}
+}
+
 func TestModelFamily_StructuredOutputSupport(t *testing.T) {
 	tests := []struct {
 		modelID      string
@@ -25,9 +50,9 @@ func TestModelFamily_StructuredOutputSupport(t *testing.T) {
 		{modelID: "anthropic.claude-sonnet-4-6-v1", strict: true, known: true, capabilitySO: true},
 		{modelID: "anthropic.claude-haiku-4-5-20251001-v1:0", strict: true, known: true, capabilitySO: true},
 		{modelID: "anthropic.claude-opus-4-7", known: true, capabilitySO: true},
-		{modelID: "anthropic.claude-opus-5", known: true, capabilitySO: true},
-		{modelID: "anthropic.claude-sonnet-5-5", known: true, capabilitySO: true},
-		{modelID: "us.anthropic.claude-haiku-5-5", known: true, capabilitySO: true},
+		{modelID: "anthropic.claude-opus-5", native: true, strict: true, known: true, capabilitySO: true},
+		{modelID: "anthropic.claude-sonnet-5-5", native: true, strict: true, known: true, capabilitySO: true},
+		{modelID: "us.anthropic.claude-haiku-5-5", native: true, strict: true, known: true, capabilitySO: true},
 		{modelID: "us.anthropic.claude-opus-4-9-v1:0", known: true},
 		{modelID: "us.anthropic.claude-opus-6-v1:0", capabilitySO: true},
 		{modelID: "global.anthropic.claude-future-v1:0", capabilitySO: true},
