@@ -166,3 +166,21 @@ func TestNormalizeOpenAIJSONSchema_RemovedPropertyNamesDoesNotWarnForPattern(t *
 	require.Len(t, warnings, 1)
 	assert.Equal(t, "JSON Schema propertyNames", warnings[0].Feature)
 }
+
+func TestNormalizeOpenAIJSONSchema_UntypedPropertyNamesAreRemovedWithWarning(t *testing.T) {
+	for name, schema := range map[string]string{
+		"enum":           `{"type":"object","propertyNames":{"enum":["a","b"]}}`,
+		"pattern":        `{"type":"object","propertyNames":{"pattern":"^[a-z]+$"}}`,
+		"nested pattern": `{"type":"object","properties":{"x":{"type":"object","propertyNames":{"pattern":"^[a-z]+$"}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, warnings, err := normalizeOpenAIJSONSchema(json.RawMessage(schema))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.NotContains(t, string(encoded), "propertyNames")
+			require.Len(t, warnings, 1)
+			assert.Equal(t, "JSON Schema propertyNames", warnings[0].Feature)
+		})
+	}
+}
