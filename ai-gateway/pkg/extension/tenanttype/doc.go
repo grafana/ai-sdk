@@ -15,10 +15,16 @@
 //
 // A type's configuration is stored in the spec member named [Type.Member].
 // Its schema is projected into the manifest, keeping JSON types, properties,
-// items, closed objects, typed maps, required fields and descriptions, and
-// dropping value constraints, which admission checks instead. Objects must
-// declare additionalProperties false or a typed value schema, and nodes must
-// have exactly one JSON type; combinators are not supported.
+// items, closed objects, required fields and descriptions, and dropping value
+// constraints, which admission checks instead. A schema uses closed objects
+// and arrays only: every object declares properties with additionalProperties
+// false, and every node has exactly one JSON type. Typed maps, $ref and
+// combinators are not supported. Integer fields declare a minimum and a
+// maximum within ±(2^53−1), the safe integers of a JavaScript number, so
+// validation compares them exactly.
+//
+// The tests of this package check the registry: names, unique and
+// unreserved members, and examples the schemas accept.
 //
 // The platform validates every write against the current schema, including
 // fields the write leaves unchanged. A type's schema therefore changes only
