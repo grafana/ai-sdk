@@ -76,10 +76,9 @@ pnpm --filter ./ai-gateway build
 """
 
 [tasks.generate-ai-gateway-kinds]
-description = "Generate the AI Gateway Middleware members from the public tenant types, then the app manifest and kind types"
+description = "Generate the AI Gateway app manifest and kind types from the CUE kinds"
 run = """
 mise deps install --only test
-(cd ai-gateway && go run ./pkg/internal/tenantschema/cmd/members)
 pnpm --filter ./ai-gateway generate:kinds
 """
 

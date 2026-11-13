@@ -198,7 +198,7 @@ Every extension SHALL have one instance per process, constructed at startup befo
 - **THEN** each call's phases SHALL run sequentially and see only that call's state
 
 ### Requirement: Tenant configuration documentation
-The extension guide SHALL describe the `Middleware` resource and its members, roles and admission rules, disabling after a rollback, how a public tenant type is added and projected, that private extensions are operator-scope unless they implement a public type, propagation within the TTL on each replica, read failures and their bound, behavior without API access, and what tenant extensions see.
+The extension guide SHALL describe the `Middleware` resource and its members, roles and admission rules, disabling after a rollback, how a public tenant type is added and its member mirrored, that private extensions are operator-scope unless they implement a public type, propagation within the TTL on each replica, read failures and their bound, behavior without API access, and what tenant extensions see.
 
 #### Scenario: Extension author reads the guide
 - **WHEN** an extension author reads the guide's tenant configuration section
@@ -209,7 +209,7 @@ The extension guide SHALL describe the `Middleware` resource and its members, ro
 - **THEN** they SHALL find the TTL, that replicas converge independently, and that a failed read never falls back to a more permissive default
 
 ### Requirement: Tenant configuration evidence
-Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, exact numbers, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
+Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
 
 #### Scenario: End-to-end suite with the shipped build
 - **WHEN** the plugin end-to-end suite runs against the pinned Grafana image
