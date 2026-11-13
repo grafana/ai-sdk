@@ -245,19 +245,21 @@ Startup fails when a tenant-scope definition has no public type, or differs
 from its type in schema or default. To add a type:
 
 1. Add it to the `tenanttype` registry with a description and an example.
-2. Run `mise run generate-ai-gateway-kinds`, which projects the schema into the
-   manifest and regenerates the kind. The projection keeps JSON types,
-   properties, items, required fields and descriptions, and drops value
-   constraints and defaults.
-3. The generator refuses schemas the platform would prune or can't express.
    Schemas use closed objects and arrays only: every node needs exactly one
    JSON type, and every object declares properties with
    `additionalProperties: false`. Typed maps, `$ref` and combinators such as
    `oneOf` aren't supported. A `minimum` or `maximum` on an integer field
    must be within ±(2^53−1), the safe integers of a JavaScript `number`; as
    upstream, integers beyond that range aren't compared exactly. The
-   generator also refuses a type whose example doesn't survive Grafana's
-   pruning.
+   registry's tests check these rules.
+2. Add its member to `ai-gateway/kinds/middleware_members.cue` by hand, named
+   after the type in lowerCamel case. Mirror the schema's structure: the same
+   properties, JSON types, array items, required fields and descriptions,
+   without enums, patterns, bounds or defaults. Admission checks those against
+   the type's schema.
+3. Run `mise run generate-ai-gateway-kinds` to regenerate the manifest and the
+   kind types. A manifest test fails when the member and the type's schema
+   disagree, or when the member refuses the type's example.
 
 Grafana validates every write against the current schema, including fields
 the write doesn't change. A type's schema can therefore only grow: add

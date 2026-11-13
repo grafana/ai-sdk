@@ -349,8 +349,8 @@ Startup SHALL fail, before any setting is read and also on hosts that start idle
 - **WHEN** a tenant-scope definition has a public type's name but another schema or default
 - **THEN** startup SHALL fail naming the extension and the differing field
 
-### Requirement: Tenant configuration member projection
-Each manifest member SHALL be projected from its type's schema of closed objects and arrays, keeping JSON types, properties, items, required fields and descriptions, and dropping value constraints and defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. A type whose projection is not structural, or whose example pruning changes, SHALL be refused. A drift check SHALL guarantee the committed manifest equals the projection.
+### Requirement: Tenant configuration members mirror their types
+Each manifest member SHALL mirror its type's schema structurally: the same properties, JSON types, items and required fields, closed objects and descriptions, with no value constraints or defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. Type schemas SHALL use closed objects and arrays only. A consistency test SHALL fail when a member and its type disagree, or when the member refuses the type's example.
 
 #### Scenario: Value constraints stay in admission
 - **WHEN** a type's schema has an enum, a pattern or a bound on a field
@@ -358,15 +358,15 @@ Each manifest member SHALL be projected from its type's schema of closed objects
 
 #### Scenario: Schema the platform would prune
 - **WHEN** a type's schema has an open object, an empty object, an object without an explicit `additionalProperties: false`, a typed map, a `$ref`, an untyped node or a combinator
-- **THEN** the type SHALL be refused before it reaches the manifest
+- **THEN** the repository checks SHALL fail naming the type
 
 #### Scenario: Integer field bounds
 - **WHEN** a type's schema declares a `minimum` or `maximum` on an integer field outside ±(2^53−1)
-- **THEN** the type SHALL be refused before it reaches the manifest
+- **THEN** the repository checks SHALL fail naming the type
 
 #### Scenario: Drift
-- **WHEN** the registry changes without regenerating the manifest
-- **THEN** the repository checks SHALL fail
+- **WHEN** a type's schema changes without its hand-written manifest member, or the other way round
+- **THEN** the repository checks SHALL fail naming the member
 
 ### Requirement: Tenant configuration admission
 Admission SHALL accept a create or update only when the spec sets no member other than its type's, `spec.type` names a tenant-scope extension the distribution implements, a type with configuration has its member when `enabled` is `true`, a type without configuration has no member, and a present member matches that type's full schema. Operator-scope, unregistered and unimplemented types SHALL be refused with the same reason.
