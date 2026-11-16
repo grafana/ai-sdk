@@ -39,6 +39,10 @@ SHALL fail.
 - **WHEN** a function declaration omits parameters
 - **THEN** the adapter supplies an empty object parameter schema.
 
+#### Scenario: Standard message variants
+- **WHEN** history contains developer instructions, names, refusal history or multipart text tool results
+- **THEN** developer instructions map to system messages, refusal text remains in history, and tool text parts concatenate in order; compatible Chat candidates retain native developer, name and refusal fields.
+
 ### Requirement: Candidate-local Chat defaults
 
 The adapter SHALL supply an execution.Translator per call, copying options and
@@ -312,3 +316,14 @@ mapping/protocol-hop proof from live-provider or deployed-Grafana acceptance.
   until the caller cancels
 - **THEN** the client sees incremental output and cancellation reaches the
   provider through the shared runtime and plugin host.
+
+
+### Requirement: Preserve message semantics across transports
+
+The adapter MUST reject named participants and substantive assistant refusal
+history before native I/O when the selected transport is not compatible Chat.
+Empty or null refusal MUST remain accepted.
+
+#### Scenario: Named participant on Responses
+- **WHEN** a Chat request names a participant and selects a Responses candidate
+- **THEN** the request fails as unsupported before calling the native model

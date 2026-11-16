@@ -15,7 +15,8 @@
               "system",
               "user",
               "assistant",
-              "tool"
+              "tool",
+              "developer"
             ]
           },
           "content": {
@@ -31,15 +32,20 @@
                       "type": "object",
                       "properties": {
                         "type": {
-                          "const": "text"
+                          "enum": [
+                            "text",
+                            "refusal"
+                          ]
                         },
                         "text": {
+                          "type": "string"
+                        },
+                        "refusal": {
                           "type": "string"
                         }
                       },
                       "required": [
-                        "type",
-                        "text"
+                        "type"
                       ],
                       "additionalProperties": false
                     },
@@ -104,6 +110,15 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "refusal": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         },

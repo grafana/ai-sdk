@@ -18,11 +18,13 @@ type kind string
 
 const (
 	roleSystem    role = "system"
+	roleDeveloper role = "developer"
 	roleUser      role = "user"
 	roleAssistant role = "assistant"
 	roleTool      role = "tool"
 	kindFunction  kind = "function"
 	kindText      kind = "text"
+	kindRefusal   kind = "refusal"
 	kindJSON      kind = "json_object"
 	kindSchema    kind = "json_schema"
 )
@@ -55,6 +57,8 @@ type request struct {
 }
 type message struct {
 	Role       role            `json:"role"`
+	Name       *string         `json:"name"`
+	Refusal    *string         `json:"refusal"`
 	Content    json.RawMessage `json:"content"`
 	ToolCalls  []toolCall      `json:"tool_calls"`
 	ToolCallID *string         `json:"tool_call_id"`
@@ -174,14 +178,7 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	}
 	pending := map[string]string{}
 	used := map[string]bool{}
-	seenNonSystem := false
 	for _, m := range r.Messages {
-		if m.Role == roleSystem && seenNonSystem {
-			return r, errRequest
-		}
-		if m.Role != roleSystem {
-			seenNonSystem = true
-		}
 		if m.Role != roleTool && len(pending) > 0 {
 			return r, errRequest
 		}
@@ -189,29 +186,33 @@ func mapRequest(data []byte) (mappedRequest, error) {
 			return r, errRequest
 		}
 		p := provider.Message{Role: provider.Role(m.Role)}
+		if m.Role == roleDeveloper {
+			p.Role = provider.RoleSystem
+		}
+		if m.Name != nil && !namePattern.MatchString(*m.Name) {
+			return r, errRequest
+		}
+		if m.Refusal != nil && m.Role != roleAssistant {
+			return r, errRequest
+		}
 		switch m.Role {
-		case roleSystem, roleUser, roleAssistant:
+		case roleSystem, roleDeveloper, roleUser, roleAssistant:
 			if present(m.Content) {
 				var text string
 				if json.Unmarshal(m.Content, &text) == nil {
 					p.Content = []provider.ContentPart{provider.TextPart(text)}
 				} else {
-					var parts []struct {
-						Type kind    `json:"type"`
-						Text *string `json:"text"`
+					parts, err := textContent(m.Content, m.Role == roleAssistant)
+					if err != nil {
+						return r, err
 					}
-					if decodeStrict(m.Content, &parts) != nil || len(parts) > 1024 {
-						return r, errRequest
-					}
-					for _, part := range parts {
-						if part.Type != kindText || part.Text == nil {
-							return r, errRequest
-						}
-						p.Content = append(p.Content, provider.TextPart(*part.Text))
-					}
+					p.Content = parts
 				}
-			} else if m.Role != roleAssistant || len(m.ToolCalls) == 0 {
+			} else if m.Role != roleAssistant || (len(m.ToolCalls) == 0 && m.Refusal == nil) {
 				return r, errRequest
+			}
+			if m.Refusal != nil {
+				p.Content = append(p.Content, provider.TextPart(*m.Refusal))
 			}
 			for _, call := range m.ToolCalls {
 				if call.Type != kindFunction || call.ID == "" || len(call.ID) > 256 || used[call.ID] || !namePattern.MatchString(call.Function.Name) || !jsonObject([]byte(call.Function.Arguments)) {
@@ -226,8 +227,17 @@ func mapRequest(data []byte) (mappedRequest, error) {
 				return r, errRequest
 			}
 			var text string
-			if !present(m.Content) || json.Unmarshal(m.Content, &text) != nil {
+			if !present(m.Content) {
 				return r, errRequest
+			}
+			if json.Unmarshal(m.Content, &text) != nil {
+				parts, err := textContent(m.Content, false)
+				if err != nil {
+					return r, err
+				}
+				for _, part := range parts {
+					text += part.Text
+				}
 			}
 			p.Content = []provider.ContentPart{provider.ToolResultPart(*m.ToolCallID, pending[*m.ToolCallID], &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: text})}
 			delete(pending, *m.ToolCallID)
