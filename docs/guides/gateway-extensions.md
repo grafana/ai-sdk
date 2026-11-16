@@ -297,11 +297,12 @@ calls that a tenant extension applies to, and caches each namespace:
 - Each Gateway replica caches on its own, so replicas can disagree for up to
   that window.
 - A failed read is never treated as "no resources". The last configuration
-  read successfully keeps applying for up to 10 minutes, and failed reads are
-  retried every 30 seconds. After that, or when the first read fails, every
-  tenant extension in the namespace applies its failure policy: `skip`
-  extensions are off and `fail-closed` ones refuse calls with the unavailable
-  error. The Gateway never falls back to the more permissive default.
+  read successfully keeps applying until a read succeeds, and a failed read is
+  retried after the same minute. When a namespace's first read fails, every
+  tenant extension in it applies its failure policy until a read succeeds:
+  `skip` extensions are off and `fail-closed` ones refuse calls with the
+  unavailable error. The Gateway never falls back to the more permissive
+  default. Read failures show in the read metrics and logs.
 
 Prefer `skip` for tenant extensions. A `fail-closed` tenant extension turns an
 outage of Grafana's API into refused calls in every namespace it applies to.

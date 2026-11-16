@@ -14,7 +14,7 @@
 
 ## Goals / Non-Goals
 
-**Goals:** apply each namespace's stored configuration without trusting callers; never fail open on read failures; bound memory, API load and staleness; keep one instance per extension and pass each namespace's configuration to calls as data; keep the shipped build inert until it registers a tenant extension.
+**Goals:** apply each namespace's stored configuration without trusting callers; never fail open on read failures; bound memory and API load; keep one instance per extension and pass each namespace's configuration to calls as data; keep the shipped build inert until it registers a tenant extension.
 
 **Non-Goals:** an all-namespace informer or watch; a status writer; operator-configurable cache constants; admission warnings through app-sdk (see Decision: admission without API access); shipped tenant extensions (#766); stack-catalog sources (#757).
 
@@ -25,7 +25,7 @@
 `tenantconfig.NewReader(kubeConfig rest.Config) (*Reader, error)`, called in the provider callback when `KubeConfig.Host` is not empty:
 
 - Copies the config. Sets `GroupVersion` to the manifest group and `v1alpha1`, `APIPath` `/apis`, app-sdk's `k8s.GenericNegotiatedSerializer`, and an explicit client rate limit (`readQPS` 20, `readBurst` 40). Builds one `rest.RESTClientFor`. The kubeconfig's `WrapTransport` (token exchange) and TLS settings come along unchanged.
-- `Read(ctx, namespace)` lists `namespaces/<ns>/middlewares` in pages of `listPageSize` (100), following `continue`. It streams each page through `io.LimitReader` with a total bound of `maxListBytes` (4 MiB) and keeps each item's `metadata.name` and raw `spec`.
+- `Read(ctx, namespace)` lists `namespaces/<ns>/middlewares` in one request with `limit` 100. A namespace holds at most one resource per tenant type (D15), far fewer, so a response with a non-empty `continue` is invalid. It reads the body through one `io.LimitReader` bound of `maxListBytes` (4 MiB) and keeps each item's `metadata.name` and raw `spec`.
 - `resourceFrom` is the only reader code that knows the spec shape: it decodes the spec with `DecodeSpec` and returns `extensionhost.TenantResource{Name, Type, Enabled, Config, Invalid}`, where `Config` is the type's member in canonical JSON (numbers as written), or nil without a member. A spec that can't be decoded, or sets another type's member or more than one member, is `Invalid`, so only that extension applies its failure policy. An item without a name invalidates the whole list.
 - A failure returns a classed error: `refused` (401, 403), `not found` (404: the kind isn't served, never "no resources"), `unexpected status`, `timeout`, `invalid response` (decode error or exceeded bound) or `error`. Classification uses `apierrors` predicates and never keeps the body.
 - Alternative: the generated `MiddlewareClient` through `k8s.NewClientRegistry`. Rejected because its generated types decode members into `float64`s. A dynamic or unstructured client converts numbers to `int64` or `float64`, which still loses precision outside `int64`.
@@ -47,40 +47,31 @@ Loads run on a goroutine whose context is derived from the cache's own root (`co
 
 ### Cache state machine
 
-One entry per namespace, in an LRU of `maxNamespaces` (1024). An entry holds the served namespace configuration, `loadedAt` (the last successful read), `retryAt`, and at most one in-flight load.
+One entry per namespace, at most `maxNamespaces` (1024). An entry holds the served namespace configuration, the resources it was built from, `readAt` (the last read, successful or not), `lastUsed`, and at most one in-flight load. It has three states: no configuration yet (the first read is in flight), current, and refreshing.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Loading: first call (waits)
-    Loading --> Fresh: read ok, resources
-    Loading --> Absent: read ok, none
-    Loading --> Failed: read failed (failure configuration)
-    Fresh --> Stale: TTL elapsed
-    Absent --> Stale: TTL elapsed
-    Stale --> Fresh: refresh ok (rebuild only if changed)
-    Stale --> Absent: refresh ok, none
-    Stale --> StaleFailed: refresh failed (serve last-known-good, back off)
-    StaleFailed --> Fresh: retry ok
-    StaleFailed --> Failed: 10 min since loadedAt
-    Failed --> Fresh: retry ok after backoff
-    Failed --> Absent: retry ok, none
-    Fresh --> [*]: evicted or shutdown
+    Loading --> Current: read ok (configuration built)
+    Loading --> Current: read failed (failure configuration)
+    Current --> Refreshing: TTL since readAt
+    Refreshing --> Current: read ok (rebuilt only if resources changed)
+    Refreshing --> Current: read failed (configuration kept)
+    Current --> [*]: evicted or shutdown
 ```
 
 - **Acquire** (under the cache mutex):
-  1. Touch the LRU. Eviction skips the entry just touched and entries with a read in flight, so the bound can be exceeded by the reads in flight until a later touch.
+  1. Mark the entry used. Creating an entry when the cache is full first evicts the least recently used entry without a read in flight, found by a scan; entries with reads in flight can exceed the bound until a later insert.
   2. If the entry has no configuration, start the load when none is in flight, then wait outside the lock.
-  3. Otherwise:
-     - if `now >= loadedAt+ttl` (or the last read failed), and no load is in flight, and `now >= retryAt`, start a background refresh;
-     - if the last read failed, `loadedAt+maxStaleness <= now` and the configuration came from a read, replace it with the shared failure configuration. A namespace whose last read succeeded is never expired, however long it was idle: its refresh replaces it.
+  3. Otherwise, if `now >= readAt+ttl` and no load is in flight, start a background refresh.
   4. Return the served configuration. It is immutable, so no reference is taken.
 - **Load result:**
-  - **Success:** compare the resources with the current configuration's. If they're equal, only `loadedAt` moves and nothing is decoded. Otherwise build the new configuration outside the lock and swap the pointer in.
-  - **Failure:** `retryAt = now + failureBackoff` (30 s, fixed). Without a configuration, install the failure configuration. Otherwise keep last-known-good until the bound.
+  - **Success:** compare the resources with the last ones read (`slices.EqualFunc`, with `bytes.Equal` for configuration). If they're equal, only `readAt` moves and nothing is decoded. Otherwise build the new configuration outside the lock and swap the pointer in.
+  - **Failure:** `readAt` moves, so the read is retried after the TTL, like a successful one. Without a configuration, install the failure configuration. Otherwise keep last-known-good until a read succeeds.
   - **Evicted or closed meanwhile:** the result is dropped.
-- **Constants:** `ttl` 1 minute, `maxStaleness` 10 minutes, `readTimeout` 5 s, `failureBackoff` 30 s and `maxNamespaces` 1024 are named constants that `extensionhost.TenantCacheConfig` can override in tests. The clock comes from `Config.Clock`, so `synctest` drives it.
-- **Revision:** a per-entry counter that increments on every swap. It appears in logs. The list key is the configuration itself, keyed by key ownership inside it, so the effective key is (namespace, revision, key ownership).
-- **Memory:** a configuration keeps the decoded value of each enabled tenant extension. Equality uses a SHA-256 of the normalized resources. The worst case is `maxNamespaces` × tenant definitions × 64 KiB of configuration, plus what decoders make of it.
+- **Constants:** `ttl` 1 minute, `readTimeout` 5 s and `maxNamespaces` 1024 are named constants that `extensionhost.TenantCacheConfig` can override in tests. The clock comes from `Config.Clock`, so `synctest` drives it.
+- **Revision:** the list key is the configuration itself, keyed by key ownership inside it, so the effective key is (namespace, configuration, key ownership).
+- **Memory:** an entry keeps its resources, each member at most 64 KiB, and the decoded value of each enabled tenant extension. The worst case is `maxNamespaces` × tenant types × 64 KiB, plus what decoders make of it.
 
 ### Namespace configuration
 
@@ -96,7 +87,7 @@ A namespace's configuration is built from its resources and the tenant definitio
 | an invalid spec, a missing member for a type with a schema, a member for a schema-less type, a failing member, `name != type`, or a `Decode` error or panic | failed: `skip` drops it; `fail-closed` marks it unavailable |
 
 - The **failure configuration** is shared: operator extensions only, with every fail-closed tenant extension unavailable.
-- Enabled resources whose type this build doesn't implement are logged and counted once per entry and type (the entry keeps a set). Disabled and invalid ones are ignored.
+- Enabled resources whose type this build doesn't implement are logged and counted in `buildNamespace`, which runs only when a namespace's resources change. Disabled and invalid ones are ignored.
 - Configuration and decoding failures count once per change under `extension_events_total{phase="configure",event="failed"}`, with one warning naming the extension, namespace, policy and class. Calls that a `fail-closed` failure refuses are visible in the model metrics as unavailable errors.
 - Each configuration precomputes `lists` per key ownership: operator instances and the enabled tenant instances in name order, with each one's configuration alongside (`configs`, nil for operators), and the unavailable definitions. An absent namespace gets the default lists.
 
@@ -166,11 +157,11 @@ All cache, configuration and pipeline timing tests run in `synctest` bubbles wit
 | Acceptance | Evidence |
 |---|---|
 | Two namespaces stay isolated | `extensionhost` pipeline test: a recording tenant transform configured differently in `a` and `b`, defaults in `c`, and disabled default-on in `d`, unary and stream. Gateway test through the test host: resources created via admission in two namespaces, with each call's transform reflecting its own configuration. |
-| A read failure never applies a more permissive default; last-known-good stays within the bound | Cache test: first read fails, so `skip` default-on is off and `fail-closed` refuses with `ErrUnavailable` and zero model calls. Success, then failing refreshes: at `loadedAt+10m-1ns` last-known-good still disables a default-on extension, and at `+10m` the failure policy applies. Then success restores. Reader tests: 403 and 404 are failures, not absence. |
+| A read failure never applies a more permissive default; last-known-good is kept until a read succeeds | Cache test: first read fails, so `skip` default-on is off and `fail-closed` refuses with `ErrUnavailable` and zero model calls. A later read after the TTL applies the default. Success, then failing refreshes for hours: last-known-good still disables a default-on extension, failed reads retry only after the TTL, and the next success applies. Reader tests: 403 and 404 are failures, not absence. |
 | A type not implemented is skipped and counted | Cache test: an enabled resource of a type not implemented, three acquires and two unchanged refreshes produce one log and one count. A disabled or invalid one produces neither. An operator-type name counts as not implemented. |
 | Caller permissions don't affect reads | Cache test: the reader's context carries no `AuthInfo` and isn't cancelled when the waiting caller cancels, and the next call uses the result without a second read. Gateway test: the test host's exchange log shows no subject token for reads triggered by a user's call. |
 | Concurrent first requests share one load | Cache test: ten goroutines acquire an uncached namespace, `synctest.Wait`, one `Read` call, and all get the same configuration. |
-| A change applies within the TTL (injected) | Pipeline test: a call at `ttl-1ns` sees the old configuration and doesn't read. A call at `ttl` sees the old configuration and triggers one refresh. After `synctest.Wait`, the next call sees the new one. A refresh that fails is retried at `retryAt` and not before. |
+| A change applies within the TTL (injected) | Pipeline test: a call at `ttl-1ns` sees the old configuration and doesn't read. A call at `ttl` sees the old configuration and triggers one refresh. After `synctest.Wait`, the next call sees the new one. A refresh that fails is retried after the TTL and not before. |
 | Self-hosted without API access | Gateway test with a zero kubeconfig: no list request reaches the test host, default-on runs, default-off doesn't, one warning record, a create refused with `400` and the fixed reason, and a delete succeeds unreviewed. `tenantconfig` test: `WithoutAPIAccess` refuses a disable-only update too. |
 | Development deployment check | Manual follow-up (above). |
 | Follow-ups: raw JSON, read-time check | Reader test: a nested member with the largest safe integer reaches `Call.Config`. Configuration table test: a schema-less extension with no member gets nil, a member for it fails; a tightened schema, a `Decode` error and a `Decode` panic apply the failure policy, with a sentinel absent from logs. |
@@ -181,7 +172,7 @@ All cache, configuration and pipeline timing tests run in `synctest` bubbles wit
 
 - [A fail-closed tenant extension turns an API outage into refused calls for every namespace where it applies, even without resources] → It's the approved "never more permissive" rule. The guide says tenant gates should prefer `skip`, and must-have gates are mandatory operator extensions. #766's extensions are `skip`.
 - [First calls in a namespace wait for a read, up to 5 s] → Only the first call per entry. Refreshes are background. Absence is cached too.
-- [API load is replicas × active namespaces / TTL, and deploy restarts cause a cold-start burst] → Client rate limit and the backoff. Documented. An informer is the later investigation.
+- [API load is replicas × active namespaces / TTL, and deploy restarts cause a cold-start burst] → Client rate limit, and failed reads retry at the TTL. Documented. An informer is the later investigation.
 - [Wildcard-namespace plugin token and `list` permission are unverified in Cloud] → Manual deployment check. The read-failure class `refused` makes a gap visible.
 - [Refusing writes without API access deviates from the design article's "accepted with a warning"] → Recorded decision B and the follow-up to A.
 - [Not-implemented-type logs repeat after eviction] → Bounded by eviction rate. Documented.
@@ -207,6 +198,7 @@ All cache, configuration and pipeline timing tests run in `synctest` bubbles wit
 - **API-access evidence in CI:** one Info record at app construction, and a positive check in `scripts/e2e.sh`. It closes #764's follow-up on the vacuous plugin-log sentinel check.
 - **Cache constants** stay constants, not operator settings.
 - **Fail-closed on a first-read failure** applies in namespaces without resources too: a failed read is never a missing resource.
+- **Last-known-good (Q5): (a), unbounded.** A failed refresh keeps the last configuration read until a read succeeds. It preserves known disablements, the reason for D17 and Q5, with one rule fewer than a staleness bound; a lasting read failure shows in the read metrics and logs. A failed read retries at the TTL, with no separate backoff.
 
 ## Follow-ups
 
