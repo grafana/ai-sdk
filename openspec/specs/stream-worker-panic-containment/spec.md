@@ -8,7 +8,7 @@ Keep a panic while producing, forwarding or observing one model stream on the Ga
 
 ### Requirement: Stream workers contain panics
 
-The stream worker goroutines that produce or forward provider stream parts on the Gateway path SHALL recover a panic, emit at most one terminal error part when the consumer can still receive, close their output and release upstream resources through their existing ownership paths. The terminal part SHALL carry a non-retryable `APICallError` without a status code whose cause is the internal `ErrPanic` sentinel, and no part SHALL follow it. A panic while closing a provider response body SHALL be discarded, whether the worker or a cancellation callback closes it.
+The stream worker goroutines that produce or forward provider stream parts on the Gateway path SHALL recover a panic, emit at most one terminal error part when the consumer can still receive, close their output and release upstream resources through their existing ownership paths. The terminal part SHALL carry a non-retryable `APICallError` without a status code whose cause is the internal `ErrPanic` sentinel, and no part SHALL follow it.
 
 #### Scenario: Transport reader panics mid-stream
 - **WHEN** reading a provider response body panics after `DoStream` returned a stream
@@ -18,6 +18,10 @@ The stream worker goroutines that produce or forward provider stream parts on th
 - **WHEN** converting a provider event into stream parts panics
 - **THEN** the stream SHALL end with one terminal error part matching `ErrPanic` and its output SHALL close
 - **AND** a transport reader still waiting on the response body SHALL be released
+
+### Requirement: Response body close panics are discarded
+
+A panic while closing a provider response body SHALL be discarded, whether the worker or a cancellation callback closes it.
 
 #### Scenario: Response body close panics
 - **WHEN** closing the provider response body panics, after the stream finished, after a reader panic or on cancellation
