@@ -74,7 +74,7 @@ func categoryStatus(category execution.Category) int {
 		return 403
 	case execution.CategoryRateLimit:
 		return 429
-	case execution.CategoryOverload:
+	case execution.CategoryOverload, execution.CategoryUnavailable:
 		return 503
 	case execution.CategoryFailedDependency:
 		return 424

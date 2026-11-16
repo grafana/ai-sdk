@@ -3,6 +3,7 @@ package chatcompletions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	openaisdk "github.com/openai/openai-go/v3"
@@ -117,6 +119,8 @@ func TestHandler_SafeErrors(t *testing.T) {
 		{"internal", nil, errors.New("secret"), 500},
 		{"upstream", nil, &provider.APICallError{StatusCode: 403, Message: "secret"}, 424},
 		{"rate limit", nil, &provider.APICallError{StatusCode: 429, Message: "secret"}, 429},
+		{"extension denial", nil, fmt.Errorf("secret: %w", extension.ErrDenied), 403},
+		{"extension unavailable", nil, fmt.Errorf("secret: %w", extension.ErrUnavailable), 503},
 		{"nil response", nil, nil, 500},
 		{"invalid response", &provider.GenerateResult{}, nil, 500},
 	} {
