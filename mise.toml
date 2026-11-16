@@ -7,14 +7,14 @@ experimental = true
 GOWORK = "off"
 
 [tools]
-go = "1.27.3"
+go = "1.27.4"
 jq = "1.8.2"
 node = "26"
 pnpm = "12.18.0"
 python = "3.15.2"
 golangci-lint = "2.15.0"
 mage = "1.17.2"
-"npm:@fission-ai/openspec" = "1.16.0"
+"npm:@fission-ai/openspec" = "2.0.0"
 "npm:markdownlint-cli2" = "0.24.0"
 
 [deps.test]
@@ -280,7 +280,7 @@ description = "Upgrade OpenSpec and refresh centralized agent skills"
 run = "bash scripts/update-openspec-skills.sh"
 
 [tasks.test-update-openspec]
-description = "Test centralized OpenSpec skill freshness and rollback"
+description = "Test centralized OpenSpec skill freshness"
 run = "bash scripts/update-openspec-skills_test.sh"
 
 [tasks.tidy]

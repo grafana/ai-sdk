@@ -25,6 +25,9 @@
 // options, provider metadata, and opaque error messages require explicit
 // CaptureOptions.
 //
+// Options.IsDenied classifies policy denials: their terminal record uses
+// outcome and error type "denied" at Level instead of ErrorLevel.
+//
 // Terminal records prefer response provider/model metadata when a gateway or
 // router reports the backend that served the call. The original wrapper identity
 // is retained as transport metadata when it differs.

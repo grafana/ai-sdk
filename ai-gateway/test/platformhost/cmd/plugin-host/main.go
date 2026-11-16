@@ -21,6 +21,8 @@ import (
 	"github.com/grafana/authlib/types"
 	"github.com/hashicorp/go-hclog"
 
+	"github.com/grafana/grafana-app-sdk/app"
+
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
@@ -44,12 +46,17 @@ func run() error {
 	serviceAccount := flag.String("service-account-token", "", "service account token to register")
 	logLevel := flag.String("log-level", "info", "level at which plugin log records are relayed")
 	routeDeadline := flag.Duration("route-deadline", 0, "deadline of each forwarded route call, as a platform route deadline; 0 disables it")
+	manifest := flag.String("manifest", "", "app manifest JSON whose kinds the host stores in memory")
 	flag.Parse()
 	if *binary == "" {
 		return errors.New("--plugin is required")
 	}
+	kinds, err := manifestKinds(*manifest)
+	if err != nil {
+		return err
+	}
 
-	host, err := platformhost.New(platformhost.Config{Topology: platformhost.Topology(*topology), PluginID: pluginID, Group: group, Version: version, RouteDeadline: *routeDeadline})
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.Topology(*topology), PluginID: pluginID, Group: group, Version: version, RouteDeadline: *routeDeadline, Kinds: kinds})
 	if err != nil {
 		return err
 	}
@@ -125,6 +132,35 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
+}
+
+// manifestKinds reads the served version's kinds from an app manifest file,
+// or returns none without one.
+func manifestKinds(path string) ([]app.ManifestVersionKind, error) {
+	if path == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading the manifest: %w", err)
+	}
+	var manifest struct {
+		Spec struct {
+			Versions []struct {
+				Name  string                    `json:"name"`
+				Kinds []app.ManifestVersionKind `json:"kinds"`
+			} `json:"versions"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return nil, fmt.Errorf("decoding the manifest: %w", err)
+	}
+	for _, served := range manifest.Spec.Versions {
+		if served.Name == version {
+			return served.Kinds, nil
+		}
+	}
+	return nil, fmt.Errorf("the manifest does not serve %s", version)
 }
 
 type credentialKind string

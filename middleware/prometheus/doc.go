@@ -60,6 +60,10 @@
 //   - aisdk_model_inter_chunk_delay_seconds: stream histogram labeled by
 //     operation, provider, model, and chunk_type.
 //
+// Status is `success`, `error`, `canceled`, or `denied`. Set IsDenied to
+// classify policy denials, such as a gateway refusing a call, as `denied` with
+// error type `none`, so they stay out of error rates.
+//
 // Histogram buckets use seconds. Options can override request duration,
 // time-to-first-output, and inter-chunk-delay buckets. Setting
 // DisableStreamChunkMetrics disables aisdk_model_stream_chunks_total and

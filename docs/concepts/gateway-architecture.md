@@ -88,6 +88,11 @@ production table matches the committed manifest: `GET {prefix}/config` and
 `POST {prefix}/language-model`, and `POST {prefix}/v1/chat/completions`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
+The manifest also declares one kind, `ModelCatalog`. Grafana stores catalog
+objects and their provider keys itself, and asks the plugin's admission
+validator to accept or refuse each create and update. Stored catalogs do not yet
+reach discovery or selection.
+
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery
 is host-owned: the host lists the catalog for configured callers and returns the

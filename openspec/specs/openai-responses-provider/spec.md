@@ -136,11 +136,11 @@ Assistant calls SHALL become function_call or corresponding built-in call items 
 
 ### Requirement: Function result output conversion
 
-Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar error-text and error-JSON SHALL serialize as JSON objects with one error property containing the original text or JSON value, regardless of output schema. Text, JSON and execution-denied SHALL retain their existing string and output-schema encoding rules. Conversion SHALL NOT mutate caller inputs. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.
+Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar error-text and error-JSON SHALL serialize as JSON objects with one error property containing the original text or JSON value, regardless of output schema. Text, JSON and execution-denied SHALL retain their existing string and output-schema encoding rules. Conversion SHALL NOT mutate caller inputs. Scalar output SHALL remain string unless an active-namespace cache breakpoint wraps it.
 
 #### Scenario: Scalar results retain cache precedence and schema encoding
 - **WHEN** a function output is text, JSON, error-text, error-JSON, or execution-denied and both its output and tool-result part carry distinct active-namespace cache breakpoints
-- **THEN** its `function_call_output.output` is an `input_text` array carrying the output-level breakpoint and the correctly encoded scalar text
+- **THEN** its `function_call_output.output` is an `input_text` array carrying the output-level breakpoint as `prompt_cache_breakpoint` and the correctly encoded scalar text
 - **AND** without an output-level breakpoint the result-part breakpoint applies, and without either breakpoint output remains a string
 - **AND** a function tool with an output schema quotes text/denial as JSON string literals, while successful JSON remains JSON-serialized and errors retain their JSON object envelope and denial without a reason uses the default reason
 
@@ -162,7 +162,7 @@ Ordinary results SHALL use function_call_output with original call_id and existi
 
 ### Requirement: Custom tool result output conversion
 
-Configured custom results SHALL retain custom_tool_call_output and original call_id. Error-text and error-JSON SHALL serialize as JSON objects containing the original value under error, independent of output schemas and without mutating caller inputs. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL stay strings unless a selected active-namespace breakpoint (output before result part) makes an input_text array. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
+Configured custom results SHALL retain custom_tool_call_output and original call_id. Error-text and error-JSON SHALL serialize as JSON objects containing the original value under error, independent of output schemas and without mutating caller inputs. Scalar outputs SHALL stay strings unless an active-namespace breakpoint wraps them in input_text. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
 
 #### Scenario: Custom scalar breakpoint and output identity
 - **WHEN** a custom tool result has a scalar output with output-level or result-part active-namespace cache breakpoint
