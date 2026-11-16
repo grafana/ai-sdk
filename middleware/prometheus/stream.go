@@ -21,6 +21,7 @@ type streamObservation struct {
 	lastPayloadAt     time.Time
 	recordPayloadGaps bool
 	payloadGaps       []payloadGap
+	config            config
 }
 
 type payloadGap struct {
@@ -28,11 +29,12 @@ type payloadGap struct {
 	seconds   float64
 }
 
-func newStreamObservation(recordPayloadGaps bool) *streamObservation {
+func newStreamObservation(config config) *streamObservation {
 	return &streamObservation{
 		finishReason:      finishReasonNone,
 		chunkCounts:       map[string]int{},
-		recordPayloadGaps: recordPayloadGaps,
+		recordPayloadGaps: !config.disableStreamChunkMetrics,
+		config:            config,
 	}
 }
 
@@ -46,7 +48,7 @@ func (i *instrumentation) runStreamTee(
 	defer close(tee)
 	defer i.collectors.inflight.WithLabelValues(operationStream, requested.provider, requested.model).Dec()
 
-	obs := newStreamObservation(!i.config.disableStreamChunkMetrics)
+	obs := newStreamObservation(i.config)
 	for {
 		if i.config.streamDrainTimeout > 0 && ctx.Err() != nil {
 			i.drainCanceledStream(upstream)
@@ -116,7 +118,7 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 		}
 	} else if obs.streamError != nil {
 		out = *obs.streamError
-		if out.finishReason == finishReasonNone && obs.finishReason != finishReasonNone {
+		if out.status != statusDenied && out.finishReason == finishReasonNone && obs.finishReason != finishReasonNone {
 			out.finishReason = obs.finishReason
 		}
 	}
@@ -155,8 +157,10 @@ func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt 
 			o.finishReason = finishReasonLabel(*part.FinishReason)
 		}
 	case provider.PartError:
-		out := classifyStreamError(part.APICallError)
-		o.streamError = &out
+		out := o.config.classifyStreamError(part.APICallError)
+		if o.streamError == nil || o.streamError.status != statusDenied {
+			o.streamError = &out
+		}
 	}
 
 	if !isPayloadBearing(part.Type) {

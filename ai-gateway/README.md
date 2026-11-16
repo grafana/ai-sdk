@@ -186,6 +186,49 @@ elsewhere.
   token, matched exactly. Every other user and service account brings its own
   provider key with each request.
 
+## Store model catalogs in Grafana
+
+The Gateway also lets a stack store model catalogs in Grafana as `ModelCatalog`
+resources, with each provider's API key held as a Grafana secure value. The
+Gateway doesn't serve models from them yet.
+
+```yaml
+apiVersion: aigateway.ext.grafana.app/v1alpha1
+kind: ModelCatalog
+metadata:
+  name: default
+spec:
+  providers:
+    anthropic: { type: anthropic }
+  models:
+    balanced:
+      name: Balanced
+      primary: { provider: anthropic, model: claude-sonnet-4-6 }
+secure:
+  anthropic: { create: "<provider key>" }
+```
+
+Reads return `secure.anthropic.name: inline-<generated>` in place of the key.
+Grafana creates that secret for the catalog and owns it there: replacing a key
+deletes the old secret, and deleting the catalog deletes its secrets.
+
+- `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
+  `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
+  can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
+- Each provider needs exactly one secure value with the provider's name. Reads
+  return secret names, never keys. Updates can omit `secure` to keep the stored
+  keys, and `remove` a key only together with its provider.
+- Catalogs aren't in folders. Viewers and Editors can read them (`aigateway:catalogreader`)
+  and Admins can write them (`aigateway:catalogwriter`).
+- The Gateway validates every create and update, so writes fail while the
+  plugin is unavailable. Deletes always work.
+- This needs the Grafana version and feature toggles in
+  [Requirements](#requirements). Grafana Cloud doesn't store secure values for
+  plugin resources yet, so catalogs with keys are refused there.
+- Catalog models can't allow [agent skills](#allow-anthropic-agent-skills)
+  or [server-side fallbacks](#allow-anthropic-server-side-fallbacks) yet, so
+  they refuse both ([#781](https://github.com/grafana/ai-sdk/issues/781)).
+
 ## Settings
 
 | Setting | Description |
