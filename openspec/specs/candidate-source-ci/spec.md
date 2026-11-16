@@ -8,7 +8,7 @@ Validate coordinated candidate SDK and Gateway source independently of standalon
 
 ### Requirement: Required CI integrates candidate source
 
-Required source CI SHALL build, vet, lint, test and exercise cross-language integration against candidate SDK, providers, middleware and Gateway through each module's local first-party replacements. It SHALL retain formatting, docs, license/isolation, parity/conformance, structural boundary, module-policy and manifest-aligned requirement checks. It SHALL run the short tests with the Go race detector for the root module, the Gateway, and the provider and middleware modules on the Gateway stream path: anthropic, openai, openai-compatible, logger, prometheus and agentobservability. Compiling candidate code against published first-party versions SHALL NOT be a merge prerequisite.
+Required source CI SHALL build, vet, lint, test and exercise cross-language integration against candidate SDK, providers, middleware and Gateway through each module's local first-party replacements. It SHALL retain formatting, docs, license/isolation, parity/conformance, structural boundary, module-policy and manifest-aligned requirement checks. Compiling candidate code against published first-party versions SHALL NOT be a merge prerequisite.
 
 #### Scenario: Coordinated source with older merged pins
 
@@ -21,6 +21,10 @@ Required source CI SHALL build, vet, lint, test and exercise cross-language inte
 - **WHEN** the required ProviderWire client differential and request-mutation controls run
 - **THEN** the Go capture SHALL build and run candidate Grafana client against candidate SDK root, retaining the pinned TypeScript comparator
 - **AND** every copied Go-client mutant SHALL be selected by its test harness and rejected by a semantic differential assertion, not a build/setup failure
+
+### Requirement: Required CI race-tests the Gateway stream path
+
+Required source CI SHALL run the short tests with the Go race detector for the root module, the Gateway, and the provider and middleware modules on the Gateway stream path: anthropic, openai, openai-compatible, logger, prometheus and agentobservability.
 
 #### Scenario: Data race in a stream-path module
 
