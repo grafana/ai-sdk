@@ -136,7 +136,10 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*namespace
 func (c *tenantCache) touch(namespace string, now time.Time) *tenantEntry {
 	entry, ok := c.entries[namespace]
 	if !ok {
-		for len(c.entries) >= c.config.MaxNamespaces && c.evictLeastRecentlyUsed() {
+		for len(c.entries) >= c.config.MaxNamespaces {
+			if !c.evictLeastRecentlyUsed() {
+				break
+			}
 		}
 		entry = &tenantEntry{namespace: namespace}
 		c.entries[namespace] = entry
@@ -182,25 +185,29 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	resources, err := c.reader.Read(ctx, entry.namespace)
 	cancel()
 	now := c.host.clock()
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry.readAt = now
 	if err != nil {
 		if c.root.Err() == nil {
 			c.host.recordReadFailure(entry.namespace, err)
 		}
+		c.mu.Lock()
+		entry.readAt = now
 		if entry.config == nil {
 			entry.config = c.host.failed
 		}
 		c.finish(entry)
+		c.mu.Unlock()
 		return
 	}
 	c.host.reads.WithLabelValues(readSuccess).Inc()
 	if resources == nil {
 		resources = []TenantResource{}
 	}
-	if c.closed || entry.resources != nil && slices.EqualFunc(entry.resources, resources, sameResource) {
+	c.mu.Lock()
+	entry.readAt = now
+	unchanged := c.closed || entry.resources != nil && slices.EqualFunc(entry.resources, resources, sameResource)
+	if unchanged {
 		c.finish(entry)
+		c.mu.Unlock()
 		return
 	}
 	c.mu.Unlock()
@@ -210,6 +217,7 @@ func (c *tenantCache) load(entry *tenantEntry) {
 		entry.config, entry.resources = built, resources
 	}
 	c.finish(entry)
+	c.mu.Unlock()
 }
 
 // sameResource reports whether two reads of a resource configure it the
