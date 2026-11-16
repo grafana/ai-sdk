@@ -616,7 +616,7 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 ### Requirement: Converse Nova 2 Lite high reasoning omits token limits
 
-When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixes and system inference-profile ARNs, resolves to `reasoningConfig.type: enabled` with effort `high`, `xhigh`, or `max`, the provider SHALL omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning. Explicit provider `reasoningConfig` fields SHALL take precedence over portable reasoning when resolving that combination. Lower efforts, other reasoning types, and other models SHALL keep the caller's token limit.
+When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixes and system inference-profile ARNs, resolves to `reasoningConfig.type: enabled` with effort `high`, `xhigh`, or `max`, the provider SHALL omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning. Explicit provider `reasoningConfig` fields SHALL take precedence over portable reasoning when resolving that combination.
 
 #### Scenario: High Nova 2 Lite reasoning drops the token limit
 
@@ -626,11 +626,11 @@ When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixe
 #### Scenario: Lower effort or other models keep the token limit
 
 - **WHEN** Nova 2 Lite resolves to effort `low` or `medium` or to non-enabled reasoning, or another model receives high reasoning
-- **THEN** `inferenceConfig.maxTokens` is preserved and no `maxOutputTokens` warning is returned
+- **THEN** the caller's `inferenceConfig.maxTokens` is preserved and no `maxOutputTokens` warning is returned
 
-### Requirement: Converse option merge preserves cache and beta precedence
+### Requirement: Converse option merge preserves cache placement
 
-Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content, and on user, tool-result and assistant content parts only when the source part emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
+Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content, and on user, tool-result and assistant content parts only when the source part emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content.
 
 #### Scenario: Cache point remains at selected message boundary
 
@@ -642,6 +642,10 @@ Converse prompt conversion SHALL preserve cache-point placement on system and us
 - **WHEN** a user part, a tool-result part in a tool or assistant message, or an assistant part has cache-point options under `amazonBedrock` or legacy `bedrock`
 - **THEN** the cache point immediately follows that part's Converse block, before any message cache point, using `amazonBedrock` when both namespaces set one
 - **AND** a part that emits no block, such as unsigned reasoning, empty assistant text or an approval response, contributes no cache point and its options are not parsed
+
+### Requirement: Converse option merge preserves beta precedence
+
+Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
 
 #### Scenario: Explicit beta and tool-required beta win over raw pass-through
 

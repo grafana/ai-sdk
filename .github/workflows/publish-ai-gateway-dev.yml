@@ -108,9 +108,9 @@ jobs:
               pull_request_enabled: true,
               pull_request_existing_strategy: "replace",
               pull_request_message: $msg,
-              update_jsonnet_attribute_configs: [{
+              update_jsonnet_attribute_configs: [("dev0", "dev1") | {
                 file_path: "ksonnet/environments/appplugins/grafana-aigateway-app/versions.libsonnet",
-                jsonnet_key: "dev",
+                jsonnet_key: .,
                 jsonnet_value: $version
               }]
             }')
