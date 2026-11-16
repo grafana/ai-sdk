@@ -42,7 +42,10 @@ const (
 	outcomeError     = "error"
 	outcomeCancelled = "cancelled"
 	outcomeTimeout   = "timeout"
+	outcomeDenied    = "denied"
 )
+
+const errorClassDenied = "denied"
 
 type modelLogger struct {
 	opts normalizedOptions
@@ -59,9 +62,10 @@ func (l *modelLogger) wrapGenerate(ctx context.Context, p middleware.WrapGenerat
 	result, err := p.DoGenerate(ctx)
 	duration := l.opts.clock().Sub(started)
 	if err != nil {
-		attrs := append(commonAttrs(callID, "generate", p.Model), terminalAttrs(duration, outcomeError)...)
-		attrs = append(attrs, errorAttrs(err, l.opts.capture)...)
-		l.log(ctx, EventGenerateError, l.opts.errorLevel, attrs...)
+		outcome, level, errAttrs := l.callError(err)
+		attrs := append(commonAttrs(callID, "generate", p.Model), terminalAttrs(duration, outcome)...)
+		attrs = append(attrs, errAttrs...)
+		l.log(ctx, EventGenerateError, level, attrs...)
 		return nil, err
 	}
 
@@ -408,6 +412,25 @@ func warningAttrs(warnings []provider.Warning) []slog.Attr {
 	if len(features) > 0 {
 		sort.Strings(features)
 		attrs = append(attrs, slog.Any("ai_sdk.warnings.features", features))
+	}
+	return attrs
+}
+
+// callError returns the terminal outcome, level and error attributes of a
+// failed call, classifying a denial with the configured classifier.
+func (l *modelLogger) callError(err error) (string, slog.Level, []slog.Attr) {
+	if l.opts.denied(err) {
+		return outcomeDenied, l.opts.level, withErrorClass(errorAttrs(err, l.opts.capture), errorClassDenied)
+	}
+	return outcomeError, l.opts.errorLevel, errorAttrs(err, l.opts.capture)
+}
+
+// withErrorClass replaces the error classification in attrs.
+func withErrorClass(attrs []slog.Attr, class string) []slog.Attr {
+	for i, attr := range attrs {
+		if attr.Key == "ai_sdk.error.type" {
+			attrs[i] = slog.String("ai_sdk.error.type", class)
+		}
 	}
 	return attrs
 }
