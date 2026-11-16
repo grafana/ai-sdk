@@ -104,7 +104,7 @@ Matching upstream, which skips `onEnd` when aborted, cancellation SHALL call OnA
 
 ### Requirement: Step content preserves provider order
 
-StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. StepResult.Text SHALL join each text part's whole text in the order the parts first appeared, as upstream's step `text` does, not in delta arrival order. Locally created post-stream approvals/results SHALL append exactly once. Manually constructed state without recorded content SHALL use deterministic grouped fallback.
+StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. StepResult.Text SHALL join each text part's whole text in the order the parts first appeared, as upstream's step `text` does, not in delta arrival order. Locally created post-stream approvals/results SHALL append exactly once.
 
 #### Scenario: Provider content is interleaved
 
@@ -131,7 +131,7 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 #### Scenario: Step state has no recorded content
 
 - **WHEN** content is built from manually constructed step fields without a recorded provider sequence
-- **THEN** reasoning, text, tools, sources, and files SHALL be emitted in that grouped order
+- **THEN** reasoning, text, tools, sources, and files SHALL be emitted in that deterministic grouped order
 
 ### Requirement: Collected results project all recorded steps
 

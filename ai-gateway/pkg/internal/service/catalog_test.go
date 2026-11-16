@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
 	"github.com/grafana/ai-sdk/provider"
@@ -47,6 +50,144 @@ func TestBuildCatalog_ConfiguredCandidateFacts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildCatalog_ListingExcludesSkillsPolicy(t *testing.T) {
+	file := testCatalogFile()
+	route := file.Models["grafana/assistant"]
+	route.Primary.Skills = &config.SkillsPolicy{Allow: []config.AllowedSkill{{Type: config.SkillCustom, SkillID: "skill_policy_secret", Versions: []string{"policy-version"}}}}
+	file.Models["grafana/assistant"] = route
+	created, err := BuildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, identityModelFactory)
+	require.NoError(t, err)
+	rows, err := created.ListModels(context.Background())
+	require.NoError(t, err)
+	raw, err := json.Marshal(rows)
+	require.NoError(t, err)
+	for _, policy := range []string{"skill_policy_secret", "policy-version", "Skills", "skills"} {
+		assert.NotContains(t, string(raw), policy)
+	}
+}
+
+func TestBuildCatalog_CandidateSkillsPolicy(t *testing.T) {
+	pptxPolicy := &config.SkillsPolicy{Allow: []config.AllowedSkill{{Type: config.SkillAnthropic, SkillID: "pptx"}}}
+	pptx := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]}}`)}}
+	pptxWithID := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"id":"container_01","skills":[{"type":"anthropic","skillId":"pptx"}]}}`)}}
+	file := config.File{
+		Providers: map[string]config.Provider{"anthropic-primary": {Type: "anthropic", APIKeyEnv: "KEY"}, "anthropic-backup": {Type: "anthropic", APIKeyEnv: "KEY"}},
+		Models: map[string]config.Model{
+			"grafana/plain":    {Name: "Plain", Primary: config.Primary{Provider: "anthropic-primary", Model: "plain"}, Fallback: []config.Primary{{Provider: "anthropic-backup", Model: "plain"}}},
+			"grafana/policied": {Name: "Policied", Primary: config.Primary{Provider: "anthropic-primary", Model: "policied", Skills: pptxPolicy}},
+			"grafana/mixed":    {Name: "Mixed", Primary: config.Primary{Provider: "anthropic-primary", Model: "mixed"}, Fallback: []config.Primary{{Provider: "anthropic-backup", Model: "mixed", Skills: pptxPolicy}}},
+			"grafana/empty":    {Name: "Empty", Primary: config.Primary{Provider: "anthropic-primary", Model: "empty", Skills: &config.SkillsPolicy{}}},
+			"grafana/busy":     {Name: "Busy", Primary: config.Primary{Provider: "anthropic-primary", Model: "busy"}, Fallback: []config.Primary{{Provider: "anthropic-backup", Model: "busy", Skills: pptxPolicy}}},
+			"grafana/both":     {Name: "Both", Primary: config.Primary{Provider: "anthropic-primary", Model: "both", Skills: pptxPolicy, ServerFallbacks: &config.ServerFallbacks{Models: []string{"claude-b"}}}},
+		},
+	}
+	type call struct{ account, model, options string }
+	build := func(t *testing.T) (*Catalog, *[]call) {
+		t.Helper()
+		var calls []call
+		created, err := buildCatalog(file, map[string]config.ResolvedProvider{
+			"anthropic-primary": {Type: "anthropic", APIKey: "primary-key"},
+			"anthropic-backup":  {Type: "anthropic", APIKey: "backup-key"},
+		}, http.DefaultClient, func(account nativemodel.Config, modelID string, _ *http.Client) provider.LanguageModel {
+			return &observabilityTestModel{generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+				raw, _ := options.ProviderOptions["anthropic"].(provider.RawProviderOption)
+				calls = append(calls, call{account: account.APIKey, model: modelID, options: string(raw.Raw)})
+				if modelID == "busy" {
+					return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "busy", StatusCode: http.StatusServiceUnavailable, IsRetryable: new(true)})
+				}
+				return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+			}}
+		}, identityModelFactory)
+		require.NoError(t, err)
+		return created, &calls
+	}
+	generate := func(t *testing.T, created *Catalog, id string, options provider.ProviderOptions) error {
+		t.Helper()
+		resolved, err := created.ResolveModel(context.Background(), id)
+		require.NoError(t, err)
+		_, err = resolved.Model.DoGenerate(context.Background(), provider.CallOptions{ProviderOptions: options})
+		return err
+	}
+
+	t.Run("policied route reaches the backend with the skills", func(t *testing.T) {
+		created, calls := build(t)
+		require.NoError(t, generate(t, created, "grafana/policied", pptx))
+		require.Len(t, *calls, 1)
+		assert.Contains(t, (*calls)[0].options, `"skillId":"pptx"`)
+	})
+
+	t.Run("unpolicied primary refuses and the policied fallback serves", func(t *testing.T) {
+		created, calls := build(t)
+		require.NoError(t, generate(t, created, "grafana/mixed", pptx))
+		require.Len(t, *calls, 1)
+		assert.Equal(t, "backup-key", (*calls)[0].account)
+		assert.Contains(t, (*calls)[0].options, `"skillId":"pptx"`)
+	})
+
+	t.Run("no candidate allows the skills", func(t *testing.T) {
+		created, calls := build(t)
+		err := generate(t, created, "grafana/plain", pptx)
+		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+		assert.Equal(t, execution.CategoryInvalidRequest, execution.ClassifyProvider(err))
+		assert.Empty(t, *calls)
+	})
+
+	t.Run("a policied fallback outage after a refusal is the real failure", func(t *testing.T) {
+		created, calls := build(t)
+		err := generate(t, created, "grafana/busy", pptx)
+		require.Error(t, err)
+		assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
+		require.Len(t, *calls, 1)
+		assert.Equal(t, "backup-key", (*calls)[0].account)
+	})
+
+	t.Run("an empty policy refuses every skill", func(t *testing.T) {
+		created, calls := build(t)
+		require.ErrorIs(t, generate(t, created, "grafana/empty", pptx), catalog.ErrUnsupportedRequest)
+		assert.Empty(t, *calls)
+	})
+
+	t.Run("skills and server-side fallbacks apply together", func(t *testing.T) {
+		created, calls := build(t)
+		both := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]},"fallbacks":[{"model":"claude-b"}]}`)}}
+		outside := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]},"fallbacks":[{"model":"claude-z"}]}`)}}
+		require.NoError(t, generate(t, created, "grafana/both", both))
+		require.ErrorIs(t, generate(t, created, "grafana/both", outside), catalog.ErrUnsupportedRequest)
+		require.ErrorIs(t, generate(t, created, "grafana/policied", both), catalog.ErrUnsupportedRequest)
+		require.Len(t, *calls, 1)
+		assert.Contains(t, (*calls)[0].options, `"fallbacks":[{"model":"claude-b"}]`)
+	})
+
+	t.Run("allowed skills with a container ID are refused", func(t *testing.T) {
+		created, calls := build(t)
+		require.ErrorIs(t, generate(t, created, "grafana/policied", pptxWithID), catalog.ErrUnsupportedRequest)
+		assert.Empty(t, *calls)
+	})
+}
+
+func TestBuildCatalog_ContainerMetadataIsReturned(t *testing.T) {
+	var requests atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		body := `{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"container":{"id":"container_from_response","expires_at":"2026-11-10T00:00:00Z"}}`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+	})}
+	file := testCatalogFile()
+	created, err := BuildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret", BaseURL: "https://anthropic.invalid"}}, client, identityModelFactory)
+	require.NoError(t, err)
+	resolved, err := created.ResolveModel(context.Background(), "grafana/assistant")
+	require.NoError(t, err)
+	result, err := resolved.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(64)})
+	require.NoError(t, err)
+	assert.Contains(t, string(result.ProviderMetadata["anthropic"]), `"container_from_response"`)
+	require.Equal(t, int32(1), requests.Load())
+
+	followUp := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"id":"container_from_response"}}`)}}
+	_, err = resolved.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("again")}, MaxOutputTokens: new(64), ProviderOptions: followUp})
+	require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+	assert.Equal(t, int32(1), requests.Load())
 }
 
 func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.T) {
@@ -312,4 +453,69 @@ func TestBuildCatalog_InjectsOpenAICompatibleClientBaseURLAndBackendModel(t *tes
 	}
 	assert.True(t, finished, "a stream without a usage chunk still finishes")
 	assert.Equal(t, 1, requests)
+}
+
+func TestBuildCatalog_RejectsServerFallbacksOnNonAnthropic(t *testing.T) {
+	const policyModel = "policy-model-must-not-leak"
+	policy := &config.ServerFallbacks{Models: []string{policyModel}, AllowDefault: true}
+	for _, tc := range []struct {
+		name         string
+		providerType string
+		onFallback   bool
+	}{
+		{"openai primary", "openai", false},
+		{"compatible primary", "openai-compatible", false},
+		{"openai fallback entry", "openai", true},
+		{"compatible fallback entry", "openai-compatible", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file := testCatalogFile()
+			route := file.Models["grafana/assistant"]
+			providers := map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret-primary"}}
+			if tc.onFallback {
+				route.Fallback = []config.Primary{{Provider: "backup", Model: "native-backup", ServerFallbacks: policy}}
+				providers["backup"] = config.ResolvedProvider{Type: tc.providerType, APIKey: "secret-backup", BaseURL: "https://backend.invalid/v1"}
+			} else {
+				route.Primary.ServerFallbacks = policy
+				providers["anthropic-primary"] = config.ResolvedProvider{Type: tc.providerType, APIKey: "secret-primary", BaseURL: "https://backend.invalid/v1"}
+			}
+			file.Models["grafana/assistant"] = route
+			created, err := BuildCatalog(file, providers, http.DefaultClient, identityModelFactory)
+			require.Error(t, err)
+			assert.Nil(t, created)
+			for _, value := range []string{policyModel, "secret-primary", "secret-backup", "backend.invalid"} {
+				assert.NotContains(t, err.Error(), value)
+			}
+		})
+	}
+}
+
+func TestBuildCatalog_ServerFallbacksLeaveDiscoveryUnchanged(t *testing.T) {
+	providers := map[string]config.ResolvedProvider{
+		"anthropic-primary": {Type: "anthropic", APIKey: "secret-primary"},
+		"backup":            {Type: "anthropic", APIKey: "secret-backup"},
+	}
+	rows := func(policy *config.ServerFallbacks) []catalog.ModelInfo {
+		file := testCatalogFile()
+		route := file.Models["grafana/assistant"]
+		route.Primary.ServerFallbacks = policy
+		route.Fallback = []config.Primary{{Provider: "backup", Model: "native-backup", ServerFallbacks: policy}}
+		file.Models["grafana/assistant"] = route
+		created, err := BuildCatalog(file, providers, http.DefaultClient, identityModelFactory)
+		require.NoError(t, err)
+		listed, err := created.ListModels(context.Background())
+		require.NoError(t, err)
+		return listed
+	}
+	without := rows(nil)
+	with := rows(&config.ServerFallbacks{Models: []string{"claude-b"}, AllowDefault: true})
+	assert.Equal(t, without, with)
+	require.NotEmpty(t, with)
+	assert.Equal(t, []catalog.ConfiguredCandidate{
+		{ProviderInstance: "anthropic-primary", Provider: "anthropic", ModelID: with[0].Candidates[0].ModelID},
+		{ProviderInstance: "backup", Provider: "anthropic", ModelID: "native-backup"},
+	}, with[0].Candidates)
+	raw, err := json.Marshal(with)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "claude-b")
 }

@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/plugin/appadapter"
 	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
-	"github.com/grafana/grafana-app-sdk/plugin/grpcplugin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
@@ -186,7 +185,7 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options harnessOptions) *harness {
 	t.Helper()
 	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline})
+	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
 	require.NoError(t, err)
 	keys, err := host.JWKS()
 	require.NoError(t, err)
@@ -209,7 +208,9 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	provider := gw.Provider()
 	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
 	require.NoError(t, err)
-	served, err := host.ServeInProcess(grpcplugin.ServeOpts{RouteServer: appadapter.NewRouteAdapter(built), Authenticator: gw.Authenticator(), PluginID: PluginID})
+	opts := appadapter.ServeOpts(built)
+	opts.Authenticator, opts.PluginID = gw.Authenticator(), PluginID
+	served, err := host.ServeInProcess(opts)
 	require.NoError(t, err)
 	server := httptest.NewServer(served.Handler())
 	t.Cleanup(func() {
