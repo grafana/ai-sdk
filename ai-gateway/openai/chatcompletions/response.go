@@ -20,12 +20,18 @@ type usage struct {
 	CompletionDetails *completionDetails `json:"completion_tokens_details,omitempty"`
 }
 type promptDetails struct {
-	Cached int `json:"cached_tokens"`
+	CacheWrite *int `json:"cache_write_tokens,omitempty"`
+	Audio      *int `json:"audio_tokens,omitempty"`
+	Cached     *int `json:"cached_tokens,omitempty"`
 }
 type completionDetails struct {
-	Reasoning int `json:"reasoning_tokens"`
+	Audio              *int `json:"audio_tokens,omitempty"`
+	AcceptedPrediction *int `json:"accepted_prediction_tokens,omitempty"`
+	RejectedPrediction *int `json:"rejected_prediction_tokens,omitempty"`
+	Reasoning          *int `json:"reasoning_tokens,omitempty"`
 }
 type outputMessage struct {
+	Refusal     *string      `json:"refusal,omitempty"`
 	Annotations []annotation `json:"annotations,omitempty"`
 	Role        role         `json:"role"`
 	Content     *string      `json:"content"`
@@ -72,10 +78,10 @@ func mapUsage(u provider.Usage) (*usage, error) {
 	}
 	result := &usage{Prompt: in, Completion: out, Total: in + out}
 	if u.InputTokens.CacheRead != nil {
-		result.PromptDetails = &promptDetails{*u.InputTokens.CacheRead}
+		result.PromptDetails = &promptDetails{Cached: u.InputTokens.CacheRead}
 	}
 	if u.OutputTokens.Reasoning != nil {
-		result.CompletionDetails = &completionDetails{*u.OutputTokens.Reasoning}
+		result.CompletionDetails = &completionDetails{Reasoning: u.OutputTokens.Reasoning}
 	}
 	return result, nil
 }
@@ -161,7 +167,11 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if err != nil {
 		return out, err
 	}
-	msg := outputMessage{Role: roleAssistant}
+	native, err := chatMetadata(result.ProviderMetadata)
+	if err != nil {
+		return out, err
+	}
+	msg := outputMessage{Role: roleAssistant, Refusal: native.Refusal}
 	var content strings.Builder
 	hasText := false
 	used := map[string]bool{}
@@ -203,8 +213,10 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if !partialFinish(finish) && (len(msg.ToolCalls) > 0) != (finish == "tool_calls") {
 		return out, errOutput
 	}
-	if err = r.validateText(text, finish); err != nil {
-		return out, err
+	if native.Refusal == nil {
+		if err = r.validateText(text, finish); err != nil {
+			return out, err
+		}
 	}
 	if hasText || len(msg.ToolCalls) == 0 {
 		msg.Content = &text
@@ -213,7 +225,10 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if err != nil {
 		return out, err
 	}
-	out.Choices = []choice{{Message: msg, Finish: finish}}
+	if err = nativeUsage(out.Usage, result.Usage.Raw); err != nil {
+		return out, err
+	}
+	out.Choices = []choice{{Message: msg, Finish: finish, Logprobs: native.Logprobs}}
 	return out, nil
 }
 

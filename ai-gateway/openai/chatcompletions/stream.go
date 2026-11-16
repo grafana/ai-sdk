@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type toolDelta struct {
@@ -25,6 +26,7 @@ type functionDelta struct {
 	Arguments *string `json:"arguments,omitempty"`
 }
 type delta struct {
+	Refusal     *string      `json:"refusal,omitempty"`
 	Annotations []annotation `json:"annotations,omitempty"`
 	Role        role         `json:"role,omitempty"`
 	Content     *string      `json:"content,omitempty"`
@@ -52,6 +54,7 @@ type toolState struct {
 	ended, final bool
 }
 type streamState struct {
+	refused    bool
 	toolOffset int
 	text       strings.Builder
 	textSeen   bool
@@ -181,8 +184,10 @@ func (s *streamState) finish(p provider.StreamPart, r mappedRequest) (string, *u
 	if !partialFinish(f) && (len(s.tools) > 0) != (f == "tool_calls") {
 		return "", nil, errOutput
 	}
-	if err = r.validateText(s.text.String(), f); err != nil {
-		return "", nil, err
+	if !s.refused {
+		if err = r.validateText(s.text.String(), f); err != nil {
+			return "", nil, err
+		}
 	}
 	var u *usage
 	if p.Usage != nil {
@@ -232,9 +237,10 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		return controller.Flush() == nil
 	}
 	var pending *diagnostics
+	var logprobs any
 	opened := false
 	emit := func(d delta, finish *string, u *usage, empty bool) bool {
-		c := chunk{ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish}}, Usage: u, Grafana: pending}
+		c := chunk{ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish, Logprobs: logprobs}}, Usage: u, Grafana: pending}
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
@@ -243,6 +249,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			return false
 		}
 		pending = nil
+		logprobs = nil
 		return true
 	}
 	var view execution.View
@@ -326,6 +333,13 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			continue
 		}
 		if part.Type == provider.PartError {
+			if errors.Is(part.APICallError, compatible.ErrInvalidChatCompletionMetadata) {
+				if pending == nil {
+					pending = &diagnostics{}
+				}
+				pending.Warnings = append(pending.Warnings, warning{Type: provider.WarnOther, Message: "Invalid optional Chat metadata was omitted."})
+				continue
+			}
 			detail := executionDiagnostics(nil, view, nil)
 			if current := view.Current(part.APICallError); current != nil {
 				if detail == nil {
@@ -336,11 +350,31 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			_ = write(errorBody(categoryStatus(execution.ClassifyStreamPart(part.APICallError)), detail))
 			return
 		}
+
 		if part.Type == provider.PartFinish {
+			native, err := chatMetadata(part.ProviderMetadata)
+			if err != nil {
+				fail(502)
+				return
+			}
+			state.refused = native.Refusal != nil
 			f, u, err := state.finish(part, r)
 			if err != nil {
 				fail(502)
 				return
+			}
+			if part.Usage != nil && nativeUsage(u, part.Usage.Raw) != nil {
+				fail(502)
+				return
+			}
+			if native.Refusal != nil || native.Logprobs != nil {
+				if !open() {
+					return
+				}
+				logprobs = native.Logprobs
+				if !emit(delta{Refusal: native.Refusal}, nil, nil, false) {
+					return
+				}
 			}
 			finalMetadata = part.ProviderMetadata
 			final = &f
@@ -394,14 +428,26 @@ func addUsage(total, next *usage) error {
 	total.Completion += next.Completion
 	total.Total += next.Total
 	if total.PromptDetails != nil && next.PromptDetails != nil {
-		total.PromptDetails.Cached += next.PromptDetails.Cached
+		total.PromptDetails.Cached = sumOptional(total.PromptDetails.Cached, next.PromptDetails.Cached)
+		total.PromptDetails.Audio = sumOptional(total.PromptDetails.Audio, next.PromptDetails.Audio)
+		total.PromptDetails.CacheWrite = sumOptional(total.PromptDetails.CacheWrite, next.PromptDetails.CacheWrite)
 	} else {
 		total.PromptDetails = nil
 	}
 	if total.CompletionDetails != nil && next.CompletionDetails != nil {
-		total.CompletionDetails.Reasoning += next.CompletionDetails.Reasoning
+		total.CompletionDetails.Reasoning = sumOptional(total.CompletionDetails.Reasoning, next.CompletionDetails.Reasoning)
+		total.CompletionDetails.Audio = sumOptional(total.CompletionDetails.Audio, next.CompletionDetails.Audio)
+		total.CompletionDetails.AcceptedPrediction = sumOptional(total.CompletionDetails.AcceptedPrediction, next.CompletionDetails.AcceptedPrediction)
+		total.CompletionDetails.RejectedPrediction = sumOptional(total.CompletionDetails.RejectedPrediction, next.CompletionDetails.RejectedPrediction)
 	} else {
 		total.CompletionDetails = nil
 	}
 	return nil
+}
+
+func sumOptional(a, b *int) *int {
+	if a == nil || b == nil || *b > math.MaxInt-*a {
+		return nil
+	}
+	return ptr(*a + *b)
 }

@@ -1,0 +1,5 @@
+- [x] Enable the provider constructor option in the shared catalog.
+- [x] Project resolved-namespace refusal/logprobs at segment finish.
+- [x] Derive native usage details from Usage.Raw, preserving absent and zero.
+- [x] Preserve content after optional metadata errors.
+- [x] Test both adapters with the same HTTP-backed catalog and update specs/docs.
