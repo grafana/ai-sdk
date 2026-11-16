@@ -138,6 +138,8 @@ var strictToolClaudeModelPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`claude-opus-4-(?:1|5|6)(?:[-.:]|$)`),
 	regexp.MustCompile(`claude-sonnet-4-(?:5|6)(?:[-.:]|$)`),
 	regexp.MustCompile(`claude-haiku-4-5(?:[-.:]|$)`),
+	regexp.MustCompile(`claude-(?:opus|sonnet)-5(?:-5)?(?:-\d{8})?(?:-v\d+)?(?:[:.]|$)`),
+	regexp.MustCompile(`claude-haiku-5-5(?:-\d{8})?(?:-v\d+)?(?:[:.]|$)`),
 }
 
 var unreliableNativeStructuredOutputPattern = regexp.MustCompile(`claude-(?:sonnet-4-6|haiku-4-5)(?:[-.:]|$)`)
@@ -145,7 +147,7 @@ var unreliableNativeStructuredOutputPattern = regexp.MustCompile(`claude-(?:sonn
 // supportsStrictTools reports whether Bedrock accepts tool `strict` for the
 // model. Only known supported Claude generations qualify; non-Claude IDs and
 // opaque inference profiles keep strict support. Mirrors upstream
-// amazon-bedrock-anthropic-model-support.ts (@ai-sdk/amazon-bedrock 5.0.118).
+// amazon-bedrock-anthropic-model-support.ts (@ai-sdk/amazon-bedrock 5.0.131).
 func supportsStrictTools(modelID string) bool {
 	if !strings.Contains(modelID, "claude-") || strictToolLegacyClaudePattern.MatchString(modelID) {
 		return true

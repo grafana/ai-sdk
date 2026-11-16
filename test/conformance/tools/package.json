@@ -14,13 +14,13 @@
     "record": "tsx record.mts"
   },
   "dependencies": {
-    "@ai-sdk/amazon-bedrock": "5.0.130",
-    "@ai-sdk/anthropic": "4.0.94",
-    "@ai-sdk/openai": "4.0.106",
-    "@ai-sdk/openai-compatible": "3.0.82",
+    "@ai-sdk/amazon-bedrock": "5.0.132",
+    "@ai-sdk/anthropic": "4.0.96",
+    "@ai-sdk/openai": "4.0.108",
+    "@ai-sdk/openai-compatible": "3.0.84",
     "@ai-sdk/provider": "4.0.35",
-    "@ai-sdk/provider-utils": "5.0.72",
-    "ai": "7.0.159",
+    "@ai-sdk/provider-utils": "5.0.74",
+    "ai": "7.0.162",
     "yaml": "^2.7.0",
     "zod": "4.6.7"
   },
