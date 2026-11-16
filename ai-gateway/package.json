@@ -2,7 +2,7 @@
   "name": "@grafana/aigateway-app",
   "version": "0.1.0-alpha.1",
   "private": true,
-  "packageManager": "pnpm@12.16.1",
+  "packageManager": "pnpm@12.18.0",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
@@ -80,7 +80,7 @@
     "@grafana/ui": "13.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^6.22.0",
+    "react-router-dom": "^7.0.0",
     "rxjs": "7.8.2"
   }
 }

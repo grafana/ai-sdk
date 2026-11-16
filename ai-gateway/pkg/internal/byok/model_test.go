@@ -650,15 +650,19 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 	const mcpOptions = `{"anthropic":{"mcpServers":[{"name":"external","url":"https://example.invalid"}]}}`
 	for _, streaming := range []bool{false, true} {
 		for _, tc := range []struct {
-			name, options, nativeField string
-			mcpHistory                 bool
-			providerExecuted           bool
-			allowed                    bool
+			name, options, nativeField, beta string
+			mcpHistory                       bool
+			providerExecuted                 bool
+			allowed                          bool
 		}{
 			{name: "MCP servers", options: mcpOptions, nativeField: "mcp_servers", allowed: true},
 			{name: "invalid MCP destination", options: `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`},
-			{name: "container skills", options: `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`},
-			{name: "native fallback", options: `{"anthropic":{"fallbacks":"default"}}`},
+			{name: "malformed custom skill", options: `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`},
+			{name: "too many skills", options: `{"anthropic":{"container":{"skills":[` + distinctSkills(21) + `]}}}`},
+			{name: "over-long container ID", options: `{"anthropic":{"container":{"id":"` + strings.Repeat("c", 129) + `"}}}`},
+			{name: "bounded custom skill with container ID", options: `{"anthropic":{"container":{"id":"container_01","skills":[{"type":"custom","providerReference":{"anthropic":"skill_01external"}}]}}}`, nativeField: "skill_01external", allowed: true},
+			{name: "native fallback default", options: `{"anthropic":{"fallbacks":"default"}}`, nativeField: `"fallbacks":"default"`, beta: "server-side-fallback-2026-07-01", allowed: true},
+			{name: "native fallback chain with a repeated model", options: `{"anthropic":{"fallbacks":[{"model":"claude-any"},{"model":"claude-any","thinking":{"type":"disabled"}}]}}`, nativeField: `"fallbacks":[{"model":"claude-any"},{"model":"claude-any","thinking":{"type":"disabled"}}]`, beta: "server-side-fallback-2026-06-01", allowed: true},
 			{name: "unconfigured MCP history", options: `{}`, mcpHistory: true, providerExecuted: true},
 			{name: "configured MCP history", options: mcpOptions, mcpHistory: true, providerExecuted: true, nativeField: "mcp_tool_use", allowed: true},
 			{name: "local MCP marker", options: `{}`, mcpHistory: true, nativeField: "tool_use", allowed: true},
@@ -673,6 +677,7 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 					body, err := io.ReadAll(r.Body)
 					require.NoError(t, err)
 					assert.NotContains(t, string(body), "dummy-")
+					assert.Contains(t, r.Header.Get("Anthropic-Beta"), tc.beta)
 					if tc.allowed {
 						assert.Contains(t, string(body), tc.nativeField)
 						assert.NotContains(t, string(body), "ignored")
@@ -701,4 +706,12 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 			})
 		}
 	}
+}
+
+func distinctSkills(n int) string {
+	skills := make([]string, n)
+	for i := range skills {
+		skills[i] = fmt.Sprintf(`{"type":"anthropic","skillId":"skill-%d"}`, i)
+	}
+	return strings.Join(skills, ",")
 }
