@@ -40,7 +40,7 @@ var (
 func bodyTestHandler(t *testing.T, language http.Handler) http.Handler {
 	t.Helper()
 	policy := gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeCloud, InternalServices: []string{testInternalService}}
-	handler, err := newHandler(policy, newTestTelemetry(t), productionRoutes(http.NotFoundHandler(), language))
+	handler, err := newHandler(policy, newTestTelemetry(t), productionRoutes(http.NotFoundHandler(), language, http.NotFoundHandler()))
 	require.NoError(t, err)
 	return handler
 }

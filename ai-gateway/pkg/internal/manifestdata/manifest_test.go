@@ -41,6 +41,7 @@ func TestManifest_DeclaresGatewayRoutesAndTheCatalogKind(t *testing.T) {
 	assert.Equal(t, map[string][]string{
 		"/namespaces/{namespace}/config":                              {http.MethodGet},
 		"/namespaces/{namespace}/language-model":                      {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions":                 {http.MethodPost},
 		"/namespaces/{namespace}/modelcatalogs/{name}/config":         {http.MethodGet},
 		"/namespaces/{namespace}/modelcatalogs/{name}/language-model": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
