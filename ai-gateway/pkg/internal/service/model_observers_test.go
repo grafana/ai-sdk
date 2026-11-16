@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -240,7 +241,7 @@ func TestModelObservers_PerRequestSelection(t *testing.T) {
 }
 
 func TestModelObservers_UnknownSourceFailsBeforeTheModel(t *testing.T) {
-	for _, source := range []execution.Source{"", "stack-catalog"} {
+	for _, source := range []execution.Source{"", "other-source"} {
 		t.Run(string(source), func(t *testing.T) {
 			var calls int
 			lower := &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -256,6 +257,50 @@ func TestModelObservers_UnknownSourceFailsBeforeTheModel(t *testing.T) {
 			assert.Equal(t, execution.CategoryInternal, category)
 			assert.Zero(t, calls)
 			assert.Empty(t, observed.logs.String())
+		})
+	}
+}
+
+func TestModelObservers_MetricIdentityBySource(t *testing.T) {
+	for _, tc := range []struct {
+		source   execution.Source
+		identity func(lower provider.LanguageModel) (provider.LanguageModel, error)
+		provider string
+		model    string
+	}{
+		{source: execution.SourceOperatorCatalog, identity: func(lower provider.LanguageModel) (provider.LanguageModel, error) {
+			return ConfiguredIdentity("grafana/assistant", lower)
+		}, provider: "grafana", model: "grafana/assistant"},
+		{source: execution.SourceStackCatalog, identity: func(lower provider.LanguageModel) (provider.LanguageModel, error) {
+			return ConfiguredIdentity("team-model", lower)
+		}, provider: "grafana", model: "catalog"},
+		{source: execution.SourceRequestBYOK, identity: func(lower provider.LanguageModel) (provider.LanguageModel, error) {
+			return BYOKIdentity("anthropic/claude-native", lower)
+		}, provider: "anthropic", model: "byok"},
+	} {
+		t.Run(string(tc.source), func(t *testing.T) {
+			logs := &lockedBuffer{}
+			logger := slog.New(slog.NewJSONHandler(logs, nil))
+			telemetry, err := NewTelemetry(logger)
+			require.NoError(t, err)
+			observers, err := NewModelObservers(telemetry, logger, nil, 10*time.Millisecond)
+			require.NoError(t, err)
+			model, err := tc.identity(seamModel(false))
+			require.NoError(t, err)
+			observed, err := observers.Compose(execution.Selection{ID: model.ModelID(), Model: model, Source: tc.source})
+			require.NoError(t, err)
+			assert.Equal(t, model.Provider(), observed.Provider())
+			assert.Equal(t, model.ModelID(), observed.ModelID())
+			_, err = observed.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("observe me")}})
+			require.NoError(t, err)
+
+			series := regexp.MustCompile(`(?m)^aisdk_model_requests_total\{([^}]*)\}`).FindAllStringSubmatch(testMetrics(t, telemetry), -1)
+			require.Len(t, series, 1)
+			assert.Contains(t, series[0][1], `provider="`+tc.provider+`"`)
+			assert.Contains(t, series[0][1], `model="`+tc.model+`"`)
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				assert.Contains(collect, logs.String(), `"ai_sdk.model":"`+model.ModelID()+`"`)
+			}, time.Second, time.Millisecond)
 		})
 	}
 }

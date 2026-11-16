@@ -173,8 +173,9 @@ func lookup(values map[string]string) func(string) (string, bool) {
 }
 
 type harnessOptions struct {
-	routeDeadline time.Duration
-	fallback      bool
+	routeDeadline  time.Duration
+	fallback       bool
+	withoutCatalog bool
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -194,6 +195,9 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 		"GF_PLUGIN_MODEL_CATALOG": modelCatalog(anthropic.server.URL, options.fallback),
 		"GRAFANA_JWKS":            string(keys),
 		"ANTHROPIC_SECRET":        providerSecret,
+	}
+	if options.withoutCatalog {
+		delete(env, "GF_PLUGIN_MODEL_CATALOG")
 	}
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"
@@ -358,6 +362,28 @@ func TestGateway_CloudAccess(t *testing.T) {
 		}
 		assert.Contains(t, h.logs.String(), `"caller_service":"`+testInternalService+`"`)
 	})
+}
+
+func TestGateway_WithoutOperatorCatalog(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{withoutCatalog: true})
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+
+	status, body := do(t, discoveryRequest(t, h.url("config"), internal))
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, `{"models":[]}`, body)
+	for _, request := range []string{unaryBody, `{"prompt":[],"providerOptions":{"gateway":{"models":["other"]}}}`} {
+		status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), request, false, internal))
+		assert.Equal(t, http.StatusNotFound, status)
+		assert.Contains(t, body, `"code":"model_not_found"`)
+	}
+	status, body = do(t, discoveryRequest(t, h.url("config"), account))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, body, "catalog discovery is unsupported for BYOK")
+	status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, account))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, body, "BYOK requires a supported provider/model selector")
+	assert.Zero(t, h.anthropic.requests.Load())
 }
 
 func TestGateway_SelfHostedAccess(t *testing.T) {

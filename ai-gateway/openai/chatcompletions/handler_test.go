@@ -2,6 +2,7 @@ package chatcompletions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -181,4 +182,29 @@ func TestHandler_PerAttemptTranslation(t *testing.T) {
 	h.ServeHTTP(response, req)
 	assert.Equal(t, 200, response.Code)
 	assert.Equal(t, 2, calls)
+}
+
+func TestHandler_StackCatalogKeysNeverReachTheResponse(t *testing.T) {
+	const catalogKey = "sentinel-stack-catalog-key"
+	echo := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "rejected " + catalogKey, ResponseBody: `{"error":{"message":"rejected ` + catalogKey + `"}}`})
+	model := &fakeModel{
+		generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, echo },
+		stream:   func(context.Context, provider.CallOptions) (*provider.StreamResult, error) { return nil, echo },
+	}
+	expected := []execution.ExpectedAttempt{{ModelID: "alias", CanonicalID: "alias", Destination: catalog.ConfiguredCandidate{ProviderInstance: "claude", Provider: "anthropic", ModelID: "native"}}}
+	runtime, err := execution.New(execution.Config{Limits: execution.DefaultLimits, Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+		return execution.StackCatalogSelection(id, "team", model, expected, []string{catalogKey}), nil
+	}})
+	require.NoError(t, err)
+	h, err := New(runtime)
+	require.NoError(t, err)
+	for _, body := range []string{basic, strings.TrimSuffix(basic, "}") + `,"stream":true}`} {
+		req := httptest.NewRequest("POST", Path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, req)
+		assert.Equal(t, http.StatusFailedDependency, response.Code, response.Body.String())
+		assert.NotContains(t, response.Body.String(), catalogKey)
+		assert.NotContains(t, response.Header(), "X-Gateway-Execution")
+	}
 }

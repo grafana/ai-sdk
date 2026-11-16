@@ -62,7 +62,7 @@ The Gateway SHALL NOT create network listeners or HTTP servers of its own beyond
 - **THEN** no Gateway handler SHALL serve the request
 
 ### Requirement: Host-compatible configuration
-The Gateway SHALL read settings, including the bounded strict model catalog document, as `GF_PLUGIN_<KEY>` variables, which Grafana derives from its plugin configuration section, without command-line arguments or file access. Operator documentation SHALL state how each host supplies them. Configuration SHALL NOT accept authentication, listener or Cloud-ingress settings. Invalid configuration SHALL fail startup of a non-idle Gateway before any request is served, without exposing secrets.
+The Gateway SHALL read settings, including the optional bounded strict model catalog document, as `GF_PLUGIN_<KEY>` variables that Grafana derives from its plugin configuration section, without arguments or file access. Documentation SHALL state how each host supplies them. Authentication, listener and Cloud-ingress settings SHALL NOT be accepted. Invalid configuration SHALL fail startup of a non-idle Gateway before any request, without exposing secrets.
 
 #### Scenario: Legacy authentication blocks are present
 - **WHEN** the model catalog contains an `auth` or `server` block
@@ -78,7 +78,8 @@ The Gateway SHALL read settings, including the bounded strict model catalog docu
 
 #### Scenario: Missing or oversized model catalog
 - **WHEN** `GF_PLUGIN_MODEL_CATALOG` is unset, blank or larger than 64 KiB
-- **THEN** startup SHALL fail with a reason that names the setting without its value
+- **THEN** an unset or blank catalog SHALL start the Gateway without an operator catalog and without resolving any operator provider key
+- **AND** an oversized catalog SHALL fail startup with a reason that names the setting without its value
 
 #### Scenario: Startup failure is logged with its reason
 - **WHEN** configuration or construction fails at startup
@@ -86,7 +87,7 @@ The Gateway SHALL read settings, including the bounded strict model catalog docu
 - **AND** the reason SHALL name the failing setting or provider without the setting's whole value or credentials; it MAY name catalog keys and identifiers such as model IDs, provider names and `apiKeyEnv` variable names
 
 #### Scenario: Environment-only startup
-- **WHEN** the host starts the plugin with no arguments and a valid environment, including the model catalog
+- **WHEN** the host starts the plugin with no arguments and a valid environment, with or without the model catalog
 - **THEN** the Gateway SHALL construct its catalog, BYOK factories and telemetry, and serve requests
 
 #### Scenario: Host without platform signing keys
