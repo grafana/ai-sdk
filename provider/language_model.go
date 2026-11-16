@@ -33,6 +33,10 @@ type LanguageModel interface {
 // Reasoning is omitted: strict wire adapters normalize both omission and the
 // explicit wire value "provider-default" to that provider-domain zero value.
 type CallOptions struct {
+	// ChoiceCount opts into native alternatives. Zero and one retain the V4
+	// single-result contract. Values above one require an explicitly capable
+	// model and consumer; this Go extension is not serialized on the V4 wire.
+	ChoiceCount      int               `json:"-"`
 	Prompt           []Message         `json:"prompt,omitempty"`
 	Tools            []Tool            `json:"tools,omitempty"`
 	ToolChoice       *ToolChoice       `json:"toolChoice,omitempty"`
@@ -146,8 +150,21 @@ const (
 	ContentToolApprovalRequest GenerateContentType = "tool-approval-request"
 )
 
-// GenerateResult is the result of a non-streaming DoGenerate call.
+// GenerateChoice is one indexed alternative from a native multi-choice call.
+// Usage and response identity belong to the enclosing result, not each choice.
+type GenerateChoice struct {
+	Index            int
+	Content          []GenerateContentPart
+	FinishReason     FinishReason
+	ProviderMetadata ProviderMetadata
+}
+
+// GenerateResult is the result of a DoGenerate call.
 type GenerateResult struct {
+	// Choices carries all alternatives when ChoiceCount exceeds one. Content
+	// and FinishReason are empty in this mode; Usage remains the native total.
+	// This Go-only extension is not part of LanguageModelV4 JSON.
+	Choices          []GenerateChoice      `json:"-"`
 	Content          []GenerateContentPart `json:"content"`
 	FinishReason     FinishReason          `json:"finishReason"`
 	Usage            Usage                 `json:"usage"`

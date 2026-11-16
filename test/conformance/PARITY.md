@@ -32,6 +32,7 @@ Other records have their own homes:
 | UI messages and SSE | Core | mixed | `ui/` chunk snapshots, framing tests, schema-parsed `test/integration` tests |
 | Agent, middleware and registry | Core | mixed | Root tests, `test/integration` |
 | React hooks | Frontend interop | mixed | `useChat`, `useCompletion` and `useObject` tests in `test/integration` |
+| Native multiple choices (Go opt-in) | Provider contract | intentional deviation | `ai-gateway/internal/execution/choices_test.go`, `gateway-native-choices` spec |
 | LanguageModelV4 contract | Provider contract | mixed | `mise run parity-provider-shape`, request snapshots |
 | SDK provider-tool contract | Provider contract | mixed | Provider tests, Grafana client differential tests |
 | SDK provider transport context | Provider contract | mixed | Anthropic/OpenAI HTTP tests, `mantle_transport_test.go` |

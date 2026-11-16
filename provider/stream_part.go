@@ -12,6 +12,9 @@ import (
 type StreamPartType string
 
 const (
+	// PartChoicesFinish ends an opt-in native multi-choice stream after every
+	// indexed choice has finished. It carries aggregate Usage and no FinishReason.
+	PartChoicesFinish       StreamPartType = "choices-finish"
 	PartTextStart           StreamPartType = "text-start"
 	PartTextDelta           StreamPartType = "text-delta"
 	PartTextEnd             StreamPartType = "text-end"
@@ -160,7 +163,11 @@ func (d StreamFileData) dataType() StreamFileDataType {
 // PartError parts) rather than a Go-native error value, because Go errors
 // are not generally serializable.
 type StreamPart struct {
-	Type StreamPartType `json:"type"`
+	// ChoiceIndex scopes a part to one native alternative. Nil denotes global
+	// metadata, errors, raw chunks or PartChoicesFinish. It is Go-only and must
+	// not be used unless the call opted into ChoiceCount greater than one.
+	ChoiceIndex *int           `json:"-"`
+	Type        StreamPartType `json:"type"`
 
 	ID               string            `json:"id,omitempty"`
 	Delta            string            `json:"delta,omitempty"`
