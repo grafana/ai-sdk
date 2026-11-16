@@ -17,9 +17,13 @@ type Overview struct {
 }
 
 // Attempt identifies an observed candidate and its selection outcome.
+// ServedModelID is set only on the selected attempt, when its output reported
+// an Anthropic server-side fallback to another model; ModelID remains the
+// configured or requested destination.
 type Attempt struct {
 	Provider         string                  `json:"provider"`
 	ModelID          string                  `json:"modelId"`
+	ServedModelID    string                  `json:"servedModelId,omitempty"`
 	ProviderInstance string                  `json:"providerInstance,omitempty"`
 	Outcome          fallback.AttemptOutcome `json:"outcome"`
 	Error            *Failure                `json:"error,omitempty"`

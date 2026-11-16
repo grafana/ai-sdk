@@ -218,6 +218,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if err := validateFallbackConfig(anthropicOpts.Fallbacks); err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
+	if err := validateContainerSkills(anthropicOpts.Container); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
+	}
 	safeguards, err := projectAnthropicSafeguards(anthropicOpts.Safeguards)
 	if err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
@@ -559,7 +562,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
-	applyProviderOptions(&p, anthropicOpts, hasAnthropicOpts, &warnings)
+	applyProviderOptions(&p, anthropicOpts, hasAnthropicOpts, opts.Tools, &warnings)
 	if len(safeguards) > 0 {
 		br.requestOptions = append(br.requestOptions, option.WithJSONSet("safeguards", safeguards))
 		p.Betas = appendBetaUnique(p.Betas, dangerousToolUseBeta)
@@ -3062,7 +3065,28 @@ func projectAnthropicSafeguards(entries []AnthropicSafeguard) ([]map[string]any,
 	return projected, nil
 }
 
-func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, warnings *[]provider.Warning) {
+func validateContainerSkills(container *Container) error {
+	if container == nil {
+		return nil
+	}
+	for i, skill := range container.Skills {
+		if _, err := skill.ResolveSkillID(); err != nil {
+			return fmt.Errorf("container skill %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func hasCodeExecutionTool(tools []provider.Tool) bool {
+	for _, tool := range tools {
+		if tool.Type == provider.ToolTypeProvider && (tool.ID == "anthropic.code_execution_20250825" || tool.ID == "anthropic.code_execution_20260120") {
+			return true
+		}
+	}
+	return false
+}
+
+func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, tools []provider.Tool, warnings *[]provider.Warning) {
 	if !ok {
 		return
 	}
@@ -3142,8 +3166,9 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 			container.ID = anthropic.String(ao.Container.ID)
 		}
 		for _, skill := range ao.Container.Skills {
+			skillID, _ := skill.ResolveSkillID()
 			sp := anthropic.BetaSkillParams{
-				SkillID: skill.SkillID,
+				SkillID: skillID,
 				Type:    anthropic.BetaSkillParamsType(skill.Type),
 			}
 			if skill.Version != "" {
@@ -3153,8 +3178,12 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 		}
 		p.Container = anthropic.BetaMessageNewParamsContainerUnion{OfContainers: &container}
 		if len(container.Skills) > 0 {
+			p.Betas = appendBetaUnique(p.Betas, "code-execution-2025-08-25")
 			p.Betas = appendBetaUnique(p.Betas, "skills-2025-10-02")
 			p.Betas = appendBetaUnique(p.Betas, "files-api-2025-04-14")
+			if !hasCodeExecutionTool(tools) {
+				*warnings = append(*warnings, provider.Warning{Type: provider.WarnOther, Message: "code execution tool is required when using skills"})
+			}
 		}
 	}
 

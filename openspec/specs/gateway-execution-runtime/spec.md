@@ -168,8 +168,41 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 - **WHEN** a stream wait or a unary call reports invalid output
 - **THEN** provider classification SHALL return internal
 
+### Requirement: Aggregate chain-failure classification
+The runtime SHALL classify a chain failure that joins two or more attempt failures, or attempt failures with the call-level context error, as one failure: a call-level cancellation or expired deadline SHALL win; otherwise the newest attempt failure that is not a refusal SHALL decide by the single-error rules; only when every attempt refused SHALL it be invalid request. A refusal is an attempt failure that is invalid request through `ErrUnsupportedRequest` or `ErrUnsupportedFunctionality`.
+
+#### Scenario: Refusal next to a provider failure
+- **WHEN** a chain aggregate joins a refusal (`catalog.ErrUnsupportedRequest` or `provider.ErrUnsupportedFunctionality`) and a provider failure, in either order, such as a refusing primary and a fallback that returns 503, a 503 primary and a refusing fallback, or a refusing primary and a fallback that returns 429, and the aggregate carries no call-level cancellation or expired deadline
+- **THEN** the category SHALL be that of the provider failure (overload, overload and rate limit respectively), not invalid request
+
+#### Scenario: Most recent non-refusal failure decides
+- **WHEN** a chain aggregate joins several provider failures and refusals, or joins a refusal with an error that has no other category, and the aggregate carries no call-level cancellation or expired deadline
+- **THEN** the most recent attempt failure that is not a refusal SHALL decide the category through the single-error rules, so a refusal next to an unknown error, in either order, SHALL be internal
+- **AND** an earlier attempt-level timeout SHALL NOT outrank a newer 503
+
+#### Scenario: Call canceled after a refusal
+- **WHEN** a chain aggregate joins one or more attempt failures, including a refusal, with the call-level cancellation or expired deadline
+- **THEN** the category SHALL be cancellation or timeout respectively
+- **AND** the call-level context error SHALL be the last element of the top-level join and identical to the context cancellation or deadline error; an attempt failure that merely wraps one of them SHALL NOT count as call-level
+
+#### Scenario: Every attempt refused
+- **WHEN** every attempt in a chain aggregate is a refusal, through either error, and the aggregate carries no call-level cancellation or expired deadline
+- **THEN** the category SHALL be invalid request
+
+#### Scenario: Single refusal
+- **WHEN** a failure is a single refusal, not joined with another attempt failure or a call-level context error
+- **THEN** the category SHALL remain invalid request
+
+#### Scenario: Every Gateway chain
+- **WHEN** configured fallback, routed or BYOK chains of any provider fail with an aggregate
+- **THEN** the aggregate rule SHALL apply to each of them, through every adapter that classifies provider errors
+
+#### Scenario: API error wrapping the unsupported-functionality error
+- **WHEN** an attempt failure is an API call error or transport error that wraps the unsupported-functionality error
+- **THEN** it SHALL NOT count as a refusal and SHALL keep its API call or transport category
+
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. Selections with no attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. The served model SHALL be recorded as gateway-execution-overview defines. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
@@ -191,6 +224,10 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 - **WHEN** an attempt is observed after the call's outcome was decided
 - **THEN** it SHALL NOT appear in the overview
 
+#### Scenario: Served model after sealing
+- **WHEN** a selected stream emits an `anthropic.fallback` marker after its first part sealed the capture
+- **THEN** the overview SHALL carry that marker's served model on the selected attempt, and the attempts list and its check against the expected attempts SHALL be unchanged
+
 #### Scenario: Selection without attribution
 - **WHEN** a selector returns a valid selection with neither configured nor request-account attribution and its model reports fallback attempts
 - **THEN** the attempts SHALL be captured and sealed, and no overview SHALL appear in the response
@@ -198,6 +235,10 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 #### Scenario: Test adapter sees BYOK attempts
 - **WHEN** the test-only adapter and ProviderWire run the same BYOK fake-model scenarios
 - **THEN** both SHALL report the same attempt view, including omitted canonical identity
+
+#### Scenario: Test adapter sees the served model
+- **WHEN** the test-only adapter and ProviderWire run the same configured fake-model scenario whose output carries an `anthropic.fallback` marker
+- **THEN** both SHALL report the same attempt view, including `servedModelId`
 
 ### Requirement: Test-only adapter evidence
 Tests SHALL include a minimal HTTP adapter, not ProviderWire, built only on the runtime and the host contract, with its own response and host-error format. For identical fake models, it SHALL show the same deadline, cancellation, drain, classification, policy, attempt-view and invalid-output outcomes as ProviderWire, with invalid output at the same part. It SHALL NOT be shipped.
