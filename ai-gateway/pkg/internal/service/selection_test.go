@@ -303,7 +303,7 @@ func TestBYOKSelection_RejectedBeforeAttemptsHasNoOverview(t *testing.T) {
 				calls.Add(1)
 				return nil, fmt.Errorf("unexpected native call")
 			})}
-			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"}]}},"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`
+			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"}]}},"anthropic":{"container":{"skills":[` + manySkills(21) + `]}}}}`
 			response := serveBYOK(t, client, "anthropic/native-model", body, streaming)
 			assert.Equal(t, http.StatusBadRequest, response.Code)
 			assert.Zero(t, calls.Load())
@@ -350,7 +350,12 @@ func TestBYOKSelection_SelectedProviderAccountCount(t *testing.T) {
 func serveBYOK(t *testing.T, client *http.Client, modelID, body string, streaming bool) *httptest.ResponseRecorder {
 	t.Helper()
 	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-	wire, err := newWireHandler(execution.Config{Selector: byokSelector(client, factory), Limits: serviceTestLimits()})
+	return serveBYOKWith(t, byokSelector(client, factory), modelID, body, streaming)
+}
+
+func serveBYOKWith(t *testing.T, selector execution.RequestSelector, modelID, body string, streaming bool) *httptest.ResponseRecorder {
+	t.Helper()
+	wire, err := newWireHandler(execution.Config{Selector: selector, Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))

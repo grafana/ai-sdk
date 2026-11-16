@@ -1,33 +1,54 @@
 #!/usr/bin/env bash
 # Runs the Playwright tests against the built plugin package in the
-# create-plugin Grafana environment, then stops the environment.
+# create-plugin Grafana environment, with the end-to-end overrides and their
+# fake provider, then stops the environment.
 set -euo pipefail
 
 gateway=$(git rev-parse --show-toplevel)/ai-gateway
 grafana_url=http://localhost:3000
 startup_attempts=90
+catalog_key_sentinel=e2e-catalog-sentinel-key
+dump_lines=200
 
 fail() { echo "$*" >&2; exit 1; }
 
 [[ -f "$gateway/dist/plugin.json" ]] || fail "build the plugin package first: mise run build-ai-gateway-plugin"
 cd "$gateway"
+compose=(docker compose -f docker-compose.yaml -f docker-compose.e2e.yaml)
+
+# dump_failure prints, for the whole run, the plugin's log lines and Grafana's
+# lines about catalog storage and admission, each bounded, then Grafana's last
+# lines.
+dump_failure() {
+  local log
+  log=$("${compose[@]}" logs --no-color grafana 2>&1) || true
+  echo "--- plugin log (logger=plugin.grafana-aigateway-app, first $dump_lines lines)"
+  grep 'logger=plugin.grafana-aigateway-app' <<<"$log" | head -n "$dump_lines" || true
+  echo "--- catalog storage and admission (first $dump_lines lines)"
+  grep -v 'logger=plugin.grafana-aigateway-app' <<<"$log" | grep -i -E 'modelcatalog|admission|securevalue|inline secure|apistore' | head -n "$dump_lines" || true
+  echo "--- Grafana log (last $dump_lines lines)"
+  tail -n "$dump_lines" <<<"$log"
+}
 
 stop() {
   local status=$?
   if [[ $status -ne 0 ]]; then
-    docker compose logs grafana | tail -n 200 || true
+    dump_failure
   fi
-  docker compose down --volumes || true
+  "${compose[@]}" down --volumes || true
   exit "$status"
 }
 trap stop EXIT
 
-docker compose up --detach --build
+"${compose[@]}" up --detach --build
 for ((attempt = 0; attempt < startup_attempts; attempt++)); do
   curl -fsS "$grafana_url/api/health" >/dev/null 2>&1 && break
   sleep 2
 done
 curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become healthy"
 
-pnpm exec playwright install chromium ${CI:+--with-deps}
+pnpm exec playwright install chromium
 pnpm e2e
+if "${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' | grep -q "$catalog_key_sentinel"; then
+  fail "the plugin logged a catalog key"
+fi

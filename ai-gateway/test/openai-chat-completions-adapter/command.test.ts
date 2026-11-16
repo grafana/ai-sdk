@@ -341,28 +341,45 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           assert.equal(unary.choices[0].message.content, 'hello');
           assert.equal(unary.usage?.total_tokens, 5);
           const providerOptions = backend === 'anthropic'
-            ? { anthropic: { container: { id: 'sdk-container' } } }
+            ? { anthropic: { effort: 'low' } }
             : backend === 'openai' ? { openai: { user: 'sdk-user' } }
             : { 'custom-vendor': { user: 'sdk-user' } };
           const extended = { model: 'chat', messages, providerOptions };
           await client.chat.completions.create(extended);
-          assert.deepEqual(backend === 'anthropic' ? requests.at(-1)!.container : requests.at(-1)!.user,
-            backend === 'anthropic' ? { id: 'sdk-container' } : 'sdk-user');
+          assert.deepEqual(backend === 'anthropic' ? (requests.at(-1)!.output_config as { effort: string }).effort : requests.at(-1)!.user,
+            backend === 'anthropic' ? 'low' : 'sdk-user');
           const extendedStream = await client.chat.completions.create({ ...extended, stream: true });
           for await (const chunk of extendedStream) assert.equal(chunk.object, 'chat.completion.chunk');
-          assert.deepEqual(backend === 'anthropic' ? requests.at(-1)!.container : requests.at(-1)!.user,
-            backend === 'anthropic' ? { id: 'sdk-container' } : 'sdk-user');
+          assert.deepEqual(backend === 'anthropic' ? (requests.at(-1)!.output_config as { effort: string }).effort : requests.at(-1)!.user,
+            backend === 'anthropic' ? 'low' : 'sdk-user');
+          if (backend === 'anthropic') {
+            for (const stream of [false, true] as const) {
+              const before = requests.length;
+              await assert.rejects(() => client.chat.completions.create({
+                model: 'chat', messages, stream,
+                ...{ providerOptions: { anthropic: { container: { id: 'sdk-container' } } } },
+              }), (e: unknown) => e instanceof OpenAI.APIError && e.status === 400);
+              assert.equal(requests.length, before);
+            }
+          }
           const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: 'developer', content: 'Follow the policy', name: 'policy' },
             { role: 'user', content: 'hello', name: 'alice' },
             { role: 'assistant', content: null, refusal: 'Cannot do that' },
             { role: 'user', content: 'Try this instead' },
           ];
-          const withHistory = await client.chat.completions.create({ model: 'chat', messages: history });
-          assert.equal(withHistory.choices[0].message.content, 'hello');
           if (backend === 'openai-compatible') {
+            const withHistory = await client.chat.completions.create({ model: 'chat', messages: history });
+            assert.equal(withHistory.choices[0].message.content, 'hello');
             const sent = requests.at(-1)!;
             assert.deepEqual(sent.messages, history.map((m) => m.role === 'assistant' ? { ...m, content: '' } : m));
+          } else {
+            for (const stream of [false, true] as const) {
+              const before = requests.length;
+              await assert.rejects(() => client.chat.completions.create({ model: 'chat', messages: history, stream }),
+                (e: unknown) => e instanceof OpenAI.APIError && e.status === 400);
+              assert.equal(requests.length, before);
+            }
           }
           if (backend === 'anthropic') {
             const warned = await client.chat.completions.create({ model: 'chat', messages, seed: 7 });

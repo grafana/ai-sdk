@@ -1,6 +1,10 @@
 package openaicompatible
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/grafana/ai-sdk/provider"
+)
 
 // Option configures an OpenAI-compatible model instance.
 type Option func(*model)
@@ -72,7 +76,30 @@ func WithStructuredOutputs(enabled bool) Option {
 
 // WithRequestTransform rewrites the JSON body before it is sent. It is useful
 // for compatible providers that need a small deviation from OpenAI's shape.
+// It preserves request-conversion warnings. Use WithRequestTransformAndWarnings
+// to also report or change warnings. The last transform option wins; nil disables
+// transformation. The callback may run concurrently for calls on the same model.
 func WithRequestTransform(transform func(map[string]any) (map[string]any, error)) Option {
+	if transform == nil {
+		return WithRequestTransformAndWarnings(nil)
+	}
+	return WithRequestTransformAndWarnings(func(body map[string]any, warnings []provider.Warning) (map[string]any, []provider.Warning, error) {
+		body, err := transform(body)
+		return body, warnings, err
+	})
+}
+
+// WithRequestTransformAndWarnings rewrites the completed JSON body and warnings
+// before sending a generation or streaming request. The callback receives the
+// current call's conversion warnings and returns the complete warning slice;
+// append to the input slice to retain existing warnings. Returned warnings appear
+// in GenerateResult.Warnings or the streaming PartStreamStart event.
+//
+// An error or nil body prevents the HTTP request. The last of this option and
+// WithRequestTransform wins; nil disables transformation. Bodies and conversion
+// warnings are call-local. The callback may run concurrently and must synchronize
+// any captured mutable state; it must not mutate returned values after returning.
+func WithRequestTransformAndWarnings(transform func(map[string]any, []provider.Warning) (map[string]any, []provider.Warning, error)) Option {
 	return func(m *model) { m.transformRequestBody = transform }
 }
 
@@ -101,12 +128,14 @@ type OpenAIOptions struct {
 	// true when structured outputs are enabled and a schema is provided.
 	StrictJSONSchema *bool `json:"strictJsonSchema,omitempty"`
 
-	// PreserveChatCompletionMetadata retains validated Chat-only output fields.
-	// This local codec option is not sent to the provider.
-	PreserveChatCompletionMetadata *bool `json:"preserveChatCompletionMetadata,omitempty"`
-
 	extraFields map[string]any
 }
 
 // ProviderKey returns the provider option namespace.
 func (OpenAIOptions) ProviderKey() string { return "openaiCompatible" }
+
+// WithChatCompletionMetadata retains refusal and logprobs in the resolved provider
+// metadata namespace, accumulated at stream finish. It does not alter request options.
+func WithChatCompletionMetadata() Option {
+	return func(m *model) { m.preserveChatCompletionMetadata = true }
+}

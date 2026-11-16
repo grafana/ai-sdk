@@ -13,6 +13,8 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
+var anthropicOptions = nativeoptions.Anthropic(nativeoptions.RequestAccountAnthropicPolicy())
+
 // Groups returns one routing group per destination, keyed by its selector,
 // with one candidate per account. Accounts are never treated as repeated
 // destinations. A group lists at most one candidate more than the attempt
@@ -65,7 +67,7 @@ func New(request Request, placements []routing.Placement, client *http.Client) (
 	}
 	chain := model.WithDecider(execution.FallbackDecider)
 	if allAnthropic {
-		return nativeoptions.Model{LanguageModel: chain, Validate: nativeoptions.Anthropic}, nil
+		return nativeoptions.Model{LanguageModel: chain, Validate: anthropicOptions}, nil
 	}
 	return chain, nil
 }
@@ -75,7 +77,7 @@ func newCandidate(destination Destination, account nativemodel.Config, client *h
 	var target execution.TargetType
 	switch destination.Provider {
 	case Anthropic:
-		candidate = nativeoptions.Model{LanguageModel: nativemodel.NewAnthropic(account, destination.Model, client), Validate: nativeoptions.Anthropic}
+		candidate = nativeoptions.Model{LanguageModel: nativemodel.NewAnthropic(account, destination.Model, client), Validate: anthropicOptions}
 		target = execution.TargetAnthropic
 	case OpenAI:
 		candidate, target = nativemodel.NewOpenAI(account, destination.Model, client), execution.TargetOpenAI
