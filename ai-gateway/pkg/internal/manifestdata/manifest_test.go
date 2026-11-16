@@ -6,12 +6,13 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/kube-openapi/pkg/spec3"
 )
 
-func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
+func TestManifest_DeclaresGatewayRoutesAndTheCatalogKind(t *testing.T) {
 	data := LocalManifest().ManifestData
 	require.NotNil(t, data)
 	assert.Equal(t, "aigateway", data.AppName)
@@ -23,11 +24,53 @@ func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
 	version := data.Versions[0]
 	assert.Equal(t, "v1alpha1", version.Name)
 	assert.True(t, version.Served)
-	assert.Empty(t, version.Kinds)
+	require.Len(t, version.Kinds, 1)
+	kind := version.Kinds[0]
+	assert.Equal(t, "ModelCatalog", kind.Kind)
+	assert.Equal(t, "ModelCatalogs", kind.Plural)
+	assert.Equal(t, "Namespaced", kind.Scope)
+	require.NotNil(t, kind.FolderScoped)
+	assert.False(t, *kind.FolderScoped)
+	assert.False(t, kind.Conversion)
+	require.Len(t, kind.SecureValues, 1)
+	assert.Equal(t, "*", kind.SecureValues[0].Key)
+	require.NotNil(t, kind.Admission)
+	assert.Nil(t, kind.Admission.Mutation)
+	require.NotNil(t, kind.Admission.Validation)
+	assert.Equal(t, []app.AdmissionOperation{app.AdmissionOperationCreate, app.AdmissionOperationUpdate}, kind.Admission.Validation.Operations)
 	assert.Equal(t, map[string][]string{
 		"/namespaces/{namespace}/config":         {http.MethodGet},
 		"/namespaces/{namespace}/language-model": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
+}
+
+func TestManifest_CatalogRoles(t *testing.T) {
+	data := LocalManifest().ManifestData
+	rolePattern := regexp.MustCompile(`^` + data.AppName + `:[a-z0-9]+$`)
+	permissionSets := map[string]string{}
+	fixedIDs := []string{}
+	for name, role := range data.Roles {
+		assert.Regexp(t, rolePattern, name)
+		require.Len(t, role.Kinds, 1)
+		assert.Equal(t, "ModelCatalog", role.Kinds[0].Kind)
+		assert.Empty(t, role.Kinds[0].Verbs)
+		require.NotNil(t, role.Kinds[0].PermissionSet)
+		permissionSets[name] = *role.Kinds[0].PermissionSet
+		fixedIDs = append(fixedIDs, "fixed:"+data.Group+":"+name)
+	}
+	assert.Equal(t, map[string]string{
+		"aigateway:catalogreader": app.ManifestRolePermissionSetViewer,
+		"aigateway:catalogwriter": app.ManifestRolePermissionSetEditor,
+	}, permissionSets)
+	assert.ElementsMatch(t, []string{
+		"fixed:aigateway.ext.grafana.app:aigateway:catalogreader",
+		"fixed:aigateway.ext.grafana.app:aigateway:catalogwriter",
+	}, fixedIDs)
+	require.NotNil(t, data.RoleBindings)
+	assert.Equal(t, []string{"aigateway:catalogreader"}, data.RoleBindings.Viewer)
+	assert.Empty(t, data.RoleBindings.Editor)
+	assert.Equal(t, []string{"aigateway:catalogwriter"}, data.RoleBindings.Admin)
+	assert.Empty(t, data.RoleBindings.Additional)
 }
 
 func TestManifest_GeneratorMatchesRuntimeVersion(t *testing.T) {

@@ -24,8 +24,10 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
+	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -173,19 +175,19 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
+	observers, err := service.NewModelObservers(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := service.BuildCatalog(file, providers, nativeClient, modelFactory, sinks.attempts)
+	catalog, err := service.BuildCatalog(file, providers, nativeClient, service.ConfiguredIdentity, sinks.attempts)
 	if err != nil {
 		return nil, err
 	}
 	var byokOptions *service.BYOKOptions
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: byokFactory}
+		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
@@ -223,11 +225,18 @@ func (g *Gateway) Handler() http.Handler { return g.handler }
 // or nil when the Gateway is idle.
 func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 
-// Provider returns the app-sdk provider whose app serves Handler.
+// Provider returns the app-sdk provider whose app serves Handler and the
+// manifest kinds with their admission validators.
 func (g *Gateway) Provider() app.Provider {
 	return simple.NewAppProvider(manifestdata.LocalManifest(), nil, func(cfg app.Config) (app.App, error) {
-		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler})
+		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds()})
 	})
+}
+
+// managedKinds lists every manifest kind with its admission validator. No
+// kind has a reconciler or watcher, so the app starts no informers.
+func managedKinds() []simple.AppManagedKind {
+	return []simple.AppManagedKind{{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}}}
 }
 
 // Close flushes Agent Observability and attempt records concurrently for at

@@ -171,6 +171,70 @@ func TestRuntimeCall_Selection(t *testing.T) {
 	}
 }
 
+func TestRuntimeCall_Compose(t *testing.T) {
+	newComposed := func(t *testing.T, compose ModelComposer) (*Runtime, *generateModel) {
+		t.Helper()
+		selected := &generateModel{modelID: "selected"}
+		runtime, err := New(Config{Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+			return ConfiguredSelection(id, selected, nil), nil
+		}, Compose: compose, Limits: testLimits()})
+		require.NoError(t, err)
+		return runtime, selected
+	}
+
+	t.Run("call invokes the composed model", func(t *testing.T) {
+		composed := &generateModel{modelID: "composed"}
+		var received []Selection
+		runtime, selected := newComposed(t, func(s Selection) (provider.LanguageModel, error) {
+			received = append(received, s)
+			return composed, nil
+		})
+		call, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		_, err = call.Generate()
+		require.NoError(t, err)
+		require.Len(t, received, 1)
+		assert.Equal(t, "id", received[0].ID)
+		assert.Equal(t, SourceOperatorCatalog, received[0].Source)
+		assert.Same(t, selected, received[0].Model)
+		assert.Equal(t, 1, composed.callCount())
+		assert.Zero(t, selected.callCount())
+	})
+
+	var typedNil *generateModel
+	for _, tc := range []struct {
+		name    string
+		compose ModelComposer
+	}{
+		{name: "error", compose: func(Selection) (provider.LanguageModel, error) { return nil, errors.New("private") }},
+		{name: "panic", compose: func(Selection) (provider.LanguageModel, error) { panic("private") }},
+		{name: "nil model", compose: func(Selection) (provider.LanguageModel, error) { return nil, nil }},
+		{name: "typed nil model", compose: func(Selection) (provider.LanguageModel, error) { return typedNil, nil }},
+	} {
+		t.Run("composer "+tc.name+" fails as internal", func(t *testing.T) {
+			runtime, selected := newComposed(t, tc.compose)
+			_, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+			assert.ErrorIs(t, err, errInternal)
+			assert.Zero(t, selected.callCount())
+		})
+	}
+
+	t.Run("selection errors skip the composer", func(t *testing.T) {
+		var composed atomic.Int32
+		runtime, err := New(Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+			return Selection{}, ErrInvalidBYOK
+		}, Compose: func(s Selection) (provider.LanguageModel, error) {
+			composed.Add(1)
+			return s.Model, nil
+		}, Limits: testLimits()})
+		require.NoError(t, err)
+		_, err = runtime.Call(t.Context(), "id", provider.CallOptions{})
+		assert.ErrorIs(t, err, ErrInvalidBYOK)
+		assert.Zero(t, composed.Load())
+	})
+}
+
 func TestCallGenerate(t *testing.T) {
 	t.Run("result", func(t *testing.T) {
 		result, err := newCall(t, t.Context(), &generateModel{}, testLimits()).Generate()
@@ -565,6 +629,17 @@ func TestStreamClose_Drain(t *testing.T) {
 		time.Sleep(4 * limits.StreamDrainDuration)
 		assert.Equal(t, settled, produced.Load())
 	})
+}
+
+func TestCall_ModelID(t *testing.T) {
+	runtime := newRuntime(t, func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+		return Selection{ID: "canonical", Model: &generateModel{}}, nil
+	}, testLimits())
+	call, err := runtime.Call(t.Context(), "alias", provider.CallOptions{})
+	require.NoError(t, err)
+	defer call.Close()
+	assert.Equal(t, "canonical", call.ModelID())
+	assert.Nil(t, call.View(nil).Overview)
 }
 
 // invalidThenReady returns a stream that sends one invalid part and then

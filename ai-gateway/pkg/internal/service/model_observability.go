@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/middleware"
@@ -221,11 +222,21 @@ func (writer agentDiagnosticWriter) Write(message []byte) (int, error) {
 	return len(message), nil
 }
 
-// NewModelObservabilityFactory constructs shared middleware once and returns a
-// catalog factory that adds the fixed logical chain around each lower model.
-func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (ModelFactory, ModelFactory, error) {
+var errUnobservedSource = errors.New("gateway service: selection source has no observer configuration")
+
+// ModelObservers applies the Gateway's logical observer chains to selections.
+// Its middleware and collectors are constructed once; each call only wraps its
+// selected model in the chain of the selection's source.
+type ModelObservers struct {
+	chains map[execution.Source]modelObservationChain
+}
+
+// NewModelObservers constructs the shared observer middleware once, registers
+// the model metrics with telemetry's registerer, and returns one chain for each
+// selection source.
+func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (*ModelObservers, error) {
 	if telemetry == nil || logger == nil || drainTimeout <= 0 {
-		return nil, nil, fmt.Errorf("gateway service: invalid model observability dependency")
+		return nil, fmt.Errorf("gateway service: invalid model observability dependency")
 	}
 	metrics, err := metricsmiddleware.Middleware(metricsmiddleware.Options{
 		Registerer:                telemetry.Registerer(),
@@ -240,7 +251,7 @@ func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, r
 		},
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
+		return nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
 	}
 	loggerOptions := logmiddleware.Options{
 		Logger:             logger,
@@ -249,7 +260,7 @@ func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, r
 		IdentitySource:     logmiddleware.IdentityRequested,
 		StreamDrainTimeout: drainTimeout,
 	}
-	chain := modelObservationChain{
+	configured := modelObservationChain{
 		contextBridge:    observationBridgeMiddleware(),
 		structuredLogger: logmiddleware.Middleware(loggerOptions),
 		prometheus:       metrics,
@@ -267,20 +278,26 @@ func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, r
 			OnRecordError:    runtime.recordError,
 			OnRecordComplete: runtime.recordingComplete,
 		})
-		chain.agentRecording = &recording
+		configured.agentRecording = &recording
 	}
-
-	configured := func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
-		return chain.wrap(canonicalID, lower)
-	}
-	byokChain := chain
+	byok := configured
 	loggerOptions.Redactor = closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.RequestBYOK)
-	byokChain.structuredLogger = logmiddleware.Middleware(loggerOptions)
-	byok := func(requestID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
-		identity := middleware.Wrap(middleware.WrapOptions{Model: lower, ProviderID: lower.Provider(), ModelID: requestID})
-		return byokChain.observe(identity), nil
+	byok.structuredLogger = logmiddleware.Middleware(loggerOptions)
+	return &ModelObservers{chains: map[execution.Source]modelObservationChain{
+		execution.SourceOperatorCatalog: configured,
+		execution.SourceRequestBYOK:     byok,
+	}}, nil
+}
+
+// Compose is the runtime's [execution.ModelComposer]: it wraps the selected
+// model, which carries its logical identity, in the observer chain of the
+// selection's source. A source without a chain fails.
+func (o *ModelObservers) Compose(selected execution.Selection) (provider.LanguageModel, error) {
+	chain, ok := o.chains[selected.Source]
+	if !ok {
+		return nil, errUnobservedSource
 	}
-	return configured, byok, nil
+	return chain.observe(selected.Model), nil
 }
 
 type modelObservationChain struct {
@@ -288,14 +305,6 @@ type modelObservationChain struct {
 	agentRecording   *middleware.Middleware
 	structuredLogger middleware.Middleware
 	prometheus       middleware.Middleware
-}
-
-func (chain modelObservationChain) wrap(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
-	identity, err := identityModelFactory(canonicalID, lower)
-	if err != nil {
-		return nil, err
-	}
-	return chain.observe(identity), nil
 }
 
 func (chain modelObservationChain) observe(identity provider.LanguageModel) provider.LanguageModel {

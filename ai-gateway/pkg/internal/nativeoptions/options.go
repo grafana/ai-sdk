@@ -39,14 +39,23 @@ func (m Model) DoStream(ctx context.Context, options provider.CallOptions) (*pro
 	return m.LanguageModel.DoStream(ctx, options)
 }
 
-func Anthropic(options provider.CallOptions) error {
+// Anthropic returns the validator for one Anthropic candidate under policy.
+// It refuses, before native I/O, server-side fallbacks and container options
+// the policy does not admit and invalid MCP configuration or history.
+func Anthropic(policy AnthropicPolicy) func(provider.CallOptions) error {
+	return func(options provider.CallOptions) error { return validateAnthropic(policy, options) }
+}
+
+func validateAnthropic(policy AnthropicPolicy, options provider.CallOptions) error {
 	call, _, err := provider.ResolveOption[anthropicprovider.AnthropicOptions](options.ProviderOptions, "anthropic")
 	if err != nil {
 		return catalog.ErrUnsupportedRequest
 	}
-	if (call.Container != nil && len(call.Container.Skills) > 0) ||
-		(call.Fallbacks != nil && (call.Fallbacks.Default || len(call.Fallbacks.Chain) > 0)) {
+	if !policy.Fallbacks.admits(call.Fallbacks) {
 		return catalog.ErrUnsupportedRequest
+	}
+	if err := policy.validateContainer(call.Container); err != nil {
+		return err
 	}
 	servers, err := validateAnthropicMCPServers(call.MCPServers)
 	if err != nil {
