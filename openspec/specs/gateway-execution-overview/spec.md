@@ -14,7 +14,9 @@ The Gateway SHALL provide a pure projector for one invocation's ordered observed
 - **WHEN** an invocation is projected into an optional execution overview
 - **THEN** It SHALL include the requested route identity once, the canonical route identity once when a catalog resolution supplied one, and each observed candidate's provider/backend model, optional configured instance, outcome and optional failure summary. It SHALL NOT emit unrun configured candidates, a selected index, timestamps, completion/replay claims, fallback-intent flags, raw diagnostic trees or disposition taxonomies. Only the last attempt SHALL be eligible for selected or canceled outcome. Selected SHALL mean accepted unary result or first stream part, not successful completion. Invalid, incomplete or mixed invocation observation SHALL omit the optional overview rather than invent attribution.
 - **AND** Configured overviews SHALL always include the canonical route identity. Overviews without a catalog resolution SHALL omit the canonical identity and configured instances rather than substitute the requested identity, a native identity or a credential-derived value.
-- **AND** The owned namespace schema SHALL require the requested identity and attempts, and SHALL accept an absent canonical identity.
+- **AND** The selected attempt, of a configured candidate or a request account alike, SHALL carry an optional served model identity only when its output reported an Anthropic server-side fallback hop: the `to.model` of the latest valid `anthropic.fallback` marker observed before that carrier is published, across all response segments of a stream. A marker whose `to.model` is empty or invalid UTF-8 SHALL be ignored. The attempt's provider/backend model SHALL remain the configured or requested destination. Failed and canceled attempts, outputs without a valid marker and native response model IDs SHALL NOT produce a served model identity. The routing summary SHALL NOT carry it.
+- **AND** Every carrier that publishes a selected attempt SHALL use the current served model identity: unary result metadata, unary invalid-output and mapping error metadata, each stream finish's metadata, committed stream error metadata, terminal stream errors after a wait ends (closed, deadline, canceled, idle timeout or invalid output) and the adapter-failure terminal stream error.
+- **AND** The owned namespace schema SHALL require the requested identity and attempts, SHALL accept an absent canonical identity, and SHALL accept an optional nonempty served model identity only on a selected attempt.
 
 #### Scenario: Earlier candidate fails and later candidate is selected
 - **WHEN** one invocation reports a failed primary followed by a selected secondary
@@ -31,6 +33,26 @@ The Gateway SHALL provide a pure projector for one invocation's ordered observed
 #### Scenario: Invocation without catalog resolution
 - **WHEN** a request-account invocation for `openai/gpt-5` reports a failed then a selected native attempt
 - **THEN** the overview SHALL carry `requestedModelId` `openai/gpt-5`, no `canonicalModelId`, and two attempts with native provider `openai`, model `gpt-5`, no `providerInstance`, the first attempt's own failure summary and the second's selected outcome
+
+#### Scenario: Server-side fallback served the response
+- **WHEN** a selected configured Anthropic candidate for backend `claude-fable-5` returns output with an `anthropic.fallback` marker from `claude-fable-5` to `claude-opus-4-8`, and its native response model ID is `claude-fable-5`
+- **THEN** the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8` in unary result metadata and in stream finish metadata
+
+#### Scenario: Server-side fallback served a request-account response
+- **WHEN** a selected BYOK Anthropic account for `anthropic/claude-fable-5` returns output with an `anthropic.fallback` marker to `claude-opus-4-8`
+- **THEN** the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8`, with no canonical identity, and the overview SHALL still be published
+
+#### Scenario: Stream error after a server-side fallback hop
+- **WHEN** a selected stream emits an `anthropic.fallback` marker to `claude-opus-4-8`, then ends with a committed stream error part or a terminal wait error such as the idle timeout
+- **THEN** that error's metadata SHALL carry the selected attempt with `servedModelId` `claude-opus-4-8`
+
+#### Scenario: Server-side fallback in two response segments
+- **WHEN** a selected stream's first segment carries a marker to `claude-opus-4-8` and ends with a finish, and its second segment carries a marker to `claude-sonnet-5` and ends with a finish
+- **THEN** the first finish SHALL carry `servedModelId` `claude-opus-4-8` and the second SHALL carry `claude-sonnet-5`, and both SHALL carry the same `gateway.routing` summary as without the markers
+
+#### Scenario: No server-side fallback hop
+- **WHEN** a selected attempt's output contains no valid `anthropic.fallback` marker
+- **THEN** the attempt SHALL omit `servedModelId`, and existing overviews SHALL remain byte-identical
 
 ### Requirement: Small native failure summaries
 

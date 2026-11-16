@@ -20,8 +20,9 @@ type usage struct {
 	CompletionDetails *completionDetails `json:"completion_tokens_details,omitempty"`
 }
 type promptDetails struct {
-	Audio  *int `json:"audio_tokens,omitempty"`
-	Cached *int `json:"cached_tokens,omitempty"`
+	CacheWrite *int `json:"cache_write_tokens,omitempty"`
+	Audio      *int `json:"audio_tokens,omitempty"`
+	Cached     *int `json:"cached_tokens,omitempty"`
 }
 type completionDetails struct {
 	Audio              *int `json:"audio_tokens,omitempty"`
@@ -224,7 +225,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if err != nil {
 		return out, err
 	}
-	if err = nativeUsage(out.Usage, native.Usage); err != nil {
+	if err = nativeUsage(out.Usage, result.Usage.Raw); err != nil {
 		return out, err
 	}
 	out.Choices = []choice{{Message: msg, Finish: finish, Logprobs: native.Logprobs}}

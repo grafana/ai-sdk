@@ -43,6 +43,11 @@ type Options struct {
 	// StreamDrainTimeout bounds cancellation cleanup when positive. Zero preserves
 	// the existing asynchronous drain until the upstream channel closes.
 	StreamDrainTimeout time.Duration
+	// IsDenied reports whether a call error or stream error part is a policy
+	// denial rather than a failure. Denials use status "denied" and error type
+	// "none", so they stay out of error rates. A nil IsDenied denies nothing,
+	// and a panicking IsDenied is treated as reporting no denial.
+	IsDenied func(err error) bool
 }
 
 var defaultDurationBuckets = []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300}
@@ -60,6 +65,7 @@ type config struct {
 	interChunkDelayBuckets    []float64
 	disableStreamChunkMetrics bool
 	streamDrainTimeout        time.Duration
+	isDenied                  func(err error) bool
 }
 
 func normalizeOptions(opts Options) config {
@@ -84,6 +90,7 @@ func normalizeOptions(opts Options) config {
 		interChunkDelayBuckets:    bucketsOrDefault(opts.InterChunkDelayBuckets, defaultInterChunkDelayBuckets),
 		disableStreamChunkMetrics: opts.DisableStreamChunkMetrics,
 		streamDrainTimeout:        opts.StreamDrainTimeout,
+		isDenied:                  opts.IsDenied,
 	}
 }
 
