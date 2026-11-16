@@ -13,14 +13,15 @@ import (
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/providers/anthropic"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type modelConstructor func(config nativemodel.Config, modelID string, client *http.Client) provider.LanguageModel
 
-// ModelFactory composes one canonical logical model around its unchanged lower
-// model. WP8 observers use this seam; WP9 may replace the lower model with a
-// fallback without changing the logical wrapper.
+// ModelFactory gives one lower model its logical identity, without changing it.
+// The lower model may be a fallback chain. Logical observers are not applied
+// here: the runtime applies them to the selection with [ModelObservers].
 type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error)
 
 // Catalog is the configured model catalog. It also keeps each route's
@@ -72,13 +73,16 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if providerConfig.APIKey == "" {
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
+			if descriptor.ServerFallbacks != nil && providerConfig.Type != "anthropic" {
+				return nil, fmt.Errorf("gateway service: model %q sets server fallbacks on a provider that is not anthropic", id)
+			}
 			var candidate provider.LanguageModel
 			var validateOptions func(provider.CallOptions) error
 			target := execution.Target{ModelID: descriptor.Model}
 			switch providerConfig.Type {
 			case "anthropic":
 				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-				validateOptions = nativeoptions.Anthropic
+				validateOptions = nativeoptions.Anthropic(anthropicPolicy(descriptor))
 				target.Type = execution.TargetAnthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
@@ -163,7 +167,9 @@ func composeCandidates(candidates []provider.LanguageModel, descriptors []config
 	return ordered.WithDecider(execution.FallbackDecider).WithAttemptObserver(physicalAttemptObserver(descriptors, sink)), nil
 }
 
-func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+// ConfiguredIdentity is the [ModelFactory] of configured models: provider
+// `grafana` and the canonical public model ID.
+func ConfiguredIdentity(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
 	if lower == nil {
 		return nil, fmt.Errorf("lower model is nil")
 	}
@@ -172,4 +178,22 @@ func identityModelFactory(canonicalID string, lower provider.LanguageModel) (pro
 		ProviderID: "grafana",
 		ModelID:    canonicalID,
 	}), nil
+}
+
+// anthropicPolicy converts a configured candidate's skills and server-side
+// fallback policies. Configured candidates never admit container IDs, and an
+// absent policy refuses every skill or every active server-side fallback.
+func anthropicPolicy(descriptor config.Primary) nativeoptions.AnthropicPolicy {
+	var policy nativeoptions.AnthropicPolicy
+	if fallbacks := descriptor.ServerFallbacks; fallbacks != nil {
+		policy.Fallbacks = nativeoptions.NewAnthropicFallbackPolicy(fallbacks.Models, fallbacks.AllowDefault)
+	}
+	if skills := descriptor.Skills; skills != nil {
+		grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
+		for _, entry := range skills.Allow {
+			grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+		}
+		policy.Skills = nativeoptions.AllowlistedAnthropicSkills(grants)
+	}
+	return policy
 }

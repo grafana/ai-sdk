@@ -12,15 +12,29 @@ import (
 )
 
 // Selection is the executable model a selector chose for one request, with its
-// logical identity. A selection built by [CatalogSelector],
+// logical identity and its source. A selection built by [CatalogSelector],
 // [ConfiguredSelection] or [AccountSelection] carries the expected attempts its
 // execution overview is projected from; any other selection publishes no overview.
 type Selection struct {
-	ID          string
-	Model       provider.LanguageModel
+	ID    string
+	Model provider.LanguageModel
+	// Source names where the selected model and its provider keys come from.
+	Source      Source
 	attribution attribution
 	expected    []ExpectedAttempt
 }
+
+// Source names where a selection's model and provider keys come from. A
+// [ModelComposer] chooses the per-call layers of a selection by its source.
+type Source string
+
+const (
+	// SourceOperatorCatalog is the operator's configured model catalog, with
+	// server-held provider keys.
+	SourceOperatorCatalog Source = "operator-catalog"
+	// SourceRequestBYOK is the request's own provider accounts.
+	SourceRequestBYOK Source = "request-byok"
+)
 
 type attribution uint8
 
@@ -42,29 +56,34 @@ type ExpectedAttempt struct {
 	Destination catalog.ConfiguredCandidate
 }
 
-// ConfiguredSelection returns the selection for model, which tries the expected
-// attempts in order. id is the requested model's canonical ID, which is the
+// ConfiguredSelection returns the [SourceOperatorCatalog] selection for model,
+// which tries the expected attempts in order. id is the requested model's canonical ID, which is the
 // overview's canonical identity even when none of that model's candidates were
 // composed. The overview attributes each attempt to the configured destination
 // expected at its position; without expected attempts, attempts keep their
 // decision identity.
 func ConfiguredSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt) Selection {
-	return Selection{ID: id, Model: model, attribution: attributionConfigured, expected: slices.Clone(expected)}
+	return Selection{ID: id, Model: model, Source: SourceOperatorCatalog, attribution: attributionConfigured, expected: slices.Clone(expected)}
 }
 
-// AccountSelection returns the selection for model, which tries the request's
-// accounts in the order of expected. Its overview names the call's requested
+// AccountSelection returns the [SourceRequestBYOK] selection for model, which
+// tries the request's accounts in the order of expected. Its overview names the call's requested
 // model ID, has no canonical model or provider instance, and lists each account
 // attempt with its native destination. An attempt for another destination than
 // the one expected at its position, or more attempts than expected, omits the
 // overview.
 func AccountSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt) Selection {
-	return Selection{ID: id, Model: model, attribution: attributionAccounts, expected: slices.Clone(expected)}
+	return Selection{ID: id, Model: model, Source: SourceRequestBYOK, attribution: attributionAccounts, expected: slices.Clone(expected)}
 }
 
 // RequestSelector chooses the model for a request from its model ID, its mapped
 // options and the raw call-level gateway controls, which are nil when absent.
 type RequestSelector func(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (Selection, error)
+
+// ModelComposer returns the model one call invokes for a valid selection: the
+// selected model inside the host's per-call layers, such as logical observers.
+// It runs once per call, after selection and before the model is invoked.
+type ModelComposer func(selected Selection) (provider.LanguageModel, error)
 
 var (
 	// ErrReservedProviderOptions reports gateway controls a selector does not accept.
@@ -88,8 +107,9 @@ var (
 	ErrUnknownFallbackModel = errors.New("execution: unknown fallback model")
 )
 
-// CatalogSelector selects configured models from resolver. It refuses gateway
-// controls, and returns nil for a nil resolver.
+// CatalogSelector selects configured models from resolver as
+// [SourceOperatorCatalog] selections. It refuses gateway controls, and returns
+// nil for a nil resolver.
 func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 	if isNilInterface(resolver) {
 		return nil
@@ -102,7 +122,7 @@ func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 		if err != nil {
 			return Selection{}, err
 		}
-		return Selection{ID: resolved.ID, Model: resolved.Model, attribution: attributionConfigured, expected: configuredExpected(modelID, resolved.ID, resolved.Candidates)}, nil
+		return Selection{ID: resolved.ID, Model: resolved.Model, Source: SourceOperatorCatalog, attribution: attributionConfigured, expected: configuredExpected(modelID, resolved.ID, resolved.Candidates)}, nil
 	}
 }
 
