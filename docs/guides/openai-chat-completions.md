@@ -151,3 +151,8 @@ The shared Gateway catalog enables this extension at model construction. Provide
 also carries the typed fields in its existing provider-metadata envelope; neither
 route needs a per-request flag or extra custom content parts. Invalid optional Chat
 metadata is omitted with diagnostics while ordinary content continues.
+
+Validation applies to the complete public stream: structured JSON must remain valid
+after concatenation, and `parallel_tool_calls:false` permits only one call across
+all native segments. The shared runtime rejects duplicate native tool IDs. A response containing calls ends with `tool_calls` unless it was interrupted
+by a token limit or content filter.

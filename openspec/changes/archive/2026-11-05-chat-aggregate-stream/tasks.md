@@ -1,0 +1,4 @@
+- [x] Validate concatenated JSON and aggregate tool cardinality.
+- [x] Keep aggregate tool finish semantics and global tool indices.
+- [x] Reproduce independent-review cases with HTTP/SSE tests.
+- [x] Update guide and OpenSpec.

@@ -333,7 +333,7 @@ emitting a single Chat terminal finish and DONE sentinel. It SHALL preserve publ
 identity and aggregate known per-segment token usage without inventing missing counts.
 
 #### Scenario: Reused native item identifiers
-- **WHEN** consecutive native segments reuse a text or tool item identifier
+- **WHEN** consecutive native segments reuse a text identifier
 - **THEN** text continues on the same Chat response and new tool calls receive distinct indices
 - **AND** raw native transport events do not terminate the response
 
@@ -392,3 +392,14 @@ without a client flag. Refusals SHALL bypass structured JSON validation.
 - **WHEN** the compatible provider reports ErrInvalidChatCompletionMetadata
 - **THEN** Chat SHALL expose a diagnostic warning and continue ordinary content and later chunks
 - **AND** unrelated provider errors SHALL retain their existing failure behavior
+### Requirement: Aggregate stream semantics
+The adapter SHALL validate structured output and tool cardinality across the
+complete public response, not only each native segment. Tool identity validation SHALL remain owned by the shared runtime.
+
+#### Scenario: Individually valid JSON segments
+- **WHEN** concatenating native segments produces invalid requested JSON
+- **THEN** the stream terminates with an error without DONE
+
+#### Scenario: Tool calls precede a final text segment
+- **WHEN** earlier native segments contain client-executed tool calls
+- **THEN** a completed public response retains tool_calls as its finish reason

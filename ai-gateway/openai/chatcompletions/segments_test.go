@@ -68,3 +68,40 @@ func TestSegmentUsageOverflow(t *testing.T) {
 	total := &usage{Total: int(^uint(0) >> 1)}
 	require.Error(t, addUsage(total, &usage{Total: 1}))
 }
+
+func TestAggregatedSegmentValidation(t *testing.T) {
+	tools := []provider.StreamPart{{Type: provider.PartResponseMeta}, {Type: provider.PartToolCall, ToolCallID: "same", ToolName: "weather", Input: `{}`}, {Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}}}
+	text := append([]provider.StreamPart{{Type: provider.PartResponseMeta}}, textParts()[1:]...)
+	jsonSegment := append([]provider.StreamPart(nil), text...)
+	jsonSegment[2].Delta = "{}"
+	for _, tc := range []struct {
+		name, extra string
+		parts       []provider.StreamPart
+		fail        bool
+		finish      string
+	}{
+		{"concatenated JSON", `,"response_format":{"type":"json_object"}`, append(append([]provider.StreamPart(nil), jsonSegment...), jsonSegment...), true, ""},
+		{"tools then text", `,"tools":[{"type":"function","function":{"name":"weather"}}]`, append(append([]provider.StreamPart(nil), tools...), text...), false, "tool_calls"},
+		{"parallel across segments", `,"tools":[{"type":"function","function":{"name":"weather"}}],"parallel_tool_calls":false`, append(append([]provider.StreamPart(nil), tools...), tools...), true, ""},
+		{"duplicate tool IDs rejected by runtime", `,"tools":[{"type":"function","function":{"name":"weather"}}]`, append(append([]provider.StreamPart(nil), tools...), tools...), true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return partsStream(tc.parts...), nil
+			}}
+			req := httptest.NewRequest("POST", Path, strings.NewReader(strings.TrimSuffix(basic, "}")+`,"stream":true`+tc.extra+"}"))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			testHandler(t, f).ServeHTTP(w, req)
+			body := w.Body.String()
+			if tc.fail {
+				assert.Contains(t, body, `"error"`)
+				assert.NotContains(t, body, "[DONE]")
+			} else {
+				assert.NotContains(t, body, `"error"`)
+				assert.Contains(t, body, `"finish_reason":"`+tc.finish+`"`)
+				assert.Contains(t, body, "[DONE]")
+			}
+		})
+	}
+}
