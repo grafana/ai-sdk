@@ -1,16 +1,16 @@
 # gateway-plugin-host Specification
 
 ## Purpose
-Run the Gateway as a Grafana App Platform app plugin backend that serves the ProviderWire operations as namespaced platform routes, with configuration, health and lifecycle owned by the plugin host.
+Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWire and Chat Completions as namespaced routes, with configuration, access, health and transport lifecycle owned by the host.
 
 ## Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly two namespaced custom routes, `GET namespaces/{namespace}/config` and `POST namespaces/{namespace}/language-model`, and exactly one kind, `ModelCatalog`, with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
+The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly three namespaced custom routes, `GET namespaces/{namespace}/config`, `POST namespaces/{namespace}/language-model` and `POST namespaces/{namespace}/v1/chat/completions`, and exactly one kind, `ModelCatalog`, with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
 
-#### Scenario: Committed manifest declares only the two routes
+#### Scenario: Committed manifest declares only the three routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the two custom routes, and the `ModelCatalog` kind as its only kind
+- **THEN** it SHALL declare one version with only the three custom routes, and the `ModelCatalog` kind as its only kind
 
 #### Scenario: Plugin identity is fixed
 - **WHEN** the backend is built by any supported method, including plain `go build` in tests
@@ -221,7 +221,7 @@ The production route table SHALL declare exactly the method and path pairs of th
 
 #### Scenario: Production table and manifest agree
 - **WHEN** the production route table is compared with the committed manifest
-- **THEN** both SHALL contain only `GET namespaces/{namespace}/config` and `POST namespaces/{namespace}/language-model`
+- **THEN** both SHALL contain exactly `GET namespaces/{namespace}/config`, `POST namespaces/{namespace}/language-model` and `POST namespaces/{namespace}/v1/chat/completions`
 
 #### Scenario: Undeclared path or method
 - **WHEN** a request targets another path under the route prefix, or a declared path with another method, including `HEAD` on `config`

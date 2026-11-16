@@ -347,6 +347,7 @@ mise run test-short        # skip integration/E2E
 mise run test-race         # short tests with the race detector, Gateway and stream-path modules
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
 mise run test-conformance  # replay upstream-recorded fixtures
+mise run test-openai-chat-completions-adapter # official OpenAI clients against the Gateway plugin
 ```
 
 Wire-format work needs a cross-language test. If you add or change a

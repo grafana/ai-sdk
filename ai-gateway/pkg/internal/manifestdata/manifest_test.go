@@ -39,8 +39,9 @@ func TestManifest_DeclaresGatewayRoutesAndTheCatalogKind(t *testing.T) {
 	require.NotNil(t, kind.Admission.Validation)
 	assert.Equal(t, []app.AdmissionOperation{app.AdmissionOperationCreate, app.AdmissionOperationUpdate}, kind.Admission.Validation.Operations)
 	assert.Equal(t, map[string][]string{
-		"/namespaces/{namespace}/config":         {http.MethodGet},
-		"/namespaces/{namespace}/language-model": {http.MethodPost},
+		"/namespaces/{namespace}/config":              {http.MethodGet},
+		"/namespaces/{namespace}/language-model":      {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
 }
 

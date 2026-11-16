@@ -87,12 +87,13 @@ func TestProductionRoutes_MatchTheManifest(t *testing.T) {
 		}
 	}
 	routed := map[string]struct{}{}
-	for _, entry := range productionRoutes(http.NotFoundHandler(), http.NotFoundHandler()) {
+	for _, entry := range productionRoutes(http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler()) {
 		routed[entry.method+" /namespaces/{namespace}"+entry.path] = struct{}{}
 	}
 	assert.Equal(t, declared, routed)
 	assert.Equal(t, map[string]struct{}{
-		"GET /namespaces/{namespace}/config":          {},
-		"POST /namespaces/{namespace}/language-model": {},
+		"GET /namespaces/{namespace}/config":               {},
+		"POST /namespaces/{namespace}/language-model":      {},
+		"POST /namespaces/{namespace}/v1/chat/completions": {},
 	}, routed)
 }

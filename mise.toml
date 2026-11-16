@@ -28,6 +28,7 @@ sources = [
   "test/integration/package.json",
   "ai-gateway/package.json",
   "ai-gateway/test/providerwire-v4/package.json",
+  "ai-gateway/test/openai-chat-completions-adapter/package.json",
 ]
 outputs = ["node_modules/.modules.yaml"]
 run = "pnpm install --frozen-lockfile"
@@ -483,4 +484,13 @@ mise run lint
 mise run lint-docs
 mise run test
 mise run verify-ai-gateway-boundary
+"""
+
+[tasks.test-openai-chat-completions-adapter]
+description = "Verify Chat Completions with official OpenAI Go and TypeScript clients"
+run = """
+mise deps install --only test
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race ./test/openai-chat-completions-adapter)
+pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract typecheck
+pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract test
 """
