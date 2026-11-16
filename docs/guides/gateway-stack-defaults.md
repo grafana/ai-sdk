@@ -138,11 +138,11 @@ calls for, as the plugin and never as the caller, and caches them:
   for at most 5 seconds. Later calls use the cache.
 - A change applies within about a minute of the namespace's next call, on each
   replica independently, so replicas can disagree briefly.
-- If a read fails, the last configuration read successfully keeps applying for
-  up to 10 minutes. After that, or when the first read fails, both defaults
-  are off until a read succeeds.
+- If a read fails, the last configuration read successfully keeps applying
+  until a read succeeds, and the read is retried after a minute. When a
+  namespace's first read fails, both defaults are off until a read succeeds.
 
-The cache's TTL, staleness bound, read timeout and namespace bound are fixed in
+The cache's TTL, read timeout and namespace bound are fixed in
 this version. The [extension guide](gateway-extensions.md#how-stored-configuration-takes-effect)
 describes them and their metrics.
 

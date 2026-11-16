@@ -251,7 +251,7 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 
 ## Shipped reads
 
-The shipped tenant extensions apply to every call, so the shipped Gateway reads the `Middleware` resources of every namespace it serves calls for, even one that stores none. On each replica, the first call per namespace waits for that read, bounded at 5 s. API load is about the active namespaces per replica per minute. The cache constants (`ttl` 1 minute, `maxStaleness` 10 minutes, `readTimeout` 5 s, `failureBackoff` 30 s, `maxNamespaces` 1024) are the values to revisit with development metrics. The extension guide and the org admin guide state this, and so does the pull request body.
+The shipped tenant extensions apply to every call, so the shipped Gateway reads the `Middleware` resources of every namespace it serves calls for, even one that stores none. On each replica, the first call per namespace waits for that read, bounded at 5 s. API load is about the active namespaces per replica per minute. The cache constants (`ttl` 1 minute, which is also the retry interval after a failed read, `readTimeout` 5 s, `maxNamespaces` 1024) are the values to revisit with development metrics. The extension guide and the org admin guide state this, and so does the pull request body.
 
 ## Follow-ups
 

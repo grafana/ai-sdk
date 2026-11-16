@@ -41,7 +41,7 @@ At read time the Gateway SHALL check each enabled resource's member against its 
 - **THEN** that namespace SHALL apply the failure policy, and another namespace with a valid configuration SHALL run the extension
 
 ### Requirement: Tenant types not implemented at read time
-An enabled resource whose type this build does not implement as a tenant-scope extension SHALL be skipped. It SHALL be logged once per namespace and type while the namespace stays cached, and counted. A disabled resource of such a type SHALL be ignored without a log or count, since it has no effect.
+An enabled resource whose type this build does not implement as a tenant-scope extension SHALL be skipped. It SHALL be logged and counted once each time the namespace's configuration is applied, not per call. A disabled resource of such a type SHALL be ignored without a log or count, since it has no effect.
 
 #### Scenario: Rollback leaves an enabled resource
 - **WHEN** a namespace stores an enabled resource whose type the running build doesn't implement, and three calls run
@@ -63,15 +63,15 @@ A failed read SHALL NOT be treated as a missing resource. A failure is any error
 - **THEN** the Gateway SHALL treat it as a failed read, not as a namespace without resources
 
 ### Requirement: Last-known-good tenant configuration
-When a refresh fails, the Gateway SHALL keep serving the namespace's last successfully read configuration for at most 10 minutes after that read. After that bound, each tenant extension in the namespace SHALL apply its failure policy until a read succeeds.
+When a refresh fails, the Gateway SHALL keep serving the namespace's last successfully read configuration until a read succeeds. Only a namespace without a successful read since it entered the cache SHALL get each tenant extension's failure policy.
 
-#### Scenario: Refresh fails within the bound
-- **WHEN** a namespace's configuration was read successfully and refreshes fail for the next 9 minutes
+#### Scenario: Refreshes keep failing
+- **WHEN** a namespace's configuration was read successfully and refreshes then fail for hours
 - **THEN** its calls SHALL keep the last-known-good configuration, including any extension it disables
 
-#### Scenario: Bound exceeded
-- **WHEN** refreshes keep failing for more than 10 minutes after the last successful read
-- **THEN** its calls SHALL apply each tenant extension's failure policy, and the next successful read SHALL restore the stored configuration
+#### Scenario: Read succeeds again
+- **WHEN** a read succeeds after failed refreshes
+- **THEN** its calls SHALL use the configuration that read returned
 
 ### Requirement: Tenant configuration reads as the plugin
 The Gateway SHALL read `Middleware` resources with the plugin's own identity, on a context that carries no caller identity or cancellation, with a read timeout of its own. A caller's permissions, identity, deadline or cancellation SHALL NOT affect a read or its result.
@@ -85,7 +85,7 @@ The Gateway SHALL read `Middleware` resources with the plugin's own identity, on
 - **THEN** the read SHALL complete within its own timeout, and the next call SHALL use its result
 
 ### Requirement: Tenant configuration cache
-The Gateway SHALL cache each namespace's configuration, including the absence of resources, for a TTL of 1 minute. A call SHALL wait only for a namespace's first read, and concurrent calls SHALL share one read. After the TTL, calls SHALL use the cached configuration while one background refresh runs. A failed read SHALL be retried no earlier than a fixed backoff. The cache SHALL hold a bounded number of namespaces, evicting the least recently used.
+The Gateway SHALL cache each namespace's configuration, including the absence of resources, for a TTL of 1 minute. A call SHALL wait only for a namespace's first read, and concurrent calls SHALL share one read. After the TTL, calls SHALL use the cached configuration while one background refresh runs. A failed read SHALL be retried after the TTL, as a successful one is. The cache SHALL hold a bounded number of namespaces, evicting the least recently used.
 
 #### Scenario: Concurrent first calls
 - **WHEN** ten calls arrive for an uncached namespace at the same time
@@ -95,9 +95,9 @@ The Gateway SHALL cache each namespace's configuration, including the absence of
 - **WHEN** a resource changes and a call arrives more than one TTL after the namespace was last read
 - **THEN** that call SHALL trigger a refresh, and calls after the refresh completes SHALL use the new configuration
 
-#### Scenario: Failure backs off
-- **WHEN** a refresh fails and further calls arrive before the backoff ends
-- **THEN** no further read SHALL be made until the backoff ends
+#### Scenario: Failed read retried after the TTL
+- **WHEN** a read fails and further calls arrive before the TTL has passed since it
+- **THEN** no further read SHALL be made until the TTL has passed
 
 #### Scenario: Bound reached
 - **WHEN** a new namespace is read while the cache holds its maximum number of namespaces

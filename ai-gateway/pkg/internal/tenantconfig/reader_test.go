@@ -58,50 +58,47 @@ func writeList(w http.ResponseWriter, body string) {
 func TestReader_Read(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		pages    map[string]string
+		body     string
 		expected []extensionhost.TenantResource
 	}{
 		{
 			name:     "no resources",
-			pages:    map[string]string{"": `{"kind":"MiddlewareList","items":[]}`},
-			expected: nil,
+			body:     `{"kind":"MiddlewareList","items":[]}`,
+			expected: []extensionhost.TenantResource{},
 		},
 		{
-			name: "two pages sorted by name",
-			pages: map[string]string{
-				"":   `{"kind":"MiddlewareList","metadata":{"continue":"c1"},"items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{"note":"x"}}}]}`,
-				"c1": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":false}}]}`,
-			},
+			name: "sorted by name",
+			body: `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{"note":"x"}}},{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":false}}]}`,
 			expected: []extensionhost.TenantResource{
 				{Name: "marker", Type: "marker"},
 				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"note":"x"}`)},
 			},
 		},
 		{
-			name:  "nested member with the largest safe integer",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740991}}, "ratio": 1.0 }}}]}`},
+			name: "nested member with the largest safe integer",
+			body: `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740991}}, "ratio": 1.0 }}}]}`,
 			expected: []extensionhost.TenantResource{
 				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"m":{"maxTokens":9007199254740991}},"ratio":1,"rules":[{"limits":{"rpm":10},"models":["m"]}]}`)},
 			},
 		},
 		{
 			name:     "a list labeled with another kind of the group",
-			pages:    map[string]string{"": `{"kind":"ModelCatalogList","apiVersion":"aigateway.ext.grafana.app/v1alpha1","items":[{"kind":"Middleware","apiVersion":"aigateway.ext.grafana.app/v1alpha1","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`},
+			body:     `{"kind":"ModelCatalogList","apiVersion":"aigateway.ext.grafana.app/v1alpha1","items":[{"kind":"Middleware","apiVersion":"aigateway.ext.grafana.app/v1alpha1","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`,
 			expected: []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: true}},
 		},
 		{
 			name:     "a list without a kind or item kinds",
-			pages:    map[string]string{"": `{"items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":false}}]}`},
+			body:     `{"items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":false}}]}`,
 			expected: []extensionhost.TenantResource{{Name: "a", Type: "a"}},
 		},
 		{
 			name:     "null items",
-			pages:    map[string]string{"": `{"kind":"MiddlewareList","items":null}`},
-			expected: nil,
+			body:     `{"kind":"MiddlewareList","items":null}`,
+			expected: []extensionhost.TenantResource{},
 		},
 		{
-			name:  "one invalid resource does not fail the read",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"other":{}}},{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`},
+			name: "one invalid resource does not fail the read",
+			body: `{"kind":"MiddlewareList","items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"other":{}}},{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`,
 			expected: []extensionhost.TenantResource{
 				{Name: "a", Type: "a", Enabled: true},
 				{Name: "b", Invalid: true},
@@ -109,18 +106,18 @@ func TestReader_Read(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var queries []string
+			requests := 0
 			reader := newTestReader(t, func(w http.ResponseWriter, r *http.Request) {
+				requests++
 				assert.Equal(t, listPath, r.URL.Path)
 				assert.Equal(t, "100", r.URL.Query().Get("limit"))
-				continuation := r.URL.Query().Get("continue")
-				queries = append(queries, continuation)
-				writeList(w, tc.pages[continuation])
+				assert.Empty(t, r.URL.Query().Get("continue"))
+				writeList(w, tc.body)
 			})
 			resources, err := reader.Read(context.Background(), "stacks-1")
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, resources)
-			assert.Len(t, queries, len(tc.pages))
+			assert.Equal(t, 1, requests, "one list request per read")
 		})
 	}
 }
@@ -168,8 +165,8 @@ func TestReader_Failures(t *testing.T) {
 		{name: "an item of another version", handler: func(w http.ResponseWriter, _ *http.Request) {
 			writeList(w, `{"kind":"MiddlewareList","items":[{"apiVersion":"aigateway.ext.grafana.app/v2","metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`)
 		}, expected: extensionhost.ErrReadInvalid},
-		{name: "endless pages", handler: func(w http.ResponseWriter, _ *http.Request) {
-			writeList(w, `{"kind":"MiddlewareList","metadata":{"continue":"again"},"items":[]}`)
+		{name: "a continuation", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"MiddlewareList","metadata":{"continue":"more"},"items":[]}`)
 		}, expected: extensionhost.ErrReadInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,7 +220,7 @@ func TestReader_LogsWhyAResponseIsInvalid(t *testing.T) {
 		{name: "item of another group", handler: respond("application/json", `{"kind":"MiddlewareList","items":[{"apiVersion":"`+readerSentinel+`/v1","metadata":{"name":"a"}}]}`), reason: "item", mediaType: "application/json"},
 		{name: "null body", handler: respond("application/json", `null`), reason: "decode", mediaType: "application/json"},
 		{name: "size", handler: respond("application/json", `{"kind":"MiddlewareList","items":[],"pad":"`+strings.Repeat(readerSentinel, maxListBytes/len(readerSentinel)+1)+`"}`), reason: "size", mediaType: "application/json"},
-		{name: "pages", handler: respond("application/json", `{"kind":"MiddlewareList","metadata":{"continue":"`+readerSentinel+`"},"items":[]}`), reason: "pages", mediaType: "application/json"},
+		{name: "continue", handler: respond("application/json", `{"kind":"MiddlewareList","metadata":{"continue":"`+readerSentinel+`"},"items":[]}`), reason: "continue", mediaType: "application/json"},
 		{name: "no content type", handler: respond("", readerSentinel), reason: "decode", mediaType: "none"},
 		{name: "malformed content type", handler: respond(readerSentinel+"; ;", readerSentinel), reason: "decode", mediaType: "invalid"},
 		{name: "long media type", handler: respond("application/"+strings.Repeat("x", maxMediaTypeBytes), readerSentinel), reason: "decode", mediaType: "invalid"},

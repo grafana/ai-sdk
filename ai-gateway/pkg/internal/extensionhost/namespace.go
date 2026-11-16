@@ -1,7 +1,6 @@
 package extensionhost
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -18,8 +17,7 @@ const phaseConfigure extension.Phase = "configure"
 // configuration. It is immutable once built, so calls keep using a revision
 // the cache has since replaced or evicted.
 type namespaceConfig struct {
-	lists  map[extension.KeyOwnership]*lists
-	digest [sha256.Size]byte
+	lists map[extension.KeyOwnership]*lists
 }
 
 // buildNamespace builds the configuration of a namespace's resources. A
@@ -27,11 +25,17 @@ type namespaceConfig struct {
 // is off; an enabled one whose member its schema accepts runs with the
 // member's decoded value. Any other resource, and a decoding that fails,
 // apply the extension's failure policy, logged and counted once per build.
-// Resources of types this build does not implement are ignored here.
-func (h *Host) buildNamespace(namespace string, resources []TenantResource, digest [sha256.Size]byte) *namespaceConfig {
+// An enabled resource of a type this build does not implement is skipped,
+// logged and counted once per build; the cache builds only when a
+// namespace's resources change.
+func (h *Host) buildNamespace(namespace string, resources []TenantResource) *namespaceConfig {
 	byName := make(map[string]TenantResource, len(resources))
 	for _, resource := range resources {
 		byName[resource.Name] = resource
+		if !resource.Invalid && resource.Enabled && !h.tenantDefinition(resource.Name) {
+			h.unimplementedTypes.Inc()
+			h.logger.Warn("gateway tenant configuration has a type this build does not implement", "namespace", namespace, "type", resource.Name)
+		}
 	}
 	members := h.operatorMembers()
 	var unavailable []extension.Definition
@@ -66,7 +70,7 @@ func (h *Host) buildNamespace(namespace string, resources []TenantResource, dige
 		members = append(members, member{instance: running, config: decoded})
 	}
 	slices.SortFunc(members, func(a, b member) int { return strings.Compare(a.instance.definition.Name, b.instance.definition.Name) })
-	built := &namespaceConfig{lists: make(map[extension.KeyOwnership]*lists, len(keyOwnerships)), digest: digest}
+	built := &namespaceConfig{lists: make(map[extension.KeyOwnership]*lists, len(keyOwnerships))}
 	for _, keys := range keyOwnerships {
 		built.lists[keys] = newLists(members, keys, unavailable)
 	}
@@ -106,31 +110,6 @@ func (h *Host) failureConfig() *namespaceConfig {
 		failed.lists[keys] = newLists(operators, keys, unavailable)
 	}
 	return failed
-}
-
-// digestOf fingerprints a namespace's resources, so an unchanged read keeps
-// its configuration and decodes nothing.
-func digestOf(resources []TenantResource) [sha256.Size]byte {
-	hash := sha256.New()
-	for _, resource := range resources {
-		state := []byte{'0', '-'}
-		if resource.Enabled {
-			state[0] = '1'
-		}
-		if resource.Invalid {
-			state[0] = 'x'
-		}
-		if resource.Config != nil {
-			state[1] = '+'
-		}
-		for _, part := range [][]byte{[]byte(resource.Name), []byte(resource.Type), state, resource.Config} {
-			hash.Write(part)
-			hash.Write([]byte{0})
-		}
-	}
-	var digest [sha256.Size]byte
-	hash.Sum(digest[:0])
-	return digest
 }
 
 // recordConfigurationFailure counts and logs one tenant configuration

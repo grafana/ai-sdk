@@ -3,7 +3,6 @@ package extensionhost
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -154,7 +153,7 @@ func New(config Config) (*Host, error) {
 		unimplementedTypes: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "grafana_ai_gateway",
 			Name:      "tenant_config_unimplemented_types_total",
-			Help:      "Enabled tenant configuration resources whose type this build does not implement, once per namespace and type.",
+			Help:      "Enabled tenant configuration resources whose type this build does not implement, once per change of a namespace's resources.",
 		}),
 	}
 	for _, collector := range []prometheus.Collector{host.events, host.dropped, host.reads, host.unimplementedTypes} {
@@ -192,7 +191,7 @@ func New(config Config) (*Host, error) {
 	}
 	sortByName(host.startup)
 	sortByName(host.operators)
-	host.lists = host.buildNamespace("", nil, [sha256.Size]byte{}).lists
+	host.lists = host.buildNamespace("", nil).lists
 	host.tenantKeys = make(map[extension.KeyOwnership]bool, len(keyOwnerships))
 	for _, keys := range keyOwnerships {
 		host.tenantKeys[keys] = slices.ContainsFunc(host.tenant, func(definition extension.Definition) bool { return applies(definition, keys) })

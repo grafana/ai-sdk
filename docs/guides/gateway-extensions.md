@@ -211,7 +211,7 @@ Each call's tenant extensions follow its namespace's resources:
 | `enabled: false` | Is off |
 | `enabled: true` with a valid member | Runs with that member as its configuration |
 | A member its schema no longer accepts, a missing or foreign member, or a failing `Decode` | Applies its failure policy, logged and counted |
-| An enabled resource for a type this build doesn't implement | Is skipped, logged once per namespace and type, and counted |
+| An enabled resource for a type this build doesn't implement | Is skipped, and logged and counted each time the namespace's configuration changes |
 
 The rules for writing resources:
 
@@ -305,16 +305,16 @@ serves calls for, even one that stores none. It caches each namespace:
   minute of the namespace's next call.
 - Each Gateway replica caches on its own, so replicas can disagree for up to
   that window.
-- The one-minute TTL, the 5-second read timeout, the 10-minute staleness bound
-  and the bound of 1024 cached namespaces per replica are fixed constants in
-  this version. API load is about the active namespaces per replica per
+- The one-minute TTL, the 5-second read timeout and the bound of 1024 cached
+  namespaces per replica are fixed constants in this version. API load is about the active namespaces per replica per
   minute.
 - A failed read is never treated as "no resources". The last configuration
-  read successfully keeps applying for up to 10 minutes, and failed reads are
-  retried every 30 seconds. After that, or when the first read fails, every
-  tenant extension in the namespace applies its failure policy: `skip`
-  extensions are off and `fail-closed` ones refuse calls with the unavailable
-  error. The Gateway never falls back to the more permissive default.
+  read successfully keeps applying until a read succeeds, and a failed read is
+  retried after the same minute. When a namespace's first read fails, every
+  tenant extension in it applies its failure policy until a read succeeds:
+  `skip` extensions are off and `fail-closed` ones refuse calls with the
+  unavailable error. The Gateway never falls back to the more permissive
+  default. Read failures show in the read metrics and logs.
 
 Prefer `skip` for tenant extensions. A `fail-closed` tenant extension turns an
 outage of Grafana's API into refused calls in every namespace it applies to.
@@ -357,7 +357,7 @@ counts denials and failures by extension, phase and event, including phase
 resources of types the build doesn't implement. Read failures are logged with
 the namespace and a fixed class, such as `refused` or `timeout`. A successful
 response the Gateway can't use is also logged with a fixed reason (`decode`,
-`kind`, `items`, `size`, `item` or `pages`) and its media type, never its
+`kind`, `items`, `size`, `item` or `continue`) and its media type, never its
 content. The request path identifies the resources, so the Gateway doesn't
 trust the list's `kind` label, which Grafana may set to another kind of the
 API group: a JSON object with an `items` array is a list unless its `kind`

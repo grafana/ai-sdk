@@ -25,10 +25,10 @@ import (
 )
 
 const (
-	// listPageSize is the number of resources requested per list page.
-	listPageSize = 100
-	// maxListPages bounds the pages followed for one namespace.
-	maxListPages = 64
+	// listLimit is the number of resources requested in a namespace's one
+	// list. A namespace holds at most one resource per tenant type, far
+	// fewer than this.
+	listLimit = 100
 	// maxListBytes bounds the response bytes read for one namespace.
 	maxListBytes = 4 << 20
 	// readQPS and readBurst limit the reader's requests per process.
@@ -54,8 +54,8 @@ const (
 	// invalidItem is a listed item without a name, or of another group or
 	// version.
 	invalidItem invalidReason = "item"
-	// invalidPages is a list that continues beyond the page bound.
-	invalidPages invalidReason = "pages"
+	// invalidContinue is a list that needs a continuation.
+	invalidContinue invalidReason = "continue"
 )
 
 // Media types logged in place of a response's own.
@@ -178,8 +178,9 @@ func resourceFrom(raw json.RawMessage, apiVersion string) (extensionhost.TenantR
 	return extensionhost.TenantResource{Name: stored.Metadata.Name, Type: spec.Type, Enabled: spec.Enabled, Config: member}, nil
 }
 
-// Read lists namespace's resources, following continuation pages within the
-// page and byte bounds. Failures are the extensionhost read sentinels.
+// Read lists namespace's resources in one request. A response that needs a
+// continuation is invalid, since a namespace holds at most one resource per
+// tenant type. Failures are the extensionhost read sentinels.
 func (r *Reader) Read(ctx context.Context, namespace string) ([]extensionhost.TenantResource, error) {
 	mediaType := mediaTypeNone
 	resources, reason, err := r.read(context.WithValue(ctx, mediaTypeKey{}, &mediaType), namespace)
@@ -190,60 +191,42 @@ func (r *Reader) Read(ctx context.Context, namespace string) ([]extensionhost.Te
 }
 
 func (r *Reader) read(ctx context.Context, namespace string) ([]extensionhost.TenantResource, invalidReason, error) {
-	var resources []extensionhost.TenantResource
-	remaining := int64(maxListBytes)
-	next := ""
-	for range maxListPages {
-		page, items, reason, err := r.page(ctx, namespace, next, &remaining)
-		if err != nil {
-			return nil, reason, err
-		}
-		for _, item := range items {
-			resource, err := resourceFrom(item, r.apiVersion)
-			if err != nil {
-				return nil, invalidItem, extensionhost.ErrReadInvalid
-			}
-			resources = append(resources, resource)
-		}
-		if page.Metadata.Continue == "" {
-			slices.SortFunc(resources, func(a, b extensionhost.TenantResource) int { return strings.Compare(a.Name, b.Name) })
-			return resources, "", nil
-		}
-		next = page.Metadata.Continue
-	}
-	return nil, invalidPages, extensionhost.ErrReadInvalid
-}
-
-func (r *Reader) page(ctx context.Context, namespace, next string, remaining *int64) (list, []json.RawMessage, invalidReason, error) {
-	request := r.client.Get().Namespace(namespace).Resource(r.resource).Param("limit", strconv.Itoa(listPageSize))
-	if next != "" {
-		request = request.Param("continue", next)
-	}
-	body, err := request.Stream(ctx)
+	body, err := r.client.Get().Namespace(namespace).Resource(r.resource).Param("limit", strconv.Itoa(listLimit)).Stream(ctx)
 	if err != nil {
-		return list{}, nil, "", classify(ctx, err)
+		return nil, "", classify(ctx, err)
 	}
 	defer func() { _ = body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(body, *remaining+1))
+	raw, err := io.ReadAll(io.LimitReader(body, maxListBytes+1))
 	if err != nil {
-		return list{}, nil, "", classify(ctx, err)
+		return nil, "", classify(ctx, err)
 	}
-	if int64(len(raw)) > *remaining {
-		return list{}, nil, invalidSize, extensionhost.ErrReadInvalid
+	if len(raw) > maxListBytes {
+		return nil, invalidSize, extensionhost.ErrReadInvalid
 	}
-	*remaining -= int64(len(raw))
 	var decoded list
 	if err := json.Unmarshal(raw, &decoded); err != nil || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-		return list{}, nil, invalidDecode, extensionhost.ErrReadInvalid
+		return nil, invalidDecode, extensionhost.ErrReadInvalid
 	}
 	if decoded.Kind != "" && !strings.HasSuffix(decoded.Kind, listKindSuffix) {
-		return list{}, nil, invalidKind, extensionhost.ErrReadInvalid
+		return nil, invalidKind, extensionhost.ErrReadInvalid
 	}
 	var items []json.RawMessage
 	if len(decoded.Items) == 0 || json.Unmarshal(decoded.Items, &items) != nil {
-		return list{}, nil, invalidItems, extensionhost.ErrReadInvalid
+		return nil, invalidItems, extensionhost.ErrReadInvalid
 	}
-	return decoded, items, "", nil
+	if decoded.Metadata.Continue != "" {
+		return nil, invalidContinue, extensionhost.ErrReadInvalid
+	}
+	resources := make([]extensionhost.TenantResource, 0, len(items))
+	for _, item := range items {
+		resource, err := resourceFrom(item, r.apiVersion)
+		if err != nil {
+			return nil, invalidItem, extensionhost.ErrReadInvalid
+		}
+		resources = append(resources, resource)
+	}
+	slices.SortFunc(resources, func(a, b extensionhost.TenantResource) int { return strings.Compare(a.Name, b.Name) })
+	return resources, "", nil
 }
 
 // classify maps a read error to its sentinel, dropping the error's text,

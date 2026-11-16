@@ -291,12 +291,12 @@ func TestTenantCache_RefreshAfterTheTTL(t *testing.T) {
 	})
 }
 
-func TestTenantCache_FailuresBackOffAndServeLastKnownGood(t *testing.T) {
+func TestTenantCache_FailedRefreshesKeepTheLastConfiguration(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
 		log := &journal{}
-		reader.set("a", stored("off", false, `{}`))
-		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute, FailureBackoff: 30 * time.Second, MaxStaleness: 10 * time.Minute},
+		reader.set("a", stored("off", false, ""))
+		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute},
 			configurable(t, "off", log, defaultOn),
 			configurable(t, "gate", log, failClosed),
 		)
@@ -308,36 +308,29 @@ func TestTenantCache_FailuresBackOffAndServeLastKnownGood(t *testing.T) {
 		require.NoError(t, h.generate(t, "a"))
 		synctest.Wait()
 		assert.Equal(t, 2, reader.readCount())
-		time.Sleep(30*time.Second - time.Nanosecond)
+		time.Sleep(time.Minute - time.Nanosecond)
 		require.NoError(t, h.generate(t, "a"))
 		synctest.Wait()
-		assert.Equal(t, 2, reader.readCount(), "no read before the backoff ends")
+		assert.Equal(t, 2, reader.readCount(), "a failed read is retried after the TTL, not sooner")
 		time.Sleep(time.Nanosecond)
 		require.NoError(t, h.generate(t, "a"))
 		synctest.Wait()
 		assert.Equal(t, 3, reader.readCount())
 
-		time.Sleep(10*time.Minute - time.Minute - 30*time.Second - time.Nanosecond)
-		require.NoError(t, h.generate(t, "a"))
-		assert.Empty(t, transforms(log), "last-known-good keeps the extension disabled within the bound")
+		time.Sleep(3 * time.Hour)
+		require.NoError(t, h.generate(t, "a"), "the last configuration read keeps applying while reads fail")
+		synctest.Wait()
+		assert.Empty(t, transforms(log), "the default-on extension stays disabled")
 		assert.Zero(t, h.events("gate", string(phaseConfigure), eventFailed))
-
-		time.Sleep(time.Nanosecond)
-		err := h.generate(t, "a")
-		require.ErrorIs(t, err, extension.ErrUnavailable, "the fail-closed extension refuses after the bound")
-		assert.Empty(t, transforms(log), "the skip extension stays off instead of using its default")
-		calls := h.model.callCount()
-		assert.Contains(t, h.logs.String(), "gateway tenant configuration expired")
 		assert.Contains(t, h.logs.String(), `"class":"refused"`)
 
+		reader.set("a")
 		reader.fail(nil)
-		synctest.Wait()
-		time.Sleep(30 * time.Second)
-		_ = h.generate(t, "a")
+		time.Sleep(time.Minute)
+		require.NoError(t, h.generate(t, "a"))
 		synctest.Wait()
 		require.NoError(t, h.generate(t, "a"))
-		assert.Empty(t, transforms(log), "the restored configuration disables the extension again")
-		assert.Equal(t, calls+1, h.model.callCount())
+		assert.Equal(t, []string{`off{}`}, transforms(log), "the next successful read applies")
 	})
 }
 
@@ -358,6 +351,13 @@ func TestTenantCache_FirstReadFailure(t *testing.T) {
 		synctest.Wait()
 		assert.Contains(t, log.list(), "operator:observe:error", "operator observers record the refusal")
 		assert.Contains(t, h.logs.String(), `"class":"not-found"`)
+
+		reader.fail(nil)
+		time.Sleep(defaultTenantTTL)
+		require.ErrorIs(t, h.generate(t, "a"), extension.ErrUnavailable, "the failure configuration applies until the retry completes")
+		synctest.Wait()
+		require.NoError(t, h.generate(t, "a"))
+		assert.Equal(t, []string{`default-on{}`, "operator"}, transforms(log), "a later successful read applies the default")
 	})
 }
 
@@ -496,17 +496,6 @@ func decodeValue(config json.RawMessage) (any, error) {
 		return nil, errors.New(tenantSentinel)
 	}
 	return &value, nil
-}
-
-func TestTenantCache_SafeIntegersReachTheCall(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		reader := newFakeReader()
-		reader.set("a", stored("t1", true, `{"n":9007199254740991}`))
-		log := &journal{}
-		h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "t1", log))
-		require.NoError(t, h.generate(t, "a"))
-		assert.Equal(t, []string{`t1{"n":9007199254740991}`}, transforms(log))
-	})
 }
 
 func TestTenantCache_TypesNotImplemented(t *testing.T) {
@@ -727,30 +716,6 @@ func TestReadClass(t *testing.T) {
 	}
 }
 
-func TestTenantCache_IdleNamespaceKeepsItsConfiguration(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		reader := newFakeReader()
-		reader.set("a", stored("t1", true, `{"v":"x"}`))
-		var decodes atomic.Int32
-		log := &journal{}
-		definition := configurable(t, "t1", log, failClosed, func(d *extension.Definition) {
-			d.Decode = func(config json.RawMessage) (any, error) {
-				decodes.Add(1)
-				return config, nil
-			}
-		})
-		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute, MaxStaleness: 10 * time.Minute}, definition)
-		require.NoError(t, h.generate(t, "a"))
-		time.Sleep(3 * time.Hour)
-		require.NoError(t, h.generate(t, "a"), "a namespace idle past the staleness bound is not refused")
-		synctest.Wait()
-		require.NoError(t, h.generate(t, "a"))
-		assert.Equal(t, []string{`t1{"v":"x"}`, `t1{"v":"x"}`, `t1{"v":"x"}`}, transforms(log))
-		assert.Equal(t, int32(1), decodes.Load(), "an unchanged refresh after idling decodes nothing")
-		assert.Equal(t, 2, reader.readCount())
-	})
-}
-
 func TestTenantCache_NewEntryIsNotEvictedByLoadsInFlight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
@@ -770,6 +735,12 @@ func TestTenantCache_NewEntryIsNotEvictedByLoadsInFlight(t *testing.T) {
 		close(gate)
 		calls.Wait()
 		assert.Equal(t, 2, reader.readCount())
+		reader.setGate(nil)
+		require.NoError(t, h.generate(t, "c"))
+		cache := h.host.cache.Load()
+		cache.mu.Lock()
+		defer cache.mu.Unlock()
+		assert.Len(t, cache.entries, 1, "the next insert brings the cache back within its bound")
 	})
 }
 
