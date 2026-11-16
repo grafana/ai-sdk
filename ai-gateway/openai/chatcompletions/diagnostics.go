@@ -23,6 +23,8 @@ type nativeResponse struct {
 }
 
 type diagnostics struct {
+	Sources          []provider.SourceInfo     `json:"sources,omitempty"`
+	Citations        []provider.Citation       `json:"citations,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"provider_metadata,omitempty"`
 	NativeError      *execution.Failure        `json:"native_error,omitempty"`
 	Warnings         []warning                 `json:"warnings,omitempty"`

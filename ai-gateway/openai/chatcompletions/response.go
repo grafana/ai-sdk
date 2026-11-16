@@ -26,9 +26,10 @@ type completionDetails struct {
 	Reasoning int `json:"reasoning_tokens"`
 }
 type outputMessage struct {
-	Role      role       `json:"role"`
-	Content   *string    `json:"content"`
-	ToolCalls []toolCall `json:"tool_calls,omitempty"`
+	Annotations []annotation `json:"annotations,omitempty"`
+	Role        role         `json:"role"`
+	Content     *string      `json:"content"`
+	ToolCalls   []toolCall   `json:"tool_calls,omitempty"`
 }
 type choice struct {
 	Index    int           `json:"index"`
@@ -167,8 +168,19 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	for _, p := range result.Content {
 		switch p.Type {
 		case provider.ContentText:
+			if !validCitations(p.Citations) {
+				return out, errOutput
+			}
+			msg.Annotations = append(msg.Annotations, mapCitations(p.Citations)...)
+			out.Grafana = sourceDiagnostics(out.Grafana, nil, p.Citations)
 			content.WriteString(p.Text)
 			hasText = true
+		case provider.ContentSource:
+			source := provider.SourceInfo{SourceType: p.SourceType, ID: p.ID, URL: p.URL, Title: p.Title, MediaType: p.MediaType, Filename: p.Filename, ProviderMetadata: p.ProviderMetadata}
+			if !validSource(source) {
+				return out, errOutput
+			}
+			out.Grafana = sourceDiagnostics(out.Grafana, &source, nil)
 		case provider.ContentReasoning:
 		case provider.ContentToolCall:
 			call := toolCall{ID: p.ToolCallID, Type: kindFunction, Function: callFunction{Name: p.ToolName, Arguments: string(p.Input)}}
