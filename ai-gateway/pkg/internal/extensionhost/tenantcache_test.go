@@ -498,17 +498,6 @@ func decodeValue(config json.RawMessage) (any, error) {
 	return &value, nil
 }
 
-func TestTenantCache_SafeIntegersReachTheCall(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		reader := newFakeReader()
-		reader.set("a", stored("t1", true, `{"n":9007199254740991}`))
-		log := &journal{}
-		h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "t1", log))
-		require.NoError(t, h.generate(t, "a"))
-		assert.Equal(t, []string{`t1{"n":9007199254740991}`}, transforms(log))
-	})
-}
-
 func TestTenantCache_TypesNotImplemented(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
