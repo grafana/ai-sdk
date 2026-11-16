@@ -41,7 +41,7 @@ At read time the Gateway SHALL check each enabled resource's member against its 
 - **THEN** that namespace SHALL apply the failure policy, and another namespace with a valid configuration SHALL run the extension
 
 ### Requirement: Tenant types not implemented at read time
-An enabled resource whose type this build does not implement as a tenant-scope extension SHALL be skipped. It SHALL be logged once per namespace and type while the namespace stays cached, and counted. A disabled resource of such a type SHALL be ignored without a log or count, since it has no effect.
+An enabled resource whose type this build does not implement as a tenant-scope extension SHALL be skipped. It SHALL be logged and counted once each time the namespace's configuration is applied, not per call. A disabled resource of such a type SHALL be ignored without a log or count, since it has no effect.
 
 #### Scenario: Rollback leaves an enabled resource
 - **WHEN** a namespace stores an enabled resource whose type the running build doesn't implement, and three calls run
@@ -63,7 +63,7 @@ A failed read SHALL NOT be treated as a missing resource. A failure is any error
 - **THEN** the Gateway SHALL treat it as a failed read, not as a namespace without resources
 
 ### Requirement: Last-known-good tenant configuration
-When a refresh fails, the Gateway SHALL keep serving the namespace's last successfully read configuration until a read succeeds. Only a namespace never read successfully SHALL get each tenant extension's failure policy.
+When a refresh fails, the Gateway SHALL keep serving the namespace's last successfully read configuration until a read succeeds. Only a namespace without a successful read since it entered the cache SHALL get each tenant extension's failure policy.
 
 #### Scenario: Refreshes keep failing
 - **WHEN** a namespace's configuration was read successfully and refreshes then fail for hours

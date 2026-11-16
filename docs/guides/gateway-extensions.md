@@ -204,7 +204,7 @@ Each call's tenant extensions follow its namespace's resources:
 | `enabled: false` | Is off |
 | `enabled: true` with a valid member | Runs with that member as its configuration |
 | A member its schema no longer accepts, a missing or foreign member, or a failing `Decode` | Applies its failure policy, logged and counted |
-| An enabled resource for a type this build doesn't implement | Is skipped, logged once per namespace and type, and counted |
+| An enabled resource for a type this build doesn't implement | Is skipped, and logged and counted each time the namespace's configuration changes |
 
 The rules for writing resources:
 

@@ -130,14 +130,13 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*namespace
 }
 
 // touch returns namespace's entry, marked used at now. Creating one when the
-// cache is full first evicts the least recently used entry without a read
-// in flight; entries with reads in flight can exceed the bound until a later
-// insert. The caller holds the lock.
+// cache is full first evicts least recently used entries without a read in
+// flight until it has room; entries with reads in flight can exceed the
+// bound until a later insert. The caller holds the lock.
 func (c *tenantCache) touch(namespace string, now time.Time) *tenantEntry {
 	entry, ok := c.entries[namespace]
 	if !ok {
-		if len(c.entries) >= c.config.MaxNamespaces {
-			c.evictLeastRecentlyUsed()
+		for len(c.entries) >= c.config.MaxNamespaces && c.evictLeastRecentlyUsed() {
 		}
 		entry = &tenantEntry{namespace: namespace}
 		c.entries[namespace] = entry
@@ -147,18 +146,21 @@ func (c *tenantCache) touch(namespace string, now time.Time) *tenantEntry {
 }
 
 // evictLeastRecentlyUsed removes the least recently used entry without a
-// read in flight, if any. The caller holds the lock.
-func (c *tenantCache) evictLeastRecentlyUsed() {
+// read in flight, and reports whether there was one. The caller holds the
+// lock.
+func (c *tenantCache) evictLeastRecentlyUsed() bool {
 	var victim *tenantEntry
 	for _, entry := range c.entries {
 		if entry.loading == nil && (victim == nil || entry.lastUsed.Before(victim.lastUsed)) {
 			victim = entry
 		}
 	}
-	if victim != nil {
-		delete(c.entries, victim.namespace)
-		victim.evicted = true
+	if victim == nil {
+		return false
 	}
+	delete(c.entries, victim.namespace)
+	victim.evicted = true
+	return true
 }
 
 // start starts a read for entry unless one is in flight, and returns the

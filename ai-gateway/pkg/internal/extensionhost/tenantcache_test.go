@@ -735,6 +735,12 @@ func TestTenantCache_NewEntryIsNotEvictedByLoadsInFlight(t *testing.T) {
 		close(gate)
 		calls.Wait()
 		assert.Equal(t, 2, reader.readCount())
+		reader.setGate(nil)
+		require.NoError(t, h.generate(t, "c"))
+		cache := h.host.cache.Load()
+		cache.mu.Lock()
+		defer cache.mu.Unlock()
+		assert.Len(t, cache.entries, 1, "the next insert brings the cache back within its bound")
 	})
 }
 
