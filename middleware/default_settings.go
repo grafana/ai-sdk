@@ -10,9 +10,9 @@ import (
 )
 
 // DefaultSettingsOptions defines default values for CallOptions fields.
-// Only non-nil/non-zero fields are applied as defaults; caller-provided
-// values always take precedence. Reasoning is a Go addition to the upstream
-// settings: a caller's zero ReasoningProviderDefault receives the default.
+// Pointer and slice defaults fill only nil caller fields, so a non-nil empty
+// caller slice is kept. Reasoning is a Go addition to the upstream settings:
+// a caller's zero ReasoningProviderDefault receives the default.
 type DefaultSettingsOptions struct {
 	MaxOutputTokens  *int
 	Temperature      *float64
@@ -31,23 +31,16 @@ type DefaultSettingsOptions struct {
 }
 
 // DefaultSettings returns a Middleware that applies fallback values for
-// CallOptions fields, following upstream defaultSettingsMiddleware.
+// CallOptions fields, following upstream defaultSettingsMiddleware. Headers
+// merge per key and a caller ToolChoice replaces the default whole.
 //
-// Pointer and slice defaults fill only nil caller fields, so a non-nil empty
-// caller slice is kept. Headers merge per key. A caller ToolChoice replaces
-// the default whole.
+// ResponseFormat takes the caller's type, or the default's when empty. A JSON
+// result takes an unset schema, name or description from the default.
 //
-// ResponseFormat merges per member: the caller's type wins, or the default's
-// when the caller's is empty. A JSON result takes an unset schema, name or
-// description from the default; any other result takes none of them.
-//
-// ProviderOptions deep-merge: namespaces that are JSON objects on both sides
-// merge recursively and reach the model as a [provider.RawProviderOption],
-// which providers read with [provider.ResolveOption]. Arrays, nulls and other
-// values replace, the keys __proto__, constructor and prototype are ignored
-// in caller objects, and a namespace set on only one side keeps its original
-// value. TransformParams returns an error when a shared namespace cannot be
-// marshaled.
+// ProviderOptions deep-merge like upstream mergeObjects. Namespaces that are
+// JSON objects on both sides reach the model as a [provider.RawProviderOption],
+// read with [provider.ResolveOption]; all others keep their original value.
+// TransformParams returns an error when a shared namespace cannot be marshaled.
 func DefaultSettings(settings DefaultSettingsOptions) Middleware {
 	return Middleware{
 		TransformParams: func(_ context.Context, input TransformParamsInput) (provider.CallOptions, error) {
@@ -89,7 +82,7 @@ func DefaultSettings(settings DefaultSettingsOptions) Middleware {
 			}
 
 			p.Headers = mergeHeaders(settings.Headers, p.Headers)
-			providerOptions, err := provideroptions.MergeOverlapping(settings.ProviderOptions, p.ProviderOptions)
+			providerOptions, err := provideroptions.Merge(settings.ProviderOptions, p.ProviderOptions)
 			if err != nil {
 				return provider.CallOptions{}, fmt.Errorf("middleware: merging default provider options: %w", err)
 			}

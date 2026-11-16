@@ -94,19 +94,19 @@ func TestMergeObject(t *testing.T) {
 	}
 }
 
-func TestMerge(t *testing.T) {
+func TestMergeRaw(t *testing.T) {
 	t.Run("NilInputs", func(t *testing.T) {
 		options := provider.ProviderOptions{"a": raw("a", `{"x":1}`)}
 
-		merged, err := Merge(nil, nil)
+		merged, err := MergeRaw(nil, nil)
 		require.NoError(t, err)
 		assert.Nil(t, merged)
 
-		merged, err = Merge(options, nil)
+		merged, err = MergeRaw(options, nil)
 		require.NoError(t, err)
 		assert.Equal(t, options, merged)
 
-		merged, err = Merge(nil, options)
+		merged, err = MergeRaw(nil, options)
 		require.NoError(t, err)
 		assert.Equal(t, options, merged)
 	})
@@ -121,7 +121,7 @@ func TestMerge(t *testing.T) {
 			"other": raw("other", `{"enabled":true}`),
 		}
 
-		merged, err := Merge(base, override)
+		merged, err := MergeRaw(base, override)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{
 			"test":{"nested":{"left":true,"right":true,"replace":[]},"keep":"value"},
@@ -132,26 +132,26 @@ func TestMerge(t *testing.T) {
 	})
 
 	t.Run("MarshalError", func(t *testing.T) {
-		_, err := Merge(provider.BuildProviderOptions(failingOption{}), provider.ProviderOptions{})
+		_, err := MergeRaw(provider.BuildProviderOptions(failingOption{}), provider.ProviderOptions{})
 		require.Error(t, err)
 	})
 }
 
-func TestMergeOverlapping(t *testing.T) {
+func TestMerge(t *testing.T) {
 	t.Run("NilInputs", func(t *testing.T) {
 		options := provider.BuildProviderOptions(testOption{Keep: "value"})
 
-		merged, err := MergeOverlapping(nil, nil)
+		merged, err := Merge(nil, nil)
 		require.NoError(t, err)
 		assert.Nil(t, merged)
 
-		merged, err = MergeOverlapping(options, nil)
+		merged, err = Merge(options, nil)
 		require.NoError(t, err)
 		assert.Equal(t, options, merged)
 		merged["other"] = raw("other", `{}`)
 		assert.Len(t, options, 1)
 
-		merged, err = MergeOverlapping(nil, options)
+		merged, err = Merge(nil, options)
 		require.NoError(t, err)
 		assert.Equal(t, options, merged)
 		merged["other"] = raw("other", `{}`)
@@ -172,7 +172,7 @@ func TestMergeOverlapping(t *testing.T) {
 			"scalar": overrideOnly,
 		}
 
-		merged, err := MergeOverlapping(base, override)
+		merged, err := Merge(base, override)
 		require.NoError(t, err)
 
 		assert.Equal(t, baseOnly, merged["base"])
@@ -206,7 +206,7 @@ func TestMergeOverlapping(t *testing.T) {
 			"c": raw("c", `{"x":1}`),
 		}
 
-		merged, err := MergeOverlapping(base, override)
+		merged, err := Merge(base, override)
 		require.NoError(t, err)
 		assert.Equal(t, override["a"], merged["a"])
 		assert.Equal(t, override["b"], merged["b"])
@@ -222,7 +222,7 @@ func TestMergeOverlapping(t *testing.T) {
 			"safe":        raw("safe", `{"override":true}`),
 		}
 
-		merged, err := MergeOverlapping(base, override)
+		merged, err := Merge(base, override)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"constructor":{"base":true},"safe":{"override":true}}`, encode(t, merged))
 	})
@@ -230,11 +230,11 @@ func TestMergeOverlapping(t *testing.T) {
 	t.Run("MarshalErrorOnlyForSharedNamespaces", func(t *testing.T) {
 		failing := provider.BuildProviderOptions(failingOption{})
 
-		merged, err := MergeOverlapping(failing, provider.ProviderOptions{"other": raw("other", `{}`)})
+		merged, err := Merge(failing, provider.ProviderOptions{"other": raw("other", `{}`)})
 		require.NoError(t, err)
 		assert.Len(t, merged, 2)
 
-		_, err = MergeOverlapping(failing, provider.ProviderOptions{"failing": raw("failing", `{}`)})
+		_, err = Merge(failing, provider.ProviderOptions{"failing": raw("failing", `{}`)})
 		require.Error(t, err)
 	})
 }

@@ -263,18 +263,6 @@ func TestDefaultSettings_ProviderOptions(t *testing.T) {
 			caller:   `{}`,
 			want:     `{"anthropic":{"user":"default-user"}}`,
 		},
-		{
-			name:     "ArraysAndNullReplace",
-			settings: `{"anthropic":{"list":[1,2],"object":{"a":1}}}`,
-			caller:   `{"anthropic":{"list":[3],"object":null}}`,
-			want:     `{"anthropic":{"list":[3],"object":null}}`,
-		},
-		{
-			name:     "PrototypeKeysIgnored",
-			settings: `{"anthropic":{"user":"alice"}}`,
-			caller:   `{"anthropic":{"__proto__":{"polluted":true},"constructor":{"a":1},"prototype":{"b":2},"role":"admin"}}`,
-			want:     `{"anthropic":{"user":"alice","role":"admin"}}`,
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -308,17 +296,6 @@ func TestDefaultSettings_ProviderOptions(t *testing.T) {
 		assert.Equal(t, caller["openai"], received.ProviderOptions["openai"])
 		assert.Equal(t, defaultSettingsTestOption{Thinking: true}, settings["anthropic"])
 		assert.JSONEq(t, `{"effort":"high"}`, string(caller["anthropic"].(provider.RawProviderOption).Raw))
-	})
-
-	t.Run("OneSidedNamespacesKeepTypedValues", func(t *testing.T) {
-		typed := defaultSettingsTestOption{Effort: "low"}
-		settings := provider.ProviderOptions{"anthropic": typed}
-		caller := rawOptions(t, `{"openai":{"user":"u"}}`)
-
-		received := applyDefaultSettings(t, DefaultSettingsOptions{ProviderOptions: settings}, provider.CallOptions{ProviderOptions: caller})
-
-		assert.Equal(t, typed, received.ProviderOptions["anthropic"])
-		assert.Equal(t, caller["openai"], received.ProviderOptions["openai"])
 	})
 
 	t.Run("DefaultsNotSharedAcrossCalls", func(t *testing.T) {

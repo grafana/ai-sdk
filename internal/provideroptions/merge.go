@@ -13,10 +13,33 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// Merge deep-merges override into base. When either side is nil the other is
-// returned unchanged; otherwise every merged namespace is returned as a
-// [provider.RawProviderOption].
+// Merge deep-merges override into base and returns a new map. Only namespaces
+// that are JSON objects on both sides become a merged
+// [provider.RawProviderOption]; every other namespace keeps its original value.
 func Merge(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
+	if base == nil {
+		return maps.Clone(override), nil
+	}
+	result := maps.Clone(base)
+	for key, value := range override {
+		if ignoredKey(key) {
+			continue
+		}
+		if baseValue, ok := base[key]; ok {
+			var err error
+			if value, err = mergeNamespace(key, baseValue, value); err != nil {
+				return nil, err
+			}
+		}
+		result[key] = value
+	}
+	return result, nil
+}
+
+// MergeRaw deep-merges override into base like [Merge], but returns every
+// namespace as a [provider.RawProviderOption]. When either side is nil the
+// other is returned unchanged.
+func MergeRaw(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
 	if base == nil {
 		return override, nil
 	}
@@ -45,53 +68,17 @@ func Merge(base, override provider.ProviderOptions) (provider.ProviderOptions, e
 	return result, nil
 }
 
-// MergeOverlapping deep-merges override into base like [Merge], but keeps the
-// original values of namespaces that are not JSON objects on both sides. Only
-// namespaces whose base and override values are both JSON objects are
-// returned as a merged [provider.RawProviderOption]. The result is always a
-// new map, or nil when both sides are nil.
-func MergeOverlapping(base, override provider.ProviderOptions) (provider.ProviderOptions, error) {
-	if base == nil {
-		return maps.Clone(override), nil
-	}
-	if override == nil {
-		return maps.Clone(base), nil
-	}
-
-	result := maps.Clone(base)
-	for key, value := range override {
-		if ignoredKey(key) {
-			continue
-		}
-		baseValue, shared := base[key]
-		if !shared {
-			result[key] = value
-			continue
-		}
-		merged, err := mergeNamespace(key, baseValue, value)
-		if err != nil {
-			return nil, err
-		}
-		result[key] = merged
-	}
-	return result, nil
-}
-
 func mergeNamespace(key string, base, override provider.ProviderOption) (provider.ProviderOption, error) {
-	baseObject, err := optionsObject(provider.ProviderOptions{key: base})
+	pair, err := optionsObject(provider.ProviderOptions{"base": base, "override": override})
 	if err != nil {
-		return nil, fmt.Errorf("marshaling base options: %w", err)
+		return nil, fmt.Errorf("marshaling option %q: %w", key, err)
 	}
-	overrideObject, err := optionsObject(provider.ProviderOptions{key: override})
-	if err != nil {
-		return nil, fmt.Errorf("marshaling override options: %w", err)
-	}
-	baseNamespace, baseOK := baseObject[key].(map[string]any)
-	overrideNamespace, overrideOK := overrideObject[key].(map[string]any)
+	baseObject, baseOK := pair["base"].(map[string]any)
+	overrideObject, overrideOK := pair["override"].(map[string]any)
 	if !baseOK || !overrideOK {
 		return override, nil
 	}
-	raw, err := json.Marshal(mergeObject(baseNamespace, overrideNamespace))
+	raw, err := json.Marshal(mergeObject(baseObject, overrideObject))
 	if err != nil {
 		return nil, fmt.Errorf("marshaling merged option %q: %w", key, err)
 	}
