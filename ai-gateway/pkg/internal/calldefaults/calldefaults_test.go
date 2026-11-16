@@ -205,13 +205,16 @@ func TestFactories_RefuseUndecodableConfiguration(t *testing.T) {
 	}
 }
 
-// storedMember returns config as the host passes it to Decode: the member
-// of a stored spec, in canonical JSON.
-func storedMember(t *testing.T, config string) json.RawMessage {
-	t.Helper()
+// admit checks config as admission does: the spec is decoded, which
+// canonicalizes the member, and the member is checked against the schema. It
+// returns the member the host passes to Decode.
+func admit(config string) (json.RawMessage, error) {
 	spec, err := tenantconfig.DecodeSpec(json.RawMessage(`{"type":"default-settings","enabled":true,"defaultSettings":` + config + `}`))
-	require.NoError(t, err)
-	return spec.Members["defaultSettings"]
+	if err != nil {
+		return nil, err
+	}
+	member := spec.Members["defaultSettings"]
+	return member, extensionhost.CheckConfig(settingsDefinition(), member)
 }
 
 func TestSettings_DecodeAcceptsWhatAdmissionAccepts(t *testing.T) {
@@ -240,13 +243,13 @@ func TestSettings_DecodeAcceptsWhatAdmissionAccepts(t *testing.T) {
 		{config: `{"topK":4.5e0}`},
 	} {
 		t.Run(tc.config, func(t *testing.T) {
-			admitted := extensionhost.CheckConfig(settingsDefinition(), json.RawMessage(tc.config))
+			member, admitted := admit(tc.config)
 			if !tc.accepted {
 				assert.Error(t, admitted)
 				return
 			}
 			require.NoError(t, admitted)
-			decoded, err := settingsDefinition().Decode(storedMember(t, tc.config))
+			decoded, err := settingsDefinition().Decode(member)
 			require.NoError(t, err)
 			if tc.check != nil {
 				tc.check(t, decoded.(middleware.DefaultSettingsOptions))

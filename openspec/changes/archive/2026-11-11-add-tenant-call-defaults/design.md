@@ -15,7 +15,7 @@
 - **Tenant extension path:**
   - `tenanttype` is the public registry. It ships empty, and `Type.Bind` returns the tenant definition.
   - `kinds/middleware_members.cue` is hand-written, one structural member per type. A `manifestdata` test checks that each member mirrors its type's schema and accepts its example.
-  - Tenant schemas use closed objects and arrays only, and bound integers to ±(2^53−1). Admission validates through float64, as upstream's JS numbers do.
+  - Tenant schemas use closed objects and arrays only, and bound integers to ±(2^53−1). Admission canonicalizes each member through float64 before checking it against the schema, as upstream's JS numbers would.
   - #765's cache reads each namespace as the plugin, with a 1-minute TTL. `TenantCacheConfig` is reachable only from Go tests, not from the built plugin.
 - **Transforms.** Tenant transforms run before operator transforms. The host checks each result against request policy (no protected headers, no `gateway` provider-option namespace). A transform must return copies, and the host clones only the top-level header, provider-option and prompt containers.
 - **ProviderWire decoding:**
