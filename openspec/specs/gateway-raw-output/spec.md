@@ -19,24 +19,36 @@ The ProviderWire V4 handler SHALL accept `includeRawChunks` from an authenticate
 
 ### Requirement: Raw stream events
 
-When a streaming request set `includeRawChunks` to true, the handler SHALL write each `PartRaw` with a valid JSON value as `{"type":"raw","rawValue":<value>}` in provider order, after the credential projection below. A `PartRaw` without a value, meaning a value that is absent, empty or whitespace-only, SHALL be written in provider order as `{"type":"raw"}` with no `rawValue` member. A `PartRaw` with invalid JSON or invalid UTF-8, or with an object that repeats a key after unescaping SHALL be dropped. When the request did not set `includeRawChunks` to true, every `PartRaw` SHALL be dropped. Dropped raw parts SHALL NOT end the stream. Raw events SHALL NOT be counted against a part limit or bounded by a frame size, and SHALL NOT be truncated.
+When a streaming request set `includeRawChunks` to true, the handler SHALL write each `PartRaw` with a valid JSON value as `{"type":"raw","rawValue":<value>}` in provider order, after the credential projection below. A `PartRaw` with invalid JSON or invalid UTF-8, or with an object that repeats a key after unescaping SHALL be dropped. Dropped raw parts SHALL NOT end the stream.
 
 #### Scenario: Requested raw parts stream in order
 - **WHEN** the adapter emits raw parts between normalized parts and the caller requested raw output
 - **THEN** both the registered TypeScript client and the Go client SHALL receive the raw values in the same position relative to normalized parts
 
-#### Scenario: Unrequested raw parts are dropped
-- **WHEN** the adapter emits raw parts and the caller omitted `includeRawChunks` or set it false
-- **THEN** the SSE body SHALL contain no raw event and the stream SHALL finish normally
+#### Scenario: Raw part without a usable value
+- **WHEN** the adapter emits a raw part whose value is not absent, empty or whitespace-only and is not valid JSON, is not valid UTF-8, or repeats an object key
+- **THEN** the handler SHALL drop it and continue the stream
+
+### Requirement: Raw parts without a value
+
+When a streaming request set `includeRawChunks` to true, a `PartRaw` without a value, meaning a value that is absent, empty or whitespace-only, SHALL be written in provider order as `{"type":"raw"}` with no `rawValue` member.
 
 #### Scenario: Raw part without a value
 - **WHEN** the caller requested raw output and the adapter emits a raw part with no value, as for a native frame that was not valid JSON
 - **THEN** the handler SHALL write `{"type":"raw"}` in provider order and continue the stream
 - **AND** the registered TypeScript client SHALL receive a raw part with no value, and the Go client a raw part with a nil value, in the same position
 
-#### Scenario: Raw part without a usable value
-- **WHEN** the adapter emits a raw part whose value is not absent, empty or whitespace-only and is not valid JSON, is not valid UTF-8, or repeats an object key
-- **THEN** the handler SHALL drop it and continue the stream
+### Requirement: Raw output is opt-in
+
+When a streaming request did not set `includeRawChunks` to true, the handler SHALL drop every `PartRaw` without ending the stream.
+
+#### Scenario: Unrequested raw parts are dropped
+- **WHEN** the adapter emits raw parts and the caller omitted `includeRawChunks` or set it false
+- **THEN** the SSE body SHALL contain no raw event and the stream SHALL finish normally
+
+### Requirement: Raw events are not size-limited
+
+Raw events SHALL NOT be counted against a part limit or bounded by a frame size, and SHALL NOT be truncated.
 
 #### Scenario: Oversized raw event
 - **WHEN** a requested raw event encodes to a frame above the former 1 MiB limit
@@ -44,11 +56,20 @@ When a streaming request set `includeRawChunks` to true, the handler SHALL write
 
 ### Requirement: Raw credential projection
 
-Before writing a raw event, the handler SHALL remove credential-bearing fields that a provider echoes from the request. Every JSON object of type `mcp` anywhere in the value, after key unescaping, is treated as an echoed MCP tool definition: the handler SHALL delete its `authorization`, replace non-null `headers` with null, and remove userinfo and the `access_token`, `api_key`, `X-Amz-Credential`, `X-Amz-Signature` and `X-Amz-Security-Token` query keys (case-insensitive) from a string `server_url`; a non-null `server_url` that is not a string, or whose URL or query cannot be parsed, SHALL be deleted; a null `server_url` SHALL be kept. All other fields SHALL keep their JSON values, including large numbers. Whitespace, key order and string escaping MAY differ from the native bytes.
+Before writing a raw event, the handler SHALL remove credential-bearing fields that a provider echoes from the request. Every JSON object of type `mcp` anywhere in the value, after key unescaping, is treated as an echoed MCP tool definition: the handler SHALL delete its `authorization`, replace non-null `headers` with null, and redact its `server_url` as described below. All other fields SHALL keep their JSON values, including large numbers.
 
 #### Scenario: OpenAI Responses echo of MCP tools
 - **WHEN** a raw `response.created` value echoes an MCP tool with headers and a credential-bearing server URL
 - **THEN** the written raw event SHALL contain null headers and the server URL without userinfo or credential query keys, and its other fields unchanged
+- **AND** whitespace, key order and string escaping MAY differ from the native bytes
+
+### Requirement: Raw MCP server URL redaction
+
+For an echoed MCP tool definition, the handler SHALL remove userinfo and the `access_token`, `api_key`, `X-Amz-Credential`, `X-Amz-Signature` and `X-Amz-Security-Token` query keys (case-insensitive) from a string `server_url`. A non-null `server_url` that is not a string, or whose URL or query cannot be parsed, SHALL be deleted; a null `server_url` SHALL be kept.
+
+#### Scenario: Unusable or null server URL
+- **WHEN** an echoed MCP tool has a non-null `server_url` that is not a string or cannot be parsed, or a null `server_url`
+- **THEN** the written raw event SHALL omit the unusable `server_url` and keep the null `server_url`
 
 ### Requirement: Raw values stay out of Gateway telemetry
 

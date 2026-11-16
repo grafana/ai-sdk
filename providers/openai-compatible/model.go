@@ -33,7 +33,7 @@ type model struct {
 	includeUsage                   bool
 	preserveChatCompletionMetadata bool
 	supportsStructuredOutputs      bool
-	transformRequestBody           func(map[string]any) (map[string]any, error)
+	transformRequestBody           func(map[string]any, []provider.Warning) (map[string]any, []provider.Warning, error)
 	generateID                     func() string
 }
 
