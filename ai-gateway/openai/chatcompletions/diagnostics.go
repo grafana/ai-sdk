@@ -4,6 +4,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -22,8 +23,10 @@ type nativeResponse struct {
 }
 
 type diagnostics struct {
-	Warnings       []warning       `json:"warnings,omitempty"`
-	NativeResponse *nativeResponse `json:"native_response,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"provider_metadata,omitempty"`
+	NativeError      *execution.Failure        `json:"native_error,omitempty"`
+	Warnings         []warning                 `json:"warnings,omitempty"`
+	NativeResponse   *nativeResponse           `json:"native_response,omitempty"`
 }
 
 func mapWarnings(values []provider.Warning) ([]warning, error) {
@@ -68,4 +71,19 @@ func (n *nativeResponse) apply(id, model *string, created *int64) {
 	if n.Created != nil {
 		*created = *n.Created
 	}
+}
+
+func executionDiagnostics(d *diagnostics, view execution.View, native provider.ProviderMetadata) *diagnostics {
+	metadata := execution.Metadata(view.Overview, native)
+	if metadata == nil {
+		metadata = native
+	}
+	if len(metadata) == 0 {
+		return d
+	}
+	if d == nil {
+		d = &diagnostics{}
+	}
+	d.ProviderMetadata = metadata
+	return d
 }

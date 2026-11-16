@@ -76,17 +76,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if req.Context().Err() == context.Canceled {
 			return
 		}
-		WriteError(w, categoryStatus(execution.ClassifyProvider(err)))
+		writeError(w, categoryStatus(execution.ClassifyProvider(err)), executionDiagnostics(nil, call.View(err), nil))
 		return
 	}
+	view := call.View(nil)
 	out, err := mapGenerate(result, r, id, call.ModelID(), created)
 	if err != nil {
-		WriteError(w, 502)
+		writeError(w, 502, executionDiagnostics(nil, view, nil))
 		return
 	}
+	out.Grafana = executionDiagnostics(out.Grafana, view, result.ProviderMetadata)
 	encoded, err := json.Marshal(out)
 	if err != nil {
-		WriteError(w, 502)
+		writeError(w, 502, executionDiagnostics(nil, view, nil))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

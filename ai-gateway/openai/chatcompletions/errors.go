@@ -15,10 +15,11 @@ type apiError struct {
 	Code    string `json:"code"`
 }
 type errorEnvelope struct {
-	Error apiError `json:"error"`
+	Error   apiError     `json:"error"`
+	Grafana *diagnostics `json:"grafana,omitempty"`
 }
 
-func errorBody(status int) []byte {
+func errorBody(status int, details ...*diagnostics) []byte {
 	code, typ, message := "internal_error", "server_error", "internal error"
 	switch status {
 	case 400:
@@ -48,12 +49,18 @@ func errorBody(status int) []byte {
 	case 504:
 		code, message = "timeout", "request timed out"
 	}
-	b, _ := json.Marshal(errorEnvelope{apiError{message, typ, nil, code}})
+	var detail *diagnostics
+	if len(details) > 0 {
+		detail = details[0]
+	}
+	b, _ := json.Marshal(errorEnvelope{Error: apiError{message, typ, nil, code}, Grafana: detail})
 	return b
 }
 
 // WriteError writes a fixed Chat Completions envelope for host-owned route/auth failures.
-func WriteError(w http.ResponseWriter, status int) {
+func WriteError(w http.ResponseWriter, status int) { writeError(w, status, nil) }
+
+func writeError(w http.ResponseWriter, status int, d *diagnostics) {
 	switch status {
 	case 400, 401, 403, 404, 405, 413, 415, 424, 429, 499, 500, 502, 503, 504:
 	default:
@@ -61,7 +68,7 @@ func WriteError(w http.ResponseWriter, status int) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = w.Write(errorBody(status))
+	_, _ = w.Write(errorBody(status, d))
 }
 
 func categoryStatus(category execution.Category) int {

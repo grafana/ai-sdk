@@ -191,7 +191,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	stream, err := call.Stream()
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
-			WriteError(w, categoryStatus(execution.ClassifyProvider(err)))
+			writeError(w, categoryStatus(execution.ClassifyProvider(err)), executionDiagnostics(nil, call.View(err), nil))
 		}
 		return
 	}
@@ -241,7 +241,9 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		pending = nil
 		return true
 	}
-	fail := func(status int) { _ = write(errorBody(status)) }
+	var view execution.View
+	viewed := false
+	fail := func(status int) { _ = write(errorBody(status, executionDiagnostics(nil, view, nil))) }
 	open := func() bool {
 		if opened {
 			return true
@@ -251,6 +253,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	}
 	state := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
 	var final *string
+	var finalMetadata provider.ProviderMetadata
 	var total *usage
 	usageKnown := true
 	for {
@@ -258,7 +261,12 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			return
 		}
 		part, wait := stream.Next()
+		if !viewed {
+			view = call.View(wait.Err())
+			viewed = true
+		}
 		if wait == execution.WaitFinished && final != nil {
+			pending = executionDiagnostics(pending, view, finalMetadata)
 			if !open() || !emit(delta{}, final, nil, false) {
 				return
 			}
@@ -314,7 +322,14 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			continue
 		}
 		if part.Type == provider.PartError {
-			fail(categoryStatus(execution.ClassifyStreamPart(part.APICallError)))
+			detail := executionDiagnostics(nil, view, nil)
+			if current := view.Current(part.APICallError); current != nil {
+				if detail == nil {
+					detail = &diagnostics{}
+				}
+				detail.NativeError = current
+			}
+			_ = write(errorBody(categoryStatus(execution.ClassifyStreamPart(part.APICallError)), detail))
 			return
 		}
 		if part.Type == provider.PartFinish {
@@ -323,6 +338,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				fail(502)
 				return
 			}
+			finalMetadata = part.ProviderMetadata
 			final = &f
 			if u == nil {
 				usageKnown = false
