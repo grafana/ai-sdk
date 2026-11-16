@@ -47,35 +47,32 @@ func writeList(w http.ResponseWriter, body string) {
 func TestReader_Read(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		pages    map[string]string
+		body     string
 		expected []extensionhost.TenantResource
 	}{
 		{
 			name:     "no resources",
-			pages:    map[string]string{"": `{"kind":"MiddlewareList","items":[]}`},
-			expected: nil,
+			body:     `{"kind":"MiddlewareList","items":[]}`,
+			expected: []extensionhost.TenantResource{},
 		},
 		{
-			name: "two pages sorted by name",
-			pages: map[string]string{
-				"":   `{"kind":"MiddlewareList","metadata":{"continue":"c1"},"items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{"note":"x"}}}]}`,
-				"c1": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":false}}]}`,
-			},
+			name: "sorted by name",
+			body: `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{"note":"x"}}},{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":false}}]}`,
 			expected: []extensionhost.TenantResource{
 				{Name: "marker", Type: "marker"},
 				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"note":"x"}`)},
 			},
 		},
 		{
-			name:  "nested member with the largest safe integer",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740991}}, "ratio": 1.0 }}}]}`},
+			name: "nested member with the largest safe integer",
+			body: `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740991}}, "ratio": 1.0 }}}]}`,
 			expected: []extensionhost.TenantResource{
 				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"m":{"maxTokens":9007199254740991}},"ratio":1,"rules":[{"limits":{"rpm":10},"models":["m"]}]}`)},
 			},
 		},
 		{
-			name:  "one invalid resource does not fail the read",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"other":{}}},{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`},
+			name: "one invalid resource does not fail the read",
+			body: `{"kind":"MiddlewareList","items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"other":{}}},{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`,
 			expected: []extensionhost.TenantResource{
 				{Name: "a", Type: "a", Enabled: true},
 				{Name: "b", Invalid: true},
@@ -83,18 +80,18 @@ func TestReader_Read(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var queries []string
+			requests := 0
 			reader := newTestReader(t, func(w http.ResponseWriter, r *http.Request) {
+				requests++
 				assert.Equal(t, listPath, r.URL.Path)
 				assert.Equal(t, "100", r.URL.Query().Get("limit"))
-				continuation := r.URL.Query().Get("continue")
-				queries = append(queries, continuation)
-				writeList(w, tc.pages[continuation])
+				assert.Empty(t, r.URL.Query().Get("continue"))
+				writeList(w, tc.body)
 			})
 			resources, err := reader.Read(context.Background(), "stacks-1")
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, resources)
-			assert.Len(t, queries, len(tc.pages))
+			assert.Equal(t, 1, requests, "one list request per read")
 		})
 	}
 }
@@ -132,8 +129,8 @@ func TestReader_Failures(t *testing.T) {
 		{name: "success that is not a list: status", handler: func(w http.ResponseWriter, _ *http.Request) {
 			writeList(w, `{"kind":"Status","apiVersion":"v1","status":"Success","message":"`+readerSentinel+`"}`)
 		}, expected: extensionhost.ErrReadInvalid},
-		{name: "endless pages", handler: func(w http.ResponseWriter, _ *http.Request) {
-			writeList(w, `{"kind":"MiddlewareList","metadata":{"continue":"again"},"items":[]}`)
+		{name: "a continuation", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"MiddlewareList","metadata":{"continue":"more"},"items":[]}`)
 		}, expected: extensionhost.ErrReadInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
