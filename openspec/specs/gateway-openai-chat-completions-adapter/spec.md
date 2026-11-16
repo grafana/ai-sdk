@@ -327,3 +327,16 @@ Empty or null refusal MUST remain accepted.
 #### Scenario: Named participant on Responses
 - **WHEN** a Chat request names a participant and selects a Responses candidate
 - **THEN** the request fails as unsupported before calling the native model
+### Requirement: Native multi-segment streaming
+The adapter SHALL consume all runtime-validated native response segments before
+emitting a single Chat terminal finish and DONE sentinel. It SHALL preserve public
+identity and aggregate known per-segment token usage without inventing missing counts.
+
+#### Scenario: Reused native item identifiers
+- **WHEN** consecutive native segments reuse a text or tool item identifier
+- **THEN** text continues on the same Chat response and new tool calls receive distinct indices
+- **AND** raw native transport events do not terminate the response
+
+#### Scenario: Error after native finish
+- **WHEN** a native error follows a segment finish before stream closure
+- **THEN** the adapter emits an error and no successful DONE sentinel
