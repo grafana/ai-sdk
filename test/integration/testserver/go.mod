@@ -16,6 +16,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.2
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815 // indirect
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815 // indirect
 	github.com/grafana/dskit v0.0.0-20260108123158-1a1acfb6ef2e // indirect
@@ -44,3 +45,5 @@ replace github.com/grafana/ai-sdk => ../../..
 replace github.com/grafana/ai-sdk/middleware/logger => ../../../middleware/logger
 
 replace github.com/grafana/ai-sdk/providers/grafana => ../../../providers/grafana
+
+replace github.com/grafana/ai-sdk/providers/openai-compatible => ../../../providers/openai-compatible
