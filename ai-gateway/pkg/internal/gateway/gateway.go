@@ -202,7 +202,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
 		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
 	}
-	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Client: nativeClient}), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat))
 }
 

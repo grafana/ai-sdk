@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const stackCatalogKey = "dummy-stack-catalog-key"
+const stackCatalogSecret = "dummy-stack-catalog-key"
 
 // stackObservedCatalog is a stack catalog whose models all use one Anthropic
 // provider, so a fake Anthropic transport can serve every call.
@@ -37,7 +37,7 @@ func stackObservedCatalog(name string, models ...string) StackCatalog {
 			Fallback: []v1alpha1.Target{{Provider: "claude", Model: "claude-backup"}},
 		}
 	}
-	return StackCatalog{Name: name, Spec: spec, Keys: resource.DecryptedSecureValues{"claude": stackCatalogKey}}
+	return StackCatalog{Name: name, Spec: spec, Keys: resource.DecryptedSecureValues{"claude": stackCatalogSecret}}
 }
 
 // stackAnthropicClient serves Anthropic responses. A request for the primary
@@ -50,7 +50,7 @@ func stackAnthropicClient(failPrimary bool) *http.Client {
 			return nil, err
 		}
 		if failPrimary && strings.Contains(string(raw), `"model":"claude-primary"`) {
-			body := `{"type":"error","error":{"type":"overloaded_error","message":"rejected ` + stackCatalogKey + `"}}`
+			body := `{"type":"error","error":{"type":"overloaded_error","message":"rejected ` + stackCatalogSecret + `"}}`
 			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 		}
 		contentType, body := "application/json", translationAnthropicBody
@@ -118,7 +118,7 @@ func TestStackCatalogObservation_IdentityAndPrivacy(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, string(exported), `"gateway.catalog":"team-catalog"`)
 			assert.NotContains(t, string(exported), "observe me")
-			for _, private := range []string{stackCatalogKey, "claude-primary", "claude-backup", "stack-model-alias"} {
+			for _, private := range []string{stackCatalogSecret, "claude-primary", "claude-backup", "stack-model-alias"} {
 				assert.NotContains(t, observed.logs.String()+metrics+string(exported), private)
 			}
 		})
@@ -181,7 +181,7 @@ func TestStackCatalogSelection_WritesNoPhysicalAttemptRecords(t *testing.T) {
 		if id == "stack-model" {
 			return SelectStackCatalog(stack, id, gateway, StackCatalogOptions{Client: stackAnthropicClient(true)})
 		}
-		return NewSelector(operator, nil)(ctx, id, options, gateway)
+		return NewSelector(operator, nil, nil)(ctx, id, options, gateway)
 	}})
 	require.NoError(t, err)
 	for _, tc := range []struct{ id, gateway string }{{id: "stack-model"}, {id: "public", gateway: `{"models":["other"]}`}} {

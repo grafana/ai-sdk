@@ -88,6 +88,71 @@ func TestAccessPolicy_Decide(t *testing.T) {
 	}
 }
 
+func TestAccessPolicy_DecideCatalog(t *testing.T) {
+	cloudHost := newHost(t, platformhost.TopologyCloud)
+	selfHost := newHost(t, platformhost.TopologySelfHosted)
+	cloud := chains{t: t, host: cloudHost}
+	self := chains{t: t, host: selfHost}
+	policies := map[string]AccessPolicy{
+		"cloud":       {Mode: AccessModeCloud, InternalServices: []string{"svc-a"}},
+		"self-hosted": {Mode: AccessModeSelfHosted},
+	}
+	tests := []struct {
+		name       string
+		keys       *platformhost.Host
+		token      string
+		namespace  string
+		refused    bool
+		identity   string
+		attributed string
+	}{
+		{name: "cloud user", token: cloud.frontDoor(types.TypeUser, "u1"), identity: "user:u1", attributed: platformhost.FrontDoorService},
+		{name: "cloud service account", token: cloud.frontDoor(types.TypeServiceAccount, "sa1"), identity: "service-account:sa1", attributed: platformhost.FrontDoorService},
+		{name: "access policy alone", token: cloud.cloud(cloud.service("svc-b", testNamespace)), attributed: "svc-b"},
+		{name: "allowlisted access policy alone", token: cloud.cloud(cloud.service("svc-a", testNamespace)), attributed: "svc-a"},
+		{name: "access policy acting for a user", token: cloud.cloud(cloud.exchange("svc-b", cloud.identity(types.TypeUser, "u1"))), identity: "user:u1", attributed: "svc-b"},
+		{name: "wildcard access policy", token: cloud.cloud(cloud.service("svc-b", "*")), attributed: "svc-b"},
+		{name: "cloud anonymous", token: cloud.frontDoor(types.TypeAnonymous, "anon"), refused: true},
+		{name: "self-hosted user", keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeUser, "u1")), identity: "user:u1"},
+		{name: "self-hosted service acting alone", keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), attributed: "svc-a"},
+		{name: "relay of an anonymous viewer", token: cloud.cloud(cloud.exchange("relay", cloud.exchange(platformhost.FrontDoorService, cloud.identity(types.TypeAnonymous, "anon")))), refused: true},
+		{name: "self-hosted anonymous", keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeAnonymous, "anon")), refused: true},
+		{name: "access policy for another namespace", token: cloud.cloud(cloud.service("svc-b", testNamespace)), namespace: otherNamespace, refused: true},
+		{name: "user for another namespace", token: cloud.frontDoor(types.TypeUser, "u1"), namespace: otherNamespace, refused: true},
+		{name: "missing route namespace", token: cloud.frontDoor(types.TypeUser, "u1"), namespace: "-", refused: true},
+	}
+	for mode, policy := range policies {
+		for _, tc := range tests {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				keys := cloudHost
+				if tc.keys != nil {
+					keys = tc.keys
+				}
+				authenticator, err := NewPlatformAuthenticator(PlatformConfig{PluginID: testPluginID, Group: testGroup, Keys: keys.Keys()})
+				require.NoError(t, err)
+				info, err := authenticator.Authenticate(context.Background(), platformTokens{access: tc.token})
+				require.NoError(t, err)
+				namespace := tc.namespace
+				switch tc.namespace {
+				case "":
+					namespace = testNamespace
+				case "-":
+					namespace = ""
+				}
+				caller := policy.DecideCatalog(info, namespace)
+				if tc.refused {
+					assert.Equal(t, Caller{access: Refused}, caller)
+					return
+				}
+				assert.Equal(t, Caller{Namespace: namespace, Identity: tc.identity, access: CatalogAccounts, attributedService: tc.attributed}, caller)
+			})
+		}
+	}
+	t.Run("nil identity", func(t *testing.T) {
+		assert.Equal(t, Caller{access: Refused}, policies["cloud"].DecideCatalog(nil, testNamespace))
+	})
+}
+
 func TestAccessMiddleware(t *testing.T) {
 	policy := AccessPolicy{Mode: AccessModeCloud, InternalServices: []string{"svc-a"}}
 	extra := func(service, identity string) types.AuthInfo {
@@ -117,7 +182,7 @@ func TestAccessMiddleware(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var served, refused int
 			var observed []AccountAccess
-			handler := AccessMiddleware(policy, func(w http.ResponseWriter) {
+			handler := AccessMiddleware(policy.Decide, func(w http.ResponseWriter) {
 				refused++
 				w.WriteHeader(http.StatusForbidden)
 			}, func(_ context.Context, caller Caller) {

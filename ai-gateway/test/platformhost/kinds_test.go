@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/grafana-app-sdk/plugin/appadapter"
 	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
 	"github.com/grafana/grafana-app-sdk/plugin/grpcplugin"
+	"github.com/grafana/grafana-app-sdk/resource"
 )
 
 const widgetKey = "sentinel-widget-key"
@@ -55,8 +56,12 @@ func (s *stubAdmission) recorded() []review {
 	return append([]review(nil), s.reviews...)
 }
 
-func newKindHost(t *testing.T, admission *stubAdmission) (*Host, *httptest.Server, string) {
+func newKindHost(t *testing.T, admission *stubAdmission, routes ...http.Handler) (*Host, *httptest.Server, string) {
 	t.Helper()
+	handler := http.NotFoundHandler()
+	if len(routes) == 1 {
+		handler = routes[0]
+	}
 	kind := app.ManifestVersionKind{
 		Kind:         "Widget",
 		Plural:       "Widgets",
@@ -67,7 +72,7 @@ func newKindHost(t *testing.T, admission *stubAdmission) (*Host, *httptest.Serve
 	host, err := New(Config{Topology: TopologyCloud, PluginID: testPluginID, Group: testGroup, Version: testVersion, Kinds: []app.ManifestVersionKind{kind}})
 	require.NoError(t, err)
 	served, err := host.ServeInProcess(grpcplugin.ServeOpts{
-		RouteServer:     appadapter.NewRouteAdapter(stubApp{handler: http.NotFoundHandler()}),
+		RouteServer:     appadapter.NewRouteAdapter(stubApp{handler: handler}),
 		AdmissionServer: admission,
 		Authenticator:   host.Authenticator(),
 		PluginID:        testPluginID,
@@ -203,4 +208,58 @@ func TestKindStore_RefusesWritesToAChangedObject(t *testing.T) {
 	assert.False(t, store.unchanged(key, reviewed))
 	delete(store.objects, key)
 	assert.False(t, store.unchanged(key, reviewed))
+}
+
+func TestHost_KindRoutesCarryTheParent(t *testing.T) {
+	var mu sync.Mutex
+	var seen []*resource.RouteRequestInfo
+	route := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, resource.RouteRequestInfoFrom(r.Context()))
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	_, server, token := newKindHost(t, &stubAdmission{}, route)
+	code, created := sendWidget(t, http.MethodPost, widgetURL(server, ""), token, widget(`{"key":{"create":"`+widgetKey+`"}}`))
+	require.Equal(t, http.StatusCreated, code, created)
+
+	request, err := http.NewRequest(http.MethodPost, widgetURL(server, "w")+"/render/page", strings.NewReader("{}"))
+	require.NoError(t, err)
+	request.Header.Set("X-Access-Token", token)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	_ = response.Body.Close()
+	require.Equal(t, http.StatusNoContent, response.StatusCode)
+
+	mu.Lock()
+	require.Len(t, seen, 1)
+	info := seen[0]
+	mu.Unlock()
+	require.NotNil(t, info)
+	assert.Equal(t, "widgets", info.Plural)
+	assert.Equal(t, "w", info.Name)
+	assert.Equal(t, testNamespace, info.Namespace)
+	assert.Equal(t, created["metadata"].(map[string]any)["resourceVersion"], info.ResourceVersion)
+	assert.Equal(t, resource.DecryptedSecureValues{"key": widgetKey}, info.DecryptedSecureValues)
+	var parent map[string]any
+	require.NoError(t, json.Unmarshal(info.Parent, &parent))
+	assert.Equal(t, testGroup+"/"+testVersion, parent["apiVersion"])
+	assert.Equal(t, "Widget", parent["kind"])
+	assert.Equal(t, created["secure"], parent["secure"])
+	assert.NotContains(t, string(info.Parent), widgetKey)
+
+	code, read := sendWidget(t, http.MethodGet, widgetURL(server, "w"), token, "")
+	require.Equal(t, http.StatusOK, code)
+	assert.NotContains(t, read, "kind", "forwarding does not change the stored object")
+
+	missing, err := http.NewRequest(http.MethodGet, widgetURL(server, "missing")+"/render", nil)
+	require.NoError(t, err)
+	missing.Header.Set("X-Access-Token", token)
+	response, err = http.DefaultClient.Do(missing)
+	require.NoError(t, err)
+	_ = response.Body.Close()
+	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Len(t, seen, 1, "a missing object makes no route call")
 }
