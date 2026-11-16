@@ -34,6 +34,7 @@ credentials.json
 # Test server binary and temp files
 test/integration/testserver/testserver
 test/integration/.test-server-url
+test/conformance/gateway-results/
 
 # Compiled example binaries (each example dir builds a binary named after itself)
 examples/agent-chat/agent-chat

@@ -11,7 +11,7 @@ const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.
 assert.deepEqual(document.errors, []);
 const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { name?: string; if?: string; needs?: string | string[]; permissions?: Record<string, string>; concurrency?: unknown; secrets?: unknown; uses?: string; with?: Record<string, unknown>; "continue-on-error"?: boolean; steps?: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean; "timeout-minutes"?: number }> }> };
 const jobs = workflow.jobs;
-const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
+const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "direct-conformance-test"];
 const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
 const publishFile = "publish-ai-gateway-dev.yml";
 const sharedCD = /^grafana\/plugin-ci-workflows\/\.github\/workflows\/cd\.yml@ci-cd-workflows\/v\d+\.\d+\.\d+$/;
@@ -99,7 +99,7 @@ describe("candidate-source workflow gates", () => {
       assert.match(commands("module-resolution"), new RegExp(`mise run ${task}`));
     }
     assert.match(commands("parity-baseline"), /test-providerwire-v4/);
-    assert.match(commands("conformance-test"), /test-conformance/);
+    assert.match(commands("direct-conformance-test"), /test-conformance/);
     assert.match(commands("integration-test"), /test-integration/);
     for (const task of ["fmt-check", "release-check", "vet", "build", "test-short"]) {
       assert.match(commands("build-test"), new RegExp(`mise run ${task}\\b`));
@@ -456,7 +456,7 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("keeps the required source checks and workers without image automation", () => {
-    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation", "plugin-build", "gateway-test", "changes"].sort());
+    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation", "plugin-build", "gateway-test", "changes", "gateway-conformance-test", "conformance-test"].sort());
     assert.deepEqual(workflow.on.push, { branches: ["main"], tags: ["ai-gateway/v*"] });
     assert.ok(Object.hasOwn(workflow.on, "pull_request"));
     assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push"]);
@@ -517,7 +517,7 @@ describe("candidate-source workflow gates", () => {
     assert.ok(!caches[0]!.with!.key.includes("${{ github.sha }}"));
     assert.ok(caches[1]!.with!.key.endsWith("-${{ github.sha }}"));
     assert.ok(!caches[1]!.with!["restore-keys"].includes("${{ github.sha }}"));
-    for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test", "gateway-test"]) {
+    for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "direct-conformance-test", "gateway-conformance-test", "gateway-test"]) {
       const jobSteps = steps(job);
       const cacheIndex = jobSteps.findIndex((step) => step.uses === "./.github/actions/cache-go");
       assert.ok(cacheIndex > jobSteps.findIndex((step) => step.uses?.startsWith("actions/checkout@")), job);
@@ -529,7 +529,7 @@ describe("candidate-source workflow gates", () => {
 
 describe("documentation-only CI selection", () => {
   const guard = "github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true'";
-  const workers = ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "plugin-build", "gateway-test", "conformance-test"];
+  const workers = ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "plugin-build", "gateway-test", "direct-conformance-test", "gateway-conformance-test"];
 
   it("only bypasses heavy steps for an explicitly successful docs-only PR classification", () => {
     for (const worker of workers) {

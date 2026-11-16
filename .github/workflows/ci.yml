@@ -515,7 +515,7 @@ jobs:
           path: ai-gateway/dist
           if-no-files-found: error
 
-  conformance-test:
+  direct-conformance-test:
     needs: changes
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -579,3 +579,96 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "${{ steps.conformance.outputs.exit_code }}"
+
+  gateway-conformance-test:
+    name: Gateway conformance
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          version: "2026.5.4"
+          experimental: true
+
+      - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+
+      - name: Resolve pnpm store path
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Gateway conformance harness tests
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        run: mise run test-conformance-gateway-harness
+
+      - name: Full gateway conformance matrix
+        if: ${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (!cancelled()) }}
+        env:
+          AI_GATEWAY_VCS_REF: ${{ github.sha }}
+          GRAFANA_VERSION: nightly@sha256:5d4bd69f298a7d45b3e14e93d65cd4636cc77619eea120bc1d065662c1b1ceb3
+        run: mise run test-conformance-gateway
+
+      - name: Gateway conformance artifacts
+        id: gateway-artifacts
+        if: ${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (always()) }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gateway-conformance
+          path: test/conformance/gateway-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Gateway conformance summary
+        if: ${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (always()) }}
+        env:
+          ARTIFACT_URL: ${{ steps.gateway-artifacts.outputs.artifact-url }}
+        run: |
+          if [ -f test/conformance/gateway-results/summary.md ]; then
+            cat test/conformance/gateway-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Gateway conformance did not produce a report; inspect setup logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -n "$ARTIFACT_URL" ]; then
+            printf '\n[Download full report and per-row evidence](%s)\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  conformance-test:
+    name: conformance-test
+    if: ${{ always() }}
+    needs:
+      - direct-conformance-test
+      - gateway-conformance-test
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require both conformance suites
+        env:
+          DIRECT_RESULT: ${{ needs.direct-conformance-test.result }}
+          GATEWAY_RESULT: ${{ needs.gateway-conformance-test.result }}
+        run: |
+          echo "Direct conformance: $DIRECT_RESULT; Gateway conformance: $GATEWAY_RESULT"
+          test "$DIRECT_RESULT" = success && test "$GATEWAY_RESULT" = success
