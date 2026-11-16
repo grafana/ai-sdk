@@ -47,7 +47,7 @@ The system SHALL provide an `ObjectOutput[T]` implementation that accepts a `sch
 
 ### Requirement: Array output mode
 
-The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSON SHALL be wrapped as {"elements": [...]} in a new schema.Schema via schema.SchemaFromJSON. This SHALL remain the strict provider format with additionalProperties false and elements required. `WithMinItems` and `WithMaxItems` SHALL be `ArrayOption`s that only `Array` accepts, so passing them to `Object`, `ChoiceWithOptions` or `JSON` fails to compile; every `ObjectOption` SHALL also be an `ArrayOption`. They SHALL set optional `minItems` and `maxItems` keywords on the `elements` property; an unset bound SHALL be omitted and zero SHALL be sent as an explicit bound. `Array` SHALL return an error, before any model call, when a bound is negative or the minimum exceeds the maximum.
+The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSON SHALL be wrapped as {"elements": [...]} in a new schema.Schema via schema.SchemaFromJSON. This SHALL remain the strict provider format with additionalProperties false and elements required.
 
 #### Scenario: Generate an array of typed elements
 
@@ -68,6 +68,10 @@ The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSO
 
 - **WHEN** the LLM returns `{}`, `{"elements":null}`, `{"elements":{"name":"Paris"}}` or a document that is not a JSON object
 - **THEN** the result SHALL return an error wrapping `ErrNoObjectGenerated`
+
+### Requirement: Array output bounds
+
+`WithMinItems` and `WithMaxItems` SHALL be `ArrayOption`s that only `Array` accepts, so passing them to `Object`, `ChoiceWithOptions` or `JSON` fails to compile; every `ObjectOption` SHALL also be an `ArrayOption`. They SHALL set optional `minItems` and `maxItems` keywords on the `elements` property; an unset bound SHALL be omitted and zero SHALL be sent as an explicit bound. `Array` SHALL return an error, before any model call, when a bound is negative or the minimum exceeds the maximum.
 
 #### Scenario: Bounds reach the request schema
 
@@ -234,7 +238,7 @@ The system SHALL support combining structured output with tool calling in the sa
 
 ### Requirement: Partial output streaming
 
-StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMessage partial snapshots from configured output mode. Partial failures SHALL be silently skipped. Partials SHALL parse only the step's first text part, which is the first text part any text event names, including `text-start`; deltas of other text parts SHALL pass through unparsed. A snapshot SHALL be published when it differs from the last snapshot published in the same step; each step SHALL start with no previous snapshot, as upstream's `start-step` reset does. Every published snapshot SHALL arrive exactly once in production order, losslessly even if consumed after generation. The stream SHALL close only after generation finishes and queued snapshots are delivered.
+StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMessage partial snapshots from configured output mode. Partial failures SHALL be silently skipped. A snapshot SHALL be published when it differs from the last snapshot published in the same step; each step SHALL start with no previous snapshot, as upstream's `start-step` reset does.
 
 #### Scenario: Receive partial output during streaming
 
@@ -254,6 +258,15 @@ StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMess
 - **WHEN** array output streams `{"elements":[`
 - **THEN** `PartialOutputStream()` SHALL emit `[]`, not `null`
 
+#### Scenario: No Output set
+
+- **WHEN** `Output` is nil
+- **THEN** `PartialOutputStream()` SHALL return a closed channel immediately
+
+### Requirement: Partial output parses the first text part
+
+Partials SHALL parse only the step's first text part, which is the first text part any text event names, including `text-start`; deltas of other text parts SHALL pass through unparsed.
+
 #### Scenario: Another text part interleaves with the output text
 
 - **WHEN** a step starts text parts `t1` and `t2`, and `t2` streams `note` between `t1`'s deltas `{"name":` and `"a"}`
@@ -265,20 +278,19 @@ StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMess
 - **WHEN** a step starts `t1` and then `t2`, and `t2` streams a delta before `t1` does
 - **THEN** partials SHALL parse `t1`'s text, not `t2`'s
 
+### Requirement: Partial output delivery is lossless
+
+Every published partial snapshot SHALL arrive exactly once in production order, losslessly even if consumed after generation. The stream SHALL close only after generation finishes and queued snapshots are delivered.
+
 #### Scenario: Partial output consumption starts after the channel buffer is exceeded
 
 - **WHEN** generation produces more distinct partial snapshots than the public channel buffer can hold before the consumer starts reading
 - **THEN** `PartialOutputStream()` SHALL deliver every snapshot exactly once and in production order
 - **AND** structured output generation and result completion SHALL NOT block on the delayed consumer
 
-#### Scenario: No Output set
-
-- **WHEN** `Output` is nil
-- **THEN** `PartialOutputStream()` SHALL return a closed channel immediately
-
 ### Requirement: Array element streaming
 
-The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The delivered count SHALL carry over between steps, as upstream's single element transform does: a later step's array SHALL deliver only its elements past the number already delivered. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, except that for a `BoundedArrayOutput` with a maximum the stream SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed in any step, and `ElementStreamError()` SHALL then return an error wrapping `ErrInvalidOutputText`. A negative maximum reported by a custom `BoundedArrayOutput` SHALL be treated as zero.
+`StreamTextResult` SHALL provide `ElementStream()`, a channel of `json.RawMessage` values that are complete validated array elements. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, unless an element maximum closes it earlier.
 
 #### Scenario: Receive validated elements during array streaming
 
@@ -299,6 +311,21 @@ The system SHALL provide an `ElementStream()` method on `StreamTextResult` that 
 - **THEN** `ElementStream()` SHALL emit no values
 - **AND** the channel SHALL close when generation finishes
 
+### Requirement: Array element count carries over between steps
+
+The delivered element count SHALL carry over between steps, as upstream's single element transform does: a later step's array SHALL deliver only its elements past the number already delivered.
+
+#### Scenario: Element count carries over between steps
+
+- **WHEN** step 1 streams the elements a and b, makes a tool call, and step 2 streams x, y and z
+- **THEN** an unbounded `ElementStream()` SHALL deliver a, b and z
+- **AND** with `WithMaxItems(2)` it SHALL deliver a and b, and `ElementStreamError()` SHALL report the overflow
+- **AND** with `WithMaxItems(2)` and a step 2 that streams only x and y, it SHALL deliver a and b, and `ElementStreamError()` SHALL be nil
+
+### Requirement: Array element stream maximum
+
+For a `BoundedArrayOutput` with a maximum, `ElementStream()` SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed in any step, and `ElementStreamError()` SHALL then return an error wrapping `ErrInvalidOutputText`. A negative maximum reported by a custom `BoundedArrayOutput` SHALL be treated as zero.
+
 #### Scenario: Model streams more elements than the maximum
 
 - **WHEN** the array output sets `WithMaxItems(2)` and the LLM streams four elements
@@ -307,13 +334,6 @@ The system SHALL provide an `ElementStream()` method on `StreamTextResult` that 
 - **AND** `ElementStreamError()` SHALL report the overflow once the channel is closed
 - **AND** `PartialOutputStream()` SHALL still include all four elements
 - **AND** `OutputError()` SHALL wrap `ErrNoObjectGenerated` and report the maximum when this is the final step
-
-#### Scenario: Element count carries over between steps
-
-- **WHEN** step 1 streams the elements a and b, makes a tool call, and step 2 streams x, y and z
-- **THEN** an unbounded `ElementStream()` SHALL deliver a, b and z
-- **AND** with `WithMaxItems(2)` it SHALL deliver a and b, and `ElementStreamError()` SHALL report the overflow
-- **AND** with `WithMaxItems(2)` and a step 2 that streams only x and y, it SHALL deliver a and b, and `ElementStreamError()` SHALL be nil
 
 #### Scenario: Later step after an overflow
 

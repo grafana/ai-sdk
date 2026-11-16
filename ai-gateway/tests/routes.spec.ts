@@ -37,7 +37,7 @@ test.describe('namespace routes', () => {
 
   test('language-model answers a unary call', async ({ page }) => {
     const response = await callModel(page.request, FAKE_MODEL, false);
-    expect(response.status()).toBe(200);
+    expect(response.status(), await response.text()).toBe(200);
     expect(response.headers()['content-type']).toContain('application/json');
     const body = await response.json();
     expect(body.content).toEqual([expect.objectContaining({ type: 'text', text: FAKE_TEXT })]);
@@ -45,7 +45,7 @@ test.describe('namespace routes', () => {
 
   test('language-model streams a call', async ({ page }) => {
     const response = await callModel(page.request, FAKE_MODEL, true);
-    expect(response.status()).toBe(200);
+    expect(response.status(), await response.text()).toBe(200);
     expect(response.headers()['content-type']).toContain('text/event-stream');
     const parts = streamParts(await response.text());
     const text = parts
@@ -58,7 +58,7 @@ test.describe('namespace routes', () => {
 
   test('language-model returns the Gateway error document for an unknown model', async ({ page }) => {
     const response = await callModel(page.request, 'e2e/missing', false);
-    expect(response.status()).toBe(404);
+    expect(response.status(), await response.text()).toBe(404);
     expect(response.headers()['content-type']).toContain('application/json');
     expect(await response.json()).toEqual({
       error: { message: 'model not found', type: 'model_not_found', param: null, code: 'model_not_found' },
@@ -67,7 +67,7 @@ test.describe('namespace routes', () => {
 
   test('undeclared methods are refused before the Gateway', async ({ page }) => {
     const config = await page.request.post(`${PREFIX}/config`, { data: {} });
-    expect(config.status()).toBe(405);
+    expect(config.status(), await config.text()).toBe(405);
     const language = await page.request.get(`${PREFIX}/language-model`);
     expect(language.status()).toBe(405);
   });
