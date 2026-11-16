@@ -128,9 +128,9 @@ func TestSelector_AccessModes(t *testing.T) {
 				assert.Equal(t, tc.status, w.Code, w.Body.String())
 				if tc.nativeCalls != 0 {
 					assert.Equal(t, []execution.Overview{{RequestedModelID: "openai/native-model", Attempts: []execution.Attempt{
-						{Provider: "openai", ModelID: "native-model", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "dummy-request-key", Type: "authentication_error", StatusCode: http.StatusUnauthorized}},
+						{Provider: "openai", ModelID: "native-model", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "[REDACTED]", Type: "authentication_error", StatusCode: http.StatusUnauthorized}},
 					}}}, responseOverviews(t, w.Body.String()))
-					assert.NotContains(t, withoutProviderMetadata(t, w.Body.String()), "dummy-request-key")
+					assert.NotContains(t, w.Body.String(), "dummy-request-key")
 				} else {
 					assert.NotContains(t, w.Body.String(), "dummy-request-key")
 				}
@@ -158,7 +158,7 @@ func TestBYOKSelection_NativeSummariesAndAttempts(t *testing.T) {
 		{name: "configured value collision", keys: []string{"configured-provider-key", "configured-exporter-key", "dummy-first"}},
 	} {
 		expectedMessage := nativeMessage
-		for _, key := range policy.keys {
+		for _, key := range append([]string{"dummy-first", "dummy-second"}, policy.keys...) {
 			expectedMessage = strings.ReplaceAll(expectedMessage, key, "[REDACTED]")
 		}
 		for _, name := range []string{"anthropic", "openai"} {

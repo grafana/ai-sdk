@@ -106,7 +106,7 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 				assert.Equal(t, requestID, testkit.StringValue(t, generation, "model", "name"))
 				exported, err := json.Marshal(generation)
 				require.NoError(t, err)
-				failed := execution.Attempt{Provider: "anthropic", ModelID: strings.TrimPrefix(requestID, "anthropic/"), Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "dummy-first dummy-second", Type: "api_error", StatusCode: status}}
+				failed := execution.Attempt{Provider: "anthropic", ModelID: strings.TrimPrefix(requestID, "anthropic/"), Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "[REDACTED] [REDACTED]", Type: "api_error", StatusCode: status}}
 				switch status {
 				case -1:
 					assert.Empty(t, responseOverviews(t, response.Body.String()))

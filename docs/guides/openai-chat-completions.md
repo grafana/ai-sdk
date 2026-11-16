@@ -42,16 +42,63 @@ retry policy with the application's side effects and overall deadline in mind.
 
 ## Access and supported behavior
 
-Self-hosted users and service accounts use the configured catalog. In cloud
-mode only allowlisted internal service callers can use this adapter; cloud
-user and service-account requests lack the required BYOK controls and receive
-HTTP 400 from shared selection, without native provider I/O. A caller rejected
-by the host access policy receives HTTP 403. Internal service access tokens use
-the platform's `X-Access-Token` header without an `Authorization` header; configure
-the SDK's request headers for that caller type. Request-scoped provider keys
-(BYOK) are not supported. Provider credentials come from the Gateway's configured
-providers. See [Gateway authentication](gateway-authentication.md) for the
-platform credential contract.
+Self-hosted users and service accounts, and allowlisted internal cloud services,
+use the configured catalog. Cloud users and service accounts can provide request-scoped provider
+accounts through the `providerOptions.gateway` extension. The shared selector
+validates those accounts and applies the same routing, fallback and credential
+redaction as ProviderWire. Gateway account controls are consumed during selection
+and are not forwarded in native request JSON; the selected provider key is used
+for upstream authentication. The host identity still comes from the platform token. A caller rejected by the
+host access policy receives HTTP 403. Internal service access tokens use the
+platform's `X-Access-Token` header without an `Authorization` header.
+See [Gateway authentication](gateway-authentication.md) for the access contract.
+
+For a cloud user or service account, keep the same namespaced base URL and
+Grafana authentication as above, but use a provider/model identifier and supply
+request accounts instead of a configured catalog alias. The Grafana token
+authenticates the caller; the provider API key authenticates the upstream call.
+`providerOptions` is a Gateway extension, not a standard OpenAI request field.
+
+In server-side TypeScript, pass the extension alongside the SDK request fields:
+
+```typescript
+const providerKey = process.env.OPENAI_API_KEY;
+if (!providerKey) throw new Error("OPENAI_API_KEY is required");
+
+const request = {
+  model: "openai/gpt-4.1",
+  messages: [{ role: "user" as const, content: "Hello" }],
+  providerOptions: {
+    gateway: { byok: { openai: [{ apiKey: providerKey }] } },
+  },
+};
+const result = await client.chat.completions.create(request);
+```
+
+The Go client accepts the extension as a per-call option. With `client` configured
+as above and `providerKey` holding a non-empty provider API key:
+
+```go
+providerOptions := map[string]any{
+    "gateway": map[string]any{
+        "byok": map[string]any{
+            "openai": []map[string]any{{"apiKey": providerKey}},
+        },
+    },
+}
+result, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+    Model: "openai/gpt-4.1",
+    Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("Hello")},
+}, option.WithJSONSet("providerOptions", providerOptions))
+```
+
+The same per-call extension applies to streaming requests. A cloud BYOK caller
+that omits the required accounts receives HTTP 400 before native provider I/O.
+Each namespace must be a JSON object. Provider-specific options such as
+`openai.user` or `anthropic.container` remain available, subject to the shared
+native guards. Chat's explicit fields and defaults take precedence over the
+corresponding native options. The `gateway` namespace is case-sensitive;
+configured-account callers cannot use it to supply BYOK credentials.
 
 The adapter supports text, client-executed function tools, tool-result
 continuations, JSON output, and streaming for one choice. It does not execute

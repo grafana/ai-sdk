@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "providerOptions": {
+      "type": "object",
+      "additionalProperties": {"type": "object"}
+    },
     "model": {
       "type": "string"
     },

@@ -336,7 +336,7 @@ Every runtime error response SHALL retain fixed classified status, message, type
 - **AND** Typed standard JSON encoding SHALL preserve the canonical base response bytes.
 - **AND** Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability.
 - **AND** Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
-- **AND** Arbitrary aggregate/configuration/cause trees and raw bodies/headers SHALL NOT be attached as diagnostic shortcuts. Gateway-produced native summary fields SHALL protect exact configured provider/exporter keys under gateway-attempt-failure-evidence, preserving unrelated BYOK echoes and source data.
+- **AND** Arbitrary aggregate/configuration/cause trees and raw bodies/headers SHALL NOT be attached as diagnostic shortcuts. Gateway-produced native summary fields SHALL protect exact configured provider/exporter keys under gateway-attempt-failure-evidence, protecting validated request-account API keys while preserving unrelated scalar values and source data.
 - **AND** Optional native candidate-local summaries and observed configured or request-account identity MAY accompany the base error under gateway-attempt-failure-evidence, encoded once with the base error; they SHALL NOT change classification or retryability.
 - **AND** Host-owned BYOK validation and unsupported-operation failures SHALL use fixed approved messages without copying rejected values or private diagnostics.
 - **AND** Stopped or exhausted credential fallback SHALL retain existing fallback error propagation and safe runtime classification rather than use a blanket exhaustion status.
@@ -364,7 +364,7 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 #### Scenario: BYOK provider echoes request accounts
 - **WHEN** authenticated request-only selection receives a native failure containing request-account keys or identifiers before or after stream commitment
-- **THEN** fixed classified error fields SHALL remain unchanged, and unary/setup overview summaries and SSE native summaries SHALL preserve unrelated BYOK echoes and protect exact configured provider/exporter-key matches independently of catalog attribution
+- **THEN** fixed classified error fields SHALL remain unchanged, and unary/setup overview summaries and SSE native summaries SHALL protect exact configured provider/exporter-key and validated request-account API-key matches while preserving unrelated identifiers independently of catalog attribution
 
 ### Requirement: Runtime error detail exclusions
 
@@ -372,7 +372,7 @@ Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure 
 
 #### Scenario: Runtime error detail exclusions
 - **WHEN** a resolver or provider failure carries URL, credentials and metadata
-- **THEN** arbitrary cause trees and raw bodies/headers SHALL NOT be serialized; governed native candidate-local summaries SHALL redact exact configured API-key matches while preserving other scalar echoes and fixed base fields
+- **THEN** arbitrary cause trees and raw bodies/headers SHALL NOT be serialized; governed native candidate-local summaries SHALL redact exact configured and validated request-account API-key matches while preserving other scalar echoes and fixed base fields
 
 ### Requirement: Minimal unary success response
 
