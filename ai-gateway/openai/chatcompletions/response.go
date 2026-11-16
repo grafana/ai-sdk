@@ -174,6 +174,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	msg := outputMessage{Role: roleAssistant, Refusal: native.Refusal}
 	var content strings.Builder
 	hasText := false
+	textOffset := 0
 	used := map[string]bool{}
 	for _, p := range result.Content {
 		switch p.Type {
@@ -181,7 +182,12 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 			if !validCitations(p.Citations) {
 				return out, errOutput
 			}
-			msg.Annotations = append(msg.Annotations, mapCitations(p.Citations)...)
+			annotations, err := mapCitations(p.Citations, textOffset)
+			if err != nil {
+				return out, err
+			}
+			msg.Annotations = append(msg.Annotations, annotations...)
+			textOffset += utf8.RuneCountInString(p.Text)
 			out.Grafana = sourceDiagnostics(out.Grafana, nil, p.Citations)
 			content.WriteString(p.Text)
 			hasText = true

@@ -3,6 +3,7 @@ package chatcompletions
 import (
 	"encoding/json"
 	"github.com/grafana/ai-sdk/provider"
+	"math"
 	"unicode/utf8"
 )
 
@@ -19,14 +20,19 @@ type urlCitation struct {
 
 // Only URL citations with native spans have a standard Chat representation.
 // Other citations and retrieved sources remain available without invented spans.
-func mapCitations(citations []provider.Citation) []annotation {
+// Offset counts Unicode code points in preceding text, not UTF-8 bytes. Native
+// indices remain unchanged within each block; diagnostics retain local spans.
+func mapCitations(citations []provider.Citation, offset int) ([]annotation, error) {
 	var result []annotation
 	for _, c := range citations {
 		if c.Source.SourceType == provider.SourceTypeURL && c.StartIndex != nil && c.EndIndex != nil {
-			result = append(result, annotation{Type: "url_citation", URLCitation: urlCitation{StartIndex: *c.StartIndex, EndIndex: *c.EndIndex, Title: c.Source.Title, URL: c.Source.URL}})
+			if *c.StartIndex > math.MaxInt-offset || *c.EndIndex > math.MaxInt-offset {
+				return nil, errOutput
+			}
+			result = append(result, annotation{Type: "url_citation", URLCitation: urlCitation{StartIndex: offset + *c.StartIndex, EndIndex: offset + *c.EndIndex, Title: c.Source.Title, URL: c.Source.URL}})
 		}
 	}
-	return result
+	return result, nil
 }
 func sourceDiagnostics(d *diagnostics, source *provider.SourceInfo, citations []provider.Citation) *diagnostics {
 	if source == nil && len(citations) == 0 {
