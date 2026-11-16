@@ -1,6 +1,7 @@
 services:
   grafana:
     environment:
+      GF_DATABASE_WAL: 'true'
       GF_PLUGIN_GRAFANA_AIGATEWAY_APP_MODEL_CATALOG: $$__file{/etc/grafana/provisioning/aigateway/models.e2e.yaml}
     depends_on:
       - fake-anthropic
