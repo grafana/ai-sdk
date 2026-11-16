@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type toolDelta struct {
@@ -362,6 +363,13 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			continue
 		}
 		if part.Type == provider.PartError {
+			if errors.Is(part.APICallError, compatible.ErrInvalidChatCompletionMetadata) {
+				if pending == nil {
+					pending = &diagnostics{}
+				}
+				pending.Warnings = append(pending.Warnings, warning{Type: provider.WarnOther, Message: "Invalid optional Chat metadata was omitted."})
+				continue
+			}
 			detail := executionDiagnostics(nil, view, nil)
 			if current := view.Current(part.APICallError); current != nil {
 				if detail == nil {
@@ -372,25 +380,14 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			_ = write(errorBody(categoryStatus(execution.ClassifyStreamPart(part.APICallError)), detail))
 			return
 		}
-		if part.Type == provider.PartCustom && part.Kind == "openai-compatible.chat-completion" {
+
+		if part.Type == provider.PartFinish {
 			native, err := chatMetadata(part.ProviderMetadata)
 			if err != nil {
 				fail(502)
 				return
 			}
-			if native.Refusal != nil {
-				state.refused = true
-			}
-			if !open() {
-				return
-			}
-			logprobs = native.Logprobs
-			if !emit(delta{Refusal: native.Refusal}, nil, nil, false) {
-				return
-			}
-			continue
-		}
-		if part.Type == provider.PartFinish {
+			state.refused = native.Refusal != nil
 			segmentRequest := r
 			segmentRequest.jsonOutput = false
 			segmentRequest.Parallel = nil
@@ -400,10 +397,18 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				fail(502)
 				return
 			}
-			native, err := chatMetadata(part.ProviderMetadata)
-			if err != nil || nativeUsage(u, native.Usage) != nil {
+			if part.Usage != nil && nativeUsage(u, part.Usage.Raw) != nil {
 				fail(502)
 				return
+			}
+			if native.Refusal != nil || native.Logprobs != nil {
+				if !open() {
+					return
+				}
+				logprobs = native.Logprobs
+				if !emit(delta{Refusal: native.Refusal}, nil, nil, false) {
+					return
+				}
 			}
 			finalMetadata = part.ProviderMetadata
 			allText.WriteString(state.text.String())
@@ -464,6 +469,7 @@ func addUsage(total, next *usage) error {
 	if total.PromptDetails != nil && next.PromptDetails != nil {
 		total.PromptDetails.Cached = sumOptional(total.PromptDetails.Cached, next.PromptDetails.Cached)
 		total.PromptDetails.Audio = sumOptional(total.PromptDetails.Audio, next.PromptDetails.Audio)
+		total.PromptDetails.CacheWrite = sumOptional(total.PromptDetails.CacheWrite, next.PromptDetails.CacheWrite)
 	} else {
 		total.PromptDetails = nil
 	}

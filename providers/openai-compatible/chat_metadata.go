@@ -3,6 +3,7 @@ package openaicompatible
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"unicode/utf8"
 
@@ -10,12 +11,11 @@ import (
 )
 
 // ChatCompletionMetadata retains Chat fields without a LanguageModelV4 equivalent.
-// Unary results carry complete values. Custom streaming parts carry deltas; the
-// finish part carries final usage. It is opt-in and never contains raw response data.
+// Unary results and stream finish metadata carry complete values.
+// Native token accounting remains in Usage.Raw.
 type ChatCompletionMetadata struct {
 	Refusal  *string                 `json:"refusal,omitempty"`
 	Logprobs *ChatCompletionLogprobs `json:"logprobs,omitempty"`
-	Usage    *ChatCompletionUsage    `json:"usage,omitempty"`
 }
 
 // ChatCompletionLogprobs preserves both native probability channels.
@@ -38,56 +38,45 @@ type ChatCompletionTokenLogprob struct {
 	TopLogprobs []ChatCompletionTokenProbability `json:"top_logprobs"`
 }
 
-// ChatCompletionUsage preserves reported counts, including absent versus zero.
-type ChatCompletionUsage struct {
-	PromptTokens            *int                               `json:"prompt_tokens,omitempty"`
-	CompletionTokens        *int                               `json:"completion_tokens,omitempty"`
-	TotalTokens             *int                               `json:"total_tokens,omitempty"`
-	PromptTokensDetails     *ChatCompletionPromptTokensDetails `json:"prompt_tokens_details,omitempty"`
-	CompletionTokensDetails *ChatCompletionOutputTokensDetails `json:"completion_tokens_details,omitempty"`
-}
+// ChatCompletionMetadataKey identifies Chat-only fields inside the resolved provider namespace.
+const ChatCompletionMetadataKey = "chatCompletion"
 
-// ChatCompletionPromptTokensDetails describes native input accounting.
-type ChatCompletionPromptTokensDetails struct {
-	CachedTokens *int `json:"cached_tokens,omitempty"`
-	AudioTokens  *int `json:"audio_tokens,omitempty"`
-}
-
-// ChatCompletionOutputTokensDetails describes native output accounting.
-type ChatCompletionOutputTokensDetails struct {
-	ReasoningTokens          *int `json:"reasoning_tokens,omitempty"`
-	AudioTokens              *int `json:"audio_tokens,omitempty"`
-	AcceptedPredictionTokens *int `json:"accepted_prediction_tokens,omitempty"`
-	RejectedPredictionTokens *int `json:"rejected_prediction_tokens,omitempty"`
-}
+// ErrInvalidChatCompletionMetadata identifies malformed Chat-only output.
+var ErrInvalidChatCompletionMetadata = errors.New("openai-compatible: invalid chat completion metadata")
 
 func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMetadata, error) {
 	var envelope struct {
-		Choices []struct {
-			Message struct {
-				Refusal *string `json:"refusal"`
-			} `json:"message"`
-			Delta struct {
-				Refusal *string `json:"refusal"`
-			} `json:"delta"`
-			Logprobs *ChatCompletionLogprobs `json:"logprobs"`
-		} `json:"choices"`
-		Usage *ChatCompletionUsage `json:"usage"`
+		Choices []json.RawMessage `json:"choices"`
 	}
 	var result ChatCompletionMetadata
-	if !utf8.Valid(data) {
-		return result, errors.New("openai: invalid Chat metadata encoding")
-	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return result, err
+		return result, fmt.Errorf("%w: decoding choices: %w", ErrInvalidChatCompletionMetadata, err)
 	}
-	result.Usage = envelope.Usage
-	if len(envelope.Choices) > 0 {
-		choice := envelope.Choices[0]
-		result.Refusal = choice.Message.Refusal
-		if streaming {
-			result.Refusal = choice.Delta.Refusal
+	if len(envelope.Choices) == 0 {
+		return result, nil
+	}
+	var choice struct {
+		Message  json.RawMessage         `json:"message"`
+		Delta    json.RawMessage         `json:"delta"`
+		Logprobs *ChatCompletionLogprobs `json:"logprobs"`
+	}
+	if err := json.Unmarshal(envelope.Choices[0], &choice); err != nil {
+		return result, fmt.Errorf("%w: decoding first choice: %w", ErrInvalidChatCompletionMetadata, err)
+	}
+	message := choice.Message
+	if streaming {
+		message = choice.Delta
+	}
+	if len(message) > 0 {
+		var fields struct {
+			Refusal *string `json:"refusal"`
 		}
+		if err := json.Unmarshal(message, &fields); err != nil {
+			return result, fmt.Errorf("%w: decoding refusal: %w", ErrInvalidChatCompletionMetadata, err)
+		}
+		result.Refusal = fields.Refusal
+	}
+	if choice.Logprobs != nil && (len(choice.Logprobs.Content) > 0 || len(choice.Logprobs.Refusal) > 0) {
 		result.Logprobs = choice.Logprobs
 	}
 	if err := result.Validate(); err != nil {
@@ -98,7 +87,7 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 
 // Validate checks the typed metadata before a codec publishes it.
 func (m ChatCompletionMetadata) Validate() error {
-	invalid := errors.New("openai: invalid Chat completion metadata")
+	invalid := ErrInvalidChatCompletionMetadata
 	if m.Refusal != nil && !utf8.ValidString(*m.Refusal) {
 		return invalid
 	}
@@ -113,20 +102,6 @@ func (m ChatCompletionMetadata) Validate() error {
 						return invalid
 					}
 				}
-			}
-		}
-	}
-	if u := m.Usage; u != nil {
-		counts := []*int{u.PromptTokens, u.CompletionTokens, u.TotalTokens}
-		if d := u.PromptTokensDetails; d != nil {
-			counts = append(counts, d.CachedTokens, d.AudioTokens)
-		}
-		if d := u.CompletionTokensDetails; d != nil {
-			counts = append(counts, d.ReasoningTokens, d.AudioTokens, d.AcceptedPredictionTokens, d.RejectedPredictionTokens)
-		}
-		for _, count := range counts {
-			if count != nil && *count < 0 {
-				return invalid
 			}
 		}
 	}
@@ -145,19 +120,60 @@ func validTokenProbability(p ChatCompletionTokenProbability) bool {
 	return true
 }
 
-func withChatCompletionMetadata(metadata provider.ProviderMetadata, chat ChatCompletionMetadata) provider.ProviderMetadata {
-	if chat.Refusal == nil && chat.Logprobs == nil && chat.Usage == nil {
-		return metadata
+func withChatCompletionMetadata(metadata provider.ProviderMetadata, metadataKey string, chat ChatCompletionMetadata) (provider.ProviderMetadata, error) {
+	if chat.Refusal == nil && chat.Logprobs == nil {
+		return metadata, nil
+	}
+	if err := chat.Validate(); err != nil {
+		return metadata, fmt.Errorf("validating chat metadata: %w", err)
+	}
+	var namespace map[string]json.RawMessage
+	if raw := metadata[metadataKey]; len(raw) > 0 {
+		if err := json.Unmarshal(raw, &namespace); err != nil {
+			return metadata, fmt.Errorf("decoding provider metadata: %w", err)
+		}
+	}
+	if namespace == nil {
+		namespace = map[string]json.RawMessage{}
+	}
+	rawChat, err := json.Marshal(chat)
+	if err != nil {
+		return metadata, fmt.Errorf("encoding chat metadata: %w", err)
+	}
+	namespace[ChatCompletionMetadataKey] = rawChat
+	rawNamespace, err := json.Marshal(namespace)
+	if err != nil {
+		return metadata, fmt.Errorf("encoding provider metadata: %w", err)
 	}
 	if metadata == nil {
 		metadata = provider.ProviderMetadata{}
 	}
-	var namespace map[string]json.RawMessage
-	_ = json.Unmarshal(metadata["openaiCompatible"], &namespace)
-	if namespace == nil {
-		namespace = map[string]json.RawMessage{}
+	metadata[metadataKey] = rawNamespace
+	return metadata, nil
+}
+
+func (m *ChatCompletionMetadata) append(delta ChatCompletionMetadata) {
+	if delta.Refusal != nil {
+		refusal := ""
+		if m.Refusal != nil {
+			refusal = *m.Refusal
+		}
+		refusal += *delta.Refusal
+		m.Refusal = &refusal
 	}
-	namespace["chatCompletion"], _ = json.Marshal(chat)
-	metadata["openaiCompatible"], _ = json.Marshal(namespace)
-	return metadata
+	if delta.Logprobs != nil {
+		if m.Logprobs == nil {
+			m.Logprobs = &ChatCompletionLogprobs{}
+		}
+		m.Logprobs.Content = append(m.Logprobs.Content, delta.Logprobs.Content...)
+		m.Logprobs.Refusal = append(m.Logprobs.Refusal, delta.Logprobs.Refusal...)
+	}
+}
+
+func chatMetadataError(endpoint string, err error) *provider.APICallError {
+	retryable := false
+	return provider.NewAPICallError(provider.APICallErrorOptions{
+		Message: fmt.Sprintf("openai-compatible: decoding chat metadata: %v", err),
+		URL:     endpoint, IsRetryable: &retryable, Cause: err,
+	})
 }

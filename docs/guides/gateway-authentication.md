@@ -9,6 +9,7 @@ models you get, depends on where Grafana runs:
 | An application on self-hosted Grafana | Grafana service account token | The models your administrator configured |
 | An application on Grafana Cloud | Grafana service account token | Any model from your own provider account (bring your own key) |
 | A Grafana service in Grafana Cloud | Cloud access policy token | The models Grafana configured for your service |
+| An App Platform app (plugin backend) | The token exchange Grafana gives your backend | Self-hosted: the configured models, on behalf of a user. Grafana Cloud: the configured models once your app is allowed; until then, your own provider key on behalf of a user |
 
 Keep credentials on your application server. Never include them in browser
 code.
@@ -90,11 +91,17 @@ for Go and TypeScript examples.
 Model listing is not available in this mode, because your provider account
 decides which models exist.
 
+Anthropic agent skills, including your custom skills, and `container.id` work
+with your own key, because they belong to your account; see
+[Anthropic agent skills](../providers/grafana-gateway.md#anthropic-agent-skills).
+A custom skill or container exists in one Anthropic account, so if you list
+several accounts, a later account's attempt fails at the provider.
+
 ## Call from a Grafana service in Grafana Cloud
 
 Grafana services use the configured models with a Cloud access policy token.
-Ask the Gateway owners to allow your service, then create a client that
-exchanges your token for one the Gateway accepts:
+Once your service is [allowed](#get-your-service-allowed-in-grafana-cloud),
+create a client that exchanges your token for one the Gateway accepts:
 
 ```go
 client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
@@ -115,7 +122,8 @@ This flow needs the Go client. The Vercel client cannot exchange tokens.
 ### Call on behalf of a user
 
 When a request is made for a user, pass their token in the call context. Use
-the user's Grafana ID token, or the access token your plugin received for them:
+the user's Grafana ID token, or the access token your plugin received for them
+(see [Call from an App Platform app](#call-from-an-app-platform-app)):
 
 ```go
 ctx = grafana.WithOnBehalfOf(ctx, userToken)
@@ -124,13 +132,98 @@ result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.U
 
 The call still uses your service's models, and is made on the user's behalf.
 
+## Call from an App Platform app
+
+An App Platform app, a Grafana app plugin with a backend, calls the Gateway
+through Grafana. It can call as itself, or on behalf of the user whose request
+it is serving.
+
+Declare the Gateway's routes in your app manifest, so that Grafana lets your
+app call them:
+
+```cue
+extraPermissions: accessKinds: [
+	{group: "aigateway.ext.grafana.app", resource: "language-model", actions: ["create"]},
+	{group: "aigateway.ext.grafana.app", resource: "config", actions: ["get"]},
+]
+```
+
+`language-model` serves model calls and `config` serves model listing; Grafana
+checks listing as `get`, so a `list` action grants nothing.
+
+Create the client from the token exchange that Grafana gives your backend in
+`GF_API_ACCESS_CAP_TOKEN` and `GF_API_ACCESS_TOKEN_EXCHANGE_URL`, the same
+credentials the app SDK uses. Grafana's API is at `GF_API_ACCESS_ROUTER_URL`:
+
+```go
+client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
+	CAPToken:         os.Getenv("GF_API_ACCESS_CAP_TOKEN"),
+	TokenExchangeURL: os.Getenv("GF_API_ACCESS_TOKEN_EXCHANGE_URL"),
+	Namespace:        namespace,
+	Audience:         "grafana",
+	BaseURL:          os.Getenv("GF_API_ACCESS_ROUTER_URL") + "/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/" + namespace,
+})
+```
+
+Set `Namespace` to the namespace you call, such as the one of the request you
+are serving. In self-hosted Grafana, set `Audience` to `grafana`, the audience
+Grafana's API accepts. In Grafana Cloud, set it to the Gateway's plugin ID,
+`grafana-aigateway-app`, or its API group, `aigateway.ext.grafana.app`; your
+app's access policy must allow that audience.
+
+To call on behalf of the user, pass the access token of the request your
+handler is serving, which authlib's `types.AuthInfoFrom` returns, as described in
+[Call on behalf of a user](#call-on-behalf-of-a-user):
+
+```go
+info, ok := types.AuthInfoFrom(ctx)
+if !ok {
+	return errors.New("no caller")
+}
+ctx = grafana.WithOnBehalfOf(ctx, info.GetAccessToken())
+```
+
+What each call gets:
+
+| Call | Self-hosted Grafana | Grafana Cloud |
+|---|---|---|
+| As the app | Refused, because the Gateway needs a user or service account | The configured models once your app is [allowed](#get-your-service-allowed-in-grafana-cloud); refused before |
+| On behalf of a user | The configured models | The configured models once your app is allowed; before that, your own provider key |
+
+In both environments, a call on behalf of a user also needs the user to have
+the `plugins.app:access` permission on `plugins:id:grafana-aigateway-app`.
+Grafana's Viewer role has it by default.
+
+## Get your service allowed in Grafana Cloud
+
+In Grafana Cloud, the Gateway gives its configured models only to the services
+its owners allow. To be allowed, give the Gateway owners your service identity:
+the `serviceIdentity` claim in the access tokens your service gets from its
+token exchange. The Gateway matches it exactly, for your own calls and for
+calls on behalf of a user.
+
+Until your service is allowed, its own calls are refused with a `403`
+permission error, and calls on behalf of a user need
+[your own provider key](#bring-your-own-provider-key-in-grafana-cloud).
+
+To check that your service is allowed, list the models as your service:
+
+```go
+models, err := client.ListModels(ctx)
+```
+
+An allowed service gets the configured models. A service that is not allowed
+gets the `403` permission error, or, on behalf of a user, a `400` error saying
+that discovery is unsupported with your own key.
+
 ## Troubleshoot authentication errors
 
 | Response | Likely cause |
 |---|---|
 | `401 Unauthorized` | The token is missing, expired or revoked. |
-| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL, or your role cannot use the app. |
-| `403` Gateway permission error | Your credential has no Gateway access, for example a Grafana service not yet allowed. |
+| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL; the user or service account lacks `plugins.app:access` on `plugins:id:grafana-aigateway-app`; or an App Platform app's manifest does not [declare the Gateway's routes](#call-from-an-app-platform-app). |
+| `403` Gateway permission error in Grafana Cloud | A service calls as itself and is not [allowed](#get-your-service-allowed-in-grafana-cloud) yet. |
+| `403` Gateway permission error in self-hosted Grafana | A service or app calls without a user or service account. Call on behalf of a user instead. |
 | `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
 | Request ends after 60 seconds | Grafana limits how long a request can run, including a streamed response. |
 

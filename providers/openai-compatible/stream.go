@@ -20,7 +20,7 @@ type streamState struct {
 	providerName    string
 	metadataKey     string
 	includeRaw      bool
-	chatUsage       *ChatCompletionUsage
+	chatMetadata    ChatCompletionMetadata
 
 	textActive      bool
 	reasoningActive bool
@@ -143,18 +143,11 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 		if preserveChat {
 			chat, err := decodeChatCompletionMetadata(data, true)
 			if err != nil {
-				state.emitError(streamDecodeError(endpoint, err))
-				state.flush()
-				return
-			}
-			if chat.Usage != nil {
-				state.chatUsage = chat.Usage
-				chat.Usage = nil
-			}
-			if chat.Refusal != nil || chat.Logprobs != nil {
-				if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartCustom, Kind: "openai-compatible.chat-completion", ProviderMetadata: withChatCompletionMetadata(nil, chat)}) {
+				if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(endpoint, err)}) {
 					return
 				}
+			} else {
+				state.chatMetadata.append(chat)
 			}
 		}
 		if chunk.Usage != nil {
@@ -440,6 +433,12 @@ func (s *streamState) flush() {
 			URL:     s.endpoint,
 		}))
 	}
+	metadata, err := withChatCompletionMetadata(responseProviderMetadata(s.metadataKey, s.rawUsage), s.metadataKey, s.chatMetadata)
+	if err != nil {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(s.endpoint, err)}) {
+			return
+		}
+	}
 	if s.errorEmitted {
 		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	}
@@ -451,7 +450,7 @@ func (s *streamState) flush() {
 		Type:             provider.PartFinish,
 		FinishReason:     &s.finishReason,
 		Usage:            usage,
-		ProviderMetadata: withChatCompletionMetadata(responseProviderMetadata(s.metadataKey, s.rawUsage), ChatCompletionMetadata{Usage: s.chatUsage}),
+		ProviderMetadata: metadata,
 	})
 }
 

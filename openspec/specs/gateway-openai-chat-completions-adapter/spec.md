@@ -317,6 +317,16 @@ mapping/protocol-hop proof from live-provider or deployed-Grafana acceptance.
 - **THEN** the client sees incremental output and cancellation reaches the
   provider through the shared runtime and plugin host.
 
+
+### Requirement: Preserve message semantics across transports
+
+The adapter MUST reject named participants and substantive assistant refusal
+history before native I/O when the selected transport is not compatible Chat.
+Empty or null refusal MUST remain accepted.
+
+#### Scenario: Named participant on Responses
+- **WHEN** a Chat request names a participant and selects a Responses candidate
+- **THEN** the request fails as unsupported before calling the native model
 ### Requirement: Native multi-segment streaming
 The adapter SHALL consume all runtime-validated native response segments before
 emitting a single Chat terminal finish and DONE sentinel. It SHALL preserve public
@@ -360,18 +370,28 @@ inventing positions for other citations.
 - **THEN** the citation remains in diagnostics without a fabricated Chat annotation
 
 ### Requirement: Native Chat response fields
-The adapter SHALL project typed compatible-provider refusal, log-probability, and
-usage-detail metadata into standard Chat fields. A refusal SHALL not be rejected
-solely because it lacks requested structured JSON content.
+The adapter SHALL project typed compatible-provider refusal and logprobs from the
+resolved metadata namespace into Chat fields, and usage details from `Usage.Raw`.
+The shared catalog SHALL enable preservation at construction for Chat and ProviderWire
+without a client flag. Refusals SHALL bypass structured JSON validation.
 
 #### Scenario: Structured-output refusal
 - **WHEN** a compatible backend refuses a structured-output request
 - **THEN** unary and streaming clients receive refusal without a codec JSON error
 
 #### Scenario: Detailed token accounting
-- **WHEN** native output reports audio or prediction token counters
+- **WHEN** native output reports audio, prediction or cache-write token counters
 - **THEN** standard Chat usage details preserve them including explicit zero
 
+#### Scenario: Accumulated native metadata
+- **WHEN** the compatible provider completes a native stream segment
+- **THEN** the adapter SHALL emit accumulated refusal and logprobs once before the public finish
+- **AND** ProviderWire SHALL carry them through its existing finish metadata without custom parts
+
+#### Scenario: Malformed optional Chat metadata
+- **WHEN** the compatible provider reports ErrInvalidChatCompletionMetadata
+- **THEN** Chat SHALL expose a diagnostic warning and continue ordinary content and later chunks
+- **AND** unrelated provider errors SHALL retain their existing failure behavior
 ### Requirement: Aggregate stream semantics
 The adapter SHALL validate structured output and tool cardinality across the
 complete public response, not only each native segment. Tool identity validation SHALL remain owned by the shared runtime.

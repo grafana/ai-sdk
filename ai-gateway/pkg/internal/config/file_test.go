@@ -357,3 +357,181 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 		require.NoError(t, file.Validate())
 	})
 }
+
+func TestFileValidateShape(t *testing.T) {
+	withoutKey := func(file File) File {
+		file.Providers = map[string]Provider{"provider": {Type: "anthropic"}}
+		return file
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*File)
+		wantErr string
+	}{
+		{name: "no key reference", mutate: func(*File) {}},
+		{name: "no providers", mutate: func(file *File) { file.Providers = nil }, wantErr: "config: at least one provider is required"},
+		{name: "unsupported type", mutate: func(file *File) { file.Providers["provider"] = Provider{Type: "unsupported"} }, wantErr: `config: providers.provider.type "unsupported" is unsupported (want anthropic, openai or openai-compatible)`},
+		{name: "no models", mutate: func(file *File) { file.Models = nil }, wantErr: "config: at least one model is required"},
+		{name: "missing name", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Name = ""
+			file.Models["canonical"] = model
+		}, wantErr: "config: models.canonical.name is required"},
+		{name: "unknown provider", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Primary.Provider = "missing"
+			file.Models["canonical"] = model
+		}, wantErr: `config: models.canonical.primary.provider references unknown provider "missing"`},
+		{name: "repeated candidate", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Fallback = []Primary{model.Primary}
+			file.Models["canonical"] = model
+		}, wantErr: "config: models.canonical.fallback[0] repeats a candidate"},
+		{name: "alias collision", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			model.Aliases = []string{"canonical"}
+			file.Models["canonical"] = model
+		}, wantErr: `config: alias "canonical" collides with canonical model`},
+		{name: "too many candidates", mutate: func(file *File) {
+			model := file.Models["canonical"]
+			for i := range MaxProviderAttempts {
+				model.Fallback = append(model.Fallback, Primary{Provider: "provider", Model: fmt.Sprintf("native-%d", i)})
+			}
+			file.Models["canonical"] = model
+		}, wantErr: "config: configured discovery cardinality exceeds limit"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			file := withoutKey(cloneFile(testModelConfig()))
+			tc.mutate(&file)
+			err := file.ValidateShape()
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.EqualError(t, file.Validate(), "config: providers.provider.apiKeyEnv is required")
+				return
+			}
+			assert.EqualError(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestParseModelCatalog_ServerFallbacksPolicy(t *testing.T) {
+	const primaryModel = "      model: claude-test\n"
+	withPrimaryPolicy := func(policy string) string {
+		return strings.Replace(minimalConfigYAML, primaryModel, primaryModel+policy, 1)
+	}
+	withFallback := strings.Replace(minimalConfigYAML, "models:", "  backup:\n    type: anthropic\n    apiKeyEnv: BACKUP_KEY\nmodels:", 1) +
+		"    fallback:\n      - provider: backup\n        model: second\n        serverFallbacks:\n          models: [claude-b]\n"
+	for _, tc := range []struct {
+		name  string
+		yaml  string
+		check func(t *testing.T, model Model)
+	}{
+		{
+			name: "primary policy",
+			yaml: withPrimaryPolicy("      serverFallbacks:\n        models: [claude-b, claude-c]\n        allowDefault: true\n"),
+			check: func(t *testing.T, model Model) {
+				assert.Equal(t, &ServerFallbacks{Models: []string{"claude-b", "claude-c"}, AllowDefault: true}, model.Primary.ServerFallbacks)
+			},
+		},
+		{
+			name: "default only",
+			yaml: withPrimaryPolicy("      serverFallbacks:\n        allowDefault: true\n"),
+			check: func(t *testing.T, model Model) {
+				assert.Equal(t, &ServerFallbacks{AllowDefault: true}, model.Primary.ServerFallbacks)
+			},
+		},
+		{
+			name: "fallback entry policy",
+			yaml: withFallback,
+			check: func(t *testing.T, model Model) {
+				assert.Nil(t, model.Primary.ServerFallbacks)
+				require.Len(t, model.Fallback, 1)
+				assert.Equal(t, &ServerFallbacks{Models: []string{"claude-b"}}, model.Fallback[0].ServerFallbacks)
+			},
+		},
+		{
+			name: "null policy is absent",
+			yaml: withPrimaryPolicy("      serverFallbacks: null\n"),
+			check: func(t *testing.T, model Model) {
+				assert.Nil(t, model.Primary.ServerFallbacks)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file, err := ParseModelCatalog(tc.yaml)
+			require.NoError(t, err)
+			tc.check(t, file.Models["grafana/assistant"])
+		})
+	}
+
+	const secretModel = "policy-value-must-not-leak"
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{name: "openai provider", yaml: strings.Replace(withPrimaryPolicy("      serverFallbacks:\n        models: ["+secretModel+"]\n"), "type: anthropic", "type: openai", 1), want: "models.grafana/assistant.primary.serverFallbacks is only supported for anthropic providers"},
+		{name: "openai-compatible provider", yaml: strings.Replace(withPrimaryPolicy("      serverFallbacks:\n        models: ["+secretModel+"]\n"), "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n", 1), want: "models.grafana/assistant.primary.serverFallbacks is only supported for anthropic providers"},
+		{name: "openai fallback entry", yaml: strings.Replace(withFallback, "  backup:\n    type: anthropic", "  backup:\n    type: openai", 1), want: "models.grafana/assistant.fallback[0].serverFallbacks is only supported for anthropic providers"},
+		{name: "empty policy", yaml: withPrimaryPolicy("      serverFallbacks: {}\n"), want: "models.grafana/assistant.primary.serverFallbacks must allow default or at least one model"},
+		{name: "explicit false without models", yaml: withPrimaryPolicy("      serverFallbacks:\n        allowDefault: false\n        models: []\n"), want: "models.grafana/assistant.primary.serverFallbacks must allow default or at least one model"},
+		{name: "empty model", yaml: withPrimaryPolicy("      serverFallbacks:\n        models: ['']\n"), want: "models.grafana/assistant.primary.serverFallbacks.models[0] must not be empty"},
+		{name: "blank model", yaml: withPrimaryPolicy("      serverFallbacks:\n        models: [claude-b, '  ']\n"), want: "models.grafana/assistant.primary.serverFallbacks.models[1] must not be empty"},
+		{name: "overlong model", yaml: withPrimaryPolicy("      serverFallbacks:\n        models: [" + strings.Repeat("m", maxStringBytes+1) + "]\n"), want: "models.grafana/assistant.primary.serverFallbacks.models[0] is invalid or exceeds limit"},
+		{name: "repeated model", yaml: withPrimaryPolicy("      serverFallbacks:\n        models: [" + secretModel + ", " + secretModel + "]\n"), want: "models.grafana/assistant.primary.serverFallbacks.models[1] repeats a model"},
+		{name: "unknown policy field", yaml: withPrimaryPolicy("      serverFallbacks:\n        models: [claude-b]\n        allowAll: true\n"), want: "config: invalid YAML fields or values"},
+		{name: "repeated candidate with another policy", yaml: strings.Replace(withFallback, "      - provider: backup\n        model: second\n", "      - provider: anthropic-primary\n        model: claude-test\n", 1), want: "models.grafana/assistant.fallback[0] repeats a candidate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseModelCatalog(tc.yaml)
+			require.ErrorContains(t, err, tc.want)
+			assert.NotContains(t, err.Error(), secretModel)
+			assert.NotContains(t, err.Error(), "BACKUP_KEY")
+		})
+	}
+
+	t.Run("invalid UTF-8 model", func(t *testing.T) {
+		file := testModelConfig()
+		model := file.Models["canonical"]
+		model.Primary.ServerFallbacks = &ServerFallbacks{Models: []string{"claude-\xff"}}
+		file.Models["canonical"] = model
+		require.ErrorContains(t, file.Validate(), "models.canonical.primary.serverFallbacks.models[0] is invalid or exceeds limit")
+	})
+}
+
+func TestParseModelCatalog_ServerFallbacksPerDestination(t *testing.T) {
+	document := func(aProvider, aPolicy, bProvider, bPolicy string) string {
+		return strings.NewReplacer("A_PROVIDER", aProvider, "A_SKILLS\n", aPolicy, "B_PROVIDER", bProvider, "B_SKILLS\n", bPolicy).Replace(sharedDestinationYAML)
+	}
+	primaryPolicy := func(body string) string { return "      serverFallbacks:\n" + body }
+	fallbackPolicy := func(body string) string { return "        serverFallbacks:\n" + body }
+	const differs = "config: models.grafana/b.fallback[0].serverFallbacks differs from models.grafana/a.primary.serverFallbacks for the same provider and model"
+
+	for _, tc := range []struct {
+		name    string
+		aPolicy string
+		bPolicy string
+	}{
+		{name: "only the first declares a policy", aPolicy: primaryPolicy("        models: [claude-b]\n")},
+		{name: "only the second declares a policy", bPolicy: fallbackPolicy("          models: [claude-b]\n")},
+		{name: "different models", aPolicy: primaryPolicy("        models: [claude-b]\n"), bPolicy: fallbackPolicy("          models: [claude-c]\n")},
+		{name: "different allowDefault", aPolicy: primaryPolicy("        models: [claude-b]\n"), bPolicy: fallbackPolicy("          models: [claude-b]\n          allowDefault: true\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseModelCatalog(document("anthropic-main", tc.aPolicy, "anthropic-main", tc.bPolicy))
+			require.EqualError(t, err, differs)
+			assert.NotContains(t, err.Error(), "claude-b")
+		})
+	}
+
+	t.Run("equal policies in a different order load", func(t *testing.T) {
+		_, err := ParseModelCatalog(document("anthropic-main", primaryPolicy("        models: [claude-b, claude-c]\n"), "anthropic-main", fallbackPolicy("          models: [claude-c, claude-b]\n")))
+		require.NoError(t, err)
+	})
+
+	t.Run("second provider instance may differ", func(t *testing.T) {
+		_, err := ParseModelCatalog(document("anthropic-main", "", "anthropic-skills", fallbackPolicy("          allowDefault: true\n")))
+		require.NoError(t, err)
+	})
+}

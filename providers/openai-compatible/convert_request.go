@@ -122,7 +122,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	}
 
 	if m.transformRequestBody != nil {
-		transformed, err := m.transformRequestBody(body)
+		transformed, transformedWarnings, err := m.transformRequestBody(body, warnings)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("openai: transforming request body: %w", err)
 		}
@@ -130,6 +130,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 			return nil, warnings, fmt.Errorf("openai: transforming request body returned nil")
 		}
 		body = transformed
+		warnings = transformedWarnings
 	}
 
 	return body, warnings, nil
@@ -268,11 +269,10 @@ func toCamelCase(s string) string {
 }
 
 var openAIOptionFields = map[string]struct{}{
-	"user":                           {},
-	"reasoningEffort":                {},
-	"textVerbosity":                  {},
-	"strictJsonSchema":               {},
-	"preserveChatCompletionMetadata": {},
+	"user":             {},
+	"reasoningEffort":  {},
+	"textVerbosity":    {},
+	"strictJsonSchema": {},
 }
 
 func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, error) {
@@ -304,9 +304,6 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 }
 
 func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
-	if src.PreserveChatCompletionMetadata != nil {
-		dst.PreserveChatCompletionMetadata = src.PreserveChatCompletionMetadata
-	}
 	if src.User != "" {
 		dst.User = src.User
 	}
