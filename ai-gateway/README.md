@@ -43,7 +43,7 @@ client.
 
 3. Create the model catalog file that `model_catalog` reads, as described in
    the next section.
-4. Restart Grafana and enable **Grafana AI Gateway** under
+4. Restart Grafana and enable **AI Gateway** under
    **Administration > Plugins and data > Plugins**.
 
 The app's overview page shows the Gateway URL that applications use.
