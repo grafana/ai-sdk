@@ -342,10 +342,11 @@ func (chain modelObservationChain) observe(identity provider.LanguageModel) prov
 }
 
 var allowedAgentMetadataKeys = map[string]struct{}{
-	"gateway.correlation_id": {},
-	"gateway.caller_service": {},
-	"gateway.namespace":      {},
-	"gateway.catalog":        {},
+	"gateway.correlation_id":  {},
+	"gateway.caller_service":  {},
+	"gateway.namespace":       {},
+	"gateway.catalog":         {},
+	"gateway.caller_identity": {},
 }
 
 // filterAgentGeneration removes every metadata/tag/identity field not owned by

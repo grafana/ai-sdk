@@ -139,9 +139,10 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 		assert.Contains(t, logs, `"route":"catalog_config"`)
 		assert.Contains(t, logs, `"route":"catalog_language_model"`)
 		assert.Contains(t, logs, `"catalog":"team"`)
-		for _, private := range []string{routeCatalogKey, editedCatalogKey, "private-user-uid"} {
+		for _, private := range []string{routeCatalogKey, editedCatalogKey} {
 			assert.NotContains(t, logs, private)
 		}
+		assert.Contains(t, logs, `"caller_identity":"user:private-user-uid"`)
 	})
 }
 
@@ -188,6 +189,8 @@ func TestCatalogRoutes_AttributeTheDirectCaller(t *testing.T) {
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		assert.Contains(collect, h.logs.String(), `"caller_service":"svc-b"`)
 	}, time.Second, time.Millisecond)
-	assert.NotContains(t, h.logs.String(), "private-user-uid")
-	assert.False(t, strings.Contains(h.metrics(t), "svc-b"))
+	assert.Contains(t, h.logs.String(), `"caller_identity":"user:private-user-uid"`)
+	metrics := h.metrics(t)
+	assert.False(t, strings.Contains(metrics, "svc-b"))
+	assert.False(t, strings.Contains(metrics, "private-user-uid"))
 }

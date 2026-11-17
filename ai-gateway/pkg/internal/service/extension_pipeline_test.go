@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -75,6 +75,23 @@ func newExtensionsRuntime(t *testing.T, selector execution.RequestSelector, defi
 	return observed, host
 }
 
+var (
+	secondaryCandidate = extension.Candidate{Model: "other", CanonicalModel: "other", Provider: "anthropic", ProviderInstance: "secondary-instance", ProviderModel: "backend-secondary"}
+	byokCandidate      = extension.Candidate{Model: "anthropic/native-model", Provider: "anthropic", ProviderModel: "native-model"}
+	failedPrimary      = extension.Attempt{Provider: "anthropic", ProviderInstance: "primary-instance", ProviderModel: "backend-primary", Outcome: extension.AttemptFailed, StatusCode: 503}
+)
+
+// primaryCandidate is the primary candidate of the configured model public,
+// requested as modelID.
+func primaryCandidate(modelID string) extension.Candidate {
+	return extension.Candidate{Model: modelID, CanonicalModel: "public", Provider: "anthropic", ProviderInstance: "primary-instance", ProviderModel: "backend-primary"}
+}
+
+// selectedAttempt is the selected attempt of candidate.
+func selectedAttempt(candidate extension.Candidate) extension.Attempt {
+	return extension.Attempt{Provider: candidate.Provider, ProviderInstance: candidate.ProviderInstance, ProviderModel: candidate.ProviderModel, Outcome: extension.AttemptSelected}
+}
+
 func recorderDefinition(name string, value any, keys ...extension.KeyOwnership) extension.Definition {
 	return extension.Definition{
 		Name:             name,
@@ -102,10 +119,16 @@ func TestExtensionPipeline_StackCatalogCallsAreCustomerOwned(t *testing.T) {
 			admitted := customer.admitted[0]
 			assert.Equal(t, extension.SourceStackCatalog, admitted.Source)
 			assert.Equal(t, extension.KeysCustomer, admitted.Keys)
-			assert.Equal(t, "stack-model", admitted.Model)
+			assert.Equal(t, "stack-model-alias", admitted.RequestedModel)
+			assert.Equal(t, "stack-model", admitted.CanonicalModel)
+			require.NotEmpty(t, admitted.Candidates)
+			assert.Equal(t, "stack-model-alias", admitted.Candidates[0].Model)
 			assert.Equal(t, testNamespace, admitted.Namespace)
 			require.Len(t, customer.observed, 1)
 			assert.Equal(t, extension.OutcomeSuccess, customer.observed[0].Outcome)
+			require.Len(t, customer.observed[0].Attempts, 1)
+			assert.Equal(t, extension.AttemptSelected, customer.observed[0].Attempts[0].Outcome)
+			assert.Equal(t, admitted.Candidates[0].ProviderModel, customer.observed[0].Attempts[0].ProviderModel)
 			assert.Empty(t, operator.admitted)
 			assert.Empty(t, operator.observed)
 			require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -119,19 +142,27 @@ func TestExtensionPipeline_StackCatalogCallsAreCustomerOwned(t *testing.T) {
 func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 	const byokKey = "dummy-pipeline-key"
 	for _, tc := range []struct {
-		name    string
-		access  gatewayauth.AccountAccess
-		modelID string
-		gateway string
-		fail    bool
-		source  extension.Source
-		model   string
-		caller  extension.CallerType
+		name       string
+		access     gatewayauth.AccountAccess
+		modelID    string
+		gateway    string
+		fail       bool
+		source     extension.Source
+		canonical  string
+		caller     extension.CallerType
+		identity   string
+		candidates []extension.Candidate
+		attempts   []extension.Attempt
 	}{
-		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
-		{name: "alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
-		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
-		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, model: "anthropic/native-model", caller: extension.CallerUser},
+		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService,
+			candidates: []extension.Candidate{primaryCandidate("public")}, attempts: []extension.Attempt{selectedAttempt(primaryCandidate("public"))}},
+		{name: "alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService,
+			candidates: []extension.Candidate{primaryCandidate("alias")}, attempts: []extension.Attempt{selectedAttempt(primaryCandidate("alias"))}},
+		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService,
+			candidates: []extension.Candidate{primaryCandidate("alias"), secondaryCandidate},
+			attempts:   []extension.Attempt{failedPrimary, selectedAttempt(secondaryCandidate)}},
+		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, caller: extension.CallerUser, identity: "user:u1",
+			candidates: []extension.Candidate{byokCandidate}, attempts: []extension.Attempt{selectedAttempt(byokCandidate)}},
 	} {
 		for _, mode := range []string{"generate", "stream"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
@@ -152,11 +183,15 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 				admitted := recorder.admitted[0]
 				assert.Equal(t, tc.source, admitted.Source)
 				assert.Equal(t, tc.source.Keys(), admitted.Keys)
-				assert.Equal(t, tc.model, admitted.Model)
+				assert.Equal(t, tc.modelID, admitted.RequestedModel)
+				assert.Equal(t, tc.canonical, admitted.CanonicalModel)
+				assert.Equal(t, tc.identity, admitted.CallerIdentity)
+				assert.Equal(t, tc.candidates, admitted.Candidates)
 				assert.Equal(t, testNamespace, admitted.Namespace)
 				assert.Equal(t, tc.caller, admitted.Caller)
 				require.Len(t, recorder.observed, 1)
 				assert.Equal(t, extension.OutcomeSuccess, recorder.observed[0].Outcome)
+				assert.Equal(t, tc.attempts, recorder.observed[0].Attempts)
 				require.EventuallyWithT(t, func(collect *assert.CollectT) {
 					assert.Len(collect, observed.records(t, "aisdk.model."+mode+".finish"), 1)
 				}, time.Second, time.Millisecond)
@@ -223,22 +258,111 @@ func TestExtensionRequest(t *testing.T) {
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "correlation-1" }
 	for _, tc := range []struct {
-		access gatewayauth.AccountAccess
-		caller extension.CallerType
+		name     string
+		mode     gatewayauth.AccessMode
+		service  string
+		identity string
+		caller   extension.CallerType
 	}{
-		{access: gatewayauth.ConfiguredAccounts, caller: extension.CallerInternalService},
-		{access: gatewayauth.RequestBYOK, caller: extension.CallerUser},
+		{name: "internal service", mode: gatewayauth.AccessModeCloud, service: testInternalService, caller: extension.CallerInternalService},
+		{name: "internal service for a user", mode: gatewayauth.AccessModeCloud, service: testInternalService, identity: "user:u1", caller: extension.CallerInternalService},
+		{name: "user", mode: gatewayauth.AccessModeCloud, service: "front-door", identity: "user:u1", caller: extension.CallerUser},
+		{name: "service account", mode: gatewayauth.AccessModeCloud, identity: "service-account:sa1", caller: extension.CallerServiceAccount},
+		{name: "self-hosted user", mode: gatewayauth.AccessModeSelfHosted, identity: "user:u2", caller: extension.CallerUser},
+		{name: "self-hosted service account", mode: gatewayauth.AccessModeSelfHosted, identity: "service-account:sa2", caller: extension.CallerServiceAccount},
+		{name: "identity beyond the log bound", mode: gatewayauth.AccessModeCloud, identity: "user:" + strings.Repeat("u", maxObservationValueLen), caller: extension.CallerUser},
 	} {
-		t.Run(string(tc.access), func(t *testing.T) {
-			var got extension.Call
-			handler, _ := withAccess(t, gatewayauth.AccessModeCloud, tc.access, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				got = ExtensionRequest(r.Context())
-			}))
-			telemetry.Middleware(fixedRoute("language_model"), handler).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
-			assert.Equal(t, extension.Call{Namespace: testNamespace, Caller: tc.caller, CorrelationID: "correlation-1"}, got)
+		t.Run(tc.name, func(t *testing.T) {
+			got := ExtensionRequest(observedCallerContext(t, telemetry, tc.mode, tc.service, tc.identity))
+			assert.Equal(t, extension.Call{Namespace: testNamespace, Caller: tc.caller, CallerIdentity: tc.identity, CorrelationID: "correlation-1"}, got)
 		})
 	}
 	assert.Equal(t, extension.Call{}, ExtensionRequest(context.Background()))
+}
+
+func (r *pipelineRecorder) records() []extension.Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.observed)
+}
+
+func TestExtensionPipeline_StreamRecordAfterTheOverviewSealed(t *testing.T) {
+	parts := make(chan provider.StreamPart, 1)
+	parts <- provider.StreamPart{Type: provider.PartStreamStart}
+	held := &observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: parts}, nil
+	}}
+	created := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{
+		"backend-primary":   seamModel(true),
+		"backend-secondary": held,
+	})
+	recorder := &pipelineRecorder{}
+	observed, host := newExtensionRuntime(t, NewSelector(created, nil, nil), recorder)
+	call, err := observed.runtime.Call(callerContext(t, gatewayauth.ConfiguredAccounts), "alias", routedGateway(`{"models":["other"]}`))
+	require.NoError(t, err)
+	defer call.Close()
+	stream, err := call.Stream()
+	require.NoError(t, err)
+	defer stream.Close()
+
+	_, wait := stream.Next()
+	require.Equal(t, execution.WaitPart, wait)
+	view := call.View(wait.Err())
+	require.NotNil(t, view.Overview)
+	require.Len(t, view.Overview.Attempts, 2)
+	assert.Empty(t, recorder.records(), "the provider still holds the stream open")
+
+	for _, part := range []provider.StreamPart{
+		{Type: provider.PartTextStart, ID: "text"},
+		{Type: provider.PartTextDelta, ID: "text", Delta: "answer"},
+		{Type: provider.PartTextEnd, ID: "text"},
+		{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+	} {
+		parts <- part
+		_, wait = stream.Next()
+		require.Equal(t, execution.WaitPart, wait)
+	}
+	close(parts)
+	_, wait = stream.Next()
+	require.Equal(t, execution.WaitFinished, wait)
+	host.Close(context.Background())
+
+	records := recorder.records()
+	require.Len(t, records, 1)
+	assert.Equal(t, []extension.Attempt{
+		failedPrimary,
+		selectedAttempt(secondaryCandidate),
+	}, records[0].Attempts)
+}
+
+func TestExtensionPipeline_OperatorAndTenantExtensionsSeeTheCallerIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		service  string
+		identity string
+		modelID  string
+		options  provider.CallOptions
+	}{
+		{name: "internal service for a user", service: testInternalService, identity: "user:audit-uid", modelID: "public"},
+		{name: "BYOK service account", identity: "service-account:audit-uid", modelID: "anthropic/native-model", options: routedGateway(`{"byok":{"anthropic":[{"apiKey":"dummy-identity-key"}]}}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			created := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{"backend-primary": seamModel(false), "backend-secondary": seamModel(false)})
+			operator, tenant := &pipelineRecorder{}, &pipelineRecorder{}
+			tenantAudit := recorderDefinition("tenant-audit", tenant)
+			tenantAudit.Scope = extension.ScopeTenant
+			observed, host := newExtensionsRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}, nil),
+				recorderDefinition("operator-audit", operator),
+				tenantAudit,
+			)
+			observed.call(t, observedCallerContext(t, observed.telemetry, gatewayauth.AccessModeCloud, tc.service, tc.identity), tc.modelID, tc.options, false)
+			host.Close(context.Background())
+			for _, recorder := range []*pipelineRecorder{operator, tenant} {
+				require.Len(t, recorder.admitted, 1)
+				assert.Equal(t, tc.identity, recorder.admitted[0].CallerIdentity)
+			}
+		})
+	}
 }
 
 func TestExtensionPipeline_UnobservedSourceRunsNoPhase(t *testing.T) {
