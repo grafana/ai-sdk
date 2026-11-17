@@ -113,7 +113,8 @@ setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
 one typed member per public tenant type in the `tenanttype` registry, and its
 validator checks each member against the tenant extensions the distribution
-implements. Stored `Middleware` resources decide, per namespace, which tenant
+implements. The registry holds `default-instructions` and `default-settings`,
+which the shipped Gateway implements. Stored `Middleware` resources decide, per namespace, which tenant
 extensions run and with which configuration: the Gateway reads them through
 the host's API access configuration, as the plugin, and caches each namespace
 (see step 4 below). Without API access, tenant extensions keep their defaults
@@ -138,7 +139,8 @@ the app provider that receives the host's API access configuration, the
 lifecycle events and the final flush, so another Go module can build a
 Gateway distribution without repeating or missing any of them. A distribution
 passes its [extensions](../guides/gateway-extensions.md) in `Options`; the
-shipped backend passes none.
+shipped backend passes `DefaultExtensions()`, the `default-instructions` and
+`default-settings` tenant extensions.
 
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
 supported request subset into the same execution runtime. Its call-scoped
@@ -247,8 +249,9 @@ sequenceDiagram
    logs and exports name the catalog. Inside the observers and outside the
    selected model, the [extension pipeline](../guides/gateway-extensions.md)
    runs the distribution's extensions that apply to the call's key ownership.
-   Every extension, operator or tenant, is built once at startup. When a
-   tenant extension applies, the pipeline first resolves the call namespace's
+   Every extension, operator or tenant, is built once at startup. The shipped
+   tenant extensions apply to every call, so the shipped Gateway reads every
+   namespace it serves. When a tenant extension applies, the pipeline first resolves the call namespace's
    configuration from a cache that reads the namespace's `Middleware`
    resources as the plugin, never as the caller, on its own context and
    timeout. It decodes the namespace's configuration once per change and

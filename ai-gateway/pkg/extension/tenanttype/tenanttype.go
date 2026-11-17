@@ -46,13 +46,31 @@ type Implementation struct {
 	Decode func(config json.RawMessage) (any, error)
 }
 
-var registry = []Type{}
+var registry = []Type{defaultInstructions, defaultSettings}
 
-// All returns the public tenant types in name order. It returns a copy.
+// All returns the public tenant types in name order. It returns copies.
 func All() []Type {
-	types := slices.Clone(registry)
+	types := make([]Type, 0, len(registry))
+	for _, t := range registry {
+		types = append(types, t.clone())
+	}
 	slices.SortFunc(types, func(a, b Type) int { return strings.Compare(a.Name, b.Name) })
 	return types
+}
+
+// newType declares a registry type. A schema that does not compile leaves the
+// type with an example and no schema, which startup refuses.
+func newType(name, description, configSchema string, example json.RawMessage) Type {
+	compiled, err := schema.SchemaFromJSON(json.RawMessage(configSchema))
+	if err != nil {
+		compiled = schema.Schema{}
+	}
+	return Type{Name: name, Description: description, ConfigSchema: compiled, Example: example}
+}
+
+func (t Type) clone() Type {
+	t.Example = slices.Clone(t.Example)
+	return t
 }
 
 // Member returns the name of the spec member that holds the type's

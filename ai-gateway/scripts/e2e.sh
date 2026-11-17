@@ -74,6 +74,7 @@ plugin_logs=$("${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigatew
 # needs to read Middleware resources.
 api_access=$(grep 'gateway plugin API access' <<<"$plugin_logs" || true)
 [[ -n "$api_access" ]] || fail "the plugin log has no API access record"
+echo "plugin API access: $api_access"
 grep -q 'available=true' <<<"$api_access" || fail "Grafana gave the plugin no API access: $api_access"
 if grep -F -- "$catalog_key_sentinel" >/dev/null <<<"$plugin_logs"; then
   fail "the plugin logged a catalog key"

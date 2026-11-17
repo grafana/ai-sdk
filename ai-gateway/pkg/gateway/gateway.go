@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/calldefaults"
 	composition "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/gateway"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/pluginlog"
 )
@@ -30,8 +31,9 @@ type Options struct {
 }
 
 // DefaultExtensions returns the extension definitions the shipped Gateway
-// registers. There are none in this version.
-func DefaultExtensions() []extension.Definition { return []extension.Definition{} }
+// registers: the default-instructions and default-settings tenant
+// extensions, both off until a stack's Middleware resource enables them.
+func DefaultExtensions() []extension.Definition { return calldefaults.Definitions() }
 
 // Run constructs the Gateway from the plugin host environment and serves it
 // through the plugin protocol until the host stops the plugin, then flushes
