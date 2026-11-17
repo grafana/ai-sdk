@@ -971,9 +971,14 @@ func TestDoGenerateResponseOrderAndProviderMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, result.Content, 3)
-	require.Equal(t, provider.ContentText, result.Content[0].Type)
-	require.Equal(t, provider.ContentReasoning, result.Content[1].Type)
+	assert.Equal(t, provider.ContentReasoning, result.Content[0].Type)
+	assert.Equal(t, "thinking", result.Content[0].Text)
+	assert.Equal(t, provider.ContentText, result.Content[1].Type)
+	assert.Equal(t, "answer", result.Content[1].Text)
 	require.Equal(t, provider.ContentToolCall, result.Content[2].Type)
+	assert.Equal(t, "function-call-1", result.Content[2].ToolCallID)
+	assert.Equal(t, "check_flight", result.Content[2].ToolName)
+	assert.JSONEq(t, `{"flight":"AA100"}`, string(result.Content[2].Input))
 
 	var toolMeta struct {
 		ThoughtSignature string `json:"thoughtSignature"`
