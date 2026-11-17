@@ -343,11 +343,12 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 
 // forward inspects and delivers the model's stream parts. A response abort
 // withholds the part, delivers one error part and stops the model stream. The
-// record is dispatched after out is closed.
+// record is dispatched after out is closed, with the outcome
+// [streamOutcome] chooses.
 func (p *pipeline) forward(ctx context.Context, cancel context.CancelFunc, c *call, validator *execution.StreamValidator, in <-chan provider.StreamPart, out chan<- provider.StreamPart) {
 	defer cancel()
 	var usage streamusage.Aggregator
-	outcome, invalid, closed, delivered := extension.OutcomeError, false, false, false
+	outcome, invalid, closed, delivered, failed := extension.OutcomeError, false, false, false, false
 loop:
 	for {
 		select {
@@ -363,6 +364,7 @@ loop:
 				break loop
 			}
 			usage.Observe(part)
+			failed = failed || part.Type == provider.PartError
 			if !invalid && validator.Check(part) != nil {
 				invalid = true
 			}
@@ -390,9 +392,7 @@ loop:
 	if !closed {
 		execution.StartDrain(in, p.host.drainTimeout)
 	}
-	if invalid && outcome != extension.OutcomeDenied {
-		outcome = extension.OutcomeInvalidOutput
-	}
+	outcome = streamOutcome(outcome, invalid, failed)
 	modelErr := streamModelError(ctx, delivered)
 	reserved := c.reserve()
 	close(out)
@@ -451,6 +451,25 @@ func physicalAttempts(projected []execution.Attempt) []extension.Attempt {
 		}
 	}
 	return attempts
+}
+
+// streamOutcome returns a stream's observed outcome from the outcome its
+// forwarding ended with, whether its output broke a lifecycle rule, and whether
+// the model delivered an in-band error part: denied, then invalid output, then
+// error, then cancelled, then success. Invalid output and an in-band error rank
+// above cancellation because the consumer cancels a stream after either, and a
+// finish does not make a stream that carried an error part successful.
+func streamOutcome(ended extension.Outcome, invalid, failed bool) extension.Outcome {
+	switch {
+	case ended == extension.OutcomeDenied:
+		return ended
+	case invalid:
+		return extension.OutcomeInvalidOutput
+	case failed:
+		return extension.OutcomeError
+	default:
+		return ended
+	}
 }
 
 // abortPart is the error part that ends a stream an extension aborted.
