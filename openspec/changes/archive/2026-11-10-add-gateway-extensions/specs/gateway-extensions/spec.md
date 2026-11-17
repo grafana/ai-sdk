@@ -145,6 +145,10 @@ Observe SHALL run once per call for each applicable extension that implements it
 - **WHEN** one call fails with a provider error and another stream is cancelled by the caller
 - **THEN** each observer SHALL receive exactly one record per call, with outcome error and cancelled respectively
 
+#### Scenario: In-band error around a finish
+- **WHEN** a model stream delivers an error part, before or after its finish
+- **THEN** the outcome SHALL be error, also when the call is then cancelled, unless it is denied or its output is invalid
+
 #### Scenario: Observer fails
 - **WHEN** observe returns an error or panics
 - **THEN** the call's result, error and stream SHALL be unchanged, other observers SHALL still run, and the failure SHALL be counted
