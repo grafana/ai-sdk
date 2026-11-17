@@ -2692,7 +2692,9 @@ describe("platform caller access in cloud mode", () => {
       assert.doesNotMatch(metrics, /decision="(?:byok|refused)"/);
       await gateway.stop();
       for (const namespace of namespaces) assert.ok(gateway.stderr.includes(namespace), `Gateway observed ${namespace}`);
-      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, ...users, "private-user-uid"]);
+      assert.ok(gateway.stderr.includes(`"caller_identity":"user:private-user-uid"`));
+      assertPrivateValuesAbsent([metrics], fake, ["private-user-uid"]);
+      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, ...users]);
       assert.deepEqual(fake.violations, []);
     } finally {
       await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop());
