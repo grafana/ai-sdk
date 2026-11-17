@@ -147,6 +147,12 @@ attempts. Place it inside when logs should represent only requests that passed
 policy and should see transformed parameters. See the [middleware overview](overview.md)
 for ordering semantics.
 
+For native alternatives, captured response output uses `ai_sdk.response.choices`
+with the existing content and metadata capture controls. Stream-part logs include
+`ai_sdk.stream.choice_index` for indexed events. Summary usage comes from the
+single global `choices-finish`; differing choice finish reasons summarize as
+`other`. These log attributes do not change the ProviderWire JSON contract.
+
 ## Reference
 
 - [`middleware/logger`](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware/logger)
