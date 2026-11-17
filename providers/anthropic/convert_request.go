@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -123,9 +124,18 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		// Go map literals, and returns nil for root schemas that only have
 		// allOf. Upstream's sanitize-json-schema is the single intended
 		// transform on the wire payload.
-		p.OutputConfig.Format = anthropic.BetaJSONOutputFormatParam{
-			Schema: sanitizeJSONSchema(schemaMap),
+		// SanitizeJSON keeps property order, which sets the order the model
+		// writes the answer's fields in. schemaMap already validated the
+		// schema, so it cannot fail here.
+		schema, err := anthropicschema.SanitizeJSON(rf.Schema)
+		if err != nil {
+			return buildResult{warnings: append(warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "responseFormat",
+				Details: fmt.Sprintf("failed to parse response format schema: %v", err),
+			})}
 		}
+		p.OutputConfig.Format = anthropic.BetaJSONOutputFormatParam{Schema: schema}
 		return buildResult{warnings: warnings}
 	}
 

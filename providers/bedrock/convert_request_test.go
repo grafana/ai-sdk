@@ -812,8 +812,10 @@ func TestBuildRequest_NativeStructuredOutputSanitizesUnsupportedConstraints(t *t
 	require.True(t, ok)
 	format, ok := outputConfig["format"].(map[string]any)
 	require.True(t, ok)
-	sanitized, ok := format["schema"].(map[string]any)
+	raw, ok := format["schema"].(json.RawMessage)
 	require.True(t, ok)
+	var sanitized map[string]any
+	require.NoError(t, json.Unmarshal(raw, &sanitized))
 	assert.Equal(t, false, sanitized["additionalProperties"])
 	properties, ok := sanitized["properties"].(map[string]any)
 	require.True(t, ok)
@@ -821,6 +823,21 @@ func TestBuildRequest_NativeStructuredOutputSanitizesUnsupportedConstraints(t *t
 	require.True(t, ok)
 	assert.NotContains(t, labels, "maxItems")
 	assert.Equal(t, "max items: 3.", labels["description"])
+}
+
+func TestBuildRequest_NativeStructuredOutputKeepsPropertyOrder(t *testing.T) {
+	// The model writes the answer's fields in the order the schema lists
+	// them, so the request must keep the caller's order, not sort it.
+	schema := json.RawMessage(`{"type":"object","properties":{"zulu":{"type":"string"},"alpha":{"type":"object","properties":{"yankee":{"type":"string"},"bravo":{"type":"string"}}}},"required":["zulu","alpha"]}`)
+	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+		Prompt:          []provider.Message{provider.UserText("x")},
+		ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+		ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeOutputFormat}),
+	})
+
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"schema":{"type":"object","properties":{"zulu":{"type":"string"},"alpha":{"type":"object","properties":{"yankee":{"type":"string"},"bravo":{"type":"string"}},"additionalProperties":false}},"required":["zulu","alpha"],"additionalProperties":false}`)
 }
 
 func TestBuildRequest_Opus47And48StructuredOutputFallback(t *testing.T) {
