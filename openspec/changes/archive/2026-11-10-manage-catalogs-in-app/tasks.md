@@ -4,13 +4,14 @@
 
 - [x] 1.1 Add `src/api/modelCatalogs.ts` (list, get, create, update, delete, `errorMessage`) on `getBackendSrv` with `showErrorAlert: false` and the generated kind types; verify with Jest tests for URLs (`appSubUrl`, namespace), methods, bodies and `Status` message extraction.
 - [x] 1.2 Add `src/permissions.ts` with the four `modelcatalogs` action names and `catalogPermissions()` on `hasPermission`; verify with a Jest test that results follow the permission map, not `orgRole`.
-- [x] 1.3 Add `catalogSpec.ts`: spec updates, the secure values of each change and the local checks; verify with Jest tests for kept, replaced, new and removed keys, missing values, taken names, a retyped provider and a stored model's round trip.
+- [x] 1.3 Add `catalogSpec.ts`: spec updates, the defaults, the secure values of each change, a new catalog's entered keys and the local checks; verify with Jest tests for each, and a stored model's round trip.
 
 ## 2. Catalog pages and routing
 
-- [x] 2.1 Add `ROUTES.Catalogs`, the `catalogs` and `catalogs/:name` routes in `App.tsx`, and the "Model catalogs" include in `plugin.json` with the `modelcatalogs:get` action; verify with the `App` Jest test rendering each path.
-- [x] 2.2 Build the catalog list: a card per catalog with its URL, counts and provider types, the new catalog dialog, delete confirmation, empty state and error alert; verify with Jest tests for cards, permission-gated controls, the create body, local checks, a refused create, confirm-before-delete and a refused delete's message.
-- [x] 2.3 Build the catalog page: provider and model panels, provider and model dialogs saved one change at a time, removal rules, read-only mode and returned-error display; verify with Jest tests for each update body, saved-key state, no typed key in the DOM after a save, the read-only matrix, a verbatim refusal in its dialog and a kept input after an error.
+- [x] 2.1 Add `ROUTES.Catalogs`, the `catalogs`, `catalogs/new` and `catalogs/edit/:name` routes in `App.tsx`, and the "Model catalogs" include in `plugin.json` with the `modelcatalogs:get` action; verify with the `App` Jest test rendering each path.
+- [x] 2.2 Build the catalog list: a card per catalog with its URL, counts and provider types, "New catalog", delete confirmation, empty state and error alert; verify with Jest tests for cards, permission-gated controls, confirm-before-delete and a refused delete's message.
+- [x] 2.3 Build the catalog page: a card per provider with its key state, models and quick add, the connect, Replace key and model drawer flows saved one change at a time, removal rules, read-only mode and returned-error display; verify with Jest tests for each update body, the defaults, typed keys never in the DOM, the read-only matrix and refusals shown where they happen.
+- [x] 2.4 Build the new catalog page: name, providers and models in the same cards, and one create with the entered keys; verify with Jest tests for the create body, a removed provider's key, missing parts and a refused create.
 
 ## 3. Overview
 
@@ -19,7 +20,7 @@
 ## 4. End-to-end tests
 
 - [x] 4.1 Add the `users` and `pageAs(role)` fixture to `tests/fixtures.ts` (Viewer and Editor login users, deleted after the worker); verify by the specs in 4.2 passing in CI.
-- [x] 4.2 Add `tests/catalog-page.spec.ts` for Admin create, edit (keys kept, key replaced), provider add and remove, delete, admission error, conflict, and Viewer and Editor read-only pages, with the sentinel never on the page; add an overview base URL test to `tests/overview.spec.ts`; verify with the CI Playwright job (`mise run test-ai-gateway-e2e`).
+- [x] 4.2 Add `tests/catalog-page.spec.ts` for Admin create, edit (keys kept, model added, key replaced), provider connect and remove, delete, admission error, conflict, and Viewer and Editor read-only pages, with the sentinel never on the page; add an overview base URL test to `tests/overview.spec.ts`; verify with the CI Playwright job (`mise run test-ai-gateway-e2e`).
 
 ## 5. Documentation
 

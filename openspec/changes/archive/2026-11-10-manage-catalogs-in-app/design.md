@@ -47,12 +47,13 @@
 | Path under `/a/grafana-aigateway-app/` | Page | Needs |
 |---|---|---|
 | `overview`, `/`, unknown | Overview | — |
-| `catalogs` | Catalog list, with the new catalog dialog | `get`; `create` to create |
-| `catalogs/:name` | Catalog page, read-only or editable | `get`; `update` to change, `delete` to delete |
+| `catalogs` | Catalog list | `get` |
+| `catalogs/new` | New catalog | `create` |
+| `catalogs/edit/:name` | Catalog page, read-only or editable | `get`; `update` to change, `delete` to delete |
 
 - `plugin.json` adds a "Model catalogs" include at `/a/%PLUGIN_ID%/catalogs` with `addToNav`. It also sets `action: aigateway.ext.grafana.app/modelcatalogs:get`, so Grafana shows the nav entry only to readers. The page checks the permission anyway, because the include action gates navigation, not the URL.
-- `ROUTES` gains `Catalogs`, and `catalogPageURL(name)` builds a catalog's path. `App.tsx` adds the two routes before the catch-all. The catalog page passes `pageNav` to `PluginPage` for breadcrumbs.
-- Creating is a dialog on the list, not a route, so every name, `new` included, has its own `catalogs/:name` page.
+- `ROUTES` gains `Catalogs`, `NewCatalog` and `EditCatalog`, and `catalogPageURL(name)` builds a catalog's path. `App.tsx` adds the three routes before the catch-all. Sub-pages pass `pageNav` to `PluginPage` for breadcrumbs.
+- `edit/:name` follows Grafana's data source pages (`/datasources/new`, `/datasources/edit/:uid`), which also serve read-only users. `catalogs/:name` next to `catalogs/new` was rejected: `new` is a valid catalog name and would be unreachable.
 
 ### API module
 
@@ -75,46 +76,59 @@
 
 ### Page layout
 
-The pages follow Grafana's admin settings patterns, the same ones the Assistant app's settings use: a page header with a one-line description and its actions, content limited to the `lg` breakpoint, resources as rows or cards with their state and actions, and create and edit in dialogs. Everything is built from `@grafana/ui`; the Assistant's own design system isn't a dependency.
+A catalog has three layers: the catalog, its providers, and the models they serve. A writer thinks "connect my Anthropic key, then choose the models to offer", so the catalog page is organized by provider, and the page derives what a common catalog repeats. The layout follows Grafana's admin settings patterns, the ones the Assistant app's settings use too: a page header with its actions, content limited to the `lg` breakpoint, and resources shown with their state and actions. Everything is built from `@grafana/ui`; the Assistant's own design system isn't a dependency.
 
-- **List:** one `Card` per catalog. It shows the name, which links to the catalog's page, the provider and model counts, the base URL with a Copy URL button, a badge per provider type, and, with `delete`, a Delete action behind a `ConfirmModal`. With `create`, "New catalog" sits in the page header's actions; an empty namespace shows an `EmptyState` that explains catalogs and offers the same button.
-- **Catalog page:** the header shows the name, the base URL with a copy control and, with `delete`, "Delete catalog". Below are two panels:
-  - **Providers:** a row per provider with its name, a type badge, "Key saved" and the models that use it;
-  - **Models:** a row per model with its ID, display name, description, its route ("Calls claude › claude-sonnet-4-6, then gpt › gpt-5") and aliases.
+- **List:** one `Card` per catalog. It shows the name, which links to the catalog's page, the provider and model counts, the base URL with a Copy URL button, a badge per provider type, and, with `delete`, a Delete action behind a `ConfirmModal`. With `create`, "New catalog" sits in the page header's actions; an empty namespace shows an `EmptyState` that explains catalogs and offers the same link.
+- **Catalog page:** the header shows the name, the base URL with a copy control and, with `delete`, "Delete catalog". Below it is one card per provider:
+  - the header shows the provider's type, its name when that differs from the type, its key state, Replace key and Remove;
+  - the body lists the models whose primary is that provider: the model ID, the display name and provider model when they differ from it, its fallbacks ("Falls back to gpt-5 on openai") and its aliases;
+  - the footer adds a model by its provider model ID, in one field.
 
-  With `update`, each panel has an Add button and each row Edit and Remove. A reader sees the same rows, every value included, and a read-only notice.
+  "Connect a provider" follows the cards. A model's ID opens its drawer.
+- **Model drawer:** a `Drawer` with three sections: what the model calls (its primary provider and provider model), what applications see (model ID, display name, description, aliases), and its fallbacks, in order, with move and remove controls. The catalog's other models' primaries are offered as one-click fallbacks, and "Another provider model" adds a free row. A target's provider is a `Combobox` over the catalog's providers with their types, plus a stale name a target still references so admission can report it. Aliases use `TagsInput` with a 128-character limit, the documented alias limit, because its default of 50 would block valid aliases.
+- **New catalog page:** three numbered steps on one page: name the catalog, with a live preview of its base URL; connect providers and add models, in the same provider cards; and create. Nothing is written until Create, because the platform accepts a catalog only with a provider and a model. Entered keys stay in memory, shown as "Key entered", and are sent once, in the create.
+- A reader sees the same cards and drawer, without actions or a save button, and a read-only notice.
+- Provider-level settings, such as serving every model of a provider without listing each one, belong on the provider card, next to its list of models.
+
+### Defaults
+
+| Field | Default | Asked for |
+|---|---|---|
+| Provider name | The type, such as `anthropic` | Only when the catalog already has a provider of that name; the suggestion is the type with the first free number |
+| Model ID | The provider model ID | In the drawer, to serve the model under another ID |
+| Display name | The model ID | In the drawer; left empty, it stays the ID |
+| Primary | The card's provider and the entered provider model | In the drawer, which can move the model to another provider |
+
+Admission still receives every required field, because the page fills these in. A provider's type is fixed once it's connected, because its key belongs to that type's account: another type is another provider. Provider and catalog names are fixed too: a catalog's name is its URL, and a provider name keys its secure value, which Grafana won't move to another key. A model's ID can change in the drawer, which warns that applications using the old ID break; the update carries the model under the new ID only.
 
 ### Changes and key behavior
 
-Each change is saved on its own, when the writer confirms it, rather than as a draft of the whole catalog:
+On a stored catalog, each change is saved when the writer confirms it, rather than as a draft of the whole catalog. It is one update of the stored object: its `metadata` unchanged, including `resourceVersion`, so a concurrent change gives `409`; the whole new `spec`; and `secure` only when non-empty. The page then shows the object the update returned, so the next change carries its new resource version without a reload. A refused change keeps its dialog or drawer open with its input and the returned message.
 
-- **Create** is one dialog with the least the platform accepts: the catalog name, with a live preview of its base URL; a provider with its type, name and key; and a first model with its ID, display name and provider model. The provider name follows the type, `anthropic` or `openai`, until the writer changes it. Create sends `apiVersion`, `kind`, `metadata.name`, `spec` and `secure`, then opens the catalog's page.
-- **Provider dialog:** type, name and key. **Model dialog:** ID, display name, description, aliases, then routing: the primary provider and model and an ordered list of fallbacks, at most seven, with move and remove controls. A target's provider is a `Combobox` over the catalog's providers with their types, plus a stale name a target still references so admission can report it. Aliases use `TagsInput` with a 128-character limit, the documented alias limit, because its default of 50 would block valid aliases.
-- **Saving** a dialog sends one update of the stored object: its `metadata` unchanged, including `resourceVersion`, so a concurrent change gives `409`; the whole new `spec`; and `secure` only when non-empty. The page then shows the object the update returned, so the next change carries its new resource version without a reload. A refused save keeps the dialog open with its input and the returned message.
-- **Removing** a provider or model asks for confirmation, then updates the same way. A provider that a model calls can't be removed, and says so; the last model can't either, because the platform refuses a catalog without one.
-- **Names are fixed once saved.** A catalog name is its URL. A provider name keys its secure value, and Grafana refuses reusing a secret under another key, so a rename would mean a new key anyway. A model ID is what applications request.
-- **Round trips:** the dialogs edit the stored `Provider` and `Model` objects in place, so fields the page doesn't edit are sent back unchanged.
+- **Removing** a provider or model asks for confirmation. Removing a provider also removes the models whose primary it is, and the confirmation names them. A provider can't be removed while another provider's model falls back to it, and says which. A stored catalog's last model can't be removed, because the platform refuses a catalog without one.
+- **Round trips:** the drawer edits the stored `Model` object in place, and providers are only added, removed or given a new key, so fields the page doesn't edit are sent back unchanged.
 
-`src/components/Catalog/catalogSpec.ts` holds the pure parts: spec updates (`withProvider`, `withoutProvider`, `withModel`, `withoutModel`, `modelsUsing`), the secure values of a change, and the local checks. The secure values of a write:
+`src/components/Catalog/catalogSpec.ts` holds the pure parts: the spec updates, the defaults, the secure values of a change, the new catalog's entered keys and the local checks. The secure values of a write:
 
 | Change | Sent |
 |---|---|
-| Add a provider, or create a catalog | `create` for its key |
-| Save a provider without a new key | nothing (kept) |
-| Save a provider with a new key | `create` |
+| Connect a provider, or create a catalog | `create` for each key |
+| Replace a key | `create` for that key |
 | Remove a provider | `remove: true` for its stored key |
 | Any model change | nothing |
 
-- **Key field:** `SecretInput` from `@grafana/ui`. It shows as configured when the provider has a stored key, no key has been typed and its type is unchanged. Reset opens the field for a replacement, which is then required. A type change on a stored provider also requires a new key: the stored key belongs to the old provider's account, and admission doesn't tie keys to types. The typed value is never written anywhere except the request body, and closing the dialog drops it.
-- **Local checks**, shown on their fields: a missing value, a provider name or model ID the catalog already has, which the map-shaped body can't express, and a retyped stored provider without a new key. Name, ID and alias formats, alias collisions and policy limits go to admission; the field descriptions state the formats.
+- **Key fields** are empty `SecretInput`s, in the connect and Replace key dialogs only. A saved key is never in a field; the card shows that it's saved. The typed value is written nowhere except the request body, and closing the dialog drops it.
+- **Local checks**, shown on their fields: a missing value, and a provider name or model ID the catalog already has, which the map-shaped body can't express. Name, ID and alias formats, alias collisions and policy limits go to admission; the field descriptions state the formats.
 - **Alternatives considered:**
-  - a single form of the whole catalog with one Save. It allows bulk edits, but a long form is hard to scan, unsaved changes can be lost, and a refusal shows far from the field that caused it;
+  - providers and models in separate panels, cross-referenced by name. Every model then asks which provider it calls, and a writer keeps translating between the panels;
+  - a models table with providers as a strip of key cards. It scales to many models with cross-provider fallbacks, but keeps the provider choice on every model and has no place for provider-level settings;
+  - a single form of the whole catalog with one Save. It allows bulk edits, but a long form is hard to scan, unsaved changes can be lost, and a refusal shows far from its cause;
   - a JSON spec editor (`CodeEditor`) with key fields per provider. Users would have to know the schema, keys and providers can drift apart in the editor, and Jest testing of Monaco is awkward.
 
 ### Errors
 
-- Load errors are an `Alert` with severity `error` and the `errorMessage` text above the content. A refused dialog save shows the same inside the dialog, and a refused removal or delete above the content.
-- In-app links use `react-router-dom`'s `Link`, or a `Card` `href`, which Grafana routes in the app, not `TextLink`. `@grafana/ui`'s internal `Link` reads Grafana's v5-compat router context, which is the same router at runtime but a different one in Jest.
+- Load errors are an `Alert` with severity `error` and the `errorMessage` text above the content. A refused change shows the same inside its dialog or drawer; a refused quick add, under its field; a refused removal or delete, above the content.
+- In-app links use `react-router-dom`'s `Link`, `LinkButton` or a `Card` `href`, which Grafana routes in the app, not `TextLink`. `@grafana/ui`'s internal `Link` reads Grafana's v5-compat router context, which is the same router at runtime but a different one in Jest.
 
 ### Overview
 
@@ -156,11 +170,11 @@ What's added:
 
 | Acceptance | Tests |
 |---|---|
-| Admin creates, changes, deletes; keys write-only | The `catalogSpec` tests: spec updates, the secure values of each change in the table above, local checks, and a stored model's round trip with fields the page doesn't edit. The API module sends `showErrorAlert: false` and builds URLs with `appSubUrl` and namespace. The create body carries `create` and opens the catalog's page. Each dialog sends one update of the loaded object: `create` for an added or replaced key, nothing for a kept one, `remove` for a removed provider, and fallbacks in their order. A provider in use and the last model can't be removed. The typed key isn't in the DOM after a save. Delete calls the API only after confirmation. |
-| Viewer and Editor read-only | A permission matrix that sets permissions independently of `orgRole`: an Admin without `update` sees no change controls, an Editor with `update` does, and Delete follows `delete`. Without `get`, no request and no content. |
-| Admission errors as returned | A refused create or update with a `Status` body shows its `message` verbatim in its dialog and keeps the input; a refused removal shows it on the page. A taken provider name and missing values block the request. |
+| Admin creates, changes, deletes; keys write-only | The `catalogSpec` tests: spec updates, the defaults, the secure values in the table above, the new catalog's entered keys, local checks, and a stored model's round trip with fields the page doesn't edit. The API module sends `showErrorAlert: false` and builds URLs with `appSubUrl` and namespace. The new catalog page sends one create with every entered key, none of a removed provider, and opens the catalog. Each change on the catalog page sends one update of the loaded object: a quick-added model under its own ID, `create` for a connected provider or replaced key, `remove` and the removal of its models for a removed provider, a renamed model under its new ID only, and a one-click fallback. A provider used as a fallback and the last model can't be removed. Typed keys aren't in the DOM. Delete calls the API only after confirmation. |
+| Viewer and Editor read-only | A permission matrix that sets permissions independently of `orgRole`: an Admin without `update` sees no change controls, an Editor with `update` does, and Delete follows `delete`. A reader's drawer is read-only. Without `get`, no request and no content. |
+| Admission errors as returned | A refused create or update with a `Status` body shows its `message` verbatim where the change was made and keeps the input; a refused removal shows it on the page. A taken model ID and missing values block the request. |
 | Overview base URLs | Lists catalog URLs, including `appSubUrl` and namespace encoding. No request without `get`. Empty state. A load error doesn't hide the endpoint. |
-| Routing | `App` renders the list, a catalog's page, `catalogs/new` as a catalog named `new`, and the overview at their paths. |
+| Routing | `App` renders the list, the new catalog page, a catalog's page and the overview at their paths. |
 
 **Playwright:**
 
@@ -169,13 +183,13 @@ What's added:
 
 | Acceptance | Test |
 |---|---|
-| Admin create | Create a catalog in the dialog with a sentinel key. The page opens the catalog, whose provider shows "Key saved". The page, console and fetched responses never contain the sentinel, and an API `GET` shows only `secure.<p>.name`. |
-| Admin edit, keys kept | Edit a model's display name: the `PUT` has no `secure` entry and the loaded resource version, and the API keeps the secure name. Then replace the key without reloading: the `PUT` carries only that provider's `create` and the resource version the first update returned. After a reload the key still shows as saved, and the sentinels appear nowhere. |
-| Admin provider add and remove | Add a provider with a sentinel key: the `PUT` carries its `create`. Remove it: the `PUT` carries its `remove`, and the API keeps only the other key. |
+| Admin create | On the new catalog page, name a catalog, connect a provider with a sentinel key and add a model, then create. The create carries the key, and the page opens the catalog, whose provider shows "Key saved". The page, console and fetched responses never contain the sentinel, and an API `GET` shows only `secure.<p>.name`. |
+| Admin edit, keys kept | Edit a model's display name in its drawer: the `PUT` has no `secure` entry and the loaded resource version, and the API keeps the secure name. Add a model, then replace the key, without reloading: each `PUT` carries the resource version the previous update returned, and the key's carries only that provider's `create`. After a reload the key still shows as saved, and the sentinels appear nowhere. |
+| Admin provider connect and remove | Connect an OpenAI provider with a sentinel key: the `PUT` carries its `create`. Remove it: the `PUT` carries its `remove`, and the API keeps only the other key. |
 | Admin delete | Delete from the list and confirm. The API returns `404` and the list drops it. |
-| Admission errors | Create a catalog whose model ID has a space. Admission refuses it (`public ID`), the dialog shows the returned message verbatim and keeps its input, and the visible page, console and fetched responses have no sentinel. A provider name policy refusal was avoided because the name is also the secure key, which Grafana might check before admission. |
-| Concurrent edit | Open the catalog, update it through the API, then save a model. The dialog shows the `409` message, and the other change stays. |
-| Viewer read-only | `pageAs('Viewer')`: the list shows the catalog, with no New or Delete. The catalog page shows the saved key and a read-only notice, with no add, edit or delete controls. |
+| Admission errors | Create a catalog with a model whose ID has a space. Admission refuses it (`public ID`), the page shows the returned message verbatim and keeps its input, and the visible page, console and fetched responses have no sentinel. A provider name policy refusal was avoided because the name is also the secure key, which Grafana might check before admission. |
+| Concurrent edit | Open the catalog, update it through the API, then save a model in its drawer. The drawer shows the `409` message, and the other change stays. |
+| Viewer read-only | `pageAs('Viewer')`: the list shows the catalog, with no New or Delete. The catalog page shows the saved key and a read-only notice, with no connect, key, or delete controls. `catalogs/new` says they can't create catalogs. |
 | Editor read-only | The same as `pageAs('Editor')`. |
 | Overview | Create a catalog through the API. The overview shows `.../namespaces/default/modelcatalogs/<name>`. |
 
@@ -189,6 +203,7 @@ What's added:
 - [Include `action` support or plugin validator warnings] → if the validator or Grafana 13.3 rejects the include action, fall back to the default Viewer include and keep the in-page check.
 - [A future spec field the page doesn't edit] → the dialogs edit the stored objects in place, so such a field round-trips unchanged; a Jest round-trip test covers it. It can't be edited until a dialog gains its input.
 - [One write per change] → each write is small and admission checks it at once, but a change across many models takes several confirmations.
+- [Derived defaults hide a field the writer might want] → every default is shown and editable in the drawer, and a model added under its own ID can change ID later.
 - [Grafana list limits] → the page makes one list call. A stack is expected to hold few catalogs; paginate if the platform starts truncating.
 - [Overview in Grafana Cloud], where catalogs with keys are refused → the list is empty or fails. Either case renders inline without affecting the quick start.
 - [Browser login users in e2e depend on the login form] → the compose base keeps the login form enabled. plugin-e2e already logs in `admin` the same way.
@@ -199,16 +214,17 @@ Additive frontend change. Rolling back removes the page and the overview section
 
 ## Follow-ups
 
-- **#760** allows `baseURL`, `openai-compatible`, `providerName` and `supportsStructuredOutputs` in stack catalogs. Once both land, the provider dialog needs:
+- **#760** allows `baseURL`, `openai-compatible`, `providerName` and `supportsStructuredOutputs` in stack catalogs. Once both land, the connect dialog needs:
   - a third type option;
   - inputs for those three fields, shown by type;
   - the matching Jest and Playwright cases.
 
-  The dialog already edits the whole stored `Provider` object, so the spec updates and the secure values don't change.
-- **Provider-level settings,** such as serving every model of a provider without listing each one, belong in the provider dialog and in a summary on the provider's row. The models panel keeps listing the models a catalog names.
+  The connect dialog writes the whole `Provider` object, so the spec updates and the secure values don't change.
+- **Provider-level settings,** such as serving every model of a provider without listing each one, belong on the provider card, next to its list of models.
+- **Model suggestions:** the provider model is free text, because keys are write-only and the Gateway has no endpoint that lists a provider's models. Such an endpoint would let the quick add suggest them.
 
 ## Decisions recorded at review
 
 - A structured form; the nav include gated on `modelcatalogs:get`; a `pageAs(role)` fixture; base URLs on the overview only.
-- Redesigned after a UI review: list cards and a catalog page with provider and model panels, after Grafana's admin settings patterns; create, edit and remove in dialogs, each saved at once; names fixed once saved; create as a dialog, so catalogs live at `catalogs/:name`.
+- Redesigned after UI reviews: list cards; a catalog page organized by provider, with models inside their primary provider's card and details in a drawer; defaults for the provider name, model ID and display name; a new catalog page in three steps; each change on a stored catalog saved at once.
 - Cache durations only if verified at `v13.3.0`, otherwise none (none given, see Docs). On-behalf-of requirements only as verified in Grafana source (see Docs).
