@@ -47,7 +47,7 @@ func (h *harness) catalogURL(route string) string {
 
 func (h *harness) createTeamCatalog(t *testing.T) {
 	t.Helper()
-	code, body := sendCatalog(t, context.Background(), http.MethodPost, catalogURL(h.server.URL, ""), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-sonnet", map[string]any{"claude": map[string]any{"create": routeCatalogKey}}))
+	code, body := sendObject(t, context.Background(), http.MethodPost, catalogURL(h.server.URL, ""), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-sonnet", map[string]any{"claude": map[string]any{"create": routeCatalogKey}}))
 	require.Equal(t, http.StatusCreated, code, body)
 }
 
@@ -98,7 +98,7 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 		assert.Zero(t, h.anthropic.requests.Load(), "the operator catalog's provider is not used")
 	})
 	t.Run("an edit applies on the next call", func(t *testing.T) {
-		code, body := sendCatalog(t, context.Background(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-opus", map[string]any{"claude": map[string]any{"create": editedCatalogKey}}))
+		code, body := sendObject(t, context.Background(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-opus", map[string]any{"claude": map[string]any{"create": editedCatalogKey}}))
 		require.Equal(t, http.StatusOK, code, body)
 		status, body := do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "team", unaryBody, false, user))
 		require.Equal(t, http.StatusOK, status, body)
