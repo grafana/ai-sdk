@@ -177,7 +177,7 @@ test.describe('model catalog page', () => {
 
     await page.getByRole('button', { name: 'Add provider' }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByText('OpenAI', { exact: true }).click();
+    await dialog.getByRole('radio', { name: 'OpenAI' }).check();
     await dialog.getByLabel(/^API key/).fill(key);
     const added = page.waitForRequest(isCatalogWrite('PUT', name));
     await dialog.getByRole('button', { name: 'Add provider' }).click();
