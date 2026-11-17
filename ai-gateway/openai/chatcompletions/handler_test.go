@@ -2,6 +2,7 @@ package chatcompletions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -138,6 +139,32 @@ func TestHandler_SafeErrors(t *testing.T) {
 	}
 }
 
+func TestHandler_SelectionErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"stack catalog configuration", fmt.Errorf("secret: %w", execution.ErrCatalogConfiguration), 424},
+		{"account access", fmt.Errorf("secret: %w", execution.ErrAccountAccess), 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime, err := execution.New(execution.Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+				return execution.Selection{}, tc.err
+			}, Limits: execution.DefaultLimits})
+			require.NoError(t, err)
+			h, err := New(runtime)
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(basic))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			assert.Equal(t, tc.status, w.Code)
+			assert.NotContains(t, w.Body.String(), "secret")
+		})
+	}
+}
+
 func TestHandler_RuntimePanicAndHostErrors(t *testing.T) {
 	h := testHandler(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { panic("private secret") }})
 	req := httptest.NewRequest("POST", Path, strings.NewReader(basic))
@@ -185,4 +212,29 @@ func TestHandler_PerAttemptTranslation(t *testing.T) {
 	h.ServeHTTP(response, req)
 	assert.Equal(t, 200, response.Code)
 	assert.Equal(t, 2, calls)
+}
+
+func TestHandler_StackCatalogKeysNeverReachTheResponse(t *testing.T) {
+	const catalogKey = "sentinel-stack-catalog-key"
+	echo := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "rejected " + catalogKey, ResponseBody: `{"error":{"message":"rejected ` + catalogKey + `"}}`})
+	model := &fakeModel{
+		generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, echo },
+		stream:   func(context.Context, provider.CallOptions) (*provider.StreamResult, error) { return nil, echo },
+	}
+	expected := []execution.ExpectedAttempt{{ModelID: "alias", CanonicalID: "alias", Destination: catalog.ConfiguredCandidate{ProviderInstance: "claude", Provider: "anthropic", ModelID: "native"}}}
+	runtime, err := execution.New(execution.Config{Limits: execution.DefaultLimits, Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+		return execution.StackCatalogSelection(id, "team", model, expected, []string{catalogKey}), nil
+	}})
+	require.NoError(t, err)
+	h, err := New(runtime)
+	require.NoError(t, err)
+	for _, body := range []string{basic, strings.TrimSuffix(basic, "}") + `,"stream":true}`} {
+		req := httptest.NewRequest("POST", Path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, req)
+		assert.Equal(t, http.StatusFailedDependency, response.Code, response.Body.String())
+		assert.NotContains(t, response.Body.String(), catalogKey)
+		assert.NotContains(t, response.Header(), "X-Gateway-Execution")
+	}
 }
