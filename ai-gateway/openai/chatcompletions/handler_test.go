@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	openaisdk "github.com/openai/openai-go/v3"
@@ -118,6 +120,8 @@ func TestHandler_SafeErrors(t *testing.T) {
 		{"internal", nil, errors.New("secret"), 500},
 		{"upstream", nil, &provider.APICallError{StatusCode: 403, Message: "secret"}, 424},
 		{"rate limit", nil, &provider.APICallError{StatusCode: 429, Message: "secret"}, 429},
+		{"extension denial", nil, fmt.Errorf("secret: %w", extension.ErrDenied), 403},
+		{"extension unavailable", nil, fmt.Errorf("secret: %w", extension.ErrUnavailable), 503},
 		{"nil response", nil, nil, 500},
 		{"invalid response", &provider.GenerateResult{}, nil, 500},
 	} {
@@ -125,6 +129,32 @@ func TestHandler_SafeErrors(t *testing.T) {
 			h := testHandler(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 				return tc.result, tc.err
 			}})
+			req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(basic))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			assert.Equal(t, tc.status, w.Code)
+			assert.NotContains(t, w.Body.String(), "secret")
+		})
+	}
+}
+
+func TestHandler_SelectionErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"stack catalog configuration", fmt.Errorf("secret: %w", execution.ErrCatalogConfiguration), 424},
+		{"account access", fmt.Errorf("secret: %w", execution.ErrAccountAccess), 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime, err := execution.New(execution.Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+				return execution.Selection{}, tc.err
+			}, Limits: execution.DefaultLimits})
+			require.NoError(t, err)
+			h, err := New(runtime)
+			require.NoError(t, err)
 			req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(basic))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()

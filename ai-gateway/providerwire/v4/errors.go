@@ -20,6 +20,7 @@ const (
 	safePermission
 	safeBYOKDiscovery
 	safeProviderStream
+	safeUnavailable
 	safeCatalogConfiguration
 )
 
@@ -43,6 +44,7 @@ var safeCategories = [...]safeErrorCategory{
 	execution.CategoryCancellation:         safeCancellation,
 	execution.CategoryInternal:             safeInternal,
 	execution.CategoryProviderStream:       safeProviderStream,
+	execution.CategoryUnavailable:          safeUnavailable,
 	execution.CategoryCatalogConfiguration: safeCatalogConfiguration,
 }
 
@@ -66,6 +68,13 @@ func safeErrorFor(category execution.Category, reason execution.Reason) safeErro
 		value.reason = routingFallbackModel
 	}
 	return value
+}
+
+// extensionOutcome reports a category that only extension outcomes produce in
+// a stream: a denial or a fail-closed failure. Neither carries a native
+// failure summary.
+func (value safeError) extensionOutcome() bool {
+	return value.category == safePermission || value.category == safeUnavailable
 }
 
 func safeErrorFromResolution(err error) safeError {

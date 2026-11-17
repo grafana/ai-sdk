@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 	"github.com/grafana/grafana-app-sdk/plugin"
@@ -56,7 +57,7 @@ func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment
 }
 
 func (e *startupEnvironment) lookup(name string) (string, bool) {
-	if name == "ANTHROPIC_SECRET" || name == "GF_PLUGIN_AGENTO11Y_TOKEN" {
+	if name == "ANTHROPIC_SECRET" || name == "GF_PLUGIN_AGENTO11Y_TOKEN" || name == extensionSecretVariable {
 		e.secrets[name]++
 	}
 	value, ok := e.values[name]
@@ -65,8 +66,13 @@ func (e *startupEnvironment) lookup(name string) (string, bool) {
 
 func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 	t.Helper()
+	return e.startWith(t, nil, nil)
+}
+
+func (e *startupEnvironment) startWith(t *testing.T, extensions []extension.Definition, mandatory []string) (*Gateway, string, error) {
+	t.Helper()
 	var logs bytes.Buffer
-	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry()})
+	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory})
 	if gw != nil {
 		t.Cleanup(gw.Close)
 	}

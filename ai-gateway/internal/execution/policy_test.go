@@ -117,3 +117,19 @@ func TestRuntimeCall_GatewayControls(t *testing.T) {
 		assert.Zero(t, selector.calls.Load())
 	})
 }
+
+func TestPolicyAllows(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options provider.CallOptions
+		allowed bool
+	}{
+		{name: "ordinary", options: provider.CallOptions{Headers: map[string]string{"x-trace": "1"}, ProviderOptions: provider.ProviderOptions{"openai": provider.RawProviderOption{Raw: []byte(`{}`)}}}, allowed: true},
+		{name: "protected header in any case", options: provider.CallOptions{Headers: map[string]string{"AUTHORIZATION": "private"}}},
+		{name: "control namespace", options: provider.CallOptions{ProviderOptions: provider.ProviderOptions{ControlNamespace: provider.RawProviderOption{Raw: []byte(`{}`)}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.allowed, PolicyAllows(tc.options))
+		})
+	}
+}

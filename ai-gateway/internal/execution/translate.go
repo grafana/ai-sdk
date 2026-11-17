@@ -110,19 +110,26 @@ func translate(ctx context.Context, target Target, options provider.CallOptions)
 	if !ok {
 		return options, nil
 	}
+	translated, err := safeTranslate(translator, target, CloneOptions(options))
+	if err != nil {
+		return provider.CallOptions{}, err
+	}
+	if !PolicyAllows(translated) {
+		return provider.CallOptions{}, ErrTranslation
+	}
+	return translated, nil
+}
+
+// CloneOptions copies the top-level maps and slices of options: provider
+// options, headers, prompt, tools and stop sequences. The values inside them,
+// and the values behind pointer fields, stay shared.
+func CloneOptions(options provider.CallOptions) provider.CallOptions {
 	options.ProviderOptions = maps.Clone(options.ProviderOptions)
 	options.Headers = maps.Clone(options.Headers)
 	options.Prompt = slices.Clone(options.Prompt)
 	options.Tools = slices.Clone(options.Tools)
 	options.StopSequences = slices.Clone(options.StopSequences)
-	translated, err := safeTranslate(translator, target, options)
-	if err != nil {
-		return provider.CallOptions{}, err
-	}
-	if !allowedTranslation(translated) {
-		return provider.CallOptions{}, ErrTranslation
-	}
-	return translated, nil
+	return options
 }
 
 func safeTranslate(translator Translator, target Target, options provider.CallOptions) (translated provider.CallOptions, err error) {

@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -33,6 +34,9 @@ const (
 	// HTTP status or a cancellation, deadline or transport cause. Only
 	// [ClassifyStreamPart] returns it.
 	CategoryProviderStream
+	// CategoryUnavailable is a call that an extension failure ended under its
+	// fail-closed policy.
+	CategoryUnavailable
 	// CategoryCatalogConfiguration is a stored stack catalog that fails its
 	// checks or lacks a provider key.
 	CategoryCatalogConfiguration
@@ -70,6 +74,9 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 	}()
 	if isNilInterface(err) {
 		return CategoryInternal, ReasonNone
+	}
+	if category, ok := classifyExtension(err); ok {
+		return category, ReasonNone
 	}
 	switch {
 	case errors.Is(err, ErrInvalidToolHistory):
@@ -116,6 +123,9 @@ func ClassifyProvider(err error) (category Category) {
 	}()
 	if isNilInterface(err) {
 		return CategoryInternal
+	}
+	if category, ok := classifyExtension(err); ok {
+		return category
 	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		if category, ok := classifyChain(joined.Unwrap()); ok {
@@ -195,6 +205,9 @@ func ClassifyStreamPart(err error) (category Category) {
 		if isNilInterface(apiError) {
 			return CategoryInternal
 		}
+		if category, ok := classifyExtension(err); ok {
+			return category
+		}
 		if apiError.StatusCode == 0 {
 			switch {
 			case errors.Is(err, context.Canceled):
@@ -213,6 +226,24 @@ func ClassifyStreamPart(err error) (category Category) {
 		return categoryFromStatus(apiError.StatusCode)
 	}
 	return ClassifyProvider(err)
+}
+
+// classifyExtension classifies an extension denial as permission and an
+// extension failure as unavailable.
+func classifyExtension(err error) (Category, bool) {
+	switch {
+	case errors.Is(err, extension.ErrDenied):
+		return CategoryPermission, true
+	case errors.Is(err, extension.ErrUnavailable):
+		return CategoryUnavailable, true
+	}
+	return 0, false
+}
+
+// isExtensionOutcome reports an extension denial or failure.
+func isExtensionOutcome(err error) bool {
+	_, ok := classifyExtension(err)
+	return ok
 }
 
 const statusOverloaded = 529
