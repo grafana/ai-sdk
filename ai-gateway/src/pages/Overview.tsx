@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
@@ -19,19 +20,10 @@ import { errorMessage, listModelCatalogs } from '../api/modelCatalogs';
 import { CodeSnippet } from '../components/CodeSnippet/CodeSnippet';
 import { LinkCard } from '../components/LinkCard/LinkCard';
 import { SetupStep } from '../components/SetupStep/SetupStep';
-import { API_GROUP, API_VERSION, prefixRoute, ROUTES } from '../constants';
+import { catalogBaseURL, catalogPageURL, gatewayEndpoint, prefixRoute, ROUTES } from '../constants';
 import { catalogPermissions } from '../permissions';
 import { CALLERS, LINKS, RESOURCES, SERVICE_ACCOUNT_PATH } from './overview/content';
 import { callExample, ENVIRONMENT, INSTALL, Language, LANGUAGES } from './overview/examples';
-
-export function gatewayEndpoint(appUrl: string, namespace: string): string {
-  return `${appUrl.replace(/\/+$/, '')}/apis/${API_GROUP}/${API_VERSION}/namespaces/${encodeURIComponent(namespace)}`;
-}
-
-/** catalogBaseURL returns the base URL of one stored catalog's routes. */
-export function catalogBaseURL(endpoint: string, name: string): string {
-  return `${endpoint}/modelcatalogs/${encodeURIComponent(name)}`;
-}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -116,6 +108,7 @@ function GetStarted({ endpoint }: { endpoint: string }) {
 }
 
 function CatalogURLs({ endpoint }: { endpoint: string }) {
+  const s = useStyles2(getStyles);
   const [names, setNames] = useState<string[]>();
   const [error, setError] = useState<string>();
 
@@ -144,7 +137,9 @@ function CatalogURLs({ endpoint }: { endpoint: string }) {
       {names?.length === 0 && <Text element="p">This stack has no model catalogs yet.</Text>}
       {names?.map((name) => (
         <Stack key={name} direction="column" gap={0.5}>
-          <Text weight="medium">{name}</Text>
+          <Link className={s.link} to={catalogPageURL(name)}>
+            {name}
+          </Link>
           <CodeSnippet code={catalogBaseURL(endpoint, name)} />
         </Stack>
       ))}
@@ -288,6 +283,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(3),
+  }),
+  link: css({
+    color: theme.colors.text.link,
+    fontWeight: theme.typography.fontWeightMedium,
   }),
   list: css({
     margin: 0,

@@ -195,11 +195,15 @@ A stack can also store its own model catalogs in Grafana as `ModelCatalog`
 resources, with each provider's API key held as a Grafana secure value, and
 call their models through the catalog's own routes.
 
-Admins manage catalogs on the app's **Model catalogs** page. A key you enter
-there is sent once and never shown again: the page only shows that a provider
-has one, and an edit that doesn't replace a key keeps the stored one. When
-Grafana or the Gateway refuses a change, the page shows the message it returns.
-Viewers and Editors see catalogs read-only. The page follows each user's Grafana permissions, so
+Admins manage catalogs on the app's **Model catalogs** page. A new catalog
+starts with one provider and one model; on its page you then add, edit and
+remove providers and models, and each change is saved when you confirm it.
+Catalog, provider and model names can't be changed once saved, because URLs,
+keys and applications refer to them. A key you enter is sent once and never
+shown again: the page only shows that a provider has one, and an edit that
+doesn't replace a key keeps the stored one. When Grafana or the Gateway refuses
+a change, the page shows the message it returns. Viewers and Editors see
+catalogs read-only. The page follows each user's Grafana permissions, so
 granting or removing `aigateway:catalogwriter` changes what it offers them.
 You can also write catalogs through the API, for example:
 

@@ -5,14 +5,13 @@ import { ROUTES } from '../../constants';
 
 const Overview = React.lazy(() => import('../../pages/Overview'));
 const CatalogList = React.lazy(() => import('../../pages/CatalogList'));
-const CatalogEdit = React.lazy(() => import('../../pages/CatalogEdit'));
+const CatalogPage = React.lazy(() => import('../../pages/CatalogPage'));
 
 function App(props: AppRootProps) {
   return (
     <Routes>
       <Route path={ROUTES.Catalogs} element={<CatalogList />} />
-      <Route path={ROUTES.NewCatalog} element={<CatalogEdit />} />
-      <Route path={`${ROUTES.EditCatalog}/:name`} element={<CatalogEdit />} />
+      <Route path={`${ROUTES.Catalogs}/:name`} element={<CatalogPage />} />
       <Route path="*" element={<Overview />} />
     </Routes>
   );

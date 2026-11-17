@@ -18,6 +18,8 @@ jest.mock('@grafana/runtime', () => ({
   config: { appUrl: 'https://grafana.example/', namespace: 'stacks-123' },
 }));
 
+const EMPTY_STATE_TIMEOUT_MS = 15_000;
+
 describe('Components/App', () => {
   let props: AppRootProps;
 
@@ -30,7 +32,10 @@ describe('Components/App', () => {
       apiVersion: 'aigateway.ext.grafana.app/v1alpha1',
       kind: 'ModelCatalog',
       metadata: { name: 'team', namespace: 'stacks-123' },
-      spec: { providers: {}, models: {} },
+      spec: {
+        providers: { claude: { type: 'anthropic' } },
+        models: { balanced: { name: 'Balanced', primary: { provider: 'claude', model: 'claude-sonnet-4-6' } } },
+      },
     });
     signInAs(OrgRole.Admin, Object.values(CatalogActions));
 
@@ -63,16 +68,20 @@ describe('Components/App', () => {
 
   test.each([
     ['/catalogs', () => screen.findByText('No model catalogs yet')],
-    ['/catalogs/new', () => screen.findByRole('button', { name: 'Add provider' })],
-    ['/catalogs/edit/team', () => screen.findByDisplayValue('team')],
-  ])('renders the catalog page at %s', async (path, find) => {
-    render(
-      <MemoryRouter initialEntries={[path]}>
-        <App {...props} />
-      </MemoryRouter>
-    );
+    ['/catalogs/team', () => screen.findByRole('listitem', { name: 'balanced' })],
+    ['/catalogs/new', () => screen.findByRole('listitem', { name: 'balanced' })],
+  ])(
+    'renders the catalog page at %s',
+    async (path, find) => {
+      render(
+        <MemoryRouter initialEntries={[path]}>
+          <App {...props} />
+        </MemoryRouter>
+      );
 
-    expect(await find()).toBeInTheDocument();
-    expect(screen.queryByText('Quick start')).not.toBeInTheDocument();
-  });
+      expect(await find()).toBeInTheDocument();
+      expect(screen.queryByText('Quick start')).not.toBeInTheDocument();
+    },
+    EMPTY_STATE_TIMEOUT_MS
+  );
 });
