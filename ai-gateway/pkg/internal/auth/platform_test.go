@@ -75,19 +75,20 @@ func TestPlatformAuthenticator_ActorChains(t *testing.T) {
 	host := newHost(t, platformhost.TopologyCloud)
 	c := chains{t: t, host: host}
 	tests := []struct {
-		name    string
-		token   string
-		service string
-		actor   string
+		name         string
+		token        string
+		service      string
+		actor        string
+		serviceChain bool
 	}{
-		{name: "direct service", token: c.cloud(c.service("svc-a", testNamespace)), service: "svc-a"},
+		{name: "direct service", token: c.cloud(c.service("svc-a", testNamespace)), service: "svc-a", serviceChain: true},
 		{name: "on behalf of a user", token: c.cloud(c.exchange("svc-a", c.identity(types.TypeUser, "u1"))), service: "svc-a", actor: "user:u1"},
 		{name: "plugin on behalf of a delegated user", token: c.cloud(c.exchange("other-app-operator", c.frontDoor(types.TypeUser, "u1"))), service: "other-app-operator", actor: "user:u1"},
-		{name: "relayed", token: c.cloud(c.exchange("relay", c.service("svc-a", testNamespace))), service: "relay"},
+		{name: "relayed", token: c.cloud(c.exchange("relay", c.service("svc-a", testNamespace))), service: "relay", serviceChain: true},
 		{name: "front-door user", token: c.frontDoor(types.TypeUser, "u1"), service: platformhost.FrontDoorService, actor: "user:u1"},
 		{name: "front-door service account", token: c.frontDoor(types.TypeServiceAccount, "sa1"), service: platformhost.FrontDoorService, actor: "service-account:sa1"},
 		{name: "front-door anonymous", token: c.frontDoor(types.TypeAnonymous, "anon"), service: platformhost.FrontDoorService},
-		{name: "no actor", token: c.service("svc-a", testNamespace)},
+		{name: "no actor", token: c.service("svc-a", testNamespace), serviceChain: true},
 	}
 	authenticator, err := NewPlatformAuthenticator(PlatformConfig{PluginID: testPluginID, Group: testGroup, Keys: host.Keys()})
 	require.NoError(t, err)
@@ -99,6 +100,7 @@ func TestPlatformAuthenticator_ActorChains(t *testing.T) {
 			extra := info.GetExtra()
 			assert.Equal(t, optional(tc.service), extra[DirectCallerServiceKey])
 			assert.Equal(t, tc.actor, identityActor(info))
+			assert.Equal(t, tc.serviceChain, len(extra[ServiceChainKey]) == 1)
 			assert.NotContains(t, extra, "id-token")
 		})
 	}

@@ -199,7 +199,7 @@ Alternative: a numeric transform priority. Rejected: the planned transforms don'
 
 ### Request phases and the policy re-check
 
-- Admit runs with a `Call` built from the context: namespace and correlation ID from the service observation snapshot, and the caller type from `auth.Caller`, which gains a type set in `Decide` (internal service when attributed, else the identity actor's type).
+- Admit runs with a `Call` built from the context: namespace and correlation ID from the service observation snapshot, and the caller type from `auth.Caller`, which gains a type set in `Decide` (internal service when attributed, else the identity actor's type) and in `DecideCatalog` (the identity actor's type, else internal service for a service acting alone).
 - Before each transform, the host clones the top-level `Headers`, `ProviderOptions` and `Prompt` containers, so a transform cannot mutate the runtime's or the caller's maps. Nested values are documented as read-only.
 - After each transform, `execution.CheckPolicy` (today's unexported `allowedTranslation`, exported and shared with translation) checks the result. A refusal is that extension's failure, of class policy.
 - The inspectors see exactly the options the pipeline passes to the inner model.

@@ -1,11 +1,12 @@
 ## MODIFIED Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly two namespaced custom routes, `GET namespaces/{namespace}/config` and `POST namespaces/{namespace}/language-model`, and exactly two kinds, `ModelCatalog` and `Middleware`, each with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
+The Gateway SHALL be one Grafana app plugin whose manifest serves one API version with exactly five namespaced custom routes: `GET config`, `POST language-model` and `POST v1/chat/completions` under `namespaces/{namespace}/`, and `GET config` and `POST language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus two kinds, `ModelCatalog` and `Middleware`, with validation admission and no mutation or conversion hooks. It SHALL declare no other routes, kinds or hooks.
 
-#### Scenario: Committed manifest declares only the two routes
+#### Scenario: Committed manifest declares only the three routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the two custom routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
+- **THEN** it SHALL declare one version with only the three namespace routes and the two `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
+- **AND** each catalog route SHALL declare a `get` access check on its own `modelcatalogs/<route>` subresource, and the namespace routes SHALL declare none
 
 #### Scenario: Plugin identity is fixed
 - **WHEN** the backend is built by any supported method, including plain `go build` in tests

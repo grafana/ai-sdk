@@ -164,6 +164,11 @@ A conformance test case MAY contain `expected-object.json` with the complete str
 - **WHEN** a test case contains `expected-object.json`, does not set `assertOutputValue`, and does not configure an SDK `Output`
 - **THEN** the Go runner MAY reconstruct the actual comparison value from emitted text-delta chunks
 
+#### Scenario: Upstream produces no structured output
+
+- **WHEN** regeneration finds that the upstream SDK fails to produce the structured output for a test case
+- **THEN** the generator SHALL remove any existing `expected-object.json` rather than keep a value upstream no longer produces
+
 ### Requirement: Expected request input format
 
 Each provider-backed case SHALL contain `expected-requests.jsonl` capturing upstream TypeScript provider inputs: one JSON object per provider API request in request order. Each snapshot SHALL include HTTP method, normalized escaped target in `path`, normalized behavior-affecting headers and decoded JSON body. The target SHALL include any nonempty URL query with the escaped pathname.

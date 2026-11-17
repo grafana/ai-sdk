@@ -1,5 +1,5 @@
 // Package gateway composes the Gateway plugin: settings, catalog, BYOK,
-// telemetry, caller access and the ProviderWire route handlers.
+// telemetry, caller access and the protocol route handlers.
 package gateway
 
 import (
@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/grafana-app-sdk/simple"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
@@ -106,13 +107,6 @@ func New(options Options) (*Gateway, error) {
 	if err := settings.AgentObservability.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
 		return nil, err
 	}
-	file, err := config.ParseModelCatalog(settings.ModelCatalog)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateProviderEndpoints(file); err != nil {
-		return nil, err
-	}
 	entries, err := config.ParseExtensions(settings.Extensions)
 	if err != nil {
 		return nil, err
@@ -121,7 +115,7 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	providers, err := file.ResolveProviderSecrets(lookupEnv)
+	file, providers, err := operatorCatalog(settings, lookupEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +136,27 @@ func New(options Options) (*Gateway, error) {
 		return nil, err
 	}
 	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, kinds: kinds}, nil
+}
+
+// operatorCatalog parses and validates the operator catalog and resolves its
+// provider keys. Without a catalog setting it returns an empty catalog and
+// reads no key.
+func operatorCatalog(settings config.Settings, lookupEnv config.LookupEnv) (config.File, map[string]config.ResolvedProvider, error) {
+	if !settings.HasModelCatalog() {
+		return config.File{}, nil, nil
+	}
+	file, err := config.ParseModelCatalog(settings.ModelCatalog)
+	if err != nil {
+		return config.File{}, nil, err
+	}
+	if err := validateProviderEndpoints(file); err != nil {
+		return config.File{}, nil, err
+	}
+	providers, err := file.ResolveProviderSecrets(lookupEnv)
+	if err != nil {
+		return config.File{}, nil, err
+	}
+	return file, providers, nil
 }
 
 func validateProviderEndpoints(file config.File) error {
@@ -233,12 +248,20 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
 		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Compose: composeModel(sinks.extensions, observers), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Client: nativeClient}), Compose: composeModel(sinks.extensions, observers), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
-	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language))
+	language, err := providerv4.New(runtime)
+	if err != nil {
+		return nil, err
+	}
+	chat, err := chatcompletions.New(runtime)
+	if err != nil {
+		return nil, err
+	}
+	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat))
 }
 
 // composeModel composes each call's model: the logical observers outside the
@@ -254,15 +277,6 @@ func composeModel(extensions *extensionhost.Host, observers *service.ModelObserv
 	}
 }
 
-// newLanguageHandler serves ProviderWire V4 over one execution runtime.
-func newLanguageHandler(config execution.Config) (http.Handler, error) {
-	runtime, err := execution.New(config)
-	if err != nil {
-		return nil, err
-	}
-	return providerv4.New(runtime)
-}
-
 // newIdle returns the idle Gateway. It refuses to start when unverified
 // requests are requested instead, since the plugin host would then serve them.
 func newIdle(lookupEnv config.LookupEnv, kinds []simple.AppManagedKind) (*Gateway, error) {
@@ -276,7 +290,7 @@ func newIdle(lookupEnv config.LookupEnv, kinds []simple.AppManagedKind) (*Gatewa
 // An idle Gateway serves no requests.
 func (g *Gateway) Idle() bool { return g.authenticator == nil }
 
-// Handler returns the ProviderWire route handler for the plugin route
+// Handler returns the protocol route handler for the plugin route
 // adapter, or nil when the Gateway is idle.
 func (g *Gateway) Handler() http.Handler { return g.handler }
 

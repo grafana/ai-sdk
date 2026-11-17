@@ -19,7 +19,26 @@ import (
 const maxBufferedResponseBytes int64 = 2 << 30
 
 // TokenExchangeConfig configures CAP exchange for an internally provisioned service.
-// Audience is required and names the Gateway plugin, grafana-aigateway-app.
+//
+// BaseURL is the Gateway API root, such as
+// https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1, and the
+// client appends /namespaces/<namespace> for each call. This differs from the
+// other constructors, which take the namespaced URL shown on the Gateway's
+// overview page; a BaseURL with a namespaces path segment is refused.
+//
+// Namespace is optional. A stack namespace, such as stacks-123, is the
+// namespace of every call that does not select one with WithNamespace, and a
+// call that selects another fails. Leave it empty to serve several stacks, so
+// that every call selects its namespace. The wildcard * exchanges one token for
+// every namespace, and every call still selects the namespace it routes to.
+// Exchanged tokens are cached per namespace and subject.
+//
+// Audience is required. In Grafana Cloud it is the Gateway's API group,
+// aigateway.ext.grafana.app, which the caller's access policy must allow; in
+// self-hosted Grafana it is grafana.
+//
+// HTTPClient is used for token exchanges and Gateway requests alike, so a
+// transport that trusts a private certificate authority covers both.
 type TokenExchangeConfig struct {
 	CAPToken         string
 	TokenExchangeURL string
@@ -62,11 +81,18 @@ type Provider struct {
 	headers           http.Header
 	bufferedReadLimit int64
 	exchanger         authn.TokenExchanger
+	tokenExchange     bool
 	namespace         string
 	audience          string
 	bearer            string
 	exchanges         singleflight.Group
 }
+
+const wildcardNamespace = "*"
+
+var namespacePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+func validNamespace(namespace string) bool { return namespacePattern.MatchString(namespace) }
 
 // NewWithServiceAccountToken constructs a provider that sends a Grafana
 // service account token as its only credential, an Authorization bearer.
@@ -117,7 +143,7 @@ func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, e
 	if !validCredential(cfg.CAPToken) {
 		return nil, errors.New("grafana: invalid CAP token")
 	}
-	if !validCredential(cfg.Namespace) {
+	if cfg.Namespace != "" && cfg.Namespace != wildcardNamespace && !validNamespace(cfg.Namespace) {
 		return nil, errors.New("grafana: invalid namespace")
 	}
 	if !validCredential(cfg.Audience) {
@@ -127,6 +153,9 @@ func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, e
 	if err != nil {
 		return nil, errors.New("grafana: invalid token exchange URL")
 	}
+	if namespacedURL(cfg.BaseURL) {
+		return nil, errors.New("grafana: token exchange base URL must be the Gateway API root, without /namespaces/<namespace>")
+	}
 	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, opts)
 	if err != nil {
 		return nil, err
@@ -135,8 +164,21 @@ func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, e
 	if err != nil {
 		return nil, errors.New("grafana: cannot construct token exchanger")
 	}
-	p.namespace, p.audience = cfg.Namespace, cfg.Audience
+	p.tokenExchange, p.namespace, p.audience = true, cfg.Namespace, cfg.Audience
 	return p, nil
+}
+
+func namespacedURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	for segment := range strings.SplitSeq(u.Path, "/") {
+		if segment == "namespaces" {
+			return true
+		}
+	}
+	return false
 }
 
 func newProvider(rawURL string, client *http.Client, headers http.Header, opts []Option) (*Provider, error) {
@@ -241,6 +283,41 @@ func WithOnBehalfOf(ctx context.Context, subjectToken string) context.Context {
 	return context.WithValue(ctx, onBehalfOfKey{}, subjectToken)
 }
 
+type namespaceKey struct{}
+
+// WithNamespace selects the stack namespace, such as stacks-123, of
+// token-exchange calls in ctx: the call is routed to that namespace and its
+// token is exchanged for it, unless the provider exchanges for every
+// namespace. A call fails before any network request when its namespace is not
+// a DNS label, differs from the provider's configured namespace, or reaches a
+// service account or access token provider, whose credential fixes the stack.
+func WithNamespace(ctx context.Context, namespace string) context.Context {
+	return context.WithValue(ctx, namespaceKey{}, namespace)
+}
+
+// resolveNamespaces returns the route and exchange namespaces of a call. Flows
+// other than token exchange route to their configured URL and return none.
+func (p *Provider) resolveNamespaces(ctx context.Context) (route, exchange string, err error) {
+	call, selected := ctx.Value(namespaceKey{}).(string)
+	switch {
+	case !selected && p.tokenExchange && (p.namespace == "" || p.namespace == wildcardNamespace):
+		return "", "", errors.New("grafana: call namespace required")
+	case !selected:
+		return p.namespace, p.namespace, nil
+	case !p.tokenExchange:
+		return "", "", errors.New("grafana: call namespace requires token exchange")
+	case !validNamespace(call):
+		return "", "", errors.New("grafana: invalid call namespace")
+	case p.namespace == "":
+		return call, call, nil
+	case p.namespace == wildcardNamespace:
+		return call, wildcardNamespace, nil
+	case call != p.namespace:
+		return "", "", errors.New("grafana: call namespace conflicts with the configured namespace")
+	}
+	return call, call, nil
+}
+
 func (p *Provider) request(ctx context.Context, method, route string, callHeaders ...map[string]string) (*http.Request, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -262,20 +339,24 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 			headers.Set(canonical, value)
 		}
 	}
+	routeNamespace, exchangeNamespace, err := p.resolveNamespaces(ctx)
+	if err != nil {
+		return nil, err
+	}
 	subject, onBehalfOf := ctx.Value(onBehalfOfKey{}).(string)
 	if onBehalfOf {
 		switch {
 		case !validCredential(subject):
 			return nil, errors.New("grafana: invalid on-behalf-of token")
-		case p.namespace == "":
+		case !p.tokenExchange:
 			return nil, errors.New("grafana: on-behalf-of calls require token exchange")
-		case p.namespace == "*":
+		case exchangeNamespace == wildcardNamespace:
 			return nil, errors.New("grafana: on-behalf-of calls require a concrete namespace")
 		}
 	}
 	credentialHeader, credential := "Authorization", p.bearer
 	if p.bearer == "" {
-		token, err := p.exchange(ctx, subject)
+		token, err := p.exchange(ctx, exchangeNamespace, subject)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -292,7 +373,11 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 		}
 		credentialHeader, credential = "X-Access-Token", token.Token
 	}
-	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+route, nil)
+	prefix := p.baseURL
+	if p.tokenExchange {
+		prefix += "/namespaces/" + routeNamespace
+	}
+	req, err := http.NewRequestWithContext(ctx, method, prefix+route, nil)
 	if err != nil {
 		return nil, errors.New("grafana: cannot construct Gateway request")
 	}
@@ -301,15 +386,16 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	return req, nil
 }
 
-// exchange returns an access token for subject. Concurrent calls for one
-// subject share a single exchange that no caller can cancel, bounded by
-// tokenExchangeTimeout, while each caller still returns when its own ctx
-// ends. An exchange that outlives its callers still fills the token cache.
-func (p *Provider) exchange(ctx context.Context, subject string) (*authn.TokenExchangeResponse, error) {
-	result := p.exchanges.DoChan(subject, func() (any, error) {
+// exchange returns an access token for subject in namespace. Concurrent calls
+// for one namespace and subject share a single exchange that no caller can
+// cancel, bounded by tokenExchangeTimeout, while each caller still returns
+// when its own ctx ends. An exchange that outlives its callers still fills the
+// token cache.
+func (p *Provider) exchange(ctx context.Context, namespace, subject string) (*authn.TokenExchangeResponse, error) {
+	result := p.exchanges.DoChan(namespace+"\x00"+subject, func() (any, error) {
 		exchangeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tokenExchangeTimeout)
 		defer cancel()
-		return p.exchanger.Exchange(exchangeCtx, authn.TokenExchangeRequest{Namespace: p.namespace, Audiences: []string{p.audience}, SubjectToken: subject})
+		return p.exchanger.Exchange(exchangeCtx, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{p.audience}, SubjectToken: subject})
 	})
 	select {
 	case <-ctx.Done():

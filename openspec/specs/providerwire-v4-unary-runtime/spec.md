@@ -483,7 +483,7 @@ Raw Go/HTTP tests and local schemas SHALL independently verify active union fiel
 - **THEN** raw/schema/lifecycle/large-output tests SHALL independently verify it, authenticated command/frontend assembly evidence SHALL accompany behavior changes and synthetic responses SHALL NOT become recorded inputs
 
 ### Requirement: Closed host error categories and fixed document reuse
-Callers SHALL select only the closed permission, internal or unsupported-BYOK-discovery categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
+Callers SHALL select only the closed permission, internal, unsupported-BYOK-discovery or catalog configuration categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
 
 #### Scenario: Closed host error categories and fixed document reuse
 - **WHEN** host middleware selects permission rather than providing its own error message
@@ -492,6 +492,10 @@ Callers SHALL select only the closed permission, internal or unsupported-BYOK-di
 #### Scenario: Unsupported discovery uses a closed category
 - **WHEN** an authenticated BYOK caller requests discovery
 - **THEN** the host SHALL select the fixed unsupported-discovery category without catalog access
+
+#### Scenario: Catalog configuration host error
+- **WHEN** the host selects the catalog configuration category
+- **THEN** the writer SHALL emit the fixed 424 `failed_dependency` document of the runtime's catalog configuration category
 
 ### Requirement: Host error status bytes and private API boundary
 
@@ -652,3 +656,14 @@ Extension outcomes SHALL use fixed ProviderWire documents with `param: null`, ch
 #### Scenario: Client classification of extension documents
 - **WHEN** the pinned TypeScript client and the Go client receive the denial and unavailable documents
 - **THEN** they SHALL classify the denial as a forbidden error that is not retryable and the unavailable document as an internal server error that is retryable
+
+### Requirement: Fixed catalog configuration error document
+The catalog configuration category SHALL use one fixed ProviderWire document: HTTP 424, type `failed_dependency`, code `failed_dependency`, `param: null`, message "model catalog is invalid or missing a provider key", not retryable. It SHALL NOT carry catalog content, check messages, names, keys or execution metadata. It is not 400, because the caller's request is valid, nor 500, because the Gateway did not fail and a retry cannot succeed until the catalog changes.
+
+#### Scenario: Unary and streaming calls on an invalid catalog
+- **WHEN** a unary call or a stream setup fails with the catalog configuration category
+- **THEN** the response SHALL be that fixed document before any stream event, with zero provider requests
+
+#### Scenario: Client classification
+- **WHEN** the pinned TypeScript client and the Go client receive the document
+- **THEN** each SHALL classify it with its existing failed-dependency handling, as not retryable, and the Go client SHALL NOT report a protocol error
