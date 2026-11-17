@@ -116,7 +116,7 @@ Every served request SHALL carry a private verified caller: access class, route 
 
 #### Scenario: Catalog call is observed
 - **WHEN** an access policy's catalog call, alone or on behalf of a user, is logged and exported
-- **THEN** observations SHALL carry its service identity, namespace and catalog name, and no user identifier
+- **THEN** observations SHALL carry its service identity, namespace and catalog name, the user's typed UID when it acts for one, and no other user claim
 
 ### Requirement: No Gateway-specific role
 Access to the namespace routes SHALL NOT require a Gateway-specific Grafana role or route access check beyond platform authentication, plugin app access and namespace authorization. Gateway manifest roles SHALL grant permissions on Gateway kinds and their catalog routes only, never on the namespace routes.
