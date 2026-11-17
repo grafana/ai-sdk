@@ -173,9 +173,102 @@ A distribution can list operator extensions in `Options.Mandatory`. Each must
 have an enabled entry with a valid configuration and its secrets, or startup
 fails. The shipped Gateway registers no extensions and no mandatory ones.
 
-Tenant extensions aren't configured by this setting. Until per-namespace
-configuration exists, a tenant extension runs everywhere it applies when it is
-enabled by default.
+Tenant extensions aren't configured by this setting; see
+[Configure tenant extensions](#configure-tenant-extensions).
+
+## Configure tenant extensions
+
+Org admins store a tenant extension's configuration in their stack namespace
+as a `Middleware` resource named after the extension. The configuration goes
+in the spec member named after the type, in lowerCamel case:
+
+```yaml
+apiVersion: aigateway.ext.grafana.app/v1alpha1
+kind: Middleware
+metadata:
+  name: model-access
+spec:
+  type: model-access
+  enabled: true
+  modelAccess:
+    rules:
+      - models: [balanced]
+        teams: [platform]
+```
+
+The Gateway doesn't apply stored resources yet. Until it does, a tenant
+extension runs everywhere it applies when it is enabled by default, with an
+empty configuration, whatever its namespace stores.
+
+- `metadata.name` must equal `spec.type`, so a namespace holds one resource per
+  extension. `enabled` is required.
+- The spec may set only its type's member. With `enabled: true` the member is
+  required, unless the type takes no configuration, in which case it has no
+  member at all.
+- The type must be a tenant extension this build implements. Operator
+  extensions, unknown names and public types the build doesn't implement are
+  refused with the same reason.
+- Grafana checks the member's structure: JSON types, required fields and
+  unknown fields. The Gateway then checks it against the type's full schema,
+  including enums, patterns and bounds, and limits it to 64 KiB. Refusals name
+  the field and the failing location, never a value.
+- An update that sets `enabled: false` and keeps or removes the member is
+  always accepted, even after a rollback to a build without the extension.
+  After a rollback to a release whose manifest no longer declares the member,
+  Grafana refuses writes that still carry it, so remove the member when you
+  disable the resource. Any other change to a resource whose extension isn't
+  implemented is refused.
+- Resources aren't in folders. Viewers and Editors can read them
+  (`aigateway:middlewarereader`) and Admins can write them
+  (`aigateway:middlewarewriter`).
+- The Gateway validates every create and update, so writes fail while the
+  plugin is unavailable. Deletes always work.
+- Resources can't hold secure values.
+
+### Add a tenant extension type
+
+A tenant extension's type is public: its name, configuration schema, default
+and an example are declared in
+[`tenanttype`](../../ai-gateway/pkg/extension/tenanttype/doc.go), and the
+Gateway's manifest declares one member per type. Its implementation may be
+private: bind it to the public type, and pass the definition with your other
+extensions.
+
+```go
+definition := modelAccessType.Bind(tenanttype.Implementation{
+	FailurePolicy: extension.FailSkip,
+	New:           newModelAccess,
+})
+```
+
+Startup fails when a tenant-scope definition has no public type, or differs
+from its type in schema or default. To add a type:
+
+1. Add it to the `tenanttype` registry with a description and an example.
+   Schemas use closed objects and arrays only: every node needs exactly one
+   JSON type, and every object declares properties with
+   `additionalProperties: false`. Typed maps, `$ref` and combinators such as
+   `oneOf` aren't supported. A `minimum` or `maximum` on an integer field
+   must be within ±(2^53−1), the safe integers of a JavaScript `number`; as
+   upstream, integers beyond that range aren't compared exactly. The
+   registry's tests check these rules.
+2. Add its member to `ai-gateway/kinds/middleware_members.cue` by hand, named
+   after the type in lowerCamel case. Mirror the schema's structure: the same
+   properties, JSON types, array items, required fields and descriptions,
+   without enums, patterns, bounds or defaults. Admission checks those against
+   the type's schema.
+3. Run `mise run generate-ai-gateway-kinds` to regenerate the manifest and the
+   kind types. A manifest test fails when the member and the type's schema
+   disagree, or when the member refuses the type's example.
+
+Grafana validates every write against the current schema, including fields
+the write doesn't change. A type's schema can therefore only grow: add
+optional fields, and never add a required field or narrow a type. An
+incompatible change needs a new type name.
+
+Prefer operator scope for private extensions. Use a tenant type only when
+tenants need to configure the extension, and remember that its schema becomes
+part of the public manifest.
 
 ## Observe extensions
 

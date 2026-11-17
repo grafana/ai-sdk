@@ -6,11 +6,11 @@ Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWir
 ## Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly five namespaced custom routes: `GET config`, `POST language-model` and `POST v1/chat/completions` under `namespaces/{namespace}/`, and `GET config` and `POST language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus one kind, `ModelCatalog`, with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
+The Gateway SHALL be one Grafana app plugin whose manifest serves one API version with exactly five namespaced custom routes: `GET config`, `POST language-model` and `POST v1/chat/completions` under `namespaces/{namespace}/`, and `GET config` and `POST language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus two kinds, `ModelCatalog` and `Middleware`, with validation admission and no mutation or conversion hooks. It SHALL declare no other routes, kinds or hooks.
 
 #### Scenario: Committed manifest declares only the three routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the three namespace routes and the two `ModelCatalog` subresource routes, and the `ModelCatalog` kind as its only kind
+- **THEN** it SHALL declare one version with only the three namespace routes and the two `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
 - **AND** each catalog route SHALL declare a `get` access check on its own `modelcatalogs/<route>` subresource, and the namespace routes SHALL declare none
 
 #### Scenario: Plugin identity is fixed
@@ -318,7 +318,7 @@ The public composition package SHALL be documented as v0 and experimental: its A
 - **THEN** it SHALL state that the API is v0, experimental and may break in minor releases
 
 ### Requirement: Kinds served by the plugin app
-The plugin app SHALL manage each manifest kind with exactly the admission handlers the manifest declares, next to the route handler, and SHALL start no informers, watchers or reconcilers for them. An idle Gateway SHALL refuse every admission review, so writes fail closed on a host that delegates no requests to it.
+The plugin app SHALL manage each manifest kind with exactly the admission handlers the manifest declares, next to the route handler, and SHALL start no informers, watchers or reconcilers for them. The `Middleware` validator SHALL decide with the public tenant types and the distribution's extension definitions. An idle Gateway SHALL refuse every admission review, so writes fail closed on a host that delegates no requests to it.
 
 #### Scenario: App and manifest agree
 - **WHEN** the app is built from the committed manifest
@@ -328,6 +328,10 @@ The plugin app SHALL manage each manifest kind with exactly the admission handle
 - **WHEN** the host sends an admission review for a `ModelCatalog` with a delegated token
 - **THEN** the plugin SHALL authenticate it like a route call and answer with the catalog validator's decision
 
+#### Scenario: Middleware admission through the plugin protocol
+- **WHEN** the host sends an admission review for a `Middleware` with a delegated token
+- **THEN** the plugin SHALL authenticate it like a route call and answer with the decision for the public tenant types and the extension definitions the distribution passed
+
 #### Scenario: Idle Gateway
 - **WHEN** an idle Gateway receives an admission review
 - **THEN** it SHALL refuse it without validating the object
@@ -336,7 +340,7 @@ The plugin app SHALL manage each manifest kind with exactly the admission handle
 Declaring a kind SHALL NOT change the namespace `config` and `language-model` routes: their methods, access decisions, statuses, headers, bodies, streaming and Gateway error documents SHALL stay as they were with a routes-only manifest.
 
 #### Scenario: Routes against Grafana with the kind declared
-- **WHEN** the end-to-end suite calls the namespace routes on Grafana with the manifest that declares `ModelCatalog`
+- **WHEN** the end-to-end suite calls the namespace routes on Grafana with the manifest that declares the Gateway's kinds
 - **THEN** discovery, language-model error documents and undeclared-method responses SHALL match what the same tests observe with the routes-only manifest
 
 ### Requirement: Extension options on the entrypoint

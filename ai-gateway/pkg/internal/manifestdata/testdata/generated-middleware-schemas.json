@@ -1,0 +1,82 @@
+{
+  "Middleware": {
+    "properties": {
+      "spec": {
+        "$ref": "#/components/schemas/spec"
+      }
+    },
+    "required": [
+      "spec"
+    ]
+  },
+  "spec": {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "modelAccess": {
+        "additionalProperties": false,
+        "description": "Controls which models teams may use.",
+        "properties": {
+          "mode": {
+            "description": "Whether rules allow or deny.\nApplies to every rule.",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "limits": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "rpm": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "models": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "teams": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "models",
+                "teams"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "strict": {
+            "type": "boolean"
+          },
+          "temperature": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "type": "object"
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "enabled"
+    ],
+    "type": "object"
+  }
+}

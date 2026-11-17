@@ -93,10 +93,10 @@ production table matches the committed manifest: `GET {prefix}/config` and
 `POST {prefix}/language-model`, and `POST {prefix}/v1/chat/completions`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
-The manifest also declares one kind, `ModelCatalog`. Grafana stores catalog
-objects and their provider keys itself, and asks the plugin's admission
-validator to accept or refuse each create and update. Each catalog also has two
-routes, `GET .../modelcatalogs/{name}/config` and
+The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
+stores their objects, and catalog provider keys, itself, and asks the plugin's
+admission validators to accept or refuse each create and update. Each catalog
+also has two routes, `GET .../modelcatalogs/{name}/config` and
 `POST .../modelcatalogs/{name}/language-model`, in the same route table.
 Grafana reads the catalog as the caller, runs the route's declared access check
 (`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
@@ -106,7 +106,11 @@ catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
 and discovery lists it without building models. Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
-models and every configured model ID is not found.
+models and every configured model ID is not found. The `Middleware` spec has
+one typed member per public tenant type in the `tenanttype` registry, and its
+validator checks each member against the tenant extensions the distribution
+implements. Stored `Middleware` resources do not yet change which extensions
+run.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery

@@ -1,11 +1,13 @@
 package extensionhost
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"slices"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 )
 
 var (
@@ -14,8 +16,10 @@ var (
 )
 
 // ValidateDefinitions checks a distribution's definitions and its mandatory
-// extension names without reading any setting.
-func ValidateDefinitions(definitions []extension.Definition, mandatory []string) error {
+// extension names without reading any setting. Every tenant-scope definition
+// must bind to one of the public tenant types: same name, configuration
+// schema and default state.
+func ValidateDefinitions(definitions []extension.Definition, mandatory []string, types []tenanttype.Type) error {
 	byName := make(map[string]extension.Definition, len(definitions))
 	for _, definition := range definitions {
 		if err := validateDefinition(definition); err != nil {
@@ -37,6 +41,29 @@ func ValidateDefinitions(definitions []extension.Definition, mandatory []string)
 		if slices.Contains(mandatory[:i], name) {
 			return fmt.Errorf("extensions: mandatory extension %q is listed twice", name)
 		}
+	}
+	for _, definition := range definitions {
+		if definition.Scope != extension.ScopeTenant {
+			continue
+		}
+		if err := checkBinding(definition, types); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkBinding(definition extension.Definition, types []tenanttype.Type) error {
+	i := slices.IndexFunc(types, func(tenantType tenanttype.Type) bool { return tenantType.Name == definition.Name })
+	if i < 0 {
+		return fmt.Errorf("extensions: tenant extension %q has no public tenant type", definition.Name)
+	}
+	tenantType := types[i]
+	if !bytes.Equal(definition.ConfigSchema.JSON(), tenantType.ConfigSchema.JSON()) {
+		return fmt.Errorf("extensions: tenant extension %q differs from its public tenant type in its configuration schema", definition.Name)
+	}
+	if definition.EnabledByDefault != tenantType.EnabledByDefault {
+		return fmt.Errorf("extensions: tenant extension %q differs from its public tenant type in its default state", definition.Name)
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
@@ -190,7 +191,9 @@ type harnessOptions struct {
 	fallback       bool
 	withoutCatalog bool
 	extensions     []extension.Definition
+	tenantTypes    []tenanttype.Type
 	env            map[string]string
+	host           *platformhost.Host
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -200,9 +203,13 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 
 func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options harnessOptions) *harness {
 	t.Helper()
-	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
-	require.NoError(t, err)
+	host := options.host
+	if host == nil {
+		data := manifestdata.LocalManifest().ManifestData
+		created, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
+		require.NoError(t, err)
+		host = created
+	}
 	keys, err := host.JWKS()
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
@@ -223,7 +230,7 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	maps.Copy(env, options.env)
 	logs := &syncBuffer{}
 	registry := prometheus.NewRegistry()
-	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions})
+	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions, TenantTypes: options.tenantTypes})
 	require.NoError(t, err)
 	provider := gw.Provider()
 	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})

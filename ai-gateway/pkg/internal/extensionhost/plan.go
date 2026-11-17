@@ -76,8 +76,8 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 			}
 			configuration = encoded
 		}
-		if err := validateConfig(path, definition, configuration); err != nil {
-			return nil, err
+		if err := CheckConfig(definition, configuration); err != nil {
+			return nil, fmt.Errorf("config: %s.config %w", path, err)
 		}
 		for _, secret := range definition.Secrets {
 			if strings.TrimSpace(entry.Secrets[secret]) == "" {
@@ -89,10 +89,17 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 	return plan, nil
 }
 
-func validateConfig(path string, definition extension.Definition, configuration json.RawMessage) error {
+// CheckConfig checks configuration, a JSON object, against definition's
+// schema. A definition without a schema accepts only an empty object. The
+// error names the deepest failing instance location, never a value or the
+// schema validator's message, so callers can prefix it with their own field
+// path. A location names object keys: with closed schemas, as tenant types
+// use, only declared properties and array indexes; an operator schema that
+// allows maps can surface the operator's own keys.
+func CheckConfig(definition extension.Definition, configuration json.RawMessage) error {
 	if definition.ConfigSchema.JSON() == nil {
 		if string(configuration) != string(emptyConfig) {
-			return fmt.Errorf("config: %s.config is not accepted: the extension takes no configuration", path)
+			return errors.New("is not accepted: the extension takes no configuration")
 		}
 		return nil
 	}
@@ -105,7 +112,7 @@ func validateConfig(path string, definition extension.Definition, configuration 
 	if errors.As(err, &validation) {
 		location = "/" + strings.Join(deepestLocation(validation), "/")
 	}
-	return fmt.Errorf("config: %s.config does not match the extension's schema at %s", path, location)
+	return fmt.Errorf("does not match the extension's schema at %s", location)
 }
 
 func deepestLocation(validation *jsonschema.ValidationError) []string {
