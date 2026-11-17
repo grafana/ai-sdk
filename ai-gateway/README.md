@@ -325,6 +325,10 @@ export ANTHROPIC_API_KEY=...        # optional; needed only to call models
 pnpm --filter ./ai-gateway server
 ```
 
+Grafana runs the nightly image that the end-to-end tests use, pinned by digest
+in `docker-compose.yaml`, because the plugin needs features that only recent
+nightlies have. Set `GRAFANA_VERSION` to another tag to try it.
+
 Then work from `ai-gateway/`:
 
 | After changing | Run |
