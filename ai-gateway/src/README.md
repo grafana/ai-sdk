@@ -16,8 +16,8 @@ The Gateway runs in one of two access modes:
 The plugin's overview page walks through calling the Gateway from Grafana
 Cloud: creating a service account token, this stack's Gateway URL, bringing
 your provider key, and a quick start for Go and TypeScript. It also shows
-which credential each kind of caller uses, the main limits and errors, and
-guidance for self-hosted Grafana. See the
+which credential each kind of caller uses and guidance for self-hosted
+Grafana. See the
 [operator guide](https://github.com/grafana/ai-sdk/blob/main/ai-gateway/README.md)
 for configuration, and the
 [client guide](https://github.com/grafana/ai-sdk/blob/main/docs/guides/gateway-authentication.md)

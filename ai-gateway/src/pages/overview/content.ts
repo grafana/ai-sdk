@@ -8,14 +8,12 @@ export const LINKS = {
   configureModels: `${BLOB_URL}/ai-gateway/README.md#configure-models`,
   accessMode: `${BLOB_URL}/ai-gateway/README.md#choose-who-can-use-it`,
   storedCatalogs: `${BLOB_URL}/ai-gateway/README.md#store-model-catalogs-in-grafana`,
-  limits: `${BLOB_URL}/ai-gateway/README.md#limits`,
   authentication: `${BLOB_URL}/docs/guides/gateway-authentication.md`,
   findGatewayURL: `${BLOB_URL}/docs/guides/gateway-authentication.md#find-your-gateway-url`,
   byok: `${BLOB_URL}/docs/guides/gateway-authentication.md#bring-your-own-provider-key-in-grafana-cloud`,
   grafanaService: `${BLOB_URL}/docs/guides/gateway-authentication.md#call-from-a-grafana-service-in-grafana-cloud`,
   appPlatform: `${BLOB_URL}/docs/guides/gateway-authentication.md#call-from-an-app-platform-app`,
   selfHostedCallers: `${BLOB_URL}/docs/guides/gateway-authentication.md#use-the-configured-models-in-self-hosted-grafana`,
-  troubleshooting: `${BLOB_URL}/docs/guides/gateway-authentication.md#troubleshoot-authentication-errors`,
   goClient: `${BLOB_URL}/docs/providers/grafana-gateway.md`,
   providerCredentials: `${BLOB_URL}/docs/providers/grafana-gateway.md#use-your-own-provider-credentials`,
   monitoring: `${BLOB_URL}/ai-gateway/docs/text-observability.md`,
@@ -52,38 +50,6 @@ export const CALLERS: Caller[] = [
     credential: 'The token exchange Grafana gives your plugin backend.',
     models: 'The configured models once your app is allowed; until then, your own key on behalf of a user.',
     href: LINKS.appPlatform,
-  },
-];
-
-export interface Fact {
-  term: string;
-  description: string;
-}
-
-export const LIMITS: Fact[] = [
-  { term: '60 seconds', description: 'per request, including a streamed response and every fallback attempt' },
-  { term: '16 MiB', description: 'per request body' },
-  { term: '8 attempts', description: 'per request, across fallback models or the provider keys you send' },
-  { term: '30 seconds', description: 'without activity ends a stream' },
-];
-
-export const ERRORS: Fact[] = [
-  { term: '401', description: 'The token is missing, expired or revoked.' },
-  {
-    term: '403 from Grafana',
-    description: 'The token belongs to another stack, or the caller cannot use this app.',
-  },
-  {
-    term: '403 Gateway permission error',
-    description: 'A service calls as itself before the Gateway owners allow it.',
-  },
-  {
-    term: '400 about gateway.byok',
-    description: 'The request has no valid key for the selected provider. Send one with every call.',
-  },
-  {
-    term: '400 about the selector',
-    description: 'With your own key, select a model as provider/model, such as anthropic/claude-sonnet-5.',
   },
 ];
 

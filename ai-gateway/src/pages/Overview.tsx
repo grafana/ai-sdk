@@ -18,7 +18,7 @@ import { CodeSnippet } from '../components/CodeSnippet/CodeSnippet';
 import { LinkCard } from '../components/LinkCard/LinkCard';
 import { SetupStep } from '../components/SetupStep/SetupStep';
 import { API_GROUP, API_VERSION } from '../constants';
-import { CALLERS, ERRORS, Fact, LIMITS, LINKS, RESOURCES, SERVICE_ACCOUNT_PATH } from './overview/content';
+import { CALLERS, LINKS, RESOURCES, SERVICE_ACCOUNT_PATH } from './overview/content';
 import { callExample, ENVIRONMENT, INSTALL, Language, LANGUAGES } from './overview/examples';
 
 export function gatewayEndpoint(appUrl: string, namespace: string): string {
@@ -32,33 +32,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </Text>
       {children}
-    </Stack>
-  );
-}
-
-function FactList({ title, facts, link }: { title: string; facts: Fact[]; link: { title: string; href: string } }) {
-  const s = useStyles2(getStyles);
-
-  return (
-    <Stack direction="column" gap={1}>
-      <Text element="h3" variant="h5">
-        {title}
-      </Text>
-      <dl className={s.facts}>
-        {facts.map((fact) => (
-          <React.Fragment key={fact.term}>
-            <dt>
-              <Text weight="medium">{fact.term}</Text>
-            </dt>
-            <dd>
-              <Text color="secondary">{fact.description}</Text>
-            </dd>
-          </React.Fragment>
-        ))}
-      </dl>
-      <TextLink href={link.href} external>
-        {link.title}
-      </TextLink>
     </Stack>
   );
 }
@@ -156,21 +129,6 @@ function Callers() {
   );
 }
 
-function GoodToKnow() {
-  return (
-    <Section title="Good to know">
-      <Grid gap={4} columns={{ xs: 1, lg: 2 }}>
-        <FactList title="Limits" facts={LIMITS} link={{ title: 'All limits', href: LINKS.limits }} />
-        <FactList
-          title="Common errors"
-          facts={ERRORS}
-          link={{ title: 'Troubleshoot errors', href: LINKS.troubleshooting }}
-        />
-      </Grid>
-    </Section>
-  );
-}
-
 const SELF_HOSTED_LINKS = [
   { title: 'Install and enable the plugin', href: LINKS.install },
   { title: 'Configure models', href: LINKS.configureModels },
@@ -257,7 +215,6 @@ function Overview() {
           </Text>
           <GetStarted endpoint={endpoint} />
           <Callers />
-          <GoodToKnow />
           <SelfHosted />
           <Resources />
         </Stack>
@@ -284,13 +241,5 @@ const getStyles = (theme: GrafanaTheme2) => ({
     margin: 0,
     paddingLeft: theme.spacing(3),
     lineHeight: theme.typography.base.lineHeight * 1.4,
-  }),
-  facts: css({
-    display: 'grid',
-    gridTemplateColumns: 'max-content 1fr',
-    columnGap: theme.spacing(2),
-    rowGap: theme.spacing(1),
-    margin: 0,
-    dd: { margin: 0 },
   }),
 });
