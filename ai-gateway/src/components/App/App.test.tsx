@@ -12,6 +12,8 @@ jest.mock('@grafana/runtime', () => ({
 describe('Components/App', () => {
   let props: AppRootProps;
 
+  beforeAll(() => import('../../pages/Overview'));
+
   beforeEach(() => {
     jest.resetAllMocks();
 
@@ -19,7 +21,7 @@ describe('Components/App', () => {
       basename: 'a/grafana-aigateway-app',
       meta: {
         id: 'grafana-aigateway-app',
-        name: 'Grafana AI Gateway',
+        name: 'AI Gateway',
         type: PluginType.app,
         enabled: true,
         jsonData: {},
@@ -37,6 +39,8 @@ describe('Components/App', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Quick start')).toBeInTheDocument(), { timeout: 2000 });
+    await waitFor(() => expect(screen.getByText('Get started in Grafana Cloud')).toBeInTheDocument(), {
+      timeout: 2000,
+    });
   });
 });

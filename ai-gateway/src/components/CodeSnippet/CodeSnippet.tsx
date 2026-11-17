@@ -32,7 +32,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     paddingRight: theme.spacing(10),
     overflowX: 'auto',
     fontFamily: theme.typography.fontFamilyMonospace,
-    fontSize: theme.typography.bodySmall.fontSize,
+    fontSize: theme.typography.sm.fontSize,
     background: theme.colors.background.secondary,
     border: `1px solid ${theme.colors.border.weak}`,
     borderRadius: theme.shape.radius.default,
