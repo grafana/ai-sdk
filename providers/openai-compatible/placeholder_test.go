@@ -16,7 +16,7 @@ func TestStream_MetadataAfterPlaceholder(t *testing.T) {
 		"data: [DONE]\n\n"
 	parts := make(chan provider.StreamPart, 16)
 	m := &model{providerName: "test"}
-	m.runStream(t.Context(), "https://example.test", nil, strings.NewReader(stream), nil, nil, false, "test", parts)
+	m.runStream(t.Context(), "https://example.test", nil, strings.NewReader(stream), nil, nil, false, "test", parts, false)
 	close(parts)
 	var metadata []provider.StreamPart
 	for part := range parts {
