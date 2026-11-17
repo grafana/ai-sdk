@@ -11,7 +11,10 @@
 //   - tool-history reconstruction: [Runtime.Call] rebuilds the prompt's
 //     [ToolHistory] before anything else and fails inconsistent history with
 //     [ErrInvalidToolHistory];
-//   - selection, validated and contained, under the request context;
+//   - selection, validated and contained, under the request context, and the
+//     composition of the model each call invokes from its selection, so
+//     per-call layers such as logical observers wrap every selection at one
+//     point whatever its [Source];
 //   - invocation of DoGenerate or DoStream, with panics and missing results
 //     failing as internal;
 //   - stream waits, the idle duration and one drain bounded by the drain
@@ -24,9 +27,16 @@
 //   - how a stream ends: a provider close after a finish is [WaitFinished],
 //     a terminal success, a close after an error part with no lifecycle part
 //     since is [WaitClosedAfterError], and any other close is [WaitClosed];
-//   - the closed failure categories and reasons;
+//   - the closed failure categories and reasons, including extension denials
+//     (permission) and fail-closed extension failures ([CategoryUnavailable]);
 //   - request-local attempt capture, projected into an overview from the
-//     expected attempts of [ConfiguredSelection] and [AccountSelection].
+//     expected attempts of [ConfiguredSelection], [StackCatalogSelection] and
+//     [AccountSelection], with native failure summaries redacting the
+//     configured keys and the selection's own request keys, and the served
+//     model the selected output reports after an Anthropic server-side
+//     fallback. A call enters its model only when the selected model itself is
+//     invoked, beneath every composed layer, so a layer that refuses first
+//     records no attempt.
 //
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,

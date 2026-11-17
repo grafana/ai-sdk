@@ -79,9 +79,12 @@ the service your application calls:
   Chat Completions-compatible servers.
 - [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
 - [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose the right Grafana credential for your application, in Go or server-side TypeScript.
+- [Use official OpenAI clients](guides/openai-chat-completions.md) with the Gateway Chat Completions adapter.
 
 ## Extend model infrastructure
 
+- [Extend Grafana AI Gateway](guides/gateway-extensions.md) — add typed
+  extensions that admit, transform, inspect and observe every Gateway model call.
 - [How a request crosses AI Gateway](concepts/gateway-architecture.md) — follow
   authentication, protocol translation, model routing, and streaming failures.
 - [Gateway glossary](concepts/gateway-glossary.md) — connect everyday terms,

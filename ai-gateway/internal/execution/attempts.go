@@ -21,6 +21,8 @@ type attemptCapture struct {
 	entered  bool
 	sealed   bool
 	attempts []fallback.Attempt
+	served   string
+	overview *Overview
 }
 
 // newAttemptCapture prepares the capture for selected. Every selection is
@@ -67,8 +69,9 @@ func (a *attemptCapture) discard() {
 }
 
 // view seals the capture and projects it for an outcome that failed with err,
-// or succeeded when err is nil or [ErrInvalidOutput]. Attempts observed
-// afterwards are ignored.
+// or succeeded when err is nil or [ErrInvalidOutput]. An extension outcome
+// after entry can only refuse output the selected model returned, so it also
+// projects as success. Attempts observed afterwards are ignored.
 func (a *attemptCapture) view(err error) (view View) {
 	entered, attempts := a.seal()
 	view = View{redactor: a.redactor}
@@ -79,7 +82,7 @@ func (a *attemptCapture) view(err error) (view View) {
 	}()
 	if len(attempts) == 0 && a.attribution == attributionConfigured && len(a.expected) == 1 && entered {
 		outcome, source := fallback.AttemptSelected, error(nil)
-		if err != nil && !errors.Is(err, ErrInvalidOutput) {
+		if err != nil && !errors.Is(err, ErrInvalidOutput) && !isExtensionOutcome(err) {
 			outcome, source = fallback.AttemptFailed, err
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				outcome = fallback.AttemptCanceled
@@ -94,7 +97,30 @@ func (a *attemptCapture) view(err error) (view View) {
 			attempt.Error = a.redactor.Redact(attempt.Error)
 		}
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.overview = view.Overview
+	a.applyServed()
 	return view
+}
+
+// serve records the model that served the selected output. It updates the
+// published overview in place, so every later carrier of the view reports it,
+// without changing the attempts.
+func (a *attemptCapture) serve(model string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.served = model
+	a.applyServed()
+}
+
+func (a *attemptCapture) applyServed() {
+	if a.overview == nil || a.served == "" {
+		return
+	}
+	if last := &a.overview.Attempts[len(a.overview.Attempts)-1]; last.Outcome == fallback.AttemptSelected {
+		last.ServedModelID = a.served
+	}
 }
 
 // View is the execution evidence an adapter may encode for one call.

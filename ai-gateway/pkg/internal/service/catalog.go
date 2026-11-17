@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -13,14 +14,15 @@ import (
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/providers/anthropic"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type modelConstructor func(config nativemodel.Config, modelID string, client *http.Client) provider.LanguageModel
 
-// ModelFactory composes one canonical logical model around its unchanged lower
-// model. WP8 observers use this seam; WP9 may replace the lower model with a
-// fallback without changing the logical wrapper.
+// ModelFactory gives one lower model its logical identity, without changing it.
+// The lower model may be a fallback chain. Logical observers are not applied
+// here: the runtime applies them to the selection with [ModelObservers].
 type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error)
 
 // Catalog is the configured model catalog. It also keeps each route's
@@ -69,55 +71,17 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if !ok {
 				return nil, fmt.Errorf("gateway service: model %q references unresolved provider", id)
 			}
-			if providerConfig.APIKey == "" {
-				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
+			if descriptor.ServerFallbacks != nil && providerConfig.Type != "anthropic" {
+				return nil, fmt.Errorf("gateway service: model %q sets server fallbacks on a provider that is not anthropic", id)
 			}
-			var candidate provider.LanguageModel
-			var validateOptions func(provider.CallOptions) error
-			target := execution.Target{ModelID: descriptor.Model}
-			switch providerConfig.Type {
-			case "anthropic":
-				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-				validateOptions = nativeoptions.Anthropic
-				target.Type = execution.TargetAnthropic
-			case "openai-compatible":
-				if providerConfig.BaseURL == "" {
-					return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
-				}
-				candidate = openaicompatible.New(descriptor.Model,
-					openaicompatible.WithAPIKey(providerConfig.APIKey),
-					openaicompatible.WithBaseURL(providerConfig.BaseURL),
-					openaicompatible.WithHTTPClient(client),
-					openaicompatible.WithProviderName(providerConfig.ProviderName),
-					openaicompatible.WithStructuredOutputs(providerConfig.SupportsStructuredOutputs),
-					// ProviderWire finish parts carry usage, so streams must request it.
-					openaicompatible.WithIncludeUsage(true),
-				)
-				providerName := candidate.Provider()
-				validateOptions = func(options provider.CallOptions) error {
-					return nativeoptions.Compatible(options, providerName)
-				}
-				target.Type, target.ProviderName = execution.TargetOpenAICompatible, providerName
-			case "openai":
-				candidate = nativemodel.NewOpenAI(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-				target.Type = execution.TargetOpenAI
-			default:
-				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
-			}
-			if candidate == nil {
+			candidate, identity, err := newCandidate(providerConfig, descriptor, anthropicPolicy(descriptor), client, construct)
+			if errors.Is(err, errNilCandidate) {
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
-			if validateOptions != nil {
-				candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
+			if err != nil {
+				return nil, err
 			}
-			candidate = execution.Translate(candidate, target)
-			providerName := providerConfig.Type
-			if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {
-				providerName = providerConfig.ProviderName
-			}
-			configuredCandidates = append(configuredCandidates, catalog.ConfiguredCandidate{
-				ProviderInstance: descriptor.Provider, Provider: providerName, ModelID: descriptor.Model,
-			})
+			configuredCandidates = append(configuredCandidates, identity)
 			candidates = append(candidates, candidate)
 		}
 		lower, err := composeCandidates(candidates, descriptors, sink)
@@ -150,6 +114,61 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 	return &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}, nil
 }
 
+var errNilCandidate = errors.New("gateway service: constructing a candidate returned nil")
+
+// newCandidate constructs the physical model of one configured candidate and
+// returns it with its configured identity. An anthropic candidate validates
+// its call options under policy.
+func newCandidate(providerConfig config.ResolvedProvider, descriptor config.Primary, policy nativeoptions.AnthropicPolicy, client *http.Client, construct modelConstructor) (provider.LanguageModel, catalog.ConfiguredCandidate, error) {
+	if providerConfig.APIKey == "" {
+		return nil, catalog.ConfiguredCandidate{}, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
+	}
+	var candidate provider.LanguageModel
+	var validateOptions func(provider.CallOptions) error
+	target := execution.Target{ModelID: descriptor.Model}
+	switch providerConfig.Type {
+	case "anthropic":
+		candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
+		validateOptions = nativeoptions.Anthropic(policy)
+		target.Type = execution.TargetAnthropic
+	case "openai-compatible":
+		if providerConfig.BaseURL == "" {
+			return nil, catalog.ConfiguredCandidate{}, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
+		}
+		candidate = openaicompatible.New(descriptor.Model,
+			openaicompatible.WithAPIKey(providerConfig.APIKey),
+			openaicompatible.WithBaseURL(providerConfig.BaseURL),
+			openaicompatible.WithHTTPClient(client),
+			openaicompatible.WithProviderName(providerConfig.ProviderName),
+			openaicompatible.WithStructuredOutputs(providerConfig.SupportsStructuredOutputs),
+			// ProviderWire finish parts carry usage, so streams must request it.
+			openaicompatible.WithIncludeUsage(true),
+		)
+		providerName := candidate.Provider()
+		validateOptions = func(options provider.CallOptions) error {
+			return nativeoptions.Compatible(options, providerName)
+		}
+		target.Type, target.ProviderName = execution.TargetOpenAICompatible, providerName
+	case "openai":
+		candidate = nativemodel.NewOpenAI(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
+		target.Type = execution.TargetOpenAI
+	default:
+		return nil, catalog.ConfiguredCandidate{}, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
+	}
+	if candidate == nil {
+		return nil, catalog.ConfiguredCandidate{}, errNilCandidate
+	}
+	if validateOptions != nil {
+		candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
+	}
+	providerName := providerConfig.Type
+	if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {
+		providerName = providerConfig.ProviderName
+	}
+	identity := catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: providerName, ModelID: descriptor.Model}
+	return execution.Translate(candidate, target), identity, nil
+}
+
 // composeCandidates returns the only candidate, or an ordered fallback chain
 // over candidates whose physical attempts are recorded against descriptors.
 func composeCandidates(candidates []provider.LanguageModel, descriptors []config.Primary, sink *PhysicalAttemptSink) (provider.LanguageModel, error) {
@@ -163,7 +182,9 @@ func composeCandidates(candidates []provider.LanguageModel, descriptors []config
 	return ordered.WithDecider(execution.FallbackDecider).WithAttemptObserver(physicalAttemptObserver(descriptors, sink)), nil
 }
 
-func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+// ConfiguredIdentity is the [ModelFactory] of configured models: provider
+// `grafana` and the canonical public model ID.
+func ConfiguredIdentity(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
 	if lower == nil {
 		return nil, fmt.Errorf("lower model is nil")
 	}
@@ -172,4 +193,22 @@ func identityModelFactory(canonicalID string, lower provider.LanguageModel) (pro
 		ProviderID: "grafana",
 		ModelID:    canonicalID,
 	}), nil
+}
+
+// anthropicPolicy converts a configured candidate's skills and server-side
+// fallback policies. Configured candidates never admit container IDs, and an
+// absent policy refuses every skill or every active server-side fallback.
+func anthropicPolicy(descriptor config.Primary) nativeoptions.AnthropicPolicy {
+	var policy nativeoptions.AnthropicPolicy
+	if fallbacks := descriptor.ServerFallbacks; fallbacks != nil {
+		policy.Fallbacks = nativeoptions.NewAnthropicFallbackPolicy(fallbacks.Models, fallbacks.AllowDefault)
+	}
+	if skills := descriptor.Skills; skills != nil {
+		grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
+		for _, entry := range skills.Allow {
+			grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+		}
+		policy.Skills = nativeoptions.AllowlistedAnthropicSkills(grants)
+	}
+	return policy
 }

@@ -10,7 +10,9 @@ client.
 
 ## Requirements
 
-- Grafana 13.3 or later.
+- Grafana 13.3 or later. Calling a stored catalog also needs Grafana to run the
+  access checks that the catalog routes declare; the end-to-end tests verify
+  this on Grafana's nightly image.
 - The `appplugins.loadAppManifest`, `appplugins.registerAPIServer` and
   `grafana.useRouterMiddleware` feature toggles. The last one is experimental.
 - The plugin is published only to the dev plugin catalog for Grafana Cloud.
@@ -41,7 +43,7 @@ client.
 
 3. Create the model catalog file that `model_catalog` reads, as described in
    the next section.
-4. Restart Grafana and enable **Grafana AI Gateway** under
+4. Restart Grafana and enable **AI Gateway** under
    **Administration > Plugins and data > Plugins**.
 
 The app's overview page shows the Gateway URL that applications use.
@@ -85,6 +87,65 @@ select it by its ID, such as `balanced`, or by one of its `aliases`. When the
 primary model fails before it starts answering, the Gateway tries the
 `fallback` models in order.
 
+### Allow Anthropic server-side fallbacks
+
+Applications can ask Anthropic to retry a refused turn on another model with
+`providerOptions.anthropic.fallbacks`. The Gateway refuses that request unless
+the candidate that would send it allows it with `serverFallbacks`:
+
+```yaml
+    primary:
+      provider: anthropic
+      model: claude-opus-5
+      serverFallbacks:
+        models: [claude-opus-4-8]
+        allowDefault: true
+```
+
+`models` lists the fallback models an explicit chain may name; each may appear
+once in a request and must match exactly. `allowDefault: true` also allows
+`"default"`, which lets Anthropic choose the model, and its cost. The policy
+applies only to the `primary` or `fallback` entry that declares it, only
+`anthropic` providers accept it, and it must allow `"default"` or at least one
+model. Every entry that names the same provider and backend model must carry
+the same policy, in any route, for the reason given for skills below. Requests
+that bring their own provider keys are not limited by it.
+
+### Allow Anthropic agent skills
+
+Anthropic agent skills, such as `pptx`, are refused unless the primary or
+fallback entry lists them under `skills.allow`. Only `anthropic` providers can
+carry a skills policy:
+
+```yaml
+models:
+  documents:
+    name: Documents
+    primary:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      skills:
+        allow:
+          - type: anthropic
+            skillId: pptx
+          - type: custom
+            skillId: skill_01AbCdEf
+            versions: ["1759178010641129"]
+```
+
+- An `anthropic` skill is provided by Anthropic. A `custom` skill lives in the
+  provider account, and listing it shares it with every caller of that model;
+  there is no per-tenant scoping.
+- Without `versions`, only requests that omit the version are allowed. With
+  `versions`, the request must send one of them; `latest` is matched literally.
+- Every entry that names the same provider and backend model must carry the
+  same policy, in any route, because a call that combines routes tries that
+  backend model only once. To use different policies for one backend model,
+  declare a second provider with the same `apiKeyEnv`.
+- Calls on these models cannot send a `container.id`, with or without skills,
+  because containers belong to the provider account. Each call starts a fresh
+  container.
+
 Each key of the `[plugin.grafana-aigateway-app]` section reaches the Gateway as
 an environment variable named `GF_PLUGIN_<KEY>`, so `anthropic_api_key` becomes
 `GF_PLUGIN_ANTHROPIC_API_KEY`. Keep provider keys there and read them from a
@@ -101,26 +162,110 @@ Grafana itself fails to start.
 The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.
 
+The Gateway serves requests only when Grafana gives it the platform signing
+keys, `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, to verify callers. Without them,
+it starts idle: it ignores its settings, serves nothing, and Grafana's log
+warns that plugin requests will be rejected. A Grafana Cloud stack's own Grafana
+runs the Gateway this way, because the platform serves the Gateway API
+elsewhere.
+
 ## Choose who can use it
 
 `access_mode` decides who can use the configured models:
 
 - **`self-hosted`:** every user and service account that can use the app gets
   the configured models. Requests that bring their own provider keys are
-  refused. To limit access, restrict the app with role-based access control,
-  or give access only to service accounts.
+  refused. Using the app takes the `plugins.app:access` permission on scope
+  `plugins:id:grafana-aigateway-app`. Viewers have it for every app by
+  default, through scope `plugins:*`, so to limit access, remove that
+  permission from the basic roles and grant it on the Gateway's scope only to
+  the roles that need it, as described in
+  [Prevent Viewers from accessing an app plugin](https://grafana.com/docs/grafana/latest/administration/roles-and-permissions/access-control/plan-rbac-rollout-strategy/#prevent-viewers-from-accessing-an-app-plugin).
+  Changing basic roles needs Grafana Enterprise.
 - **`cloud`:** for Grafana Cloud. Only the Grafana services listed in
-  `access_internal_services` get the configured models. Every other user and
-  service account brings its own provider key with each request.
+  `access_internal_services` get the configured models. Each entry is the
+  service identity a caller presents, the `serviceIdentity` claim of its access
+  token, matched exactly. Every other user and service account brings its own
+  provider key with each request.
+
+## Store model catalogs in Grafana
+
+A stack can also store its own model catalogs in Grafana as `ModelCatalog`
+resources, with each provider's API key held as a Grafana secure value, and
+call their models through the catalog's own routes.
+
+```yaml
+apiVersion: aigateway.ext.grafana.app/v1alpha1
+kind: ModelCatalog
+metadata:
+  name: default
+spec:
+  providers:
+    anthropic: { type: anthropic }
+  models:
+    balanced:
+      name: Balanced
+      primary: { provider: anthropic, model: claude-sonnet-4-6 }
+secure:
+  anthropic: { create: "<provider key>" }
+```
+
+Reads return `secure.anthropic.name: inline-<generated>` in place of the key.
+Grafana creates that secret for the catalog and owns it there: replacing a key
+deletes the old secret, and deleting the catalog deletes its secrets.
+
+- `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
+  `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
+  can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
+- Each provider needs exactly one secure value with the provider's name. Reads
+  return secret names, never keys. Updates can omit `secure` to keep the stored
+  keys, and `remove` a key only together with its provider.
+- Catalogs aren't in folders. Viewers and Editors can read them (`aigateway:catalogreader`)
+  and Admins can write them (`aigateway:catalogwriter`).
+- The Gateway validates every create and update, so writes fail while the
+  plugin is unavailable. Deletes always work.
+
+### Call a stored catalog
+
+Use the catalog's URL as the client's base URL, for example
+`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/default`.
+Clients append `/config` and `/language-model` as they do for the Gateway URL,
+so they need no other change.
+
+- Editors and Admins can list and call catalog models (`aigateway:modelinvoker`).
+  Viewers can read catalogs but not call them, and anonymous access can't
+  call them even when Grafana's roles would allow it.
+- A Grafana Cloud access policy token needs the
+  `aigateway.ext.grafana.app/modelcatalogs:get` permission. `access_mode` and
+  `access_internal_services` don't apply to catalog routes.
+- Calls use only the catalog's models and keys, never the `model_catalog`
+  setting or server keys, and refuse `providerOptions.gateway.byok`. Routing
+  controls (`models`, `order`, `only`) and fallbacks work as for the
+  configured models.
+- An edit applies on the next call. A key rotated outside the catalog, without
+  changing the resource, can take up to a minute to apply, because Grafana
+  caches decrypted keys for that long.
+- Grafana itself answers `403` when the caller can't call the catalog and `404`
+  when the catalog doesn't exist. These are Kubernetes `Status` documents, not
+  Gateway error documents; both clients report them as errors with that status.
+- A stored catalog that the Gateway can't use, such as one whose keys don't match
+  its providers, gets a `424` `failed_dependency` error with a fixed message.
+- This needs the Grafana version and feature toggles in
+  [Requirements](#requirements). Grafana Cloud doesn't store secure values for
+  plugin resources yet, so catalogs with keys are refused there.
+- Catalog models can't allow [agent skills](#allow-anthropic-agent-skills)
+  or [server-side fallbacks](#allow-anthropic-server-side-fallbacks) yet, so
+  they refuse both ([#781](https://github.com/grafana/ai-sdk/issues/781)).
 
 ## Settings
 
 | Setting | Description |
 |---|---|
-| `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Required. |
+| `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
-| `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
+| `access_internal_services` | Comma-separated service identities of the Grafana services that get the configured models in `cloud` mode. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
+| `extensions` | Optional YAML configuration of a distribution's operator extensions; see [Extend Grafana AI Gateway](../docs/guides/gateway-extensions.md). |
 
 ## Limits
 
@@ -138,7 +283,8 @@ format, not the Gateway's.
 | 16 MiB per provider response that is not streamed, after decompression | Gateway |
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
-| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Gateway, at startup |
+| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
+| The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved and each time a call uses it |
 
 ### Request duration
 

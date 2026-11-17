@@ -483,7 +483,7 @@ Raw Go/HTTP tests and local schemas SHALL independently verify active union fiel
 - **THEN** raw/schema/lifecycle/large-output tests SHALL independently verify it, authenticated command/frontend assembly evidence SHALL accompany behavior changes and synthetic responses SHALL NOT become recorded inputs
 
 ### Requirement: Closed host error categories and fixed document reuse
-Callers SHALL select only the closed permission, internal or unsupported-BYOK-discovery categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
+Callers SHALL select only the closed permission, internal, unsupported-BYOK-discovery or catalog configuration categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
 
 #### Scenario: Closed host error categories and fixed document reuse
 - **WHEN** host middleware selects permission rather than providing its own error message
@@ -492,6 +492,10 @@ Callers SHALL select only the closed permission, internal or unsupported-BYOK-di
 #### Scenario: Unsupported discovery uses a closed category
 - **WHEN** an authenticated BYOK caller requests discovery
 - **THEN** the host SHALL select the fixed unsupported-discovery category without catalog access
+
+#### Scenario: Catalog configuration host error
+- **WHEN** the host selects the catalog configuration category
+- **THEN** the writer SHALL emit the fixed 424 `failed_dependency` document of the runtime's catalog configuration category
 
 ### Requirement: Host error status bytes and private API boundary
 
@@ -518,7 +522,7 @@ The handler SHALL use synchronized request-local observation to optionally enric
 - **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure
 
 ### Requirement: Unsupported-functionality rejection classification
-When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence.
+When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence; a chain aggregate SHALL follow the gateway-execution-runtime aggregate rule.
 
 #### Scenario: Direct rejection
 - **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup
@@ -531,6 +535,10 @@ When unary invocation or stream setup fails with the provider unsupported-functi
 #### Scenario: Operational failures keep existing classification
 - **WHEN** fallback attempts end with the rejection and a retryable 503, in either order
 - **THEN** the handler SHALL keep the existing 503 classification
+
+#### Scenario: Rejection next to an unknown error
+- **WHEN** fallback attempts end with the rejection and an error that has no other category, in either order
+- **THEN** the handler SHALL return the fixed internal-error document, because the unknown error is the most recent attempt failure that is not a refusal
 
 #### Scenario: API call error wrapping the sentinel
 - **WHEN** an API call error's cause wraps the sentinel
@@ -633,3 +641,29 @@ Routing and gateway-control failures SHALL use fixed ProviderWire documents with
 #### Scenario: Client classification of routing documents
 - **WHEN** the pinned TypeScript client and the Go client receive each routing document
 - **THEN** each SHALL classify it with its existing invalid-request or model-not-found error category, as not retryable
+
+### Requirement: Fixed extension error documents
+Extension outcomes SHALL use fixed ProviderWire documents with `param: null`, chosen from the category alone. A denial SHALL reuse the existing permission document byte for byte. The unavailable category SHALL use HTTP 503, `internal_server_error`, code `unavailable`, message "service unavailable", retryable. Neither SHALL echo extension names, error text or configuration.
+
+#### Scenario: Unary and setup documents
+- **WHEN** a unary call or stream setup fails with an extension denial or unavailable outcome
+- **THEN** the response SHALL be the fixed permission or unavailable document, with execution metadata only when an overview is published
+
+#### Scenario: In-band stream outcome
+- **WHEN** a committed stream ends with an extension denial or unavailable error part
+- **THEN** the stream SHALL carry one error event with the same fixed type, code and message as the corresponding document and no native failure summary, and then end
+
+#### Scenario: Client classification of extension documents
+- **WHEN** the pinned TypeScript client and the Go client receive the denial and unavailable documents
+- **THEN** they SHALL classify the denial as a forbidden error that is not retryable and the unavailable document as an internal server error that is retryable
+
+### Requirement: Fixed catalog configuration error document
+The catalog configuration category SHALL use one fixed ProviderWire document: HTTP 424, type `failed_dependency`, code `failed_dependency`, `param: null`, message "model catalog is invalid or missing a provider key", not retryable. It SHALL NOT carry catalog content, check messages, names, keys or execution metadata. It is not 400, because the caller's request is valid, nor 500, because the Gateway did not fail and a retry cannot succeed until the catalog changes.
+
+#### Scenario: Unary and streaming calls on an invalid catalog
+- **WHEN** a unary call or a stream setup fails with the catalog configuration category
+- **THEN** the response SHALL be that fixed document before any stream event, with zero provider requests
+
+#### Scenario: Client classification
+- **WHEN** the pinned TypeScript client and the Go client receive the document
+- **THEN** each SHALL classify it with its existing failed-dependency handling, as not retryable, and the Go client SHALL NOT report a protocol error

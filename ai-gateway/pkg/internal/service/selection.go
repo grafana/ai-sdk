@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/byok"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
+	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -19,8 +20,14 @@ import (
 type BYOKOptions struct {
 	// Client is the shared model HTTP client for request accounts.
 	Client *http.Client
-	// Factory composes the logical model around the request accounts.
+	// Factory gives the request accounts' chain its logical identity.
 	Factory ModelFactory
+}
+
+// BYOKIdentity is the [ModelFactory] of request accounts: the selected
+// account's provider and the requested model selector.
+func BYOKIdentity(requestID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+	return middleware.Wrap(middleware.WrapOptions{Model: lower, ProviderID: lower.Provider(), ModelID: requestID}), nil
 }
 
 // ConfiguredModels resolves configured models and composes a request's routed
@@ -33,9 +40,11 @@ type ConfiguredModels interface {
 // NewSelector returns the selector for every access mode. Configured callers
 // resolve through models, and their routing controls compose a request chain
 // over configured candidates. BYOK callers, when byokOptions is set, build a
-// model from the request accounts and routing controls. Every other caller
-// fails with [execution.ErrAccountAccess]. It returns nil for nil models.
-func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions) execution.RequestSelector {
+// model from the request accounts and routing controls. Catalog callers, when
+// stackOptions is set, select from the stack catalog their catalog route
+// serves. Every other caller fails with [execution.ErrAccountAccess]. It
+// returns nil for nil models.
+func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions, stackOptions *StackCatalogOptions) execution.RequestSelector {
 	selectConfigured := execution.CatalogSelector(models)
 	if selectConfigured == nil {
 		return nil
@@ -58,6 +67,12 @@ func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions) execution.Re
 				return execution.Selection{}, err
 			}
 			return selectBYOK(id, controls, *byokOptions)
+		case caller.AccountAccess() == gatewayauth.CatalogAccounts && stackOptions != nil:
+			stack, ok := StackCatalogFromContext(ctx)
+			if !ok {
+				return execution.Selection{}, execution.ErrAccountAccess
+			}
+			return SelectStackCatalog(stack, id, gateway, *stackOptions)
 		default:
 			return execution.Selection{}, execution.ErrAccountAccess
 		}

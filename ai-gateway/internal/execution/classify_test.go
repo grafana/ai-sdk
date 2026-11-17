@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 )
@@ -45,12 +46,15 @@ func TestClassifySelection(t *testing.T) {
 		{"byok credentials", ErrInvalidBYOK, CategoryBYOKCredentials, ReasonNone},
 		{"byok selector", ErrInvalidBYOKSelector, CategoryBYOKSelector, ReasonNone},
 		{"gateway control", ErrUnsupportedGatewayControl, CategoryGatewayControl, ReasonNone},
+		{"catalog configuration", fmt.Errorf("wrapped: %w", ErrCatalogConfiguration), CategoryCatalogConfiguration, ReasonNone},
 		{"reserved options", ErrReservedProviderOptions, CategoryInvalidRequest, ReasonReservedProviderOptions},
 		{"unknown model", &catalog.UnknownModelError{ModelID: "private"}, CategoryModelNotFound, ReasonNone},
 		{"routing controls", fmt.Errorf("wrapped: %w", ErrRoutingControls), CategoryInvalidRequest, ReasonRoutingControls},
 		{"no candidates", ErrNoRoutingCandidates, CategoryInvalidRequest, ReasonNoCandidates},
 		{"attempt bound", ErrRoutingAttemptBound, CategoryInvalidRequest, ReasonAttemptBound},
 		{"unknown fallback model", fmt.Errorf("wrapped: %w", ErrUnknownFallbackModel), CategoryModelNotFound, ReasonFallbackModel},
+		{"extension denial", fmt.Errorf("wrapped: %w", extension.ErrDenied), CategoryPermission, ReasonNone},
+		{"extension unavailable", extension.ErrUnavailable, CategoryUnavailable, ReasonNone},
 		{"provider fallthrough", apiError(429, nil), CategoryRateLimit, ReasonNone},
 		{"deadline", context.DeadlineExceeded, CategoryTimeout, ReasonNone},
 		{"other", errors.New("private"), CategoryInternal, ReasonNone},
@@ -86,9 +90,56 @@ func TestClassifyProvider(t *testing.T) {
 		{"url error", &url.Error{Op: "Post", URL: "https://private", Err: testNetError{}}, CategoryUpstream},
 		{"dial error", &net.OpError{Op: "dial", Net: "tcp", Addr: testAddr("private:443"), Err: errors.New("refused")}, CategoryUpstream},
 		{"invalid output", fmt.Errorf("wrapped: %w", ErrInvalidOutput), CategoryInternal},
+		{"extension denial", fmt.Errorf("wrapped: %w", extension.ErrDenied), CategoryPermission},
+		{"extension unavailable", extension.ErrUnavailable, CategoryUnavailable},
 		{"other", errors.New("private internal"), CategoryInternal},
 		{"nil", nil, CategoryInternal},
 		{"panicking error", panicError{}, CategoryInternal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.category, ClassifyProvider(tc.err))
+		})
+	}
+}
+
+func TestClassifyProvider_ChainFailures(t *testing.T) {
+	attempt := func(err error) error {
+		return fmt.Errorf("fallback: provider %q model %q: %w", "instance", "model", err)
+	}
+	chain := func(newestFirst ...error) error {
+		wrapped := make([]error, len(newestFirst))
+		for i, err := range newestFirst {
+			wrapped[i] = attempt(err)
+		}
+		return errors.Join(wrapped...)
+	}
+	refusal := catalog.ErrUnsupportedRequest
+	functionality := fmt.Errorf("anthropic: %w", provider.ErrUnsupportedFunctionality)
+	unknown := errors.New("private failure")
+	for _, tc := range []struct {
+		name     string
+		err      error
+		category Category
+	}{
+		{"refusal then 503", chain(apiError(503, nil), refusal), CategoryOverload},
+		{"503 then refusal", chain(refusal, apiError(503, nil)), CategoryOverload},
+		{"refusal then 429", chain(apiError(429, nil), refusal), CategoryRateLimit},
+		{"most recent non-refusal decides", chain(apiError(503, nil), refusal, apiError(429, nil)), CategoryOverload},
+		{"refusal then unknown error", chain(unknown, refusal), CategoryInternal},
+		{"every attempt refused", chain(refusal, refusal), CategoryInvalidRequest},
+		{"single refusal", refusal, CategoryInvalidRequest},
+		{"refusal then call cancellation", errors.Join(refusal, context.Canceled), CategoryCancellation},
+		{"refusal then call deadline", errors.Join(refusal, context.DeadlineExceeded), CategoryTimeout},
+		{"chain then call cancellation", errors.Join(chain(apiError(503, nil), refusal), context.Canceled), CategoryCancellation},
+		{"attempt deadline then 503", chain(apiError(503, nil), context.DeadlineExceeded), CategoryOverload},
+		{"attempt cancellation then 503", chain(apiError(503, nil), context.Canceled), CategoryOverload},
+		{"functionality refusal then 503", chain(apiError(503, nil), functionality), CategoryOverload},
+		{"503 then functionality refusal", chain(functionality, apiError(503, nil)), CategoryOverload},
+		{"unknown error then functionality refusal", chain(functionality, unknown), CategoryInternal},
+		{"functionality refusal then unknown error", chain(unknown, functionality), CategoryInternal},
+		{"functionality and request refusals", chain(functionality, refusal), CategoryInvalidRequest},
+		{"functionality refusal then call cancellation", errors.Join(functionality, context.Canceled), CategoryCancellation},
+		{"API error wrapping the functionality sentinel", chain(apiError(400, provider.ErrUnsupportedFunctionality), refusal), CategoryFailedDependency},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.category, ClassifyProvider(tc.err))
@@ -112,6 +163,9 @@ func TestClassify_ProviderAndStreamBoundaries(t *testing.T) {
 		{"zero status wrapped cancellation", apiError(0, fmt.Errorf("read: %w", context.Canceled)), CategoryCancellation, CategoryCancellation},
 		{"zero canceled status", apiError(0, context.Canceled), CategoryCancellation, CategoryCancellation},
 		{"zero status transport timeout", apiError(0, testNetError{timeout: true}), CategoryUpstream, CategoryTimeout},
+		{"zero status extension denial", apiError(0, extension.ErrDenied), CategoryPermission, CategoryPermission},
+		{"zero status extension unavailable", apiError(0, extension.ErrUnavailable), CategoryUnavailable, CategoryUnavailable},
+		{"extension denial before other causes", apiError(0, errors.Join(extension.ErrDenied, context.Canceled)), CategoryPermission, CategoryPermission},
 		{"nil API error", (*provider.APICallError)(nil), CategoryInternal, CategoryInternal},
 		{"non API error", errors.New("private"), CategoryInternal, CategoryInternal},
 	} {

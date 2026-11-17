@@ -133,11 +133,15 @@ Closing a stream SHALL cancel the model context and start one asynchronous drain
 - **THEN** no second drain SHALL start
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
+Every failure SHALL be classified into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, catalog configuration, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation, unavailable or internal. Invalid request MAY carry a reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
 - **THEN** the category SHALL be permission, BYOK credentials, BYOK selector, unsupported gateway control, invalid request with the reserved reason, or model not found respectively, and any other error SHALL be classified as a provider error
+
+#### Scenario: Stack-catalog configuration error
+- **WHEN** selection fails because a stored stack catalog fails its checks or a catalog provider has no decrypted key
+- **THEN** the category SHALL be catalog configuration with no reason, before the provider-error fallback
 
 #### Scenario: Routing selection errors
 - **WHEN** selection fails with malformed routing controls, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
@@ -157,7 +161,7 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 
 #### Scenario: Adapter documents
 - **WHEN** ProviderWire encodes a failure
-- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents and the provider-stream document SHALL equal those written before this change
+- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents, the provider-stream document and the catalog configuration document SHALL equal those written before this change
 - **AND** provider stream SHALL use the fixed status-less stream document defined by providerwire-v4-streaming-runtime
 
 #### Scenario: Inconsistent tool history
@@ -168,8 +172,46 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 - **WHEN** a stream wait or a unary call reports invalid output
 - **THEN** provider classification SHALL return internal
 
+#### Scenario: Extension outcomes
+- **WHEN** invocation, setup or an in-band stream error part carries an extension denial or an extension unavailable outcome, alone or wrapped in a status-less provider error
+- **THEN** provider, selection and stream-part classification SHALL return permission or unavailable respectively, before any other rule
+- **AND** no other error SHALL be classified as unavailable
+
+### Requirement: Aggregate chain-failure classification
+The runtime SHALL classify a chain failure that joins two or more attempt failures, or attempt failures with the call-level context error, as one failure: a call-level cancellation or expired deadline SHALL win; otherwise the newest attempt failure that is not a refusal SHALL decide by the single-error rules; only when every attempt refused SHALL it be invalid request. A refusal is an attempt failure that is invalid request through `ErrUnsupportedRequest` or `ErrUnsupportedFunctionality`.
+
+#### Scenario: Refusal next to a provider failure
+- **WHEN** a chain aggregate joins a refusal (`catalog.ErrUnsupportedRequest` or `provider.ErrUnsupportedFunctionality`) and a provider failure, in either order, such as a refusing primary and a fallback that returns 503, a 503 primary and a refusing fallback, or a refusing primary and a fallback that returns 429, and the aggregate carries no call-level cancellation or expired deadline
+- **THEN** the category SHALL be that of the provider failure (overload, overload and rate limit respectively), not invalid request
+
+#### Scenario: Most recent non-refusal failure decides
+- **WHEN** a chain aggregate joins several provider failures and refusals, or joins a refusal with an error that has no other category, and the aggregate carries no call-level cancellation or expired deadline
+- **THEN** the most recent attempt failure that is not a refusal SHALL decide the category through the single-error rules, so a refusal next to an unknown error, in either order, SHALL be internal
+- **AND** an earlier attempt-level timeout SHALL NOT outrank a newer 503
+
+#### Scenario: Call canceled after a refusal
+- **WHEN** a chain aggregate joins one or more attempt failures, including a refusal, with the call-level cancellation or expired deadline
+- **THEN** the category SHALL be cancellation or timeout respectively
+- **AND** the call-level context error SHALL be the last element of the top-level join and identical to the context cancellation or deadline error; an attempt failure that merely wraps one of them SHALL NOT count as call-level
+
+#### Scenario: Every attempt refused
+- **WHEN** every attempt in a chain aggregate is a refusal, through either error, and the aggregate carries no call-level cancellation or expired deadline
+- **THEN** the category SHALL be invalid request
+
+#### Scenario: Single refusal
+- **WHEN** a failure is a single refusal, not joined with another attempt failure or a call-level context error
+- **THEN** the category SHALL remain invalid request
+
+#### Scenario: Every Gateway chain
+- **WHEN** configured fallback, routed or BYOK chains of any provider fail with an aggregate
+- **THEN** the aggregate rule SHALL apply to each of them, through every adapter that classifies provider errors
+
+#### Scenario: API error wrapping the unsupported-functionality error
+- **WHEN** an attempt failure is an API call error or transport error that wraps the unsupported-functionality error
+- **THEN** it SHALL NOT count as a refusal and SHALL keep its API call or transport category
+
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. Selections with no attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. The served model SHALL be recorded as gateway-execution-overview defines. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
@@ -191,6 +233,10 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 - **WHEN** an attempt is observed after the call's outcome was decided
 - **THEN** it SHALL NOT appear in the overview
 
+#### Scenario: Served model after sealing
+- **WHEN** a selected stream emits an `anthropic.fallback` marker after its first part sealed the capture
+- **THEN** the overview SHALL carry that marker's served model on the selected attempt, and the attempts list and its check against the expected attempts SHALL be unchanged
+
 #### Scenario: Selection without attribution
 - **WHEN** a selector returns a valid selection with neither configured nor request-account attribution and its model reports fallback attempts
 - **THEN** the attempts SHALL be captured and sealed, and no overview SHALL appear in the response
@@ -198,6 +244,10 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 #### Scenario: Test adapter sees BYOK attempts
 - **WHEN** the test-only adapter and ProviderWire run the same BYOK fake-model scenarios
 - **THEN** both SHALL report the same attempt view, including omitted canonical identity
+
+#### Scenario: Test adapter sees the served model
+- **WHEN** the test-only adapter and ProviderWire run the same configured fake-model scenario whose output carries an `anthropic.fallback` marker
+- **THEN** both SHALL report the same attempt view, including `servedModelId`
 
 ### Requirement: Test-only adapter evidence
 Tests SHALL include a minimal HTTP adapter, not ProviderWire, built only on the runtime and the host contract, with its own response and host-error format. For identical fake models, it SHALL show the same deadline, cancellation, drain, classification, policy, attempt-view and invalid-output outcomes as ProviderWire, with invalid output at the same part. It SHALL NOT be shipped.
@@ -470,3 +520,21 @@ Adapters SHALL NOT own or evaluate output lifecycle rules; they SHALL act on the
 #### Scenario: Agreement at the same part
 - **WHEN** the runtime returns invalid output at a stream part, for any lifecycle rule class, or for a unary result
 - **THEN** ProviderWire SHALL write the same response as for a content rejection it owns at that part or result: the frames of the earlier parts and then one internal terminal error, or the 500 internal-error document, with the same execution metadata
+
+### Requirement: Model entry at the selected model
+The runtime SHALL record that a call entered its model only when the selected model itself is invoked, beneath every per-call layer composed around it. A call that a per-call layer ends before invoking the selected model SHALL record no entry, observe no attempt and synthesize none.
+
+#### Scenario: Denied before the model
+- **WHEN** a per-call layer refuses a single-candidate configured call before invoking the selected model
+- **THEN** the call's view SHALL have no attempt and no overview, and zero provider calls SHALL occur
+
+#### Scenario: No per-call layer
+- **WHEN** no composer is configured and a single-candidate configured call succeeds
+- **THEN** the view SHALL report the one selected attempt, as before this change
+
+### Requirement: Attempt view after an extension response refusal
+An extension denial or unavailable outcome returned after the selected model was entered SHALL leave the attempt view equal to the view of a successful call, because the provider attempt succeeded and only its output was refused.
+
+#### Scenario: Single candidate output denied
+- **WHEN** a single-candidate configured call's output is denied by a response inspector
+- **THEN** the call SHALL fail with the permission category, and its overview SHALL report the one selected attempt

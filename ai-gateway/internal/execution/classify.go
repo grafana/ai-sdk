@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -33,6 +34,12 @@ const (
 	// HTTP status or a cancellation, deadline or transport cause. Only
 	// [ClassifyStreamPart] returns it.
 	CategoryProviderStream
+	// CategoryUnavailable is a call that an extension failure ended under its
+	// fail-closed policy.
+	CategoryUnavailable
+	// CategoryCatalogConfiguration is a stored stack catalog that fails its
+	// checks or lacks a provider key.
+	CategoryCatalogConfiguration
 )
 
 // Reason refines [CategoryInvalidRequest] for host policy and routing refusals
@@ -68,6 +75,9 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 	if isNilInterface(err) {
 		return CategoryInternal, ReasonNone
 	}
+	if category, ok := classifyExtension(err); ok {
+		return category, ReasonNone
+	}
 	switch {
 	case errors.Is(err, ErrInvalidToolHistory):
 		return CategoryInvalidRequest, ReasonNone
@@ -79,6 +89,8 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryBYOKSelector, ReasonNone
 	case errors.Is(err, ErrUnsupportedGatewayControl):
 		return CategoryGatewayControl, ReasonNone
+	case errors.Is(err, ErrCatalogConfiguration):
+		return CategoryCatalogConfiguration, ReasonNone
 	case errors.Is(err, ErrReservedProviderOptions):
 		return CategoryInvalidRequest, ReasonReservedProviderOptions
 	case errors.Is(err, ErrProtectedCallHeader):
@@ -98,7 +110,11 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 }
 
 // ClassifyProvider classifies an error returned by unary invocation or stream
-// setup.
+// setup. A fallback chain failure that joins several attempt failures, or
+// attempt failures with the call's context error, is classified as one
+// failure: a call-level cancellation or expired deadline wins, otherwise the
+// most recent attempt failure that is not a refusal decides, and the chain is
+// an invalid request only when every attempt refused.
 func ClassifyProvider(err error) (category Category) {
 	defer func() {
 		if recover() != nil {
@@ -108,6 +124,46 @@ func ClassifyProvider(err error) (category Category) {
 	if isNilInterface(err) {
 		return CategoryInternal
 	}
+	if category, ok := classifyExtension(err); ok {
+		return category
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		if category, ok := classifyChain(joined.Unwrap()); ok {
+			return category
+		}
+	}
+	return classifySingle(err)
+}
+
+// classifyChain applies the aggregate rule to the members of a top-level join,
+// as the fallback module produces them: attempt failures newest first,
+// optionally followed by the call-level context error. It reports false for a
+// join that is not an aggregate.
+func classifyChain(members []error) (Category, bool) {
+	if len(members) < 2 {
+		return CategoryInternal, false
+	}
+	switch members[len(members)-1] {
+	case context.Canceled:
+		return CategoryCancellation, true
+	case context.DeadlineExceeded:
+		return CategoryTimeout, true
+	}
+	for _, attempt := range members {
+		if category := classifySingle(attempt); !isRefusal(attempt, category) {
+			return category, true
+		}
+	}
+	return CategoryInvalidRequest, true
+}
+
+// isRefusal reports whether an attempt failed before native I/O because its
+// candidate cannot take the request.
+func isRefusal(err error, category Category) bool {
+	return category == CategoryInvalidRequest && (errors.Is(err, catalog.ErrUnsupportedRequest) || errors.Is(err, provider.ErrUnsupportedFunctionality))
+}
+
+func classifySingle(err error) Category {
 	switch {
 	case errors.Is(err, ErrTranslation), errors.Is(err, ErrInvalidOutput):
 		return CategoryInternal
@@ -149,6 +205,9 @@ func ClassifyStreamPart(err error) (category Category) {
 		if isNilInterface(apiError) {
 			return CategoryInternal
 		}
+		if category, ok := classifyExtension(err); ok {
+			return category
+		}
 		if apiError.StatusCode == 0 {
 			switch {
 			case errors.Is(err, context.Canceled):
@@ -167,6 +226,24 @@ func ClassifyStreamPart(err error) (category Category) {
 		return categoryFromStatus(apiError.StatusCode)
 	}
 	return ClassifyProvider(err)
+}
+
+// classifyExtension classifies an extension denial as permission and an
+// extension failure as unavailable.
+func classifyExtension(err error) (Category, bool) {
+	switch {
+	case errors.Is(err, extension.ErrDenied):
+		return CategoryPermission, true
+	case errors.Is(err, extension.ErrUnavailable):
+		return CategoryUnavailable, true
+	}
+	return 0, false
+}
+
+// isExtensionOutcome reports an extension denial or failure.
+func isExtensionOutcome(err error) bool {
+	_, ok := classifyExtension(err)
+	return ok
 }
 
 const statusOverloaded = 529

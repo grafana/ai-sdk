@@ -11,5 +11,6 @@
 // fields cannot be set that way: messages, tools, tool_choice,
 // reasoning_effort, verbosity, stream and stream_options. Sending one is
 // reported as an unsupported feature and dropped. Use WithRequestTransform to
-// rewrite the finished body.
+// rewrite the finished body, or WithRequestTransformAndWarnings to also report
+// compatibility adjustments in the call's warnings.
 package openaicompatible

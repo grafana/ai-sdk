@@ -71,9 +71,10 @@ func applyPolicy(options provider.CallOptions) (provider.CallOptions, json.RawMe
 	return options, controls, nil
 }
 
-// allowedTranslation reports whether translated options pass host policy: no
-// call-level control namespace and no protected call header.
-func allowedTranslation(options provider.CallOptions) bool {
+// PolicyAllows reports whether options that a host layer produced, such as a
+// translation or an extension transform, pass host policy: no call-level
+// [ControlNamespace] and no protected call header.
+func PolicyAllows(options provider.CallOptions) bool {
 	if _, ok := options.ProviderOptions[ControlNamespace]; ok {
 		return false
 	}

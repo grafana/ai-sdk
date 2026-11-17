@@ -20,6 +20,8 @@ func (*HostErrorWriter) WriteHostError(w http.ResponseWriter, category host.Erro
 		value.category = safePermission
 	case host.ErrorBYOKDiscovery:
 		value.category = safeBYOKDiscovery
+	case host.ErrorCatalogConfiguration:
+		value.category = safeCatalogConfiguration
 	}
 	status, body := encodeHTTPError(value, nil)
 	writeErrorResponse(w, status, body)

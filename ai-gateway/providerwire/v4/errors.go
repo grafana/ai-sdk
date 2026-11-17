@@ -20,6 +20,8 @@ const (
 	safePermission
 	safeBYOKDiscovery
 	safeProviderStream
+	safeUnavailable
+	safeCatalogConfiguration
 )
 
 type safeError struct {
@@ -28,20 +30,22 @@ type safeError struct {
 }
 
 var safeCategories = [...]safeErrorCategory{
-	execution.CategoryInvalidRequest:   safeInvalidRequest,
-	execution.CategoryBYOKCredentials:  safeBYOKCredentials,
-	execution.CategoryBYOKSelector:     safeBYOKSelector,
-	execution.CategoryGatewayControl:   safeGatewayControl,
-	execution.CategoryModelNotFound:    safeModelNotFound,
-	execution.CategoryPermission:       safePermission,
-	execution.CategoryRateLimit:        safeRateLimit,
-	execution.CategoryOverload:         safeOverload,
-	execution.CategoryFailedDependency: safeFailedDependency,
-	execution.CategoryUpstream:         safeUpstream,
-	execution.CategoryTimeout:          safeTimeout,
-	execution.CategoryCancellation:     safeCancellation,
-	execution.CategoryInternal:         safeInternal,
-	execution.CategoryProviderStream:   safeProviderStream,
+	execution.CategoryInvalidRequest:       safeInvalidRequest,
+	execution.CategoryBYOKCredentials:      safeBYOKCredentials,
+	execution.CategoryBYOKSelector:         safeBYOKSelector,
+	execution.CategoryGatewayControl:       safeGatewayControl,
+	execution.CategoryModelNotFound:        safeModelNotFound,
+	execution.CategoryPermission:           safePermission,
+	execution.CategoryRateLimit:            safeRateLimit,
+	execution.CategoryOverload:             safeOverload,
+	execution.CategoryFailedDependency:     safeFailedDependency,
+	execution.CategoryUpstream:             safeUpstream,
+	execution.CategoryTimeout:              safeTimeout,
+	execution.CategoryCancellation:         safeCancellation,
+	execution.CategoryInternal:             safeInternal,
+	execution.CategoryProviderStream:       safeProviderStream,
+	execution.CategoryUnavailable:          safeUnavailable,
+	execution.CategoryCatalogConfiguration: safeCatalogConfiguration,
 }
 
 func safeErrorFor(category execution.Category, reason execution.Reason) safeError {
@@ -64,6 +68,13 @@ func safeErrorFor(category execution.Category, reason execution.Reason) safeErro
 		value.reason = routingFallbackModel
 	}
 	return value
+}
+
+// extensionOutcome reports a category that only extension outcomes produce in
+// a stream: a denial or a fail-closed failure. Neither carries a native
+// failure summary.
+func (value safeError) extensionOutcome() bool {
+	return value.category == safePermission || value.category == safeUnavailable
 }
 
 func safeErrorFromResolution(err error) safeError {

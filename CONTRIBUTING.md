@@ -347,6 +347,7 @@ mise run test-short        # skip integration/E2E
 mise run test-race         # short tests with the race detector, Gateway and stream-path modules
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
 mise run test-conformance  # replay upstream-recorded fixtures
+mise run test-openai-chat-completions-adapter # official OpenAI clients against the Gateway plugin
 ```
 
 Wire-format work needs a cross-language test. If you add or change a
@@ -575,8 +576,11 @@ SDK's Go module dependency graph.
   `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
-  revision, as a workflow artifact. Gateway is not published as a standalone Go
-  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  revision, as a workflow artifact. Full Gateway Go source tests run in parallel
+  with the plugin build and checks. The `Validate AI Gateway plugin` check waits
+  for both jobs to succeed before retaining the validated package; the build
+  job hands off a separate, short-lived candidate artifact. Gateway is not published
+  as a standalone Go module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
 - **Gateway dev publication:** for each push to `main`, the [publish
@@ -596,8 +600,34 @@ SDK's Go module dependency graph.
   publish run by hand, but only while its commit is still the newest on `main`.
   Publishing needs a `grafana-aigateway-app` plugin stub with the Grafana Labs
   signature level in the dev catalog, which exists; the shared workflow brings its
-  own credentials and runners. Publication does not deploy or run the plugin,
-  publish to the ops or prod catalogs, or create tags or releases.
+  own credentials and runners. Publication does not publish to the ops or prod
+  catalogs, or create tags or releases.
+- **Gateway dev rollout:** the deployment repository pins the plugin version that
+  each environment's plugin backend runs. Dev is deployed in two waves, each with
+  its own pin. After a successful dev publication, the publish workflow opens one
+  auto-merge pull request there that pins both dev waves to exactly the version
+  just published, so they move together; the pull request links back to the
+  publish run. A newer publication replaces a pin pull request that has not merged
+  yet. Only a commit that is still the head of `main` is pinned: a run whose
+  commit was superseded, including a rerun of an older run, skips the pin with a
+  notice, so it never moves dev back. Once the pin merges and is applied, the dev
+  plugin backend restarts on that version, so dev runs a commit only after its pin
+  pull request merged. Ops and prod pins are not changed. The pin needs a one-time
+  grant in the deployment repository that lets this workflow open those pull
+  requests, and an existing pin for each dev wave to update; without the grant the
+  pin job fails, and a wave without a pin is left unchanged. To roll dev back, pin
+  both dev waves to an earlier published `<version>+<sha>` in the deployment
+  repository. The next `main` publication replaces those pins, so also revert the
+  faulty commit on `main` to keep dev on a good version.
+- **Gateway staging promotion:** to promote a commit that dev already runs,
+  dispatch the [promotion workflow](.github/workflows/publish-ai-gateway-ops.yml)
+  from `main` with its full SHA. The workflow requires the commit's CI run and
+  dev publication to have succeeded, publishes the same `<version>+<sha>` to the
+  staging catalog (`ops` in the shared workflow) and requests a staging version
+  pin that never merges automatically and needs review. Promotion needs a
+  one-time grant and an existing staging pin in the deployment repository;
+  without the grant the pin request fails after publishing. To roll staging
+  back, promote an earlier commit.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use

@@ -44,5 +44,6 @@ Other records have their own homes:
 | Fallback observation | Go extension | mixed | `fallback/` and root tests |
 | Agent Observability integration | Go extension | mixed | `middleware/agentobservability` tests, Gateway export tests |
 | AI Gateway | Go extension | mixed | `openspec/specs/gateway-*` and `grafana-gateway-client` specs, `ai-gateway/` tests |
+| Gateway native Chat adapter | Go extension | mixed | `ai-gateway/openai/chatcompletions`, `ai-gateway/test/openai-chat-completions-adapter` (official clients; synthetic native backends, not UI conformance) |
 | Baseline and fixture inventory | Conformance harness | automated | `mise run validate-parity-baseline`, `mise run parity-coverage` |
 | Published module dependencies | Conformance harness | automated | `mise run verify-module-requirements`, post-publication verification in `scripts/release_consumer.py` |

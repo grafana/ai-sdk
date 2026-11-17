@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -169,6 +170,116 @@ func TestRuntimeCall_Selection(t *testing.T) {
 			assert.Zero(t, model.callCount())
 		})
 	}
+}
+
+func TestRuntimeCall_Compose(t *testing.T) {
+	newComposed := func(t *testing.T, compose ModelComposer) (*Runtime, *generateModel) {
+		t.Helper()
+		selected := &generateModel{modelID: "selected"}
+		runtime, err := New(Config{Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+			return ConfiguredSelection(id, selected, nil), nil
+		}, Compose: compose, Limits: testLimits()})
+		require.NoError(t, err)
+		return runtime, selected
+	}
+
+	t.Run("call invokes the composed model", func(t *testing.T) {
+		composed := &generateModel{modelID: "composed"}
+		var received []Selection
+		runtime, selected := newComposed(t, func(s Selection) (provider.LanguageModel, error) {
+			received = append(received, s)
+			return composed, nil
+		})
+		call, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		_, err = call.Generate()
+		require.NoError(t, err)
+		require.Len(t, received, 1)
+		assert.Equal(t, "id", received[0].ID)
+		assert.Equal(t, SourceOperatorCatalog, received[0].Source)
+		entered, ok := received[0].Model.(enteredModel)
+		require.True(t, ok)
+		assert.Same(t, selected, entered.LanguageModel)
+		assert.Equal(t, 1, composed.callCount())
+		assert.Zero(t, selected.callCount())
+	})
+
+	var typedNil *generateModel
+	for _, tc := range []struct {
+		name    string
+		compose ModelComposer
+	}{
+		{name: "error", compose: func(Selection) (provider.LanguageModel, error) { return nil, errors.New("private") }},
+		{name: "panic", compose: func(Selection) (provider.LanguageModel, error) { panic("private") }},
+		{name: "nil model", compose: func(Selection) (provider.LanguageModel, error) { return nil, nil }},
+		{name: "typed nil model", compose: func(Selection) (provider.LanguageModel, error) { return typedNil, nil }},
+	} {
+		t.Run("composer "+tc.name+" fails as internal", func(t *testing.T) {
+			runtime, selected := newComposed(t, tc.compose)
+			_, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+			assert.ErrorIs(t, err, errInternal)
+			assert.Zero(t, selected.callCount())
+		})
+	}
+
+	t.Run("a layer that refuses before the selected model records no attempt", func(t *testing.T) {
+		for _, stream := range []bool{false, true} {
+			runtime, selected := newComposedConfigured(t, func(Selection) (provider.LanguageModel, error) {
+				return &generateModel{
+					generate: func(context.Context) (*provider.GenerateResult, error) { return nil, extension.ErrDenied },
+					stream:   func(context.Context) (*provider.StreamResult, error) { return nil, extension.ErrDenied },
+				}, nil
+			})
+			call, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+			require.NoError(t, err)
+			if stream {
+				_, err = call.Stream()
+			} else {
+				_, err = call.Generate()
+			}
+			assert.ErrorIs(t, err, extension.ErrDenied)
+			assert.Nil(t, call.View(err).Overview)
+			assert.Zero(t, selected.callCount())
+			call.Close()
+		}
+	})
+
+	t.Run("a layer that invokes the selected model records its attempt", func(t *testing.T) {
+		runtime, selected := newComposedConfigured(t, func(s Selection) (provider.LanguageModel, error) {
+			inner := s.Model
+			return &generateModel{generate: func(ctx context.Context) (*provider.GenerateResult, error) {
+				if _, err := inner.DoGenerate(ctx, provider.CallOptions{}); err != nil {
+					return nil, err
+				}
+				return nil, extension.ErrDenied
+			}}, nil
+		})
+		call, err := runtime.Call(t.Context(), "id", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		_, err = call.Generate()
+		assert.ErrorIs(t, err, extension.ErrDenied)
+		view := call.View(err)
+		require.NotNil(t, view.Overview)
+		require.Len(t, view.Overview.Attempts, 1)
+		assert.Equal(t, fallback.AttemptSelected, view.Overview.Attempts[0].Outcome)
+		assert.Equal(t, 1, selected.callCount())
+	})
+
+	t.Run("selection errors skip the composer", func(t *testing.T) {
+		var composed atomic.Int32
+		runtime, err := New(Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+			return Selection{}, ErrInvalidBYOK
+		}, Compose: func(s Selection) (provider.LanguageModel, error) {
+			composed.Add(1)
+			return s.Model, nil
+		}, Limits: testLimits()})
+		require.NoError(t, err)
+		_, err = runtime.Call(t.Context(), "id", provider.CallOptions{})
+		assert.ErrorIs(t, err, ErrInvalidBYOK)
+		assert.Zero(t, composed.Load())
+	})
 }
 
 func TestCallGenerate(t *testing.T) {
@@ -567,6 +678,17 @@ func TestStreamClose_Drain(t *testing.T) {
 	})
 }
 
+func TestCall_ModelID(t *testing.T) {
+	runtime := newRuntime(t, func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+		return Selection{ID: "canonical", Model: &generateModel{}}, nil
+	}, testLimits())
+	call, err := runtime.Call(t.Context(), "alias", provider.CallOptions{})
+	require.NoError(t, err)
+	defer call.Close()
+	assert.Equal(t, "canonical", call.ModelID())
+	assert.Nil(t, call.View(nil).Overview)
+}
+
 // invalidThenReady returns a stream that sends one invalid part and then
 // always has a raw part ready, and the number of raw parts taken so far.
 func invalidThenReady(t *testing.T) (chan provider.StreamPart, *atomic.Int64) {
@@ -741,4 +863,71 @@ func TestWait_Err(t *testing.T) {
 	assert.NoError(t, WaitClosedAfterError.Err())
 	assert.ErrorIs(t, WaitInvalidOutput.Err(), ErrInvalidOutput)
 	assert.Equal(t, CategoryInternal, ClassifyProvider(WaitInvalidOutput.Err()))
+}
+
+func newComposedConfigured(t *testing.T, compose ModelComposer) (*Runtime, *generateModel) {
+	t.Helper()
+	selected := &generateModel{modelID: "selected"}
+	expected := []ExpectedAttempt{{ModelID: "id", CanonicalID: "canonical", Destination: catalog.ConfiguredCandidate{Provider: "native", ModelID: "backend"}}}
+	runtime, err := New(Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+		return ConfiguredSelection("canonical", selected, expected), nil
+	}, Compose: compose, Limits: testLimits()})
+	require.NoError(t, err)
+	return runtime, selected
+}
+
+func TestRuntime_StackCatalogKeysAreRedactedPerCall(t *testing.T) {
+	echo := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "catalog-key unused-key server-key", IsRetryable: new(true)})
+	first := &generateModel{
+		modelID:  "A",
+		generate: func(context.Context) (*provider.GenerateResult, error) { return nil, echo },
+		stream:   func(context.Context) (*provider.StreamResult, error) { return nil, echo },
+	}
+	second := &generateModel{modelID: "B", stream: func(context.Context) (*provider.StreamResult, error) {
+		parts := make(chan provider.StreamPart, 1)
+		parts <- provider.StreamPart{Type: provider.PartRaw}
+		close(parts)
+		return &provider.StreamResult{Stream: parts}, nil
+	}}
+	model, err := fallback.New(first, second)
+	require.NoError(t, err)
+	expected := []ExpectedAttempt{
+		{ModelID: "stack", CanonicalID: "stack", Destination: catalog.ConfiguredCandidate{ProviderInstance: "primary", Provider: "native", ModelID: "A"}},
+		{ModelID: "stack", CanonicalID: "stack", Destination: catalog.ConfiguredCandidate{ProviderInstance: "secondary", Provider: "native", ModelID: "B"}},
+	}
+	runtime, err := New(Config{Limits: testLimits(), ConfiguredAPIKeys: []string{"server-key"}, Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+		if id == "stack" {
+			return StackCatalogSelection(id, "team", model, expected, []string{"catalog-key", "unused-key"}), nil
+		}
+		return AccountSelection(id, model, accountAttempts("native", "A", 1)), nil
+	}})
+	require.NoError(t, err)
+
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			call, err := runtime.Call(t.Context(), "stack", provider.CallOptions{})
+			require.NoError(t, err)
+			if streaming {
+				stream, err := call.Stream()
+				require.NoError(t, err)
+				_, wait := stream.Next()
+				require.Equal(t, WaitPart, wait)
+				stream.Close()
+			} else {
+				_, err = call.Generate()
+				require.NoError(t, err)
+			}
+			view := call.View(nil)
+			require.NotNil(t, view.Overview)
+			require.Len(t, view.Overview.Attempts, 2)
+			assert.Equal(t, "[REDACTED] [REDACTED] [REDACTED]", view.Overview.Attempts[0].Error.Message)
+			assert.Equal(t, "[REDACTED] [REDACTED] [REDACTED]", view.Current(echo).Message)
+		})
+	}
+	t.Run("later call keeps its own policy", func(t *testing.T) {
+		call, err := runtime.Call(t.Context(), "native/model", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		assert.Equal(t, "catalog-key unused-key [REDACTED]", call.View(nil).Current(echo).Message)
+	})
 }

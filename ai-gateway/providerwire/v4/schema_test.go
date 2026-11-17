@@ -35,6 +35,7 @@ var (
 	canonicalModelNotFoundError  = []byte(`{"error":{"message":"model not found","type":"model_not_found","param":null,"code":"model_not_found"}}`)
 	canonicalRateLimitError      = []byte(`{"error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded"}}`)
 	canonicalOverloadError       = []byte(`{"error":{"message":"service overloaded","type":"internal_server_error","param":null,"code":"overloaded"}}`)
+	canonicalUnavailableError    = []byte(`{"error":{"message":"service unavailable","type":"internal_server_error","param":null,"code":"unavailable"}}`)
 	canonicalDependencyError     = []byte(`{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`)
 	canonicalUpstreamError       = []byte(`{"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error"}}`)
 	canonicalTimeoutError        = []byte(`{"error":{"message":"request timed out","type":"internal_server_error","param":null,"code":"timeout"}}`)
@@ -54,6 +55,8 @@ var (
 	canonicalEmptyStartFrame              = []byte("data: {\"type\":\"stream-start\",\"warnings\":[]}\n\n")
 	canonicalRateLimitStreamErrorFrame    = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"rate limit exceeded\",\"type\":\"rate_limit_exceeded\",\"param\":null,\"code\":\"rate_limit_exceeded\",\"statusCode\":429,\"retryable\":true}}\n\n")
 	canonicalOverloadStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"service overloaded\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"overloaded\",\"statusCode\":503,\"retryable\":true}}\n\n")
+	canonicalPermissionStreamErrorFrame   = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"forbidden\",\"type\":\"forbidden\",\"param\":null,\"code\":\"forbidden\",\"statusCode\":403,\"retryable\":false}}\n\n")
+	canonicalUnavailableStreamErrorFrame  = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"service unavailable\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"unavailable\",\"statusCode\":503,\"retryable\":true}}\n\n")
 	canonicalDependencyStreamErrorFrame   = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"failed dependency\",\"type\":\"failed_dependency\",\"param\":null,\"code\":\"failed_dependency\",\"statusCode\":424,\"retryable\":false}}\n\n")
 	canonicalUpstreamStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"upstream failure\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"upstream_error\",\"statusCode\":502,\"retryable\":true}}\n\n")
 	canonicalTimeoutStreamErrorFrame      = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request timed out\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"timeout\",\"statusCode\":504,\"retryable\":true}}\n\n")
@@ -213,6 +216,7 @@ func TestErrorSchema(t *testing.T) {
 		canonicalTimeoutError,
 		canonicalCancellationError,
 		canonicalInternalError,
+		canonicalUnavailableError,
 		unsupportedToolsError,
 		unsupportedToolApprovalsError,
 		reservedProviderOptionsError,
@@ -277,6 +281,28 @@ func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 			require.NoError(t, compiled.Validate(metadata["gateway"]))
 		})
 	}
+	t.Run("served model", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			attempt execution.Attempt
+			valid   bool
+		}{
+			{"selected", execution.Attempt{Provider: "anthropic", ModelID: "claude-a", ServedModelID: "claude-b", Outcome: fallback.AttemptSelected}, true},
+			{"failed", execution.Attempt{Provider: "anthropic", ModelID: "claude-a", ServedModelID: "claude-b", Outcome: fallback.AttemptFailed}, false},
+			{"canceled", execution.Attempt{Provider: "anthropic", ModelID: "claude-a", ServedModelID: "claude-b", Outcome: fallback.AttemptCanceled}, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				metadata := execution.Metadata(&execution.Overview{RequestedModelID: "public", CanonicalModelID: "public", Attempts: []execution.Attempt{tc.attempt}}, nil)
+				err := compiled.Validate(metadata["gateway"])
+				if tc.valid {
+					require.NoError(t, err)
+					return
+				}
+				require.Error(t, err)
+			})
+		}
+		require.Error(t, compiled.Validate(json.RawMessage(`{"execution":{"requestedModelId":"public","attempts":[{"provider":"anthropic","modelId":"claude-a","servedModelId":"","outcome":"selected"}]}}`)))
+	})
 	t.Run("request accounts", func(t *testing.T) {
 		metadata := execution.Metadata(&execution.Overview{RequestedModelID: "openai/gpt-5", Attempts: []execution.Attempt{
 			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "overloaded", StatusCode: 503}},

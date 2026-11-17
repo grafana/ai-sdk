@@ -14,7 +14,10 @@ import (
 // Config configures a [Runtime].
 type Config struct {
 	Selector RequestSelector
-	Limits   Limits
+	// Compose, when set, composes the model each call invokes from its
+	// selection. Without it, a call invokes the selected model.
+	Compose ModelComposer
+	Limits  Limits
 	// ConfiguredAPIKeys are provider and exporter credentials redacted from native
 	// failure summaries.
 	ConfiguredAPIKeys []string `json:"-"`
@@ -24,6 +27,7 @@ type Config struct {
 // for concurrent use.
 type Runtime struct {
 	selector RequestSelector
+	compose  ModelComposer
 	limits   Limits
 	redactor SummaryRedactor
 }
@@ -43,6 +47,7 @@ func New(config Config) (*Runtime, error) {
 	}
 	return &Runtime{
 		selector: config.Selector,
+		compose:  config.Compose,
 		limits:   config.Limits,
 		redactor: NewSummaryRedactor(config.ConfiguredAPIKeys),
 	}, nil
@@ -51,6 +56,7 @@ func New(config Config) (*Runtime, error) {
 // Call is one selected model call. Its methods must be called from one
 // goroutine.
 type Call struct {
+	modelID  string
 	ctx      context.Context
 	model    provider.LanguageModel
 	options  provider.CallOptions
@@ -63,7 +69,12 @@ type Call struct {
 // selects the model for a request. It fails inconsistent history with
 // [ErrInvalidToolHistory] before anything else. It then refuses protected call
 // headers with [ErrProtectedCallHeader], and removes the call-level
-// [ControlNamespace] from options to pass it to the selector. A
+// [ControlNamespace] from options to pass it to the selector. The configured
+// [ModelComposer] then composes the model the call invokes around the selected
+// model; a composer that fails, panics or returns an invalid model fails the
+// call as internal. The call counts as entered only when the selected model
+// itself is invoked, so a composed layer that ends the call first records no
+// attempt. A
 // context that has ended before or during selection decides the outcome, and
 // its error is returned. A translator set with [WithTranslator] reaches every
 // physical attempt of this call only.
@@ -83,28 +94,56 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	selected, err := r.selectModel(ctx, modelID, options, gateway)
+	selected, attempts, err := r.selectModel(ctx, modelID, options, gateway)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
 	if err != nil {
 		return nil, err
 	}
-	attempts := newAttemptCapture(modelID, selected, r.redactor)
-	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
+	return &Call{modelID: selected.ID, ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
 
-func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
+func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, attempts *attemptCapture, err error) {
 	defer func() {
 		if recover() != nil {
-			selected, err = Selection{}, errInternal
+			selected, attempts, err = Selection{}, nil, errInternal
 		}
 	}()
 	selected, err = r.selector(ctx, modelID, options, gateway)
-	if err == nil && !validSelection(selected) {
-		return Selection{}, errInternal
+	if err != nil {
+		return selected, nil, err
 	}
-	return selected, err
+	if !validSelection(selected) {
+		return Selection{}, nil, errInternal
+	}
+	attempts = newAttemptCapture(modelID, selected, r.redactor.With(selected.keys))
+	selected.Model = enteredModel{LanguageModel: selected.Model, attempts: attempts}
+	if r.compose == nil {
+		return selected, attempts, nil
+	}
+	selected.Model, err = r.compose(selected)
+	if err != nil || !validSelection(selected) {
+		return Selection{}, nil, errInternal
+	}
+	return selected, attempts, nil
+}
+
+// enteredModel records the call's entry when the selected model itself is
+// invoked, beneath every composed layer.
+type enteredModel struct {
+	provider.LanguageModel
+	attempts *attemptCapture
+}
+
+func (m enteredModel) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+	m.attempts.enter()
+	return m.LanguageModel.DoGenerate(ctx, options)
+}
+
+func (m enteredModel) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+	m.attempts.enter()
+	return m.LanguageModel.DoStream(ctx, options)
 }
 
 func validSelection(selected Selection) (valid bool) {
@@ -116,11 +155,16 @@ func validSelection(selected Selection) (valid bool) {
 	return selected.ID != "" && utf8.ValidString(selected.ID) && !isNilInterface(selected.Model) && selected.Model.SpecificationVersion() == "v4"
 }
 
+// ModelID returns the logical model identity chosen by the selector.
+func (c *Call) ModelID() string { return c.modelID }
+
 // Generate invokes the model once. A panic or a missing result fails as
 // internal, and a result returned after the context ended is discarded in
 // favor of the context's error. A result that breaks an output lifecycle rule,
 // checked with [ValidateGenerateResult] against the call's tool history, fails
-// with [ErrInvalidOutput].
+// with [ErrInvalidOutput]. The model named by the result's last valid
+// Anthropic server-side fallback marker becomes the selected attempt's served
+// model.
 func (c *Call) Generate() (*provider.GenerateResult, error) {
 	if err := c.ctx.Err(); err != nil {
 		return nil, err
@@ -132,10 +176,14 @@ func (c *Call) Generate() (*provider.GenerateResult, error) {
 		c.attempts.discard()
 		return nil, ctxErr
 	}
-	if err == nil && ValidateGenerateResult(result, c.history) != nil {
+	if err != nil {
+		return result, err
+	}
+	c.attempts.serveContent(result.Content)
+	if ValidateGenerateResult(result, c.history) != nil {
 		return nil, ErrInvalidOutput
 	}
-	return result, err
+	return result, nil
 }
 
 func (c *Call) generate(ctx context.Context) (result *provider.GenerateResult, err error) {
@@ -147,7 +195,6 @@ func (c *Call) generate(ctx context.Context) (result *provider.GenerateResult, e
 			err = errInternal
 		}
 	}()
-	c.attempts.enter()
 	return c.model.DoGenerate(ctx, c.options)
 }
 
@@ -173,6 +220,7 @@ func (c *Call) Stream() (*Stream, error) {
 		return nil, errInternal
 	}
 	return &Stream{
+		attempts:  c.attempts,
 		ctx:       c.ctx,
 		model:     modelContext,
 		cancel:    cancel,
@@ -189,19 +237,19 @@ func (c *Call) stream(ctx context.Context) (result *provider.StreamResult, err e
 			result, err = nil, errInternal
 		}
 	}()
-	c.attempts.enter()
 	return c.model.DoStream(ctx, c.options)
 }
 
 func (c *Call) abandon(cancel context.CancelFunc, result *provider.StreamResult) {
 	cancel()
 	if result != nil {
-		startDrain(result.Stream, c.limits.StreamDrainDuration)
+		StartDrain(result.Stream, c.limits.StreamDrainDuration)
 	}
 }
 
 // View seals the call's attempt capture and projects it for an outcome that
-// failed with err, or succeeded when err is nil or [ErrInvalidOutput].
+// failed with err, or succeeded when err is nil, [ErrInvalidOutput] or an
+// extension outcome after the selected model was entered.
 func (c *Call) View(err error) View { return c.attempts.view(err) }
 
 // Close seals the call's attempt capture.
@@ -248,6 +296,7 @@ func (w Wait) Err() error {
 // Stream is an established model stream. Its methods must be called from one
 // goroutine, and Close must be called once the adapter is done.
 type Stream struct {
+	attempts  *attemptCapture
 	ctx       context.Context
 	model     context.Context
 	cancel    context.CancelFunc
@@ -270,7 +319,8 @@ type Stream struct {
 // [WaitFinished] when the last lifecycle part was a finish,
 // [WaitClosedAfterError] when an error part followed the last lifecycle part,
 // and [WaitClosed] otherwise. Invalid output and finished are sticky: later
-// calls return them again without reading.
+// calls return them again without reading. A delivered Anthropic server-side
+// fallback marker updates the served model of the call's view.
 func (s *Stream) Next() (provider.StreamPart, Wait) {
 	if s.terminal != 0 {
 		return provider.StreamPart{}, s.terminal
@@ -286,6 +336,9 @@ func (s *Stream) Next() (provider.StreamPart, Wait) {
 				s.Close()
 				s.terminal = WaitInvalidOutput
 				return provider.StreamPart{}, WaitInvalidOutput
+			}
+			if part.Type == provider.PartCustom {
+				s.attempts.servePart(part.Kind, part.ProviderMetadata)
 			}
 			return part, WaitPart
 		}
@@ -316,11 +369,13 @@ func (s *Stream) Close() {
 	s.closeAll.Do(func() {
 		s.cancel()
 		s.idle.Stop()
-		startDrain(s.parts, s.limits.StreamDrainDuration)
+		StartDrain(s.parts, s.limits.StreamDrainDuration)
 	})
 }
 
-func startDrain(parts <-chan provider.StreamPart, duration time.Duration) {
+// StartDrain drains parts on its own goroutine until it closes or duration
+// passes. A nil channel is not drained.
+func StartDrain(parts <-chan provider.StreamPart, duration time.Duration) {
 	if parts != nil {
 		go drain(parts, duration)
 	}

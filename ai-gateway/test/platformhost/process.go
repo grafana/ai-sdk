@@ -30,6 +30,9 @@ type PluginConfig struct {
 	// Env is the complete plugin environment, excluding the signing keys the
 	// host adds.
 	Env []string
+	// WithoutSigningKeys launches the plugin without the host's signing keys,
+	// as a host that delegates no requests to it does.
+	WithoutSigningKeys bool
 	// Logger relays plugin log records, as the host relays them.
 	Logger hclog.Logger
 	// Stderr, if set, receives the plugin's raw standard error.
@@ -45,17 +48,21 @@ type PluginProcess struct {
 }
 
 // LaunchPlugin starts the plugin executable through go-plugin, negotiates the
-// plugin protocol and dispenses its diagnostics and v3 route services. The
-// plugin receives the host's signing keys as GRAFANA_JWKS.
+// plugin protocol and dispenses its diagnostics and v3 route services. Unless
+// config.WithoutSigningKeys is set, the plugin receives the host's signing keys
+// as GRAFANA_JWKS.
 func (h *Host) LaunchPlugin(config PluginConfig) (*PluginProcess, error) {
-	keys, err := h.JWKS()
-	if err != nil {
-		return nil, err
-	}
 	plugins := grpcplugin.ClientPluginSet()
 	plugins[diagnosticsPlugin] = &sdkgrpcplugin.DiagnosticsGRPCPlugin{}
 	command := exec.Command(config.Binary)
-	command.Env = append(append([]string(nil), config.Env...), "GRAFANA_JWKS="+string(keys))
+	command.Env = append([]string(nil), config.Env...)
+	if !config.WithoutSigningKeys {
+		keys, err := h.JWKS()
+		if err != nil {
+			return nil, err
+		}
+		command.Env = append(command.Env, "GRAFANA_JWKS="+string(keys))
+	}
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: plugin.HandshakeConfig{
 			ProtocolVersion:  sdkgrpcplugin.ProtocolVersion,

@@ -872,7 +872,8 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"canceled", safeError{category: safeCancellation}, 499, canonicalCancellationError, canonicalCancellationStreamErrorFrame},
 		{"internal", safeError{category: safeInternal}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"provider stream", safeError{category: safeProviderStream}, 500, canonicalInternalError, canonicalProviderStreamErrorFrame},
-		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
+		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalPermissionStreamErrorFrame},
+		{"unavailable", safeError{category: safeUnavailable}, 503, canonicalUnavailableError, canonicalUnavailableStreamErrorFrame},
 		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"tools", safeError{category: safeInvalidRequest, reason: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
@@ -1636,10 +1637,10 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 		}, documentForSafeError(safeError{category: safeOverload}), []int{1, 1}},
 		{"rejection then unknown error", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(unsupported("a")), newScripted(errors.New("private failure"))}
-		}, invalid, []int{1, 1}},
+		}, documentForSafeError(safeError{category: safeInternal}), []int{1, 1}},
 		{"unknown error then rejection", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(errors.New("private failure")), newScripted(unsupported("a"))}
-		}, invalid, []int{1, 1}},
+		}, documentForSafeError(safeError{category: safeInternal}), []int{1, 1}},
 		{"API error wrapping the sentinel keeps API classification", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(wrapsSentinel)}
 		}, documentForSafeError(safeError{category: safeFailedDependency}), []int{1}},

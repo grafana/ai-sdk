@@ -33,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         if: steps.files.outputs.has_openspec == 'true'
         with:
           version: "2026.5.4"

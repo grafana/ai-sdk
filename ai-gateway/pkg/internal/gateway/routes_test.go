@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
@@ -25,7 +27,6 @@ import (
 	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/plugin/appadapter"
 	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
-	"github.com/grafana/grafana-app-sdk/plugin/grpcplugin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
@@ -58,15 +59,19 @@ func (b *syncBuffer) String() string {
 }
 
 type fakeAnthropic struct {
-	server   *httptest.Server
-	requests atomic.Int32
-	block    atomic.Bool
-	blocked  chan error
-	release  chan struct{}
-	canceled chan struct{}
-	mu       sync.Mutex
-	bodies   []string
-	headers  []http.Header
+	server *httptest.Server
+	// failModel names a backend model that answers with a retryable error
+	// whose message is failMessage.
+	failModel   atomic.Value
+	failMessage atomic.Value
+	requests    atomic.Int32
+	block       atomic.Bool
+	blocked     chan error
+	release     chan struct{}
+	canceled    chan struct{}
+	mu          sync.Mutex
+	bodies      []string
+	headers     []http.Header
 }
 
 func newFakeAnthropic(t *testing.T) *fakeAnthropic {
@@ -80,6 +85,13 @@ func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 		fake.headers = append(fake.headers, r.Header.Clone())
 		release := fake.release
 		fake.mu.Unlock()
+		if failing, _ := fake.failModel.Load().(string); failing != "" && strings.Contains(string(body), `"model":"`+failing+`"`) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			message, _ := fake.failMessage.Load().(string)
+			_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"overloaded_error","message":%q}}`, "overloaded "+message)
+			return
+		}
 		if fake.block.Load() {
 			<-r.Context().Done()
 			fake.blocked <- r.Context().Err()
@@ -174,8 +186,11 @@ func lookup(values map[string]string) func(string) (string, bool) {
 }
 
 type harnessOptions struct {
-	routeDeadline time.Duration
-	fallback      bool
+	routeDeadline  time.Duration
+	fallback       bool
+	withoutCatalog bool
+	extensions     []extension.Definition
+	env            map[string]string
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -186,7 +201,7 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options harnessOptions) *harness {
 	t.Helper()
 	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline})
+	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
 	require.NoError(t, err)
 	keys, err := host.JWKS()
 	require.NoError(t, err)
@@ -196,20 +211,26 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 		"GRAFANA_JWKS":            string(keys),
 		"ANTHROPIC_SECRET":        providerSecret,
 	}
+	if options.withoutCatalog {
+		delete(env, "GF_PLUGIN_MODEL_CATALOG")
+	}
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"
 		env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = testInternalService
 	} else {
 		env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
 	}
+	maps.Copy(env, options.env)
 	logs := &syncBuffer{}
 	registry := prometheus.NewRegistry()
-	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry})
+	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions})
 	require.NoError(t, err)
 	provider := gw.Provider()
 	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
 	require.NoError(t, err)
-	served, err := host.ServeInProcess(grpcplugin.ServeOpts{RouteServer: appadapter.NewRouteAdapter(built), Authenticator: gw.Authenticator(), PluginID: PluginID})
+	opts := appadapter.ServeOpts(built)
+	opts.Authenticator, opts.PluginID = gw.Authenticator(), PluginID
+	served, err := host.ServeInProcess(opts)
 	require.NoError(t, err)
 	server := httptest.NewServer(served.Handler())
 	t.Cleanup(func() {
@@ -357,6 +378,28 @@ func TestGateway_CloudAccess(t *testing.T) {
 		}
 		assert.Contains(t, h.logs.String(), `"caller_service":"`+testInternalService+`"`)
 	})
+}
+
+func TestGateway_WithoutOperatorCatalog(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{withoutCatalog: true})
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+
+	status, body := do(t, discoveryRequest(t, h.url("config"), internal))
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, `{"models":[]}`, body)
+	for _, request := range []string{unaryBody, `{"prompt":[],"providerOptions":{"gateway":{"models":["other"]}}}`} {
+		status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), request, false, internal))
+		assert.Equal(t, http.StatusNotFound, status)
+		assert.Contains(t, body, `"code":"model_not_found"`)
+	}
+	status, body = do(t, discoveryRequest(t, h.url("config"), account))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, body, "catalog discovery is unsupported for BYOK")
+	status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, account))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, body, "BYOK requires a supported provider/model selector")
+	assert.Zero(t, h.anthropic.requests.Load())
 }
 
 func TestGateway_SelfHostedAccess(t *testing.T) {
@@ -581,3 +624,66 @@ func TestGateway_RouteDeadlineEndsTheModelCall(t *testing.T) {
 }
 
 const unaryBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16}`
+
+func chatRequest(t *testing.T, url, body string, auth credential) *http.Request {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	auth(request)
+	return request
+}
+
+func TestGateway_ChatCompletionsAccess(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	url := h.url("v1/chat/completions")
+	body := `{"model":"public","messages":[{"role":"user","content":"hello"}]}`
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+	other := accessToken(h.serviceToken(t, "svc-b"))
+
+	status, response := do(t, chatRequest(t, url, body, internal))
+	assert.Equal(t, http.StatusOK, status, response)
+	assert.Contains(t, response, `"object":"chat.completion"`)
+	assert.Contains(t, response, "hello")
+
+	before := h.anthropic.requests.Load()
+	for _, tc := range []struct {
+		auth   credential
+		status int
+	}{{account, http.StatusBadRequest}, {other, http.StatusForbidden}} {
+		status, response = do(t, chatRequest(t, url, body, tc.auth))
+		assert.Equal(t, tc.status, status, response)
+		assert.Contains(t, response, `"error"`)
+	}
+	assert.Equal(t, before, h.anthropic.requests.Load())
+	assert.Contains(t, h.logs.String(), `"route":"chat_completions"`)
+}
+
+func TestGateway_ChatCompletionsSelfHosted(t *testing.T) {
+	h := newHarness(t, platformhost.TopologySelfHosted)
+	body := `{"model":"public","messages":[{"role":"user","content":"hello"}]}`
+	for _, auth := range []credential{bearer(h.host.AddServiceAccount("chat-sa", testNamespace)), session(h.host.AddSession(types.TypeUser, "chat-user", testNamespace))} {
+		for _, streaming := range []bool{false, true} {
+			requestBody := body
+			if streaming {
+				requestBody = strings.TrimSuffix(body, "}") + `,"stream":true}`
+			}
+			status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), requestBody, auth))
+			assert.Equal(t, http.StatusOK, status, response)
+			if streaming {
+				assert.Contains(t, response, "first")
+				assert.Contains(t, response, "second")
+				assert.Contains(t, response, "[DONE]")
+			} else {
+				assert.Contains(t, response, "hello")
+			}
+		}
+	}
+	before := h.anthropic.requests.Load()
+	anonymous := session(h.host.AddSession(types.TypeAnonymous, "chat-anon", testNamespace))
+	status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), body, anonymous))
+	assert.Equal(t, http.StatusForbidden, status, response)
+	assert.Contains(t, response, `"error"`)
+	assert.Equal(t, before, h.anthropic.requests.Load())
+}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -38,8 +38,9 @@ func TestAllowModelLogAttrs_ClosedPolicy(t *testing.T) {
 		slog.String("correlation_id", "correlation"),
 		slog.String("caller_service", "service"),
 		slog.String("namespace", "stack-1"),
+		slog.String("catalog", "team-catalog"),
 	}
-	assert.Equal(t, allowed, allowModelLogAttrs(allowed, gatewayauth.ConfiguredAccounts))
+	assert.Equal(t, allowed, allowModelLogAttrs(allowed, execution.SourceOperatorCatalog))
 }
 
 func TestAllowModelLogAttrs_DropsProviderAndFutureValues(t *testing.T) {
@@ -63,7 +64,7 @@ func TestAllowModelLogAttrs_DropsProviderAndFutureValues(t *testing.T) {
 		slog.String("ai_sdk.error.type.go", "private.Error"),
 		slog.Group("nested", slog.String("correlation_id", "smuggled")),
 	}
-	assert.Empty(t, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts))
+	assert.Empty(t, allowModelLogAttrs(attrs, execution.SourceOperatorCatalog))
 }
 
 func TestAllowModelLogAttrs_DropsInvalidValuesUnderAllowedKeys(t *testing.T) {
@@ -84,19 +85,19 @@ func TestAllowModelLogAttrs_DropsInvalidValuesUnderAllowedKeys(t *testing.T) {
 		slog.String("caller_service", "line\nbreak"),
 		slog.Any("ai_sdk.warnings.types", []string{"unsupported", "provider-private"}),
 	}
-	assert.Empty(t, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts))
+	assert.Empty(t, allowModelLogAttrs(attrs, execution.SourceOperatorCatalog))
 }
 
 func TestClosedModelLogRedactor_DelegatePanicFailsClosed(t *testing.T) {
 	redactor := closedModelLogRedactor(logmiddleware.RedactorFunc(func(context.Context, logmiddleware.EventKind, []slog.Attr) []slog.Attr {
 		panic("private-redactor-panic")
-	}), gatewayauth.ConfiguredAccounts)
+	}), execution.SourceOperatorCatalog)
 	attrs := redactor.RedactAttrs(context.Background(), logmiddleware.EventGenerateError, []slog.Attr{
 		slog.String("ai_sdk.event", "aisdk.model.generate.error"),
 		slog.String("ai_sdk.error.message", "private-error"),
 	})
 	assert.Empty(t, attrs)
-	assert.Empty(t, closedModelLogRedactor(nil, gatewayauth.ConfiguredAccounts).RedactAttrs(context.Background(), logmiddleware.EventGenerateError, nil))
+	assert.Empty(t, closedModelLogRedactor(nil, execution.SourceOperatorCatalog).RedactAttrs(context.Background(), logmiddleware.EventGenerateError, nil))
 }
 
 func TestAllowModelLogAttrs_FinishReasons(t *testing.T) {
@@ -110,6 +111,30 @@ func TestAllowModelLogAttrs_FinishReasons(t *testing.T) {
 		provider.FinishReasonOther,
 	} {
 		attrs := []slog.Attr{slog.String("ai_sdk.finish_reason", string(reason))}
-		assert.Equal(t, attrs, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts), reason)
+		assert.Equal(t, attrs, allowModelLogAttrs(attrs, execution.SourceOperatorCatalog), reason)
+	}
+}
+
+func TestAllowModelLogAttr_BySource(t *testing.T) {
+	long := strings.Repeat("m", maxLoggedModelIDBytes+1)
+	for _, tc := range []struct {
+		attr                         slog.Attr
+		operator, stack, requestBYOK bool
+	}{
+		{attr: slog.String("ai_sdk.provider", "grafana"), operator: true, stack: true},
+		{attr: slog.String("gen_ai.system", "grafana"), operator: true, stack: true},
+		{attr: slog.String("ai_sdk.provider", "anthropic"), requestBYOK: true},
+		{attr: slog.String("ai_sdk.provider", "openai"), requestBYOK: true},
+		{attr: slog.String("ai_sdk.model", "grafana/assistant"), operator: true, stack: true, requestBYOK: true},
+		{attr: slog.String("gen_ai.request.model", "anthropic/claude model"), requestBYOK: false},
+		{attr: slog.String("ai_sdk.model", strings.Repeat("m", maxObservationValueLen+1)), requestBYOK: true},
+		{attr: slog.String("ai_sdk.model", long)},
+		{attr: slog.String("catalog", "team-catalog"), operator: true, stack: true, requestBYOK: true},
+	} {
+		t.Run(tc.attr.String(), func(t *testing.T) {
+			assert.Equal(t, tc.operator, allowModelLogAttr(tc.attr, execution.SourceOperatorCatalog))
+			assert.Equal(t, tc.stack, allowModelLogAttr(tc.attr, execution.SourceStackCatalog))
+			assert.Equal(t, tc.requestBYOK, allowModelLogAttr(tc.attr, execution.SourceRequestBYOK))
+		})
 	}
 }
