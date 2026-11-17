@@ -252,6 +252,7 @@ type uiMessageStreamConfig struct {
 	sendFinish          *bool
 	sendStart           *bool
 	onError             func(error) string
+	redactToolErrors    *bool
 }
 
 // UIMessageStreamOption configures UI message stream helpers.
@@ -329,6 +330,19 @@ func WithUIMessageStreamStart(send bool) UIMessageStreamOption {
 func OnUIMessageStreamError(fn func(error) string) UIMessageStreamOption {
 	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
 		cfg.onError = fn
+	})
+}
+
+// WithUIMessageStreamRedactToolErrors configures whether the error text of
+// failed tool calls is replaced with the OnUIMessageStreamError result. By
+// default tool errors are redacted only when OnUIMessageStreamError is set;
+// otherwise the UI receives the error text the model received, so UI messages
+// converted back to model messages reproduce the original history. Stream
+// errors are masked by default either way, and provider-executed tool
+// execution errors always keep their original text.
+func WithUIMessageStreamRedactToolErrors(redact bool) UIMessageStreamOption {
+	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
+		cfg.redactToolErrors = &redact
 	})
 }
 

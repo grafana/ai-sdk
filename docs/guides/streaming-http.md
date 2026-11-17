@@ -46,7 +46,10 @@ if err := aisdk.PipeUIMessageStreamToResponse(w, stream); err != nil {
 }
 ```
 
-Do not send internal provider errors directly to users. Decide explicitly
+Do not send internal provider errors directly to users. Without an error
+callback, failed tool calls keep the error text the model received; see
+[error handling](../best-practices/error-handling.md) for tool error redaction.
+Decide explicitly
 whether reasoning, sources, metadata, and custom data are safe and useful for
 the frontend. Disabling sources does not remove citations attached to text or
 provider custom chunks, such as Anthropic's `anthropic.message_start` usage

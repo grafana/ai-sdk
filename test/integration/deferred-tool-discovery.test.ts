@@ -43,13 +43,12 @@ describe("deferred tool discovery", () => {
     });
   });
   it("preserves static errors and next-step tool outcomes in assembled messages", async () => {
+    const unavailableToolText = "AI_NoSuchToolError: Model tried to call unavailable tool 'getWeather'. Available tools: search.";
     const chunks = await scenarioChunks("deferred-tool-discovery");
     expect(chunks.filter(chunk => chunk.type === "tool-input-error")).toEqual([
-      { type: "tool-input-error", toolCallId: "too-early", toolName: "getWeather", input: {}, errorText: "An error occurred." },
+      { type: "tool-input-error", toolCallId: "too-early", toolName: "getWeather", input: {}, errorText: unavailableToolText },
     ]);
-    expect(chunks.filter(chunk => chunk.type === "tool-output-error")).toEqual([
-      { type: "tool-output-error", toolCallId: "too-early", errorText: "An error occurred." },
-    ]);
+    expect(chunks.filter(chunk => chunk.type === "tool-output-error")).toEqual([]);
     expect(chunks.filter(chunk => chunk.type === "tool-output-available")).toEqual([
       { type: "tool-output-available", toolCallId: "search", output: { tools: [{ name: "getWeather", description: "Weather forecast" }] } },
       { type: "tool-output-available", toolCallId: "weather", output: "sunny" },
@@ -67,7 +66,7 @@ describe("deferred tool discovery", () => {
       type: "tool-search", toolCallId: "search", state: "output-available", input: { query: "weather" }, output: { tools: [{ name: "getWeather", description: "Weather forecast" }] },
     });
     expect(message?.parts.find(part => part.type === "tool-getWeather" && part.toolCallId === "too-early")).toMatchObject({
-      type: "tool-getWeather", toolCallId: "too-early", state: "output-error", errorText: "An error occurred.",
+      type: "tool-getWeather", toolCallId: "too-early", state: "output-error", errorText: unavailableToolText,
     });
     expect(message?.parts.find(part => part.type === "tool-getWeather" && part.toolCallId === "weather")).toMatchObject({
       type: "tool-getWeather", toolCallId: "weather", state: "output-available", output: "sunny",

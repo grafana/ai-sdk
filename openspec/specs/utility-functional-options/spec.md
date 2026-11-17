@@ -63,6 +63,30 @@ Define ergonomic, scoped functional options for utility APIs that previously req
 - **WHEN** a caller accidentally passes a nil `UIMessageStreamOption`
 - **THEN** `WriteUIMessageStream` treats that option as absent and continues using the remaining options
 
+### Requirement: UI tool error text matches the model's tool result
+UI message streams SHALL send the error text of a failed application tool call as the text the model receives in its tool result, so converted UI messages reproduce the model's history. Stream `error` chunks SHALL stay masked by default. Provider-executed tool execution errors SHALL keep their original text; invalid provider-executed calls SHALL use the stream error text because the model receives no tool result for them.
+
+#### Scenario: Default tool errors keep the model's text
+- **WHEN** a tool fails or the model calls an unavailable tool and no error callback or redaction option is set
+- **THEN** the UI error text equals the tool result text sent to the model in the next step
+- **AND** a stream error in the same response is sent as `An error occurred.`
+
+### Requirement: Tool error redaction is configurable
+`WithUIMessageStreamRedactToolErrors(true)` SHALL replace application tool error text with the `OnUIMessageStreamError` result, or `An error occurred.` without one. Redaction SHALL default to enabled when `OnUIMessageStreamError` is set and disabled otherwise.
+
+#### Scenario: An error callback keeps redacting tool errors
+- **WHEN** `OnUIMessageStreamError` is set without `WithUIMessageStreamRedactToolErrors`
+- **THEN** tool error chunks carry the callback result
+- **AND** `WithUIMessageStreamRedactToolErrors(false)` limits the callback to stream errors
+
+### Requirement: Invalid tool calls are reported once
+An invalid application tool call SHALL produce one `tool-input-error` chunk; the tool error StreamText records for the model SHALL NOT add a `tool-output-error` chunk.
+
+#### Scenario: Invalid tool calls are reported once
+- **WHEN** the model calls an unavailable application tool
+- **THEN** the UI stream carries one `tool-input-error` chunk for the call and no `tool-output-error` chunk
+- **AND** the error callback, when redacting, is called once for that call
+
 ### Requirement: ToUIMessageStream uses functional options
 `(*StreamTextResult).ToUIMessageStream` SHALL have the signature `func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-chan UIMessageChunk`. Calls with no options SHALL use default UI message stream settings.
 

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -1499,15 +1500,43 @@ func normalizeConcurrentToolOutputs(chunks []map[string]any) []map[string]any {
 	return out
 }
 
+var noSuchToolAvailableTools = regexp.MustCompile(`^(AI_NoSuchToolError: Model tried to call unavailable tool '.*'\. Available tools: )(.*)\.$`)
+
+// normalizeNoSuchToolErrorText sorts the available-tool list of an unavailable
+// tool error, on a copy. Upstream lists tools in object insertion order; Go
+// ToolSet maps have none, so Go lists them by name. Only the list order is
+// normalized: the names, the rest of the text and every other field stay exact.
+func normalizeNoSuchToolErrorText(chunks []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(chunks))
+	for i, c := range chunks {
+		out[i] = c
+		text, _ := c["errorText"].(string)
+		match := noSuchToolAvailableTools.FindStringSubmatch(text)
+		if match == nil {
+			continue
+		}
+		names := strings.Split(match[2], ", ")
+		sort.Strings(names)
+		normalized := make(map[string]any, len(c))
+		for k, v := range c {
+			normalized[k] = v
+		}
+		normalized["errorText"] = match[1] + strings.Join(names, ", ") + "."
+		out[i] = normalized
+	}
+	return out
+}
+
 // CompareChunks compares expected and actual UI message chunks position by
 // position, after sorting each run of adjacent locally executed tool outputs
-// in both slices (see normalizeConcurrentToolOutputs). Chunk indexes in failure
-// messages refer to the sorted order.
+// in both slices (see normalizeConcurrentToolOutputs) and the available-tool
+// list of unavailable tool errors (see normalizeNoSuchToolErrorText). Chunk
+// indexes in failure messages refer to the sorted order.
 func CompareChunks(t *testing.T, expected, actual []map[string]any) {
 	t.Helper()
 
-	expected = normalizeConcurrentToolOutputs(expected)
-	actual = normalizeConcurrentToolOutputs(actual)
+	expected = normalizeNoSuchToolErrorText(normalizeConcurrentToolOutputs(expected))
+	actual = normalizeNoSuchToolErrorText(normalizeConcurrentToolOutputs(actual))
 
 	minLen := len(expected)
 	if len(actual) < minLen {
