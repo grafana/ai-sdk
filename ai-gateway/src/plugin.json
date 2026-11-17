@@ -1,26 +1,42 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "app",
-  "name": "Grafana AI Gateway",
+  "name": "AI Gateway",
   "id": "grafana-aigateway-app",
   "backend": true,
   "executable": "gpx_aigateway",
   "info": {
-    "description": "Serves ProviderWire language-model calls to configured and request-supplied model providers.",
+    "description": "One API for Anthropic and OpenAI models, called through Grafana with your own provider keys or the models your administrator configures.",
     "author": {
       "name": "Grafana Labs",
       "url": "https://grafana.com"
     },
-    "keywords": ["ai", "llm", "gateway"],
+    "keywords": ["ai", "llm", "gateway", "anthropic", "openai", "byok", "ai sdk"],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
     "links": [
       {
+        "name": "Documentation",
+        "url": "https://github.com/grafana/ai-sdk/blob/main/ai-gateway/README.md"
+      },
+      {
+        "name": "Authentication",
+        "url": "https://github.com/grafana/ai-sdk/blob/main/docs/guides/gateway-authentication.md"
+      },
+      {
         "name": "Source",
         "url": "https://github.com/grafana/ai-sdk/tree/main/ai-gateway"
+      },
+      {
+        "name": "Report an issue",
+        "url": "https://github.com/grafana/ai-sdk/issues/new"
       }
+    ],
+    "screenshots": [
+      { "name": "Overview", "path": "img/screenshots/overview-dark.png" },
+      { "name": "Overview, light theme", "path": "img/screenshots/overview-light.png" }
     ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
