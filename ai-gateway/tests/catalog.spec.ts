@@ -1,5 +1,5 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { expect, permissions, ROLES, type Role, test } from './accounts';
+import { test, expect, ROLES, type Role } from './fixtures';
 import { API_GROUP, API_VERSION } from '../src/constants';
 
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;
@@ -79,7 +79,8 @@ test.describe('ModelCatalog', () => {
   });
 
   test('catalog roles are registered and bound to Viewer and Admin', async ({ accounts }) => {
-    const actions = (role: Role) => permissions(accounts[role]);
+    const actions = async (role: Role) =>
+      Object.keys(await (await accounts[role].get('/api/access-control/user/permissions?reloadcache=true')).json());
     const read = `${API_GROUP}/modelcatalogs:get`;
     const writes = ['create', 'update', 'delete'].map((verb) => `${API_GROUP}/modelcatalogs:${verb}`);
     for (const role of ['Viewer', 'Editor'] as const) {

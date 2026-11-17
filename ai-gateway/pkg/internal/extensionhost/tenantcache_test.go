@@ -397,11 +397,25 @@ func TestTenantCache_ReadsOnlyWhenATenantExtensionApplies(t *testing.T) {
 			configurable(t, "operator-keys", log, func(d *extension.Definition) { d.Keys = []extension.KeyOwnership{extension.KeysOperator} }),
 			define("operator", &recorder{name: "operator", journal: log}),
 		)
-		_, err := h.compose(t, extension.SourceRequestBYOK).DoGenerate(inNamespace(t.Context(), "a"), provider.CallOptions{})
-		require.NoError(t, err)
-		assert.Zero(t, reader.readCount())
+		for _, source := range []extension.Source{extension.SourceRequestBYOK, extension.SourceStackCatalog} {
+			_, err := h.compose(t, source).DoGenerate(inNamespace(t.Context(), "a"), provider.CallOptions{})
+			require.NoError(t, err)
+		}
+		assert.Zero(t, reader.readCount(), "customer-owned calls, including stack catalogs, read nothing for an operator-owned tenant extension")
 		require.NoError(t, h.generate(t, "a"))
 		assert.Equal(t, 1, reader.readCount())
+	})
+
+	t.Run("stack catalog", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			reader := newFakeReader()
+			reader.set("a", stored("t1", true, `{"v":"a"}`))
+			log := &journal{}
+			h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "t1", log, func(d *extension.Definition) { d.Keys = []extension.KeyOwnership{extension.KeysCustomer} }))
+			_, err := h.compose(t, extension.SourceStackCatalog).DoGenerate(inNamespace(t.Context(), "a"), provider.CallOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, []string{`t1{"v":"a"}`}, transforms(log), "a stack-catalog call applies its namespace's configuration as customer-owned")
+		})
 	})
 
 	t.Run("no tenant extension", func(t *testing.T) {

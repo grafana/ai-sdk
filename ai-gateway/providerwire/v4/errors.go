@@ -21,6 +21,7 @@ const (
 	safeBYOKDiscovery
 	safeProviderStream
 	safeUnavailable
+	safeCatalogConfiguration
 )
 
 type safeError struct {
@@ -29,21 +30,22 @@ type safeError struct {
 }
 
 var safeCategories = [...]safeErrorCategory{
-	execution.CategoryInvalidRequest:   safeInvalidRequest,
-	execution.CategoryBYOKCredentials:  safeBYOKCredentials,
-	execution.CategoryBYOKSelector:     safeBYOKSelector,
-	execution.CategoryGatewayControl:   safeGatewayControl,
-	execution.CategoryModelNotFound:    safeModelNotFound,
-	execution.CategoryPermission:       safePermission,
-	execution.CategoryRateLimit:        safeRateLimit,
-	execution.CategoryOverload:         safeOverload,
-	execution.CategoryFailedDependency: safeFailedDependency,
-	execution.CategoryUpstream:         safeUpstream,
-	execution.CategoryTimeout:          safeTimeout,
-	execution.CategoryCancellation:     safeCancellation,
-	execution.CategoryInternal:         safeInternal,
-	execution.CategoryProviderStream:   safeProviderStream,
-	execution.CategoryUnavailable:      safeUnavailable,
+	execution.CategoryInvalidRequest:       safeInvalidRequest,
+	execution.CategoryBYOKCredentials:      safeBYOKCredentials,
+	execution.CategoryBYOKSelector:         safeBYOKSelector,
+	execution.CategoryGatewayControl:       safeGatewayControl,
+	execution.CategoryModelNotFound:        safeModelNotFound,
+	execution.CategoryPermission:           safePermission,
+	execution.CategoryRateLimit:            safeRateLimit,
+	execution.CategoryOverload:             safeOverload,
+	execution.CategoryFailedDependency:     safeFailedDependency,
+	execution.CategoryUpstream:             safeUpstream,
+	execution.CategoryTimeout:              safeTimeout,
+	execution.CategoryCancellation:         safeCancellation,
+	execution.CategoryInternal:             safeInternal,
+	execution.CategoryProviderStream:       safeProviderStream,
+	execution.CategoryUnavailable:          safeUnavailable,
+	execution.CategoryCatalogConfiguration: safeCatalogConfiguration,
 }
 
 func safeErrorFor(category execution.Category, reason execution.Reason) safeError {

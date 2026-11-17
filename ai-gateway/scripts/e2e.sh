@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs the Playwright tests against the built plugin package in the
-# create-plugin Grafana environment, with the end-to-end overrides and their
-# fake provider, then stops the environment.
+# create-plugin Grafana environment, with the end-to-end overrides, their fake
+# provider and a proxy for the native provider endpoints, then stops the
+# environment. The proxy's certificate is generated for each run and removed
+# with the environment.
 set -euo pipefail
 
 gateway=$(git rev-parse --show-toplevel)/ai-gateway
@@ -16,6 +18,9 @@ fail() { echo "$*" >&2; exit 1; }
 [[ -f "$gateway/dist/plugin.json" ]] || fail "build the plugin package first: mise run build-ai-gateway-plugin"
 cd "$gateway"
 compose=(docker compose -f docker-compose.yaml -f docker-compose.e2e.yaml)
+
+E2E_NATIVE_PROXY_CERTIFICATES=$(mktemp -d)
+export E2E_NATIVE_PROXY_CERTIFICATES
 
 # dump_failure prints, for the whole run, the plugin's log lines and Grafana's
 # lines about catalog storage and admission, each bounded, then Grafana's last
@@ -35,11 +40,24 @@ stop() {
   local status=$?
   if [[ $status -ne 0 ]]; then
     dump_failure
+    "${compose[@]}" logs --no-color native-proxy | tail -n "$dump_lines" || true
   fi
   "${compose[@]}" down --volumes || true
+  rm -rf "$E2E_NATIVE_PROXY_CERTIFICATES"
   exit "$status"
 }
 trap stop EXIT
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 1 \
+  -subj "/CN=AI Gateway end-to-end native provider" \
+  -addext "subjectAltName=DNS:api.anthropic.com,DNS:api.openai.com" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature,keyCertSign" \
+  -addext "extendedKeyUsage=serverAuth" \
+  -keyout "$E2E_NATIVE_PROXY_CERTIFICATES/key.pem" -out "$E2E_NATIVE_PROXY_CERTIFICATES/cert.pem" 2>/dev/null ||
+  fail "generating the native proxy certificate needs openssl"
+chmod 755 "$E2E_NATIVE_PROXY_CERTIFICATES"
+chmod 644 "$E2E_NATIVE_PROXY_CERTIFICATES/key.pem" "$E2E_NATIVE_PROXY_CERTIFICATES/cert.pem"
 
 "${compose[@]}" up --detach --build
 for ((attempt = 0; attempt < startup_attempts; attempt++)); do
@@ -57,9 +75,9 @@ plugin_logs=$("${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigatew
 api_access=$(grep 'gateway plugin API access' <<<"$plugin_logs" || true)
 [[ -n "$api_access" ]] || fail "the plugin log has no API access record"
 grep -q 'available=true' <<<"$api_access" || fail "Grafana gave the plugin no API access: $api_access"
-if grep -q "$catalog_key_sentinel" <<<"$plugin_logs"; then
+if grep -F -- "$catalog_key_sentinel" >/dev/null <<<"$plugin_logs"; then
   fail "the plugin logged a catalog key"
 fi
-if grep -q "$middleware_config_sentinel" <<<"$plugin_logs"; then
+if grep -F -- "$middleware_config_sentinel" >/dev/null <<<"$plugin_logs"; then
   fail "the plugin logged a Middleware config value"
 fi

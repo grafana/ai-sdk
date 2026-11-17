@@ -48,6 +48,14 @@ func TestSummaryRedactor(t *testing.T) {
 			assert.Nil(t, redactor.Redact(nil))
 		})
 	}
+	t.Run("with request keys", func(t *testing.T) {
+		configured := NewSummaryRedactor([]string{"server-key"})
+		merged := configured.With([]string{"catalog-key", "", "server-key"})
+		input := "server-key catalog-key other"
+		assert.Equal(t, "[REDACTED] [REDACTED] other", merged.Redact(&Failure{Message: input}).Message)
+		assert.Equal(t, "[REDACTED] catalog-key other", configured.Redact(&Failure{Message: input}).Message)
+		assert.Equal(t, configured, configured.With(nil))
+	})
 	t.Run("numeric precision", func(t *testing.T) {
 		code := json.RawMessage(`900719925474099312345`)
 		got := NewSummaryRedactor([]string{string(code)}).Redact(&Failure{Code: code, StatusCode: 401})

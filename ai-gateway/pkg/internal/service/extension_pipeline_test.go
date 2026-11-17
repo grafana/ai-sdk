@@ -46,26 +46,16 @@ func (r *pipelineRecorder) Observe(_ context.Context, _ *extension.Call, record 
 	return nil
 }
 
-// newExtensionRuntime composes the production model chain: the logical
-// observers outside the extension pipeline, outside the selected model.
+// newExtensionRuntime composes the production model chain around one
+// operator-scope extension that applies to every call.
 func newExtensionRuntime(t *testing.T, selector execution.RequestSelector, value any) (*observedRuntime, *extensionhost.Host) {
 	t.Helper()
-	return newExtensionRuntimeWith(t, selector, recorderDefinition("recorder", extension.ScopeOperator, value))
+	return newExtensionsRuntime(t, selector, recorderDefinition("recorder", value))
 }
 
-// recorderDefinition is a default-enabled, fail-closed definition of value.
-func recorderDefinition(name string, scope extension.Scope, value any) extension.Definition {
-	return extension.Definition{
-		Name:             name,
-		Scope:            scope,
-		FailurePolicy:    extension.FailClosed,
-		EnabledByDefault: true,
-		New:              func(json.RawMessage, extension.Dependencies) (any, error) { return value, nil },
-	}
-}
-
-// newExtensionRuntimeWith is newExtensionRuntime with the given definitions.
-func newExtensionRuntimeWith(t *testing.T, selector execution.RequestSelector, definitions ...extension.Definition) (*observedRuntime, *extensionhost.Host) {
+// newExtensionsRuntime composes the production model chain: the logical
+// observers outside the extension pipeline, outside the selected model.
+func newExtensionsRuntime(t *testing.T, selector execution.RequestSelector, definitions ...extension.Definition) (*observedRuntime, *extensionhost.Host) {
 	t.Helper()
 	observed := newObservedRuntime(t, selector)
 	plan, err := extensionhost.NewPlan(definitions, nil, nil)
@@ -102,6 +92,53 @@ func selectedAttempt(candidate extension.Candidate) extension.Attempt {
 	return extension.Attempt{Provider: candidate.Provider, ProviderInstance: candidate.ProviderInstance, ProviderModel: candidate.ProviderModel, Outcome: extension.AttemptSelected}
 }
 
+func recorderDefinition(name string, value any, keys ...extension.KeyOwnership) extension.Definition {
+	return extension.Definition{
+		Name:             name,
+		Scope:            extension.ScopeOperator,
+		Keys:             keys,
+		FailurePolicy:    extension.FailClosed,
+		EnabledByDefault: true,
+		New:              func(json.RawMessage, extension.Dependencies) (any, error) { return value, nil },
+	}
+}
+
+func TestExtensionPipeline_StackCatalogCallsAreCustomerOwned(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		t.Run(mode, func(t *testing.T) {
+			customer, operator := &pipelineRecorder{}, &pipelineRecorder{}
+			selector := stackSelector(stackObservedCatalog("team-catalog", "stack-model"), stackAnthropicClient(false))
+			observed, host := newExtensionsRuntime(t, selector,
+				recorderDefinition("customer-only", customer, extension.KeysCustomer),
+				recorderDefinition("operator-only", operator, extension.KeysOperator),
+			)
+			observed.call(t, callerContext(t, gatewayauth.CatalogAccounts), "stack-model-alias", provider.CallOptions{}, mode == "stream")
+			host.Close(context.Background())
+
+			require.Len(t, customer.admitted, 1)
+			admitted := customer.admitted[0]
+			assert.Equal(t, extension.SourceStackCatalog, admitted.Source)
+			assert.Equal(t, extension.KeysCustomer, admitted.Keys)
+			assert.Equal(t, "stack-model-alias", admitted.RequestedModel)
+			assert.Equal(t, "stack-model", admitted.CanonicalModel)
+			require.NotEmpty(t, admitted.Candidates)
+			assert.Equal(t, "stack-model-alias", admitted.Candidates[0].Model)
+			assert.Equal(t, testNamespace, admitted.Namespace)
+			require.Len(t, customer.observed, 1)
+			assert.Equal(t, extension.OutcomeSuccess, customer.observed[0].Outcome)
+			require.Len(t, customer.observed[0].Attempts, 1)
+			assert.Equal(t, extension.AttemptSelected, customer.observed[0].Attempts[0].Outcome)
+			assert.Equal(t, admitted.Candidates[0].ProviderModel, customer.observed[0].Attempts[0].ProviderModel)
+			assert.Empty(t, operator.admitted)
+			assert.Empty(t, operator.observed)
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				assert.Len(collect, observed.records(t, "aisdk.model."+mode+".finish"), 1)
+			}, time.Second, time.Millisecond)
+			assert.NotContains(t, observed.logs.String(), stackCatalogSecret)
+		})
+	}
+}
+
 func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 	const byokKey = "dummy-pipeline-key"
 	for _, tc := range []struct {
@@ -134,7 +171,7 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 					"backend-secondary": seamModel(false),
 				})
 				recorder := &pipelineRecorder{}
-				observed, host := newExtensionRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}), recorder)
+				observed, host := newExtensionRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}, nil), recorder)
 				var options provider.CallOptions
 				if tc.gateway != "" {
 					options = routedGateway(tc.gateway)
@@ -260,7 +297,7 @@ func TestExtensionPipeline_StreamRecordAfterTheOverviewSealed(t *testing.T) {
 		"backend-secondary": held,
 	})
 	recorder := &pipelineRecorder{}
-	observed, host := newExtensionRuntime(t, NewSelector(created, nil), recorder)
+	observed, host := newExtensionRuntime(t, NewSelector(created, nil, nil), recorder)
 	call, err := observed.runtime.Call(callerContext(t, gatewayauth.ConfiguredAccounts), "alias", routedGateway(`{"models":["other"]}`))
 	require.NoError(t, err)
 	defer call.Close()
@@ -312,9 +349,11 @@ func TestExtensionPipeline_OperatorAndTenantExtensionsSeeTheCallerIdentity(t *te
 		t.Run(tc.name, func(t *testing.T) {
 			created := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{"backend-primary": seamModel(false), "backend-secondary": seamModel(false)})
 			operator, tenant := &pipelineRecorder{}, &pipelineRecorder{}
-			observed, host := newExtensionRuntimeWith(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}),
-				recorderDefinition("operator-audit", extension.ScopeOperator, operator),
-				recorderDefinition("tenant-audit", extension.ScopeTenant, tenant),
+			tenantAudit := recorderDefinition("tenant-audit", tenant)
+			tenantAudit.Scope = extension.ScopeTenant
+			observed, host := newExtensionsRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}, nil),
+				recorderDefinition("operator-audit", operator),
+				tenantAudit,
 			)
 			observed.call(t, observedCallerContext(t, observed.telemetry, gatewayauth.AccessModeCloud, tc.service, tc.identity), tc.modelID, tc.options, false)
 			host.Close(context.Background())
@@ -335,7 +374,7 @@ func TestExtensionPipeline_UnobservedSourceRunsNoPhase(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		source extension.Source
-	}{{name: "empty", source: ""}, {name: "stack-catalog", source: extension.SourceStackCatalog}} {
+	}{{name: "empty", source: ""}, {name: "unnamed", source: "unnamed-source"}} {
 		source := tc.source
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := &pipelineRecorder{}

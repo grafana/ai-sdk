@@ -151,6 +151,13 @@ var publicErrors = [...]errorDefinition{
 		code:      codeUnavailable,
 		retryable: true,
 	},
+	safeCatalogConfiguration: {
+		status:    http.StatusFailedDependency,
+		message:   "model catalog is invalid or missing a provider key",
+		kind:      errorDependency,
+		code:      codeDependency,
+		retryable: false,
+	},
 }
 
 type errorResponse struct {
