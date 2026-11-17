@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -110,6 +111,9 @@ func TestAttemptCapture_View(t *testing.T) {
 		{name: "direct selected", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "direct failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
 		{name: "direct invalid output", candidates: 1, entered: true, err: fmt.Errorf("wrapped: %w", ErrInvalidOutput), outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{name: "direct output denied by an extension", candidates: 1, entered: true, err: fmt.Errorf("wrapped: %w", extension.ErrDenied), outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{name: "direct output refused by a failed extension", candidates: 1, entered: true, err: extension.ErrUnavailable, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{name: "denied before entry", candidates: 1, err: extension.ErrDenied},
 		{name: "rejected direct canceled", candidates: 1, entered: true, err: context.Canceled, discard: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptCanceled}},
 		{name: "rejected before entry", candidates: 1, discard: true},
 		{name: "fallback selected", candidates: 2, entered: true, attempts: []fallback.Attempt{
