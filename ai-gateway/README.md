@@ -326,6 +326,10 @@ export ANTHROPIC_API_KEY=...        # optional; needed only to call models
 pnpm --filter ./ai-gateway server
 ```
 
+Any Anthropic API key works. Create one with your own Anthropic account or
+organization; this repository does not provide one. The automated tests use a
+deterministic stand-in for Anthropic and need no key.
+
 Then work from `ai-gateway/`:
 
 | After changing | Run |
