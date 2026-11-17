@@ -6,6 +6,7 @@ import {
   writeFileSync,
   readdirSync,
   existsSync,
+  rmSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -560,10 +561,11 @@ async function generateExpected(tc: TestCase): Promise<void> {
 
     if (objectPromise) {
       const obj = await objectPromise;
+      const objectPath = join(tc.dir, "expected-object.json");
       if (obj && typeof obj === "object" && "__error" in obj) {
+        rmSync(objectPath, { force: true });
         console.log(`  OK: ${chunks.length} chunks, ${requests.length} request(s) -> expected.jsonl + expected-requests.jsonl (output validation failed: ${obj.__error})`);
       } else {
-        const objectPath = join(tc.dir, "expected-object.json");
         writeFileSync(objectPath, JSON.stringify(obj, null, 2) + "\n");
         console.log(`  OK: ${chunks.length} chunks, ${requests.length} request(s) -> expected.jsonl + expected-requests.jsonl + expected-object.json`);
       }

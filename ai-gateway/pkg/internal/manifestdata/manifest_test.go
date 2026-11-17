@@ -33,8 +33,11 @@ func TestManifest_DeclaresGatewayRoutesAndKinds(t *testing.T) {
 	assert.Equal(t, "v1alpha1", version.Name)
 	assert.True(t, version.Served)
 	assert.Equal(t, map[string][]string{
-		"/namespaces/{namespace}/config":         {http.MethodGet},
-		"/namespaces/{namespace}/language-model": {http.MethodPost},
+		"/namespaces/{namespace}/config":                              {http.MethodGet},
+		"/namespaces/{namespace}/language-model":                      {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions":                 {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/config":         {http.MethodGet},
+		"/namespaces/{namespace}/modelcatalogs/{name}/language-model": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
 	require.Len(t, version.Kinds, 2)
 	for _, tc := range []struct {
@@ -273,6 +276,36 @@ func sortedStrings(value any) []string {
 	return names
 }
 
+func TestManifest_DeclaredAccessChecks(t *testing.T) {
+	paths := LocalManifest().ManifestData.Versions[0].OpenAPI.Paths
+	for _, tc := range []struct {
+		path        string
+		operation   func(spec3.PathProps) *spec3.Operation
+		subresource string
+	}{
+		{path: "/namespaces/{namespace}/modelcatalogs/{name}/config", operation: func(p spec3.PathProps) *spec3.Operation { return p.Get }, subresource: "config"},
+		{path: "/namespaces/{namespace}/modelcatalogs/{name}/language-model", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "language-model"},
+	} {
+		t.Run(tc.subresource, func(t *testing.T) {
+			operation := tc.operation(paths[tc.path])
+			require.NotNil(t, operation)
+			assert.Equal(t, "modelcatalogs", operation.Extensions["x-grafana-declared-authz-resource"])
+			assert.Equal(t, tc.subresource, operation.Extensions["x-grafana-declared-authz-subresource"])
+			assert.Equal(t, "get", operation.Extensions["x-grafana-declared-authz-verb"])
+		})
+	}
+	for _, path := range []string{"/namespaces/{namespace}/config", "/namespaces/{namespace}/language-model"} {
+		for _, operation := range []*spec3.Operation{paths[path].Get, paths[path].Post} {
+			if operation == nil {
+				continue
+			}
+			for key := range operation.Extensions {
+				assert.NotContains(t, key, "x-grafana-declared-authz", path)
+			}
+		}
+	}
+}
+
 func TestManifest_Roles(t *testing.T) {
 	data := LocalManifest().ManifestData
 	rolePattern := regexp.MustCompile(`^` + data.AppName + `:[a-z0-9]+$`)
@@ -284,6 +317,11 @@ func TestManifest_Roles(t *testing.T) {
 		"aigateway:catalogwriter":    role("Model catalog writer", "Create, update and delete AI Gateway model catalogs", "ModelCatalog", app.ManifestRolePermissionSetEditor),
 		"aigateway:middlewarereader": role("Middleware reader", "Read AI Gateway tenant extension configuration", "Middleware", app.ManifestRolePermissionSetViewer),
 		"aigateway:middlewarewriter": role("Middleware writer", "Create, update and delete AI Gateway tenant extension configuration", "Middleware", app.ManifestRolePermissionSetEditor),
+		"aigateway:modelinvoker": {Title: "Model invoker", Description: "Discover and invoke models from AI Gateway model catalogs", Kinds: []app.ManifestRoleKind{
+			{Kind: "ModelCatalog", Verbs: []string{"get"}},
+			{Kind: "ModelCatalog/language-model", Verbs: []string{"get"}},
+			{Kind: "ModelCatalog/config", Verbs: []string{"get"}},
+		}, Routes: []string{}},
 	}, data.Roles)
 	fixedIDs := []string{}
 	for name := range data.Roles {
@@ -293,12 +331,13 @@ func TestManifest_Roles(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"fixed:aigateway.ext.grafana.app:aigateway:catalogreader",
 		"fixed:aigateway.ext.grafana.app:aigateway:catalogwriter",
+		"fixed:aigateway.ext.grafana.app:aigateway:modelinvoker",
 		"fixed:aigateway.ext.grafana.app:aigateway:middlewarereader",
 		"fixed:aigateway.ext.grafana.app:aigateway:middlewarewriter",
 	}, fixedIDs)
 	require.NotNil(t, data.RoleBindings)
 	assert.Equal(t, []string{"aigateway:catalogreader", "aigateway:middlewarereader"}, data.RoleBindings.Viewer)
-	assert.Empty(t, data.RoleBindings.Editor)
+	assert.Equal(t, []string{"aigateway:modelinvoker"}, data.RoleBindings.Editor)
 	assert.Equal(t, []string{"aigateway:catalogwriter", "aigateway:middlewarewriter"}, data.RoleBindings.Admin)
 	assert.Empty(t, data.RoleBindings.Additional)
 }

@@ -18,8 +18,10 @@ follows the Gateway plugin backend in `ai-gateway/pkg`. For setup, see
 
 ## The pieces and their boundaries
 
-The shipped plugin backend accepts **ProviderWire V4**, the model-call protocol used by
-the Go Grafana provider and the server-side Vercel Gateway client. It is not the
+The shipped plugin backend accepts **ProviderWire V4**, used by the Go Grafana provider
+and server-side Vercel Gateway client, and a **Chat Completions subset** for
+official OpenAI clients. These are separate adapters over one execution runtime.
+Neither is the
 browser UI message stream protocol. A Go application can consume Gateway output
 and then produce a separate [UI message stream](wire-protocol.md) for React.
 
@@ -31,16 +33,19 @@ flowchart LR
   subgraph clients[Application servers]
     go[Go Grafana provider]
     ts[Vercel Gateway client]
+    chatclient[Official OpenAI clients]
   end
   subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
+      chat[Chat Completions decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
       runtime[Execution runtime]
       select[Account-access selection]
       catalog[Public model catalog]
+      stack[Stack catalog from the route's ModelCatalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
       compose[Request routing: models, order, only]
       logical[Logical model observation]
@@ -58,12 +63,16 @@ flowchart LR
   grafanaapi[Grafana API: Middleware resources]
   go --> host
   ts --> host
+  chatclient --> host
   host --> pw
+  host --> chat --> runtime
   pw --> runtime -->|first selects| select
   select -->|private| catalog
   catalog -->|no routing controls| routing
   catalog -->|routing controls| compose
   select -->|Cloud| byok
+  select -->|catalog route| stack
+  stack --> compose
   byok -->|routing controls| compose
   compose --> routing
   runtime -->|then observes the selection| logical
@@ -85,22 +94,31 @@ a telemetry label, the adapter's handler and the adapter's host-error writer.
 Every entry gets the same access decision and request telemetry, and a refused
 caller gets that adapter's permission document without its body being read. The
 production table matches the committed manifest: `GET {prefix}/config` and
-`POST {prefix}/language-model`. A request that matches no entry does no access,
+`POST {prefix}/language-model`, and `POST {prefix}/v1/chat/completions`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
-admission validators to accept or refuse each create and update. The
-`Middleware` spec has one typed member per public tenant type in the
-`tenanttype` registry, and its validator checks each member against the
-tenant extensions the distribution implements. The registry holds
-`default-instructions` and `default-settings`, which the shipped Gateway
-implements. Stored catalogs do not yet reach
-discovery or selection. Stored `Middleware` resources decide, per namespace,
-which tenant extensions run and with which configuration: the Gateway reads
-them through the host's API access configuration, as the plugin, and caches
-each namespace (see step 4 below). Without API access, tenant extensions keep
-their defaults and the validator refuses every `Middleware` create and update.
+admission validators to accept or refuse each create and update. Each catalog
+also has two routes, `GET .../modelcatalogs/{name}/config` and
+`POST .../modelcatalogs/{name}/language-model`, in the same route table.
+Grafana reads the catalog as the caller, runs the route's declared access check
+(`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
+and only then decrypts the catalog's keys and passes the object, its resource
+version and the keys with the call. The Gateway checks that this parent is the
+catalog the path names before anything else, then decides catalog access. Its
+selector builds that catalog's models for the call with `SelectStackCatalog`,
+and discovery lists it without building models. Without the `model_catalog`
+setting the operator catalog is empty: the namespace routes list no configured
+models and every configured model ID is not found. The `Middleware` spec has
+one typed member per public tenant type in the `tenanttype` registry, and its
+validator checks each member against the tenant extensions the distribution
+implements. The registry holds `default-instructions` and `default-settings`,
+which the shipped Gateway implements. Stored `Middleware` resources decide, per namespace, which tenant
+extensions run and with which configuration: the Gateway reads them through
+the host's API access configuration, as the plugin, and caches each namespace
+(see step 4 below). Without API access, tenant extensions keep their defaults
+and the validator refuses every `Middleware` create and update.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery
@@ -124,13 +142,21 @@ passes its [extensions](../guides/gateway-extensions.md) in `Options`; the
 shipped backend passes `DefaultExtensions()`, the `default-instructions` and
 `default-settings` tenant extensions.
 
-**Other inbound protocols are not wired into this plugin backend.** In particular,
-`/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
-routes. An outbound Anthropic provider does not establish Claude Code support;
-an outbound Responses provider does not establish Codex support. Those clients
-need their own compatible ingress and end-to-end evidence. The
-[Chat Completions adapter proposal](https://github.com/grafana/ai-sdk/pull/248)
-is separate work, not an additional path in the diagram.
+The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
+supported request subset into the same execution runtime. Its call-scoped
+translator applies defaults per native fallback candidate. It supplies its own
+response/error projection and no BYOK controls; the shared selector therefore
+rejects Cloud user and service-account calls without provider accounts with
+HTTP 400 (`ErrInvalidBYOK`), before native I/O. Host access-policy refusal remains
+HTTP 403; the adapter does not add a separate access dispatcher.
+Self-hosted users/service accounts and allowlisted internal services use the
+configured catalog. Chat parses its own request body; selection, execution,
+cancellation and stream cleanup use the shared runtime and host contract.
+
+`/v1/messages` and `/v1/responses` are not registered inbound routes. An outbound
+Anthropic provider does not establish Claude Code support, and an outbound
+Responses provider does not establish Codex support. Those clients need their
+own compatible ingress and end-to-end evidence.
 
 ## Follow one request
 
@@ -204,8 +230,11 @@ sequenceDiagram
    model's candidates in order, filtered by `only` and then moved to the front
    by `order`, with repeated models and destinations skipped and at most 8
    attempts. That chain carries the requested model's canonical identity, like
-   a configured route. Every selection names its source, `operator-catalog`
-   or `request-byok`. Invalid or unknown
+   a configured route. A stack-catalog selection follows the same rules over
+   one stored catalog: it checks the catalog on every request, refuses
+   `gateway.byok`, and constructs only the candidates its chain attempts, with
+   that catalog's keys. Every selection names its source, `operator-catalog`,
+   `stack-catalog` or `request-byok`. Invalid or unknown
    controls fail here, before any provider call. This private path refuses
    request credentials; its caller cannot switch to request accounts. See
    [service selection](../../ai-gateway/pkg/internal/service/selection.go),
@@ -214,19 +243,20 @@ sequenceDiagram
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** After selection, the runtime wraps
    the selected model once in the logical observer chain of the selection's
-   source: the same observers for a configured, aliased or routed call, and a
-   BYOK chain with its own log redaction for request accounts. Inside the
-   observers and outside the selected model, the
-   [extension pipeline](../guides/gateway-extensions.md) runs the
-   distribution's extensions that apply to the call's key ownership.
+   source: the same observers for a configured, aliased or routed call, a
+   BYOK chain with its own log redaction for request accounts, and a
+   stack-catalog chain whose metrics use the fixed model `catalog` and whose
+   logs and exports name the catalog. Inside the observers and outside the
+   selected model, the [extension pipeline](../guides/gateway-extensions.md)
+   runs the distribution's extensions that apply to the call's key ownership.
    Every extension, operator or tenant, is built once at startup. The shipped
    tenant extensions apply to every call, so the shipped Gateway reads every
-   namespace it serves. When a tenant extension applies, the pipeline first
-   resolves the call namespace's configuration from a cache that reads the
-   namespace's `Middleware` resources as the plugin, never as the caller, on
-   its own context and timeout. It decodes the namespace's configuration once
-   per change and passes it to each call, refreshes in the background after a
-   one-minute TTL, and never falls back to a default when a read fails. The phases are
+   namespace it serves. When a tenant extension applies, the pipeline first resolves the call namespace's
+   configuration from a cache that reads the namespace's `Middleware`
+   resources as the plugin, never as the caller, on its own context and
+   timeout. It decodes the namespace's configuration once per change and
+   passes it to each call, refreshes in the background after a one-minute
+   TTL, and never falls back to a default when a read fails. The phases are
    admit, request transforms with a host policy check after each, request
    inspection, then response inspection on each output part and one
    asynchronous observation. Every phase sees the caller, including its
@@ -355,13 +385,14 @@ See [execution overviews and failures](../providers/grafana-gateway.md#inspect-e
 for access and privacy boundaries, and
 [operator observability](../../ai-gateway/docs/text-observability.md) for logs,
 metrics, and exporters. Native diagnostics can contain provider-authored text;
-summary redaction is not a general filter for generated content or secrets.
+summary redaction protects the configured keys and a stack-catalog call's own
+catalog keys, but is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The plugin backend serves two account paths through one selector and one runtime.
-The access decision chooses the path from the `access_mode` and the verified
-token, not from a caller choosing a different model name:
+The plugin backend serves three account paths through one selector and one
+runtime. The access decision chooses the path from the route, the `access_mode`
+and the verified token, not from a caller choosing a different model name:
 
 - **Configured:** callers granted configured access use configured models and
   server-held provider credentials. In `self-hosted` mode this is any verified
@@ -377,11 +408,18 @@ token, not from a caller choosing a different model name:
   at each attempt position, which the BYOK execution overview is checked
   against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
+- **Catalog:** on a `ModelCatalog`'s routes, any verified user, service account
+  or service acting alone whose token covers the namespace gets catalog access,
+  whatever the `access_mode`; Grafana's declared checks decide who may invoke.
+  The selector uses only that catalog and the keys Grafana decrypted for the
+  call, checks the catalog again on every call, builds only the candidates the
+  call's chain attempts, and refuses `gateway.byok`. It never reaches the
+  configured catalog, server-held keys or request accounts.
 
 See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).
-`Decide` refuses a token whose namespace does not cover the route namespace, so
-a caller cannot reach another namespace's account path. Source and synthetic
+`Decide` and `DecideCatalog` refuse a token whose namespace does not cover the
+route namespace, so a caller cannot reach another namespace's account path. Source and synthetic
 tests establish service wiring, not production network isolation or live-provider
 acceptance.
 Reusable middleware supports policy hooks, but this plugin backend does not install

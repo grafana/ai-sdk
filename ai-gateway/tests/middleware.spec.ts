@@ -1,6 +1,10 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { expect, permissions, test } from './accounts';
+import { test, expect } from './fixtures';
 import { API_GROUP, API_VERSION } from '../src/constants';
+
+async function permissions(request: APIRequestContext): Promise<string[]> {
+  return Object.keys(await (await request.get('/api/access-control/user/permissions?reloadcache=true')).json());
+}
 
 const MIDDLEWARES = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/middlewares`;
 const SENTINEL = 'e2e-middleware-sentinel-value';

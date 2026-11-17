@@ -27,8 +27,9 @@ const (
 	CallerUser CallerType = "user"
 	// CallerServiceAccount is a Grafana service account.
 	CallerServiceAccount CallerType = "service-account"
-	// CallerInternalService is an allowlisted internal service calling with
-	// configured access.
+	// CallerInternalService is a Grafana service calling as itself: an
+	// allowlisted internal service with configured access, or a service acting
+	// alone on a catalog route.
 	CallerInternalService CallerType = "internal-service"
 )
 
