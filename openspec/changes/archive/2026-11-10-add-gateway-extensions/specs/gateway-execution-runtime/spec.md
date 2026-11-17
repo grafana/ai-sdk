@@ -3,11 +3,15 @@
 ## MODIFIED Requirements
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation, unavailable or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
+Every failure SHALL be classified into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, catalog configuration, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation, unavailable or internal. Invalid request MAY carry a reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
 - **THEN** the category SHALL be permission, BYOK credentials, BYOK selector, unsupported gateway control, invalid request with the reserved reason, or model not found respectively, and any other error SHALL be classified as a provider error
+
+#### Scenario: Stack-catalog configuration error
+- **WHEN** selection fails because a stored stack catalog fails its checks or a catalog provider has no decrypted key
+- **THEN** the category SHALL be catalog configuration with no reason, before the provider-error fallback
 
 #### Scenario: Routing selection errors
 - **WHEN** selection fails with malformed routing controls, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
@@ -27,7 +31,7 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 
 #### Scenario: Adapter documents
 - **WHEN** ProviderWire encodes a failure
-- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents and the provider-stream document SHALL equal those written before this change
+- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents, the provider-stream document and the catalog configuration document SHALL equal those written before this change
 - **AND** provider stream SHALL use the fixed status-less stream document defined by providerwire-v4-streaming-runtime
 
 #### Scenario: Inconsistent tool history

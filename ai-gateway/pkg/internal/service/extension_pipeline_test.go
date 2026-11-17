@@ -99,7 +99,7 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 					"backend-secondary": seamModel(false),
 				})
 				recorder := &pipelineRecorder{}
-				observed, host := newExtensionRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}), recorder)
+				observed, host := newExtensionRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}, nil), recorder)
 				var options provider.CallOptions
 				if tc.gateway != "" {
 					options = routedGateway(tc.gateway)
@@ -209,7 +209,7 @@ func TestExtensionPipeline_UnobservedSourceRunsNoPhase(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		source extension.Source
-	}{{name: "empty", source: ""}, {name: "stack-catalog", source: extension.SourceStackCatalog}} {
+	}{{name: "empty", source: ""}, {name: "unnamed", source: "unnamed-source"}} {
 		source := tc.source
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := &pipelineRecorder{}

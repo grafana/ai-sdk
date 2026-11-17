@@ -24,12 +24,14 @@ const BYOK_OPTIONS = { gateway: { byok: { anthropic: [{ apiKey: "request-only-ke
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const BACKEND_DIR = resolve(AI_GATEWAY_ROOT, "pkg");
 const HOST_DIR = resolve(AI_GATEWAY_ROOT, "test/platformhost/cmd/plugin-host");
+const MANIFEST_PATH = resolve(AI_GATEWAY_ROOT, "src/app-sdk-manifest.json");
 const READY_TIMEOUT_MS = 30_000;
 const MODEL_CATALOG_MAX_BYTES = 64 * 1024;
 const ROUTE_DEADLINE = "60s";
 const TEST_TOKEN = "glsa_integration_service_account_token";
 const TEST_NAMESPACE = "stacks-27038";
 const INTERNAL_SERVICE = "integration-internal-service";
+const GATEWAY_AUDIENCE = "aigateway.ext.grafana.app";
 
 let buildDirectory: string;
 let binaryPath: string;
@@ -410,6 +412,110 @@ describe("metadata observation policies", () => {
       for (const value of ["returned-signature", "returned-redacted", "metadata observation", "integration-anthropic-key"]) assert.ok(!exported.includes(value));
       assert.deepEqual(observer.violations, []);
     } finally { await observer.stop(); }
+  });
+});
+
+describe("stack-catalog routes through the authenticated command", () => {
+  const CATALOG_KEY = "integration-stack-catalog-key";
+  const CATALOG_NAME = "team";
+
+  async function createCatalog(gateway: GatewayProcess, primary: string, key: string, method: "POST" | "PUT" = "POST") {
+    const url = `${gateway.baseURL}/modelcatalogs${method === "PUT" ? `/${CATALOG_NAME}` : ""}`;
+    const body = {
+      apiVersion: "aigateway.ext.grafana.app/v1alpha1",
+      kind: "ModelCatalog",
+      metadata: { name: CATALOG_NAME },
+      spec: {
+        providers: { claude: { type: "anthropic" } },
+        models: { "team-model": { name: "Team model", aliases: ["team"], primary: { provider: "claude", model: primary } } },
+      },
+      secure: { claude: { create: key } },
+    };
+    const response = await fetch(url, { method, headers: { Authorization: `Bearer ${TEST_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(5_000) });
+    const text = await response.text();
+    assert.equal(response.status, method === "POST" ? 201 : 200, text);
+    assert.equal(text.includes(key), false);
+  }
+
+  it("discovers and invokes a catalog through both registered clients with its decrypted key", async () => {
+    const [native, gateway] = await startCloudGateway();
+    native.backendModel = "catalog-native";
+    native.apiKey = CATALOG_KEY;
+    try {
+      await createCatalog(gateway, "catalog-native", CATALOG_KEY);
+      const baseURL = `${gateway.baseURL}/modelcatalogs/${CATALOG_NAME}`;
+      const expected = [{
+        id: "team-model", name: "Team model",
+        specification: { specificationVersion: "v4", provider: "grafana", modelId: "team-model" },
+        gateway: { aliases: ["team"], primary: { providerInstance: "claude", provider: "anthropic", providerModelId: "catalog-native" }, fallbacks: [] },
+      }];
+      const stock = await createGateway({ baseURL, apiKey: TEST_TOKEN }).getAvailableModels();
+      assert.deepEqual(stock.models.map(row => row.id), ["team-model"]);
+      const companion = await fetchConfiguredModels({ baseURL, headers: { Authorization: `Bearer ${TEST_TOKEN}` } });
+      assert.deepEqual(companion.models, expected);
+      const discovered = await captureGoClient(goClientBinaryPath, { baseURL, serviceAccountToken: TEST_TOKEN, mode: "discovery" });
+      assert.equal(discovered.error, undefined);
+      assert.deepEqual(discovered.models, expected);
+
+      const model = createGateway({ baseURL, apiKey: TEST_TOKEN })("team");
+      const unary = await generateText({ model, prompt: "catalog-unary", maxRetries: 0, abortSignal: AbortSignal.timeout(10_000) });
+      assert.equal(unary.text, "hello from fake Anthropic");
+      const streamed = streamText({ model, prompt: "normal-stream", maxRetries: 0, abortSignal: AbortSignal.timeout(10_000) });
+      assert.equal(await streamed.text, "hello from fake Anthropic stream");
+      assert.equal(await streamed.finishReason, "stop");
+      const options = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 32 };
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL, serviceAccountToken: TEST_TOKEN, modelID: "team-model", mode, options });
+        assert.equal(go.error, undefined, JSON.stringify(go.error));
+        assert.ok(JSON.stringify(go).includes(mode === "stream" ? "hello from fake Anthropic stream" : "hello from fake Anthropic"));
+      }
+
+      assert.equal(native.requests.length, 4);
+      assert.ok(native.requests.every(request => request.apiKey === CATALOG_KEY));
+      assert.deepEqual(native.violations, []);
+      const metrics = await gateway.metrics();
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="catalog"\} 7$/m);
+      assert.match(metrics, /model="catalog"/);
+      await gateway.stop();
+      assert.equal((gateway.stderr + metrics).includes(CATALOG_KEY), false);
+      assert.equal(metrics.includes("team-model"), false);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
+  });
+
+  it("applies a catalog edit on the next call", async () => {
+    const [native, gateway] = await startCloudGateway();
+    native.backendModel = "catalog-native";
+    native.apiKey = CATALOG_KEY;
+    native.accountKeys = ["integration-edited-catalog-key"];
+    try {
+      await createCatalog(gateway, "catalog-native", CATALOG_KEY);
+      const baseURL = `${gateway.baseURL}/modelcatalogs/${CATALOG_NAME}`;
+      const options = { prompt: [{ role: "user", content: [{ type: "text", text: "catalog-edit" }] }], maxOutputTokens: 32 };
+      assert.equal((await captureGoClient(goClientBinaryPath, { baseURL, serviceAccountToken: TEST_TOKEN, modelID: "team", mode: "generate", options })).error, undefined);
+      native.backendModel = "catalog-edited";
+      await createCatalog(gateway, "catalog-edited", "integration-edited-catalog-key", "PUT");
+      assert.equal((await captureGoClient(goClientBinaryPath, { baseURL, serviceAccountToken: TEST_TOKEN, modelID: "team", mode: "generate", options })).error, undefined);
+      assert.deepEqual(native.requests.map(request => [request.apiKey, request.body.model]), [[CATALOG_KEY, "catalog-native"], ["integration-edited-catalog-key", "catalog-edited"]]);
+      assert.deepEqual(native.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
+  });
+
+  it("surfaces the platform's Kubernetes Status for a missing catalog as a client error", async () => {
+    const [native, gateway] = await startCloudGateway();
+    try {
+      const baseURL = `${gateway.baseURL}/modelcatalogs/missing`;
+      const raw = await fetch(`${baseURL}/config`, { headers: { Authorization: `Bearer ${TEST_TOKEN}` } });
+      assert.equal(raw.status, 404);
+      assert.equal((await raw.json()).status, "Failure");
+      await assert.rejects(createGateway({ baseURL, apiKey: TEST_TOKEN }).getAvailableModels(), (error: unknown) => (error as { statusCode?: number }).statusCode === 404);
+      const model = createGateway({ baseURL, apiKey: TEST_TOKEN })("team");
+      await assert.rejects(async () => model.doGenerate({ prompt: [] }), (error: unknown) => (error as { statusCode?: number }).statusCode === 404);
+      for (const mode of ["discovery", "generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL, serviceAccountToken: TEST_TOKEN, modelID: "team", mode, options: { prompt: [] } });
+        assert.equal(go.error?.statusCode, 404, mode);
+      }
+      assert.equal(native.requests.length, 0);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
   });
 });
 
@@ -1735,7 +1841,7 @@ describe("authenticated Anthropic Gateway command", () => {
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
       const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
       const exchangeURL = `${gateway.url}/platformhost/exchange`;
-      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: exchangeURL } });
+      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: exchangeURL } });
       assert.equal(result.error, undefined);
       assert.deepEqual(result.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
       assert.equal(fake.requests.length, 0);
@@ -2518,7 +2624,7 @@ describe("platform caller access in cloud mode", () => {
     try {
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
       const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
-      const tokenExchange = { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
+      const tokenExchange = { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
       const userIDToken = await gateway.credential({ kind: "id-token", identityType: "user", uid: "private-user-uid" });
       const delegated = await gateway.credential({ kind: "delegated", service: "other-app", identityType: "user", uid: "private-user-uid" });
       for (const onBehalfOf of [undefined, userIDToken, delegated]) {
@@ -2549,6 +2655,47 @@ describe("platform caller access in cloud mode", () => {
     }
   });
 
+  it("serves configured models for several namespaces through one internal Go client", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
+      const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
+      const namespaces = [TEST_NAMESPACE, "stacks-41557"];
+      const users = await Promise.all(namespaces.map((namespace) => gateway!.credential({ kind: "id-token", identityType: "user", uid: "private-user-uid", namespace })));
+      const options = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 32 };
+      const exchange = { CAPToken: cap, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
+      const perStack = await captureGoClient(goClientBinaryPath, {
+        mode: "namespaces", modelID: "assistant", options, tokenExchange: exchange,
+        namespaceCalls: [...namespaces.map((namespace) => ({ namespace })), ...namespaces.map((namespace, index) => ({ namespace, onBehalfOf: users[index] }))],
+      });
+      const wildcard = await captureGoClient(goClientBinaryPath, {
+        mode: "namespaces", modelID: "assistant", options, tokenExchange: { ...exchange, Namespace: "*" },
+        namespaceCalls: namespaces.map((namespace) => ({ namespace })),
+      });
+      for (const [capture, expected] of [[perStack, [...namespaces, ...namespaces]], [wildcard, namespaces]] as const) {
+        assert.equal(capture.error, undefined);
+        assert.deepEqual(capture.namespaceCalls.map((call: { namespace: string }) => call.namespace), expected);
+        for (const call of capture.namespaceCalls) {
+          assert.deepEqual(call.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
+          assert.deepEqual(call.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+          assert.equal(call.parts.at(-1).type, "finish");
+        }
+        assertConsumerSecretsAbsent([capture], [cap, ...users]);
+      }
+      assert.equal(fake.requests.length, 12);
+      const metrics = await gateway.metrics();
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 18$/m);
+      assert.doesNotMatch(metrics, /decision="(?:byok|refused)"/);
+      await gateway.stop();
+      for (const namespace of namespaces) assert.ok(gateway.stderr.includes(namespace), `Gateway observed ${namespace}`);
+      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, ...users, "private-user-uid"]);
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop());
+    }
+  });
+
   it("refuses relayed, anonymous and unauthenticated callers before any work", async () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
@@ -2568,7 +2715,7 @@ describe("platform caller access in cloud mode", () => {
         assert.equal(inference.status, 403);
       }
       await assert.rejects(gateway.accessTokenClient(relayed).getAvailableModels());
-      const go = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: unlisted, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: `${gateway.url}/platformhost/exchange` } });
+      const go = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: unlisted, Namespace: TEST_NAMESPACE, Audience: GATEWAY_AUDIENCE, BaseURL: gateway.apiRoot, TokenExchangeURL: `${gateway.url}/platformhost/exchange` } });
       assert.equal(go.error?.statusCode, 403);
       assert.equal((await fetch(`${gateway.baseURL}/config`)).status, 401);
       assert.equal(fake.requests.length, 0);
@@ -3854,7 +4001,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 type Topology = "cloud" | "self-hosted";
-type CredentialRequest = { kind: "service" | "id-token" | "relay" | "delegated" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string };
+type CredentialRequest = { kind: "service" | "id-token" | "relay" | "delegated" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string; namespace?: string };
 
 function flagEnvironment(args: string[]): Record<string, string> {
   const environment: Record<string, string> = {};
@@ -3887,6 +4034,7 @@ class GatewayProcess {
   readonly process: ChildProcess;
   readonly url: string;
   readonly baseURL: string;
+  readonly apiRoot: string;
   readonly directory: string;
   nativeProxy?: Awaited<ReturnType<typeof startNativeProviderProxy>>;
   private stopped = false;
@@ -3900,6 +4048,7 @@ class GatewayProcess {
     this.output = output;
     this.url = url;
     this.baseURL = `${url}${routePrefix}`;
+    this.apiRoot = `${url}${routePrefix.slice(0, routePrefix.indexOf("/namespaces/"))}`;
   }
 
   get stderr(): string {
@@ -3917,7 +4066,7 @@ class GatewayProcess {
       const modelCatalog = fallbackURL
         ? anthropicFallbackConfig(anthropicURL, fallbackURL, backendModel)
         : configYAML ?? anthropicConfig(anthropicURL, backendModel);
-      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", namespace, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE], {
+      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", namespace, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE, "--manifest", MANIFEST_PATH], {
         cwd: directory,
         stdio: ["ignore", "pipe", "pipe"],
         env: {

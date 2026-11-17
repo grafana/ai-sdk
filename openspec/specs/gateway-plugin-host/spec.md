@@ -1,16 +1,17 @@
 # gateway-plugin-host Specification
 
 ## Purpose
-Run the Gateway as a Grafana App Platform app plugin backend that serves the ProviderWire operations as namespaced platform routes, with configuration, health and lifecycle owned by the plugin host.
+Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWire and Chat Completions as namespaced routes, with configuration, access, health and transport lifecycle owned by the host.
 
 ## Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly two namespaced custom routes, `GET namespaces/{namespace}/config` and `POST namespaces/{namespace}/language-model`, and exactly one kind, `ModelCatalog`, with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
+The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly five namespaced custom routes: `GET config`, `POST language-model` and `POST v1/chat/completions` under `namespaces/{namespace}/`, and `GET config` and `POST language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus one kind, `ModelCatalog`, with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
 
-#### Scenario: Committed manifest declares only the two routes
+#### Scenario: Committed manifest declares only the three routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the two custom routes, and the `ModelCatalog` kind as its only kind
+- **THEN** it SHALL declare one version with only the three namespace routes and the two `ModelCatalog` subresource routes, and the `ModelCatalog` kind as its only kind
+- **AND** each catalog route SHALL declare a `get` access check on its own `modelcatalogs/<route>` subresource, and the namespace routes SHALL declare none
 
 #### Scenario: Plugin identity is fixed
 - **WHEN** the backend is built by any supported method, including plain `go build` in tests
@@ -62,7 +63,7 @@ The Gateway SHALL NOT create network listeners or HTTP servers of its own beyond
 - **THEN** no Gateway handler SHALL serve the request
 
 ### Requirement: Host-compatible configuration
-The Gateway SHALL read settings, including the bounded strict model catalog document, as `GF_PLUGIN_<KEY>` variables, which Grafana derives from its plugin configuration section, without command-line arguments or file access. Operator documentation SHALL state how each host supplies them. Configuration SHALL NOT accept authentication, listener or Cloud-ingress settings. Invalid configuration SHALL fail startup of a non-idle Gateway before any request is served, without exposing secrets.
+The Gateway SHALL read settings, including the optional bounded strict model catalog document, as `GF_PLUGIN_<KEY>` variables that Grafana derives from its plugin configuration section, without arguments or file access. Documentation SHALL state how each host supplies them. Authentication, listener and Cloud-ingress settings SHALL NOT be accepted. Invalid configuration SHALL fail startup of a non-idle Gateway before any request, without exposing secrets.
 
 #### Scenario: Legacy authentication blocks are present
 - **WHEN** the model catalog contains an `auth` or `server` block
@@ -78,7 +79,8 @@ The Gateway SHALL read settings, including the bounded strict model catalog docu
 
 #### Scenario: Missing or oversized model catalog
 - **WHEN** `GF_PLUGIN_MODEL_CATALOG` is unset, blank or larger than 64 KiB
-- **THEN** startup SHALL fail with a reason that names the setting without its value
+- **THEN** an unset or blank catalog SHALL start the Gateway without an operator catalog and without resolving any operator provider key
+- **AND** an oversized catalog SHALL fail startup with a reason that names the setting without its value
 
 #### Scenario: Startup failure is logged with its reason
 - **WHEN** configuration or construction fails at startup
@@ -86,7 +88,7 @@ The Gateway SHALL read settings, including the bounded strict model catalog docu
 - **AND** the reason SHALL name the failing setting or provider without the setting's whole value or credentials; it MAY name catalog keys and identifiers such as model IDs, provider names and `apiKeyEnv` variable names
 
 #### Scenario: Environment-only startup
-- **WHEN** the host starts the plugin with no arguments and a valid environment, including the model catalog
+- **WHEN** the host starts the plugin with no arguments and a valid environment, with or without the model catalog
 - **THEN** the Gateway SHALL construct its catalog, BYOK factories and telemetry, and serve requests
 
 #### Scenario: Host without platform signing keys
@@ -150,6 +152,11 @@ Deterministic tests SHALL serve the Gateway through the real plugin protocol, fr
 #### Scenario: Secure values in the test host
 - **WHEN** a test host write carries secure values
 - **THEN** the test host SHALL apply the platform's inline semantics (create, remove, keep omitted keys, keep unchanged names) after admission, and return only names on reads
+
+#### Scenario: Subresource routes in the test host
+- **WHEN** a test calls a path below a stored object of a declared kind
+- **THEN** the test host SHALL forward it with the object as the route's parent: its resource, name, resource version, JSON and the decrypted values it holds for the object's secure keys
+- **AND** a missing object SHALL get `404` without a route call, and the test host SHALL NOT be cited as evidence of Grafana's declared access checks or decryption
 
 ### Requirement: Test host credential shapes
 The test host SHALL accept service account tokens only as an `Authorization` bearer and access tokens only as `X-Access-Token`. It SHALL delegate them with actor chains shaped like the platform's, SHALL verify delegated token audience and namespace through the same plugin authenticator and plugin ID as production, and SHALL run in either access mode.
@@ -225,25 +232,29 @@ The production route table SHALL declare exactly the method and path pairs of th
 
 #### Scenario: Production table and manifest agree
 - **WHEN** the production route table is compared with the committed manifest
-- **THEN** both SHALL contain only `GET namespaces/{namespace}/config` and `POST namespaces/{namespace}/language-model`
+- **THEN** both SHALL contain only `GET namespaces/{namespace}/config`, `POST namespaces/{namespace}/language-model`, `POST namespaces/{namespace}/v1/chat/completions`, and `GET` `config` and `POST` `language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`
 
 #### Scenario: Undeclared path or method
-- **WHEN** a request targets another path under the route prefix, or a declared path with another method, including `HEAD` on `config`
+- **WHEN** a request targets another path under the route prefix, or a declared path with another method, including `HEAD` on either `config` route
 - **THEN** no catalog, selection or provider call SHALL occur, and the response SHALL NOT be a Gateway error document
 
 ### Requirement: Closed host-error categories
-Host code SHALL report its own failures through a closed set of host-error categories: permission, internal and BYOK discovery unsupported. Each adapter SHALL write a fixed document for each category. The host SHALL NOT define an authentication category, because the platform authenticates callers before the plugin runs.
+Host code SHALL report its own failures through a closed set of host-error categories: permission, internal, BYOK discovery unsupported and catalog configuration. Each adapter SHALL write a fixed document for each category. The host SHALL NOT define an authentication category, because the platform authenticates callers before the plugin runs.
 
 #### Scenario: ProviderWire host documents are unchanged
 - **WHEN** ProviderWire writes the permission, internal or BYOK discovery unsupported host error
 - **THEN** the status, headers and body SHALL be byte-identical to the documents written before this change
+
+#### Scenario: Catalog configuration host error
+- **WHEN** catalog route discovery finds a parent catalog that fails its checks or lacks a provider key
+- **THEN** ProviderWire SHALL write the same fixed document as the runtime's catalog configuration category
 
 #### Scenario: Adapter-owned format
 - **WHEN** a host failure occurs on an entry whose adapter is not ProviderWire
 - **THEN** the response SHALL use that adapter's document for the category, not ProviderWire's
 
 ### Requirement: Host-owned discovery listing
-The host SHALL own the discovery decision and listing. Configured access SHALL list the catalog under the request context, BYOK access SHALL get the BYOK-discovery-unsupported host error without listing, and other callers SHALL get the permission error. A listing that panics or fails, or a projection that fails, SHALL produce the internal host error. The adapter SHALL own only the projection of listed models into its document.
+The host SHALL own the discovery decision and listing. Configured access SHALL list the operator catalog, catalog access its route's parent catalog, BYOK access SHALL get the BYOK-discovery-unsupported host error without listing, and other callers the permission error. A listing that panics or fails, or a projection that fails, SHALL produce the internal host error. The adapter SHALL own only the projection of listed models into its document.
 
 #### Scenario: Configured discovery document is unchanged
 - **WHEN** a configured caller requests `config`
@@ -252,6 +263,10 @@ The host SHALL own the discovery decision and listing. Configured access SHALL l
 #### Scenario: BYOK discovery
 - **WHEN** a BYOK caller requests `config` in `cloud` mode
 - **THEN** the response SHALL be the fixed BYOK discovery unsupported document, with zero catalog listings
+
+#### Scenario: Catalog route discovery
+- **WHEN** a caller with catalog access requests a catalog route's `config`
+- **THEN** the response SHALL list the parent catalog's models, and a parent that fails its checks SHALL get the catalog configuration host error
 
 #### Scenario: Listing panics
 - **WHEN** the catalog lister panics or returns an error
@@ -368,3 +383,22 @@ Extension secrets SHALL be read from the environment only after every setting, t
 #### Scenario: Disabled extension
 - **WHEN** an entry sets `enabled: false` and names an unset secret variable
 - **THEN** startup SHALL succeed without reading that variable
+
+### Requirement: Catalog route parent check
+Before using a catalog route's decrypted values, the Gateway SHALL check that the route carries a parent object whose group, version, kind, namespace and name match the route's group, version, `ModelCatalog`, namespace and `{name}`. A missing or mismatched parent SHALL fail with the internal host error before the body is read, with no access decision, listing, selection or provider work.
+
+#### Scenario: Parent names another catalog
+- **WHEN** a catalog route for `team` receives a parent named `other`, or one from another namespace
+- **THEN** the response SHALL be the internal host error, and no decrypted value SHALL reach selection or a provider
+
+#### Scenario: Route without a parent
+- **WHEN** a catalog route request carries no parent object
+- **THEN** the response SHALL be the internal host error
+
+#### Scenario: Parent whose spec does not decode
+- **WHEN** the parent names the route's catalog but its spec does not decode as a `ModelCatalog` spec
+- **THEN** language-model SHALL fail with the catalog configuration document and `config` with the catalog configuration host error
+
+#### Scenario: Parent whose identity does not decode
+- **WHEN** the parent is not JSON, or its API version, kind, namespace or name cannot be read
+- **THEN** the response SHALL be the internal host error

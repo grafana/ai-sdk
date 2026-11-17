@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: 028a025398782f4938303f48fbeee45c79af544b
+  commit: 2feaeecbd6a921a27123aafa75db6af34e1f246b
   packageSource: npm
-  verifiedAt: 2026-11-04
+  verifiedAt: 2026-11-06
 packages:
-  ai: 7.0.159
-  "@ai-sdk/anthropic": 4.0.94
-  "@ai-sdk/amazon-bedrock": 5.0.130
-  "@ai-sdk/gateway": 4.0.132
-  "@ai-sdk/openai": 4.0.106
-  "@ai-sdk/openai-compatible": 3.0.82
+  ai: 7.0.162
+  "@ai-sdk/anthropic": 4.0.96
+  "@ai-sdk/amazon-bedrock": 5.0.132
+  "@ai-sdk/gateway": 4.0.135
+  "@ai-sdk/openai": 4.0.108
+  "@ai-sdk/openai-compatible": 3.0.84
   "@ai-sdk/provider": 4.0.35
-  "@ai-sdk/provider-utils": 5.0.72
-  "@ai-sdk/react": 4.0.163
+  "@ai-sdk/provider-utils": 5.0.74
+  "@ai-sdk/react": 4.0.166
 verification:
   status: enforced
   conformanceScope: full
@@ -88,15 +88,6 @@ knownGaps:
       rejected) are implemented and included in the registered targets. Coverage
       remains focused unit tests plus manual live checks; no recorded fixture
       establishes these request boundaries. Tracked by grafana/ai-sdk#278.
-  - id: anthropic-tool-choice-none
-    surface: provider-anthropic
-    status: intentional-deviation
-    description: Ordinary tool choice none now preserves definitions in both
-      Go and upstream, retaining the prompt cache prefix. Without tools,
-      tool_choice is omitted. The remaining intentional difference is the JSON
-      response tool fallback, where Go sends only the JSON tool and upstream also
-      sends the caller's tools under a forced choice. Converter and HTTP request
-      tests cover this narrower boundary.
   - id: anthropic-vertex-native-json-output
     surface: provider-anthropic
     status: intentional-deviation

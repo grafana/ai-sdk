@@ -117,7 +117,7 @@ func (r *Runtime) selectModel(ctx context.Context, modelID string, options provi
 	if !validSelection(selected) {
 		return Selection{}, nil, errInternal
 	}
-	attempts = newAttemptCapture(modelID, selected, r.redactor)
+	attempts = newAttemptCapture(modelID, selected, r.redactor.With(selected.keys))
 	selected.Model = enteredModel{LanguageModel: selected.Model, attempts: attempts}
 	if r.compose == nil {
 		return selected, attempts, nil
