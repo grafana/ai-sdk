@@ -46,18 +46,18 @@ func (r *pipelineRecorder) Observe(_ context.Context, _ *extension.Call, record 
 	return nil
 }
 
-// newExtensionRuntime composes the production model chain: the logical
-// observers outside the extension pipeline, outside the selected model.
+// newExtensionRuntime composes the production model chain around one
+// operator-scope extension that applies to every call.
 func newExtensionRuntime(t *testing.T, selector execution.RequestSelector, value any) (*observedRuntime, *extensionhost.Host) {
 	t.Helper()
+	return newExtensionsRuntime(t, selector, recorderDefinition("recorder", value))
+}
+
+// newExtensionsRuntime composes the production model chain: the logical
+// observers outside the extension pipeline, outside the selected model.
+func newExtensionsRuntime(t *testing.T, selector execution.RequestSelector, definitions ...extension.Definition) (*observedRuntime, *extensionhost.Host) {
+	t.Helper()
 	observed := newObservedRuntime(t, selector)
-	definitions := []extension.Definition{{
-		Name:             "recorder",
-		Scope:            extension.ScopeOperator,
-		FailurePolicy:    extension.FailClosed,
-		EnabledByDefault: true,
-		New:              func(json.RawMessage, extension.Dependencies) (any, error) { return value, nil },
-	}}
 	plan, err := extensionhost.NewPlan(definitions, nil, nil)
 	require.NoError(t, err)
 	host, err := extensionhost.New(extensionhost.Config{Plan: plan, Logger: slog.New(slog.NewJSONHandler(observed.logs, nil)), Registerer: observed.telemetry.Registerer(), Clock: time.Now, RequestInfo: ExtensionRequest, DrainTimeout: 10 * time.Millisecond})
@@ -73,6 +73,47 @@ func newExtensionRuntime(t *testing.T, selector execution.RequestSelector, value
 	require.NoError(t, err)
 	observed.runtime = runtime
 	return observed, host
+}
+
+func recorderDefinition(name string, value any, keys ...extension.KeyOwnership) extension.Definition {
+	return extension.Definition{
+		Name:             name,
+		Scope:            extension.ScopeOperator,
+		Keys:             keys,
+		FailurePolicy:    extension.FailClosed,
+		EnabledByDefault: true,
+		New:              func(json.RawMessage, extension.Dependencies) (any, error) { return value, nil },
+	}
+}
+
+func TestExtensionPipeline_StackCatalogCallsAreCustomerOwned(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		t.Run(mode, func(t *testing.T) {
+			customer, operator := &pipelineRecorder{}, &pipelineRecorder{}
+			selector := stackSelector(stackObservedCatalog("team-catalog", "stack-model"), stackAnthropicClient(false))
+			observed, host := newExtensionsRuntime(t, selector,
+				recorderDefinition("customer-only", customer, extension.KeysCustomer),
+				recorderDefinition("operator-only", operator, extension.KeysOperator),
+			)
+			observed.call(t, callerContext(t, gatewayauth.CatalogAccounts), "stack-model-alias", provider.CallOptions{}, mode == "stream")
+			host.Close(context.Background())
+
+			require.Len(t, customer.admitted, 1)
+			admitted := customer.admitted[0]
+			assert.Equal(t, extension.SourceStackCatalog, admitted.Source)
+			assert.Equal(t, extension.KeysCustomer, admitted.Keys)
+			assert.Equal(t, "stack-model", admitted.Model)
+			assert.Equal(t, testNamespace, admitted.Namespace)
+			require.Len(t, customer.observed, 1)
+			assert.Equal(t, extension.OutcomeSuccess, customer.observed[0].Outcome)
+			assert.Empty(t, operator.admitted)
+			assert.Empty(t, operator.observed)
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				assert.Len(collect, observed.records(t, "aisdk.model."+mode+".finish"), 1)
+			}, time.Second, time.Millisecond)
+			assert.NotContains(t, observed.logs.String(), stackCatalogSecret)
+		})
+	}
 }
 
 func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
