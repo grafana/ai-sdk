@@ -3858,10 +3858,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		assert.False(t, br.usesJsonResponseTool)
 		require.NotEmpty(t, p.OutputConfig.Format.Schema)
 
-		// anthropic-sdk-go v1.43.0 changed BetaJSONOutputFormatParam.Schema
-		// from map[string]any to any; assert back to a map before indexing.
-		schema, ok := p.OutputConfig.Format.Schema.(map[string]any)
-		require.True(t, ok, "Format.Schema must be a map[string]any")
+		schema := decodeFormatSchema(t, p.OutputConfig.Format.Schema)
 
 		props, ok := schema["properties"].(map[string]any)
 		require.True(t, ok, "properties should be a map")
@@ -3901,8 +3898,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		p, _, _, _, err := buildParams("claude-sonnet-4-5", opts, false)
 		require.NoError(t, err)
 
-		schema, ok := p.OutputConfig.Format.Schema.(map[string]any)
-		require.True(t, ok, "Format.Schema must be a map[string]any")
+		schema := decodeFormatSchema(t, p.OutputConfig.Format.Schema)
 
 		defs, ok := schema["definitions"].(map[string]any)
 		require.True(t, ok, "definitions must remain a structured field")
@@ -3936,8 +3932,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotEmpty(t, p.OutputConfig.Format.Schema, "root allOf-only schema must not collapse to nil")
-		schema, ok := p.OutputConfig.Format.Schema.(map[string]any)
-		require.True(t, ok, "Format.Schema must be a map[string]any")
+		schema := decodeFormatSchema(t, p.OutputConfig.Format.Schema)
 		allOf, ok := schema["allOf"].([]any)
 		require.True(t, ok, "allOf must remain on the root")
 		require.Len(t, allOf, 2)
@@ -3969,8 +3964,7 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		p, _, _, _, err := buildParams("claude-sonnet-4-5", opts, false)
 		require.NoError(t, err)
 
-		s, ok := p.OutputConfig.Format.Schema.(map[string]any)
-		require.True(t, ok, "Format.Schema must be a map[string]any")
+		s := decodeFormatSchema(t, p.OutputConfig.Format.Schema)
 		assert.Equal(t, "http://json-schema.org/draft-07/schema#", s["$schema"])
 		assert.Equal(t, "https://example.com/color", s["$id"])
 		assert.Equal(t, "Color", s["title"])
@@ -5928,4 +5922,14 @@ func TestBuildParams_VertexJSONOutput(t *testing.T) {
 			})
 		}
 	}
+}
+
+// decodeFormatSchema decodes the output format schema as it goes on the wire.
+func decodeFormatSchema(t *testing.T, schema any) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(schema)
+	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	return decoded
 }

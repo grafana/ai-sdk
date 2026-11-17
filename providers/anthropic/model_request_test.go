@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -116,4 +117,37 @@ func TestNew_MessagesRequestTarget(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestDoGenerate_StructuredOutputKeepsPropertyOrder(t *testing.T) {
+	// The model writes the answer's fields in the order the schema lists
+	// them, so the request must keep the caller's order, not sort it.
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var body struct {
+			OutputConfig struct {
+				Format struct {
+					Schema json.RawMessage `json:"schema"`
+				} `json:"format"`
+			} `json:"output_config"`
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, `{"type":"object","properties":{"zulu":{"type":"string"},"alpha":{"type":"object","properties":{"yankee":{"type":"string"},"bravo":{"type":"string"}},"additionalProperties":false}},"required":["zulu","alpha"],"additionalProperties":false}`, string(body.OutputConfig.Format.Schema))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_test","type":"message","role":"assistant","content":[{"type":"text","text":"{}"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+	model := New("key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+	maxOutputTokens := 64
+	_, err := model.DoGenerate(context.Background(), provider.CallOptions{
+		MaxOutputTokens: &maxOutputTokens,
+		Prompt:          []provider.Message{provider.UserText("json")},
+		ResponseFormat: &provider.ResponseFormat{
+			Type:   provider.ResponseFormatJSON,
+			Schema: json.RawMessage(`{"type":"object","properties":{"zulu":{"type":"string"},"alpha":{"type":"object","properties":{"yankee":{"type":"string"},"bravo":{"type":"string"}}}},"required":["zulu","alpha"]}`),
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, requests)
 }
