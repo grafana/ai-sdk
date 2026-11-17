@@ -8,7 +8,7 @@
     "test": "tsx --test command.test.ts"
   },
   "dependencies": {
-    "openai": "6.27.0"
+    "openai": "6.49.0"
   },
   "devDependencies": {
     "@types/node": "25.9.9",
