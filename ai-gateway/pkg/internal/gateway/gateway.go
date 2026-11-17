@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/grafana-app-sdk/plugin"
 	"github.com/grafana/grafana-app-sdk/simple"
 
+	anthropicmessages "github.com/grafana/ai-sdk/ai-gateway/anthropic/messages"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
@@ -260,8 +261,12 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
+	messages, err := anthropicmessages.New(runtime)
+	if err != nil {
+		return nil, err
+	}
 	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat))
+	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat, messages))
 }
 
 // composeModel composes each call's model: the logical observers outside the

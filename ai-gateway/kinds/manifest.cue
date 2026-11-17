@@ -59,6 +59,10 @@ v1alpha1: {
 			operationId: "createChatCompletion"
 			responses: default: description: "OpenAI Chat Completions response"
 		}
+		"/namespaces/{namespace}/v1/messages": post: {
+			operationId: "createAnthropicMessage"
+			responses: default: description: "Anthropic Messages response"
+		}
 		"/namespaces/{namespace}/language-model": post: {
 			operationId: "createLanguageModel"
 			responses: default: description: "ProviderWire language-model response"
