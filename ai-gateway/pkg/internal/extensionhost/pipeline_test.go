@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
+	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 // invoke calls model once, unary or streaming, and returns a stream's parts.
@@ -700,3 +703,108 @@ func TestHost_CloseCountsAbandonedObservations(t *testing.T) {
 	h.host.Close(ctx)
 	assert.Equal(t, 1.0, h.dropped())
 }
+
+func TestPipeline_StreamOutcome(t *testing.T) {
+	providerErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "private"})
+	errorPart := provider.StreamPart{Type: provider.PartError, APICallError: providerErr}
+	finish := provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}, Usage: &provider.Usage{}}
+	recorded := func(records chan extension.Record) extension.Definition {
+		return define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+			records <- record
+			return nil
+		}})
+	}
+	for _, tc := range []struct {
+		name    string
+		parts   []provider.StreamPart
+		guard   *recorder
+		outcome extension.Outcome
+	}{
+		{name: "error then finish", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, errorPart, finish}, outcome: extension.OutcomeError},
+		{name: "finish then error", parts: append(textParts("hello"), errorPart), outcome: extension.OutcomeError},
+		{name: "invalid output with an error", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, {Type: provider.PartTextDelta, ID: "never-started", Delta: "x"}, errorPart, finish}, outcome: extension.OutcomeInvalidOutput},
+		{name: "inspection denial", parts: textParts("hello"), guard: &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return extension.ErrDenied }}, outcome: extension.OutcomeDenied},
+		{name: "fail-closed inspection failure", parts: textParts("hello"), guard: &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return errors.New("private") }}, outcome: extension.OutcomeError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			definitions := []extension.Definition{recorded(records)}
+			if tc.guard != nil {
+				definitions = append(definitions, define("guard", tc.guard))
+			}
+			h := newHarness(t, definitions...)
+			h.model.stream = func(context.Context) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: streamOf(tc.parts...)}, nil
+			}
+			_, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true)
+			require.NoError(t, err)
+			h.flush()
+			require.Len(t, records, 1)
+			assert.Equal(t, tc.outcome, (<-records).Outcome)
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		parts   []provider.StreamPart
+		outcome extension.Outcome
+	}{
+		{name: "error, then cancelled", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, errorPart}, outcome: extension.OutcomeError},
+		{name: "invalid output, then cancelled", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, {Type: provider.PartTextDelta, ID: "never-started", Delta: "x"}}, outcome: extension.OutcomeInvalidOutput},
+		{name: "cancelled", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, {Type: provider.PartTextStart, ID: "t"}}, outcome: extension.OutcomeCancelled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			h := newHarness(t, recorded(records))
+			h.model.stream = func(ctx context.Context) (*provider.StreamResult, error) {
+				parts := make(chan provider.StreamPart)
+				go func() {
+					defer close(parts)
+					for _, part := range tc.parts {
+						parts <- part
+					}
+					<-ctx.Done()
+				}()
+				return &provider.StreamResult{Stream: parts}, nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			result, err := h.compose(t, extension.SourceOperatorCatalog).DoStream(ctx, provider.CallOptions{})
+			require.NoError(t, err)
+			for range tc.parts {
+				<-result.Stream
+			}
+			cancel()
+			collect(t, result.Stream)
+			h.flush()
+			assert.Equal(t, tc.outcome, (<-records).Outcome)
+		})
+	}
+
+	t.Run("OpenAI-compatible stream read error", func(t *testing.T) {
+		records := make(chan extension.Record, 1)
+		h := newHarness(t, recorded(records))
+		chunk := `data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"partial"},"finish_reason":null}]}` + "\n\n"
+		client := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+			body := io.NopCloser(io.MultiReader(strings.NewReader(chunk), failingReader{}))
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: body, Request: r}, nil
+		})}
+		model := openaicompatible.New("m", openaicompatible.WithBaseURL("https://provider.example/v1"), openaicompatible.WithAPIKey("dummy-key"), openaicompatible.WithHTTPClient(client))
+		composed, err := h.host.Compose(execution.Selection{ID: "canonical", Model: model, Source: extension.SourceOperatorCatalog})
+		require.NoError(t, err)
+		result, err := composed.DoStream(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+		require.NoError(t, err)
+		types := partTypes(collect(t, result.Stream))
+		require.Contains(t, types, provider.PartError)
+		assert.Equal(t, provider.PartFinish, types[len(types)-1])
+		h.flush()
+		assert.Equal(t, extension.OutcomeError, (<-records).Outcome)
+	})
+}
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
