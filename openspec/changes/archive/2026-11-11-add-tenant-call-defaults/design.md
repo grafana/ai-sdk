@@ -40,7 +40,7 @@
 
 **Non-Goals:**
 - Changing the root `middleware.DefaultSettings` merge (see Parity).
-- Stack-catalog sources (#757). Both definitions apply to every source, so stack catalogs are covered once that source exists.
+- Stack-catalog specifics. Both definitions apply to every key ownership, so stack-catalog calls, which are customer-owned, get the defaults with no extra code.
 - A settings UI.
 - Provider-specific bounds.
 - Per-message provider options.
@@ -209,7 +209,7 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 | End to end: create, call and see it applied, then disable and see it removed | **CI e2e:** the runtime-effect test. **Go:** a gateway test through the test host with the shipped definitions. Namespace `a` enables both, `b` disables instructions and deletes settings after creating them, and `c` stores nothing. Each catalog call's fake-Anthropic body shows the system blocks and `temperature`, `max_tokens` and `stop_sequences` for `a` only. Transitions within one namespace are covered by #765's `synctest` pipeline tests. |
 | A client system message suppresses `default-instructions` | **Unit (`calldefaults`):** a system message first, a system message later, none (prepends both, in order), unary and stream; the input prompt isn't mutated. **Gateway:** a call with a system message reaches the fake with only its own system block. |
 | The `default-settings` schema refuses headers, provider options, tools, tool choice and response format | **`tenantconfig` admission table with the shipped definitions:** each of those, plus `reasoning`, an unknown key, a wrong type, `maxOutputTokens: 0`, `1.5` for `topK`, `seed: 9007199254740992`, `{}`, and for instructions an empty list, an empty content and an extra key. Each refusal names the location and holds no sentinel. Boundary values are accepted: `seed` at ±(2^53−1), `maxOutputTokens: 1`. **Manifest test:** the manifest member's properties are exactly the eight fields. **CI e2e:** `headers` refused by Grafana. |
-| Both apply to operator-owned and customer-owned calls | **Pipeline test (`extensionhost` or `service`)** with the shipped definitions and a fake reader that enables both: an operator-catalog call and a request-BYOK call, unary and stream, each reaching the model with the defaults. **Definition test:** nil `Keys`, a `Decode`, failure policy `skip`, tenant scope. Stack catalogs need #757. |
+| Both apply to operator-owned and customer-owned calls | **Pipeline test (`extensionhost` or `service`)** with the shipped definitions and a fake reader that enables both: an operator-catalog call, a request-BYOK call and a stack-catalog call, unary and stream, each reaching the model with the defaults. **Definition test:** nil `Keys`, a `Decode`, failure policy `skip`, tenant scope. |
 | Settings precedence (parity rows 1–5, 14) | **Unit tests** ported from upstream's `temperature` and "other settings" cases: a call's `0`, `stopSequences: []`, unset fields, and headers, provider options, tools, tool choice and response format unchanged. A later `append` to the stop sequences doesn't change another call's defaults. |
 | Registry and binding | **`tenanttype`:** `All()` returns both types in name order; each example passes its schema, and the members are `defaultInstructions` and `defaultSettings`. **The `manifestdata` member-mirror test** covers both members. **`pkg/gateway`:** `DefaultExtensions()` passes `ValidateDefinitions` against `tenanttype.All()`. |
 | Shipped behavior changes | Update `TestMiddlewareAdmission_ShippedTypesRefuseEveryCreate` to the new shipped scenario. `TestTenantConfiguration_ShippedDefinitionsReadNothing` becomes "reads once per namespace, calls unchanged without resources", plus a test with no tenant definitions that makes no reads. The self-hosted test logs the no-access warning with the shipped build. |
@@ -263,7 +263,6 @@ The shipped tenant extensions apply to every call, so the shipped Gateway reads 
 
   The same steps go into the PR body.
 - **List kind label.** Against the pinned Grafana nightly, listing `middlewares` returns `kind: ModelCatalogList`, the list kind of the manifest's first kind, with media type `application/json`. The reader therefore no longer requires `kind: MiddlewareList`: the request path identifies the resource, a JSON object with an `items` array is a list unless its `kind` names a non-list such as `Status`, and each item needs a name and, when present, the Middleware group and version. A platform bug report is drafted for the maintainers.
-- Stack-catalog coverage when #757 lands. No code change is expected, because `Keys` is nil.
 - Root `DefaultSettings` alignment: [#791](https://github.com/grafana/ai-sdk/issues/791).
 
 ### `upstream-sync` issue, filed as [#791](https://github.com/grafana/ai-sdk/issues/791)

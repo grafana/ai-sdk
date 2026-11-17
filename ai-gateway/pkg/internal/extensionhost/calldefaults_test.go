@@ -34,7 +34,7 @@ func TestShippedCallDefaults_EveryKeyOwnership(t *testing.T) {
 		{namespace: "none", want: provider.CallOptions{Prompt: []provider.Message{user}}},
 		{namespace: "invalid", want: provider.CallOptions{Prompt: []provider.Message{user}}},
 	} {
-		for _, source := range []extension.Source{extension.SourceOperatorCatalog, extension.SourceRequestBYOK} {
+		for _, source := range []extension.Source{extension.SourceOperatorCatalog, extension.SourceRequestBYOK, extension.SourceStackCatalog} {
 			for _, stream := range []bool{false, true} {
 				model := h.compose(t, source)
 				params := provider.CallOptions{Prompt: []provider.Message{user}}

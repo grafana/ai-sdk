@@ -65,8 +65,8 @@ When enabled, `default-settings` SHALL set each configured field only when the c
 Both extensions SHALL be tenant-scope, apply to calls with operator-owned and customer-owned keys, whatever their source, act only as request transforms, and use failure policy `skip`. The shipped Gateway SHALL register both, bound to their public types.
 
 #### Scenario: Both key ownerships
-- **WHEN** a namespace enables both extensions and runs a catalog call and a request BYOK call
-- **THEN** both calls SHALL reach the model with the default instructions and settings applied
+- **WHEN** a namespace enables both extensions and runs an operator-catalog call, a request BYOK call and a stack-catalog call
+- **THEN** every call SHALL reach the model with the default instructions and settings applied
 
 #### Scenario: Configuration that fails at read time
 - **WHEN** a stored member no longer passes its type's schema when read
