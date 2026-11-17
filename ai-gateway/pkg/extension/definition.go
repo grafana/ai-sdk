@@ -20,9 +20,9 @@ const (
 	// ScopeTenant extensions are configured per namespace, by Middleware
 	// resources named after the extension. A tenant-scope definition must
 	// bind to a public type in package tenanttype, which declares its
-	// configuration schema and default. The Gateway doesn't apply stored
-	// resources yet, so tenant extensions run with their default state and an
-	// empty configuration.
+	// configuration schema and default. A namespace without a resource uses
+	// the extension's default state, and a host that gives the plugin no API
+	// access applies the default state everywhere.
 	ScopeTenant Scope = "tenant"
 )
 
@@ -60,12 +60,28 @@ type Definition struct {
 	// EnabledByDefault enables the extension when it has no configuration
 	// entry.
 	EnabledByDefault bool
-	// New constructs an instance from its validated configuration, a JSON
-	// object, and its dependencies. The instance must implement at least one
-	// phase interface: [Admitter], [RequestTransformer], [RequestInspector],
-	// [ResponseInspector] or [Observer]. It may also implement [Closer]. New
-	// may run more than once per process, once per configuration it is given.
+	// New constructs the extension's one instance, once per process at
+	// startup, with its dependencies. An operator-scope extension gets its
+	// validated configuration from the operator setting. A tenant-scope
+	// extension gets an empty configuration and receives each namespace's
+	// configuration per call in [Call.Config]. The instance must implement at
+	// least one phase interface: [Admitter], [RequestTransformer],
+	// [RequestInspector], [ResponseInspector] or [Observer]. It may also
+	// implement [Closer], which runs once at shutdown.
 	New func(config json.RawMessage, deps Dependencies) (any, error)
+	// Decode turns a tenant-scope extension's stored configuration, a JSON
+	// object its ConfigSchema accepts, into the value its calls receive in
+	// [Call.Config]. The host runs it once each time a namespace's stored
+	// configuration changes, never per call, and once at startup on the
+	// empty configuration of a type enabled by default. Nil passes the
+	// configuration through as its canonical [json.RawMessage]. An error or
+	// panic applies the extension's failure policy in that namespace, or
+	// fails startup for the default configuration. It may run concurrently
+	// for different namespaces. The returned value is shared by concurrent
+	// calls and must not be modified. A type without a
+	// configuration schema never decodes. Operator-scope definitions must
+	// leave it nil.
+	Decode func(config json.RawMessage) (any, error)
 }
 
 // Dependencies are the process services an extension instance may use.

@@ -80,6 +80,12 @@ func validateDefinition(definition extension.Definition) error {
 	default:
 		return invalid("scope")
 	}
+	if definition.Scope == extension.ScopeOperator && definition.Decode != nil {
+		return fmt.Errorf("extensions: operator extension %q declares a decoder, which only tenant extensions take", definition.Name)
+	}
+	if definition.Scope == extension.ScopeTenant && len(definition.Secrets) != 0 {
+		return fmt.Errorf("extensions: tenant extension %q declares secrets, which only the operator setting supplies", definition.Name)
+	}
 	switch definition.FailurePolicy {
 	case extension.FailClosed, extension.FailSkip:
 	default:

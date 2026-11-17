@@ -136,3 +136,26 @@ func TestNewValidator_WithoutDefinitions(t *testing.T) {
 	err := NewValidator(nil).Validate(context.Background(), &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: access(true, `{}`)})
 	assert.EqualError(t, err, `middleware: spec.type "model-access" is not a tenant extension of this Gateway`)
 }
+
+func TestWithoutAPIAccess_Validate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		request *app.AdmissionRequest
+		wantErr string
+	}{
+		{name: "valid create", request: &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: access(true, `{}`)}, wantErr: noAPIAccessReason},
+		{name: "disable-only update", request: &app.AdmissionRequest{Action: resource.AdmissionActionUpdate, Object: access(false, ""), OldObject: access(true, `{}`)}, wantErr: noAPIAccessReason},
+		{name: "invalid create", request: &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: object("a", `{"type":"b","enabled":true}`)}, wantErr: noAPIAccessReason},
+		{name: "delete", request: &app.AdmissionRequest{Action: resource.AdmissionActionDelete, OldObject: access(true, `{}`)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := WithoutAPIAccess{}.Validate(context.Background(), tc.request)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			assert.True(t, apierrors.IsBadRequest(err))
+			assert.EqualError(t, err, tc.wantErr)
+		})
+	}
+}

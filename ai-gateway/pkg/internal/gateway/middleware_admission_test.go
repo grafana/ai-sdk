@@ -7,14 +7,19 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/grafana/authlib/types"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/logging"
+	"k8s.io/client-go/rest"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
@@ -202,7 +207,101 @@ func TestMiddlewareAdmission_AcrossBuilds(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, code)
 }
 
-func TestMiddleware_StoredResourcesHaveNoRuntimeEffect(t *testing.T) {
+// namespaceRecorder is a tenant extension that records, per admit, the
+// call's namespace and the extension and configuration the call carries.
+type namespaceRecorder struct {
+	name  string
+	calls *sync.Map
+}
+
+func (r namespaceRecorder) Admit(_ context.Context, call *extension.Call) error {
+	config, _ := call.Config.(json.RawMessage)
+	r.calls.Store(call.Namespace+" "+r.name+string(config), true)
+	return nil
+}
+
+const recordingSchema = `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"},"limits":{"type":"object","properties":{"rpm":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}`
+
+// recordingTenant returns a public tenant type with a nested schema and its
+// definition, whose instance records each call's configuration.
+func recordingTenant(t *testing.T, name string, calls *sync.Map, enabledByDefault bool) (tenanttype.Type, extension.Definition) {
+	t.Helper()
+	tenant := tenantType(t, name, recordingSchema, `{}`, enabledByDefault)
+	return tenant, tenant.Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: func(json.RawMessage, extension.Dependencies) (any, error) {
+		return namespaceRecorder{name: name, calls: calls}, nil
+	}})
+}
+
+func namespacedURL(base, namespace, route string) string {
+	return base + strings.Replace(RoutePrefix(), "{namespace}", namespace, 1) + "/" + route
+}
+
+func (h *harness) namespaceToken(t *testing.T, namespace string) string {
+	t.Helper()
+	token, err := h.host.ServiceToken(testInternalService, namespace)
+	require.NoError(t, err)
+	return token
+}
+
+func TestTenantConfiguration_AppliesEachNamespacesResources(t *testing.T) {
+	calls := &sync.Map{}
+	configuredType, configured := recordingTenant(t, "configured-access", calls, false)
+	defaultType, defaultOn := recordingTenant(t, "default-on", calls, true)
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{tenantTypes: []tenanttype.Type{configuredType, defaultType}, extensions: []extension.Definition{configured, defaultOn}})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resources := map[string][]string{
+		"stacks-1": {middlewareDocument("configured-access", "configured-access", true, `"configuredAccess":{"v":"one","n":9007199254740991,"limits":{"rpm":10}}`)},
+		"stacks-2": {middlewareDocument("configured-access", "configured-access", true, `"configuredAccess":{"v":"two"}`), middlewareDocument("default-on", "default-on", false, "")},
+	}
+	for namespace, documents := range resources {
+		for _, document := range documents {
+			code, body := sendObject(t, ctx, http.MethodPost, namespacedURL(h.server.URL, namespace, "middlewares"), h.namespaceToken(t, namespace), document)
+			require.Equal(t, http.StatusCreated, code, body)
+		}
+	}
+
+	user, err := h.host.IDToken(types.TypeUser, "u1", "stacks-1")
+	require.NoError(t, err)
+	delegated, err := h.host.Exchange(ctx, testInternalService, delegation(user))
+	require.NoError(t, err)
+	for namespace, token := range map[string]string{"stacks-1": delegated, "stacks-2": h.namespaceToken(t, "stacks-2"), "stacks-3": h.namespaceToken(t, "stacks-3")} {
+		code, body := do(t, languageRequest(t, ctx, namespacedURL(h.server.URL, namespace, "language-model"), unaryBody, false, accessToken(token)))
+		require.Equal(t, http.StatusOK, code, body)
+	}
+
+	var applied []string
+	calls.Range(func(entry, _ any) bool {
+		applied = append(applied, entry.(string))
+		return true
+	})
+	assert.ElementsMatch(t, []string{
+		`stacks-1 configured-access{"limits":{"rpm":10},"n":9007199254740991,"v":"one"}`,
+		`stacks-1 default-on{}`,
+		`stacks-2 configured-access{"v":"two"}`,
+		`stacks-3 default-on{}`,
+	}, applied, "each call applies its own namespace's member, nested, and numbers up to the largest safe integer")
+
+	subjects := h.exchanges.recorded()
+	require.NotEmpty(t, subjects, "reads go through the plugin's token exchange")
+	for _, subject := range subjects {
+		assert.Empty(t, subject, "reads are made as the plugin, even for a call on behalf of a user")
+	}
+	assert.Contains(t, h.logs.String(), `"msg":"gateway plugin API access","available":true`)
+}
+
+func TestTenantConfiguration_ShippedDefinitionsReadNothing(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	code, body := do(t, languageRequest(t, ctx, h.url("language-model"), unaryBody, false, accessToken(h.serviceToken(t, testInternalService))))
+	require.Equal(t, http.StatusOK, code, body)
+	assert.Empty(t, h.exchanges.recorded())
+	assert.Equal(t, 1, strings.Count(h.logs.String(), `"msg":"gateway plugin API access","available":true`))
+	assert.NotContains(t, h.logs.String(), "tenant configuration is not applied")
+}
+
+func TestTenantConfiguration_WithoutAPIAccess(t *testing.T) {
 	var offRuns, onRuns atomic.Int32
 	count := func(runs *atomic.Int32) gatewayExtension {
 		return gatewayExtension{admit: func() error {
@@ -210,21 +309,78 @@ func TestMiddleware_StoredResourcesHaveNoRuntimeEffect(t *testing.T) {
 			return nil
 		}}
 	}
-	types := []tenanttype.Type{tenantType(t, "off-by-default", "", "", false), tenantType(t, "on-by-default", "", "", true)}
-	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{
-		tenantTypes: types,
-		extensions:  []extension.Definition{bindTenant(types[0], count(&offRuns)), bindTenant(types[1], count(&onRuns))},
-	})
+	tenantTypes := []tenanttype.Type{tenantType(t, "off-by-default", "", "", false), tenantType(t, "on-by-default", "", "", true)}
+	options := harnessOptions{tenantTypes: tenantTypes, extensions: []extension.Definition{bindTenant(tenantTypes[0], count(&offRuns)), bindTenant(tenantTypes[1], count(&onRuns))}}
+	withAccess := newHarnessWithOptions(t, platformhost.TopologyCloud, options)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	token := h.serviceToken(t, testInternalService)
+	token := withAccess.serviceToken(t, testInternalService)
 	for name, enabled := range map[string]bool{"off-by-default": true, "on-by-default": false} {
-		code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), token, middlewareDocument(name, name, enabled, ""))
+		code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(withAccess.server.URL, ""), token, middlewareDocument(name, name, enabled, ""))
 		require.Equal(t, http.StatusCreated, code, body)
 	}
 
-	code, body := do(t, languageRequest(t, ctx, h.url("language-model"), unaryBody, false, accessToken(token)))
-	require.Equal(t, http.StatusOK, code, body)
-	assert.Equal(t, int32(0), offRuns.Load())
-	assert.Equal(t, int32(1), onRuns.Load())
+	options.host, options.noAPIAccess = withAccess.host, true
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, options)
+	token = h.serviceToken(t, testInternalService)
+	for range 2 {
+		code, body := do(t, languageRequest(t, ctx, h.url("language-model"), unaryBody, false, accessToken(token)))
+		require.Equal(t, http.StatusOK, code, body)
+	}
+	assert.Equal(t, int32(0), offRuns.Load(), "stored resources are not applied")
+	assert.Equal(t, int32(2), onRuns.Load(), "tenant extensions keep their defaults")
+	assert.Empty(t, h.exchanges.recorded())
+	logs := h.logs.String()
+	assert.Equal(t, 1, strings.Count(logs, "gateway tenant configuration is not applied"))
+	assert.Contains(t, logs, `"msg":"gateway plugin API access","available":false`)
+
+	code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), token, middlewareDocument("off-by-default", "off-by-default", true, ""))
+	assert.Equal(t, http.StatusBadRequest, code, body)
+	assert.Contains(t, body, "middleware: this Gateway cannot read Middleware resources on this host, so stored configuration would not be applied")
+	code, body = sendObject(t, ctx, http.MethodPut, middlewareURL(h.server.URL, "on-by-default"), token, middlewareDocument("on-by-default", "on-by-default", false, ""))
+	assert.Equal(t, http.StatusBadRequest, code, body, "even a disable-only update is refused")
+	code, body = sendObject(t, ctx, http.MethodDelete, middlewareURL(h.server.URL, "off-by-default"), token, "")
+	assert.Equal(t, http.StatusOK, code, body, "deletes are not reviewed")
+}
+
+func markerOptions(t *testing.T) harnessOptions {
+	t.Helper()
+	marker := tenantType(t, "marker", "", "", false)
+	return harnessOptions{tenantTypes: []tenanttype.Type{marker}, extensions: []extension.Definition{bindTenant(marker, gatewayExtension{})}}
+}
+
+func TestProvider_DecidesAPIAccessOnce(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, markerOptions(t))
+	provider := h.gateway.Provider()
+	_, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
+	require.NoError(t, err)
+	logs := h.logs.String()
+	assert.Equal(t, 1, strings.Count(logs, `"msg":"gateway plugin API access"`), "a later build without API access changes nothing")
+	assert.NotContains(t, logs, "tenant configuration is not applied")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), h.serviceToken(t, testInternalService), middlewareDocument("marker", "marker", true, ""))
+	assert.Equal(t, http.StatusCreated, code, body)
+}
+
+func TestProvider_CachesTheTenantConnectionError(t *testing.T) {
+	options := markerOptions(t)
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{noAPIAccess: true})
+	gw, err := New(Options{LookupEnv: lookup(map[string]string{"GRAFANA_JWKS": mustJWKS(t, h.host), "GF_PLUGIN_ACCESS_MODE": "self-hosted", "GF_PLUGIN_MODEL_CATALOG": modelCatalog(h.anthropic.server.URL, false), "ANTHROPIC_SECRET": providerSecret}), Logger: slog.New(slog.NewJSONHandler(&syncBuffer{}, nil)), Registerer: prometheus.NewRegistry(), Extensions: options.extensions, TenantTypes: options.tenantTypes})
+	require.NoError(t, err)
+	t.Cleanup(gw.Close)
+	provider := gw.Provider()
+	invalid := rest.Config{Host: "https://grafana.invalid", TLSClientConfig: rest.TLSClientConfig{CAData: []byte("not a certificate")}}
+	_, first := provider.NewApp(app.Config{KubeConfig: invalid, ManifestData: *provider.Manifest().ManifestData})
+	require.Error(t, first)
+	_, second := provider.NewApp(app.Config{KubeConfig: rest.Config{Host: "https://grafana.example"}, ManifestData: *provider.Manifest().ManifestData})
+	assert.Equal(t, first, second, "a later build does not retry the connection")
+}
+
+func mustJWKS(t *testing.T, host *platformhost.Host) string {
+	t.Helper()
+	keys, err := host.JWKS()
+	require.NoError(t, err)
+	return string(keys)
 }
