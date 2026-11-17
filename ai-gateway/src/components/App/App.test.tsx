@@ -12,6 +12,8 @@ jest.mock('@grafana/runtime', () => ({
 describe('Components/App', () => {
   let props: AppRootProps;
 
+  beforeAll(() => import('../../pages/Overview'));
+
   beforeEach(() => {
     jest.resetAllMocks();
 
@@ -37,6 +39,8 @@ describe('Components/App', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Quick start')).toBeInTheDocument(), { timeout: 2000 });
+    await waitFor(() => expect(screen.getByText('Get started in Grafana Cloud')).toBeInTheDocument(), {
+      timeout: 2000,
+    });
   });
 });
