@@ -1,27 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
 import {
   Alert,
   Badge,
-  Button,
   Card,
   ClipboardButton,
   ConfirmModal,
   EmptyState,
   IconButton,
+  LinkButton,
   LoadingPlaceholder,
   Stack,
   TextLink,
   useStyles2,
 } from '@grafana/ui';
-import { createModelCatalog, deleteModelCatalog, errorMessage, listModelCatalogs } from '../api/modelCatalogs';
-import { NewCatalogModal } from '../components/Catalog/NewCatalogModal';
+import { deleteModelCatalog, errorMessage, listModelCatalogs } from '../api/modelCatalogs';
 import { providerTypeLabel } from '../components/Catalog/catalogSpec';
 import { NoCatalogAccess } from '../components/NoCatalogAccess/NoCatalogAccess';
-import { catalogBaseURL, catalogPageURL, gatewayEndpoint } from '../constants';
+import { catalogBaseURL, catalogPageURL, gatewayEndpoint, prefixRoute, ROUTES } from '../constants';
 import { ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { catalogPermissions } from '../permissions';
 
@@ -34,10 +32,8 @@ function count(n: number, noun: string): string {
 function CatalogList() {
   const s = useStyles2(getStyles);
   const permissions = catalogPermissions();
-  const navigate = useNavigate();
   const [catalogs, setCatalogs] = useState<ModelCatalog[]>();
   const [error, setError] = useState<string>();
-  const [creating, setCreating] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string>();
   const [loads, setLoads] = useState(0);
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
@@ -72,9 +68,9 @@ function CatalogList() {
   };
 
   const newCatalog = permissions.create ? (
-    <Button icon="plus" onClick={() => setCreating(true)}>
+    <LinkButton icon="plus" href={prefixRoute(ROUTES.NewCatalog)}>
       New catalog
-    </Button>
+    </LinkButton>
   ) : undefined;
 
   const content = () => {
@@ -153,16 +149,6 @@ function CatalogList() {
           {content()}
         </Stack>
       </div>
-      {creating && (
-        <NewCatalogModal
-          endpoint={endpoint}
-          onCreate={async (name, spec, secure) => {
-            await createModelCatalog(name, spec, secure);
-            navigate(catalogPageURL(name));
-          }}
-          onDismiss={() => setCreating(false)}
-        />
-      )}
       <ConfirmModal
         isOpen={pendingDelete !== undefined}
         title="Delete model catalog"

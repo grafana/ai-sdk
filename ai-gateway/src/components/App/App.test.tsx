@@ -68,8 +68,8 @@ describe('Components/App', () => {
 
   test.each([
     ['/catalogs', () => screen.findByText('No model catalogs yet')],
-    ['/catalogs/team', () => screen.findByRole('listitem', { name: 'balanced' })],
-    ['/catalogs/new', () => screen.findByRole('listitem', { name: 'balanced' })],
+    ['/catalogs/edit/team', () => screen.findByRole('listitem', { name: 'balanced' })],
+    ['/catalogs/new', () => screen.findByRole('heading', { name: 'Name the catalog' })],
   ])(
     'renders the catalog page at %s',
     async (path, find) => {

@@ -1,15 +1,19 @@
 import {
+  createSecure,
+  defaultProviderName,
+  draftKeys,
+  fallbackSuggestions,
+  fallbackUsers,
   keyChange,
   keyRemoval,
   modelDraft,
   modelErrors,
   modelFromDraft,
-  modelsUsing,
-  newModelDraft,
-  newProviderDraft,
-  ProviderDraft,
-  providerErrors,
-  ProviderType,
+  modelsOf,
+  newCatalogProblems,
+  providerNameError,
+  quickAddError,
+  quickModel,
   withModel,
   withoutModel,
   withoutProvider,
@@ -29,29 +33,46 @@ const spec: Spec = {
   providers: { claude: { type: 'anthropic' }, gpt: { type: 'openai' }, spare: { type: 'openai' } },
   models: {
     balanced,
-    plain: { name: 'Plain', primary: { provider: 'gpt', model: 'gpt-5-mini' } },
+    'gpt-5': quickModel('gpt', 'gpt-5'),
   },
 };
 
-function draft(overrides: Partial<ProviderDraft>): ProviderDraft {
-  return { name: 'claude', type: ProviderType.Anthropic, key: '', replaceKey: false, ...overrides };
-}
-
 describe('components/Catalog/catalogSpec', () => {
-  test('finds the models that call a provider as primary or fallback', () => {
-    expect(modelsUsing(spec, 'claude')).toEqual(['balanced']);
-    expect(modelsUsing(spec, 'gpt')).toEqual(['balanced', 'plain']);
-    expect(modelsUsing(spec, 'spare')).toEqual([]);
+  test('names a new provider after its type, numbering it when the name is taken', () => {
+    expect(defaultProviderName('anthropic', ['openai'])).toBe('anthropic');
+    expect(defaultProviderName('anthropic', ['anthropic', 'anthropic-2'])).toBe('anthropic-3');
   });
 
-  test('adds, replaces and removes providers and models without touching the rest', () => {
+  test('groups models under their primary provider and finds fallbacks from other providers', () => {
+    expect(modelsOf(spec, 'claude').map(([id]) => id)).toEqual(['balanced']);
+    expect(modelsOf(spec, 'gpt').map(([id]) => id)).toEqual(['gpt-5']);
+    expect(fallbackUsers(spec, 'gpt')).toEqual(['balanced']);
+    expect(fallbackUsers(spec, 'claude')).toEqual([]);
+  });
+
+  test('serves a quick-added provider model under its own ID and name', () => {
+    expect(quickModel('claude', 'claude-haiku-4-5')).toEqual({
+      name: 'claude-haiku-4-5',
+      primary: { provider: 'claude', model: 'claude-haiku-4-5' },
+    });
+    expect(quickAddError(spec, ' ')).toBe("Enter the provider's model ID.");
+    expect(quickAddError(spec, 'gpt-5')).toContain('already has a model with ID "gpt-5"');
+    expect(quickAddError(spec, 'claude-haiku-4-5')).toBeUndefined();
+  });
+
+  test('removes a provider together with the models it serves', () => {
+    expect(withoutProvider(spec, 'claude')).toEqual({
+      providers: { gpt: spec.providers.gpt, spare: spec.providers.spare },
+      models: { 'gpt-5': spec.models['gpt-5'] },
+    });
     expect(withProvider(spec, 'extra', { type: 'anthropic' }).providers.extra).toEqual({ type: 'anthropic' });
-    expect(Object.keys(withoutProvider(spec, 'spare').providers)).toEqual(['claude', 'gpt']);
-    expect(withoutProvider(spec, 'spare').models).toBe(spec.models);
-    expect(Object.keys(withoutModel(spec, 'plain').models)).toEqual(['balanced']);
-    expect(withModel(spec, 'plain', { name: 'Renamed', primary: spec.models.plain.primary }).models.plain.name).toBe(
-      'Renamed'
-    );
+  });
+
+  test('adds, renames and removes models', () => {
+    expect(Object.keys(withoutModel(spec, 'gpt-5').models)).toEqual(['balanced']);
+    const renamed = withModel(spec, 'general', balanced, 'balanced');
+    expect(Object.keys(renamed.models).sort()).toEqual(['general', 'gpt-5']);
+    expect(renamed.models.general).toEqual(balanced);
   });
 
   test('round-trips a stored model through its draft, keeping fields the draft does not edit', () => {
@@ -59,69 +80,60 @@ describe('components/Catalog/catalogSpec', () => {
     expect(modelFromDraft(modelDraft('balanced', stored), stored)).toEqual(stored);
   });
 
-  test('drops empty optional model fields', () => {
-    const model = modelFromDraft({ ...newModelDraft('claude'), id: 'x', name: 'X', primary: balanced.primary });
-    expect(withModel(spec, 'x', model).models.x).toEqual({ name: 'X', primary: balanced.primary });
+  test('defaults the display name to the ID', () => {
+    const draft = modelDraft('gpt-5', spec.models['gpt-5']);
+    expect(draft.name).toBe('');
+    expect(modelFromDraft({ ...draft, id: 'gpt-5-chat' }, spec.models['gpt-5']).name).toBe('gpt-5-chat');
   });
 
-  test('sends a typed key as create, nothing for an untyped one, and removes a stored key', () => {
+  test('drops empty optional model fields', () => {
+    const draft = { ...modelDraft('gpt-5', spec.models['gpt-5']), description: '', aliases: [] };
+    expect(withModel(spec, 'gpt-5', modelFromDraft(draft, spec.models['gpt-5'])).models['gpt-5']).toEqual(
+      quickModel('gpt', 'gpt-5')
+    );
+  });
+
+  test('reports missing model fields, including fallbacks, and IDs other models have', () => {
+    const draft = { ...modelDraft('gpt-5', spec.models['gpt-5']), id: '', fallback: [{ provider: '', model: 'x' }] };
+    draft.primary = { provider: 'gpt', model: '' };
+    expect(modelErrors(draft, ['balanced'])).toEqual({
+      id: 'Enter a model ID.',
+      'primary.model': "Enter the provider's model ID.",
+      'fallback.0.provider': 'Choose a provider.',
+    });
+    expect(modelErrors({ ...modelDraft('gpt-5', spec.models['gpt-5']), id: 'balanced' }, ['balanced'])).toEqual({
+      id: 'A model with ID "balanced" already exists.',
+    });
+  });
+
+  test('suggests other models as fallbacks, except the ones the draft already calls', () => {
+    const draft = modelDraft('gpt-5', spec.models['gpt-5']);
+    expect(fallbackSuggestions(spec, draft, 'gpt-5')).toEqual([balanced.primary]);
+    expect(fallbackSuggestions(spec, { ...draft, fallback: [balanced.primary] }, 'gpt-5')).toEqual([]);
+  });
+
+  test('sends typed keys as create and removes a stored one', () => {
     expect(keyChange('claude', 'typed')).toEqual({ claude: { create: 'typed' } });
-    expect(keyChange('claude', '')).toEqual({});
     expect(keyRemoval('claude', ['claude'])).toEqual({ claude: { remove: true } });
     expect(keyRemoval('claude', [])).toEqual({});
   });
 
-  test.each([
-    ['a new provider without a name', draft({ name: ' ', key: 'k' }), undefined, { name: 'Enter a name.' }],
-    [
-      'a new provider with a taken name',
-      draft({ key: 'k' }),
-      undefined,
-      { name: 'A provider named "claude" already exists.' },
-    ],
-    ['a new provider without a key', draft({ name: 'new' }), undefined, { key: 'Enter the API key.' }],
-    ['a new provider with a key', draft({ name: 'new', key: 'k' }), undefined, {}],
-    ['a stored provider keeping its key', draft({}), { type: 'anthropic', keySaved: true }, {}],
-    [
-      'a stored provider whose key was reset',
-      draft({ replaceKey: true }),
-      { type: 'anthropic', keySaved: true },
-      { key: 'Enter the API key.' },
-    ],
-    [
-      'a stored provider with a new type',
-      draft({ type: ProviderType.OpenAI }),
-      { type: 'anthropic', keySaved: true },
-      { key: 'Enter a new API key: the saved key belongs to the previous type.' },
-    ],
-    [
-      'a stored provider with a new type and key',
-      draft({ type: ProviderType.OpenAI, key: 'k' }),
-      { type: 'anthropic', keySaved: true },
-      {},
-    ],
-  ])('checks %s', (_, provider, stored, expected) => {
-    expect(providerErrors(provider, ['claude'], stored)).toEqual(expected);
+  test('keeps a new catalog’s entered keys until it is created', () => {
+    const keys = draftKeys(draftKeys({}, { claude: { create: 'a' }, gpt: { create: 'b' } }), { gpt: { remove: true } });
+    expect(keys).toEqual({ claude: 'a' });
+    expect(createSecure(keys)).toEqual({ claude: { create: 'a' } });
   });
 
-  test('starts a new provider as Anthropic, named after its type', () => {
-    expect(newProviderDraft()).toEqual({ name: 'anthropic', type: 'anthropic', key: '', replaceKey: false });
-  });
-
-  test('reports each missing model field, including fallbacks', () => {
-    const empty = { ...newModelDraft(), fallback: [{ provider: 'gpt', model: '' }] };
-    expect(modelErrors(empty, [], false)).toEqual({
-      id: 'Enter a model ID.',
-      name: 'Enter a display name.',
-      'primary.provider': 'Choose a provider.',
-      'primary.model': "Enter the provider's model ID.",
-      'fallback.0.model': "Enter the provider's model ID.",
+  test('checks a new provider name and a new catalog', () => {
+    expect(providerNameError('', [])).toBe('Enter a name.');
+    expect(providerNameError('claude', ['claude'])).toBe('A provider named "claude" already exists.');
+    expect(newCatalogProblems('', { providers: {}, models: {} })).toEqual({
+      name: 'Enter a name.',
+      content: 'Connect a provider and add a model.',
     });
-  });
-
-  test('refuses a taken model ID only when adding', () => {
-    const stored = modelDraft('balanced', balanced);
-    expect(modelErrors(stored, ['balanced'], false)).toEqual({ id: 'A model with ID "balanced" already exists.' });
-    expect(modelErrors(stored, ['balanced'], true)).toEqual({});
+    expect(newCatalogProblems('team', { providers: spec.providers, models: {} })).toEqual({
+      content: 'Add at least one model.',
+    });
+    expect(newCatalogProblems('team', spec)).toEqual({});
   });
 });

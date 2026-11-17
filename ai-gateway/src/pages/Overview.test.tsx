@@ -123,7 +123,7 @@ describe('pages/Overview', () => {
     expect(screen.getByText(`${ENDPOINT}/modelcatalogs/ops`)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'team' })).toHaveAttribute(
       'href',
-      '/a/grafana-aigateway-app/catalogs/team'
+      '/a/grafana-aigateway-app/catalogs/edit/team'
     );
     expect(screen.getByRole('link', { name: /Manage model catalogs/ })).toHaveAttribute(
       'href',

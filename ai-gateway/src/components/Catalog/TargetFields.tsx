@@ -12,11 +12,12 @@ interface Props {
   providers: Record<string, Provider>;
   errors: FieldErrors;
   onChange: (target: Target) => void;
+  disabled?: boolean;
   actions?: ReactNode;
 }
 
 /** TargetFields edits one provider and model a model routes calls to. */
-export function TargetFields({ title, field, target, providers, errors, onChange, actions }: Props) {
+export function TargetFields({ title, field, target, providers, errors, onChange, disabled, actions }: Props) {
   const s = useStyles2(getStyles);
   const options: Array<ComboboxOption<string>> = Object.entries(providers).map(([name, provider]) => ({
     value: name,
@@ -43,6 +44,7 @@ export function TargetFields({ title, field, target, providers, errors, onChange
           value={target.provider || null}
           placeholder="Choose a provider"
           invalid={providerError !== undefined}
+          disabled={disabled}
           onChange={(option) => onChange({ ...target, provider: option.value })}
         />
       </Field>
@@ -58,6 +60,7 @@ export function TargetFields({ title, field, target, providers, errors, onChange
           value={target.model}
           placeholder="The provider's model ID"
           invalid={modelError !== undefined}
+          disabled={disabled}
           onChange={(event) => onChange({ ...target, model: event.currentTarget.value })}
         />
       </Field>

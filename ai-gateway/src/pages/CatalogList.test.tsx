@@ -2,9 +2,9 @@ import React from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CatalogList from './CatalogList';
-import { createModelCatalog, deleteModelCatalog, listModelCatalogs } from '../api/modelCatalogs';
+import { deleteModelCatalog, listModelCatalogs } from '../api/modelCatalogs';
 import { ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { CatalogActions } from '../permissions';
 import { signInAs } from '../testUtils';
@@ -12,7 +12,6 @@ import { signInAs } from '../testUtils';
 jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   listModelCatalogs: jest.fn(),
-  createModelCatalog: jest.fn(),
   deleteModelCatalog: jest.fn(),
 }));
 
@@ -30,7 +29,6 @@ jest.mock('@grafana/runtime', () => ({
 
 const APP = '/a/grafana-aigateway-app';
 const URL = 'https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs';
-const TYPED_KEY = 'typed-provider-key';
 const READ_ONLY = [CatalogActions.Read];
 const ALL = Object.values(CatalogActions);
 const EMPTY_STATE_TIMEOUT_MS = 15_000;
@@ -53,19 +51,9 @@ function renderList() {
     <MemoryRouter initialEntries={[`${APP}/catalogs`]}>
       <Routes>
         <Route path={`${APP}/catalogs`} element={<CatalogList />} />
-        <Route path={`${APP}/catalogs/:name`} element={<div>catalog page</div>} />
       </Routes>
     </MemoryRouter>
   );
-}
-
-function type(element: HTMLElement, value: string) {
-  fireEvent.change(element, { target: { value } });
-}
-
-function openNewCatalog() {
-  fireEvent.click(screen.getByRole('button', { name: 'New catalog' }));
-  return within(screen.getByRole('dialog'));
 }
 
 describe('pages/CatalogList', () => {
@@ -74,7 +62,6 @@ describe('pages/CatalogList', () => {
       .mocked(listModelCatalogs)
       .mockReset()
       .mockResolvedValue([catalog('team')]);
-    jest.mocked(createModelCatalog).mockReset().mockResolvedValue(catalog('team'));
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
   });
 
@@ -82,7 +69,7 @@ describe('pages/CatalogList', () => {
     signInAs(OrgRole.Viewer, READ_ONLY);
     renderList();
 
-    expect(await screen.findByRole('link', { name: 'team' })).toHaveAttribute('href', `${APP}/catalogs/team`);
+    expect(await screen.findByRole('link', { name: 'team' })).toHaveAttribute('href', `${APP}/catalogs/edit/team`);
     expect(screen.getByText(`${URL}/team`)).toBeInTheDocument();
     expect(screen.getByText('2 providers')).toBeInTheDocument();
     expect(screen.getByText('1 model')).toBeInTheDocument();
@@ -102,8 +89,15 @@ describe('pages/CatalogList', () => {
     renderList();
 
     await screen.findByRole('link', { name: 'team' });
-    expect(screen.queryByRole('button', { name: 'New catalog' }) !== null).toBe(writes);
+    expect(screen.queryByRole('link', { name: 'New catalog' }) !== null).toBe(writes);
     expect(screen.queryByRole('button', { name: 'Delete team' }) !== null).toBe(writes);
+  });
+
+  test('links New catalog to the create page', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderList();
+
+    expect(await screen.findByRole('link', { name: 'New catalog' })).toHaveAttribute('href', `${APP}/catalogs/new`);
   });
 
   test('requests nothing without the read action', () => {
@@ -125,91 +119,10 @@ describe('pages/CatalogList', () => {
       renderList();
 
       expect(await screen.findByText('No model catalogs yet')).toBeInTheDocument();
-      expect(screen.queryAllByRole('button', { name: 'New catalog' })).toHaveLength(offered ? 1 : 0);
+      expect(screen.queryAllByRole('link', { name: 'New catalog' })).toHaveLength(offered ? 1 : 0);
     },
     EMPTY_STATE_TIMEOUT_MS
   );
-
-  test('creates a catalog with its first provider and model, then opens it', async () => {
-    signInAs(OrgRole.Admin, ALL);
-    renderList();
-    await screen.findByRole('link', { name: 'team' });
-
-    const dialog = openNewCatalog();
-    type(dialog.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
-    expect(dialog.getByText(`${URL}/ops`)).toBeInTheDocument();
-    type(dialog.getByLabelText(/^API key/), TYPED_KEY);
-    type(dialog.getByRole('textbox', { name: /^Model ID/ }), 'balanced');
-    type(dialog.getByRole('textbox', { name: /^Display name/ }), 'Balanced');
-    type(dialog.getByRole('textbox', { name: /^Provider model/ }), 'claude-sonnet-4-6');
-    fireEvent.click(dialog.getByRole('button', { name: 'Create catalog' }));
-
-    expect(await screen.findByText('catalog page')).toBeInTheDocument();
-    expect(createModelCatalog).toHaveBeenCalledWith(
-      'ops',
-      {
-        providers: { anthropic: { type: 'anthropic' } },
-        models: { balanced: { name: 'Balanced', primary: { provider: 'anthropic', model: 'claude-sonnet-4-6' } } },
-      },
-      { anthropic: { create: TYPED_KEY } }
-    );
-    expect(document.body).not.toHaveTextContent(TYPED_KEY);
-  });
-
-  test('names a new provider after its type until the writer renames it', async () => {
-    signInAs(OrgRole.Admin, ALL);
-    renderList();
-    await screen.findByRole('link', { name: 'team' });
-
-    const dialog = openNewCatalog();
-    const name = dialog.getByRole('textbox', { name: /^Name/ });
-    fireEvent.click(dialog.getByRole('radio', { name: 'OpenAI' }));
-    expect(name).toHaveValue('openai');
-    type(name, 'team-openai');
-    fireEvent.click(dialog.getByRole('radio', { name: 'Anthropic' }));
-    expect(name).toHaveValue('team-openai');
-  });
-
-  test('marks missing fields without a request', async () => {
-    signInAs(OrgRole.Admin, ALL);
-    renderList();
-    await screen.findByRole('link', { name: 'team' });
-
-    const dialog = openNewCatalog();
-    fireEvent.click(dialog.getByRole('button', { name: 'Create catalog' }));
-
-    for (const message of [
-      'Enter a name.',
-      'Enter the API key.',
-      'Enter a model ID.',
-      'Enter a display name.',
-      "Enter the provider's model ID.",
-    ]) {
-      expect(await dialog.findByText(message)).toBeInTheDocument();
-    }
-    expect(createModelCatalog).not.toHaveBeenCalled();
-  });
-
-  test('shows a refused create as returned and keeps the input', async () => {
-    const message = 'admission hook for ModelCatalog denied the request: config: model "bad id": public ID';
-    jest.mocked(createModelCatalog).mockRejectedValue({ status: 400, data: { kind: 'Status', message } });
-    signInAs(OrgRole.Admin, ALL);
-    renderList();
-    await screen.findByRole('link', { name: 'team' });
-
-    const dialog = openNewCatalog();
-    type(dialog.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
-    type(dialog.getByLabelText(/^API key/), TYPED_KEY);
-    type(dialog.getByRole('textbox', { name: /^Model ID/ }), 'bad id');
-    type(dialog.getByRole('textbox', { name: /^Display name/ }), 'Bad');
-    type(dialog.getByRole('textbox', { name: /^Provider model/ }), 'claude-sonnet-4-6');
-    fireEvent.click(dialog.getByRole('button', { name: 'Create catalog' }));
-
-    expect(await dialog.findByText(message)).toBeInTheDocument();
-    expect(dialog.getByRole('textbox', { name: /^Model ID/ })).toHaveValue('bad id');
-    expect(document.body).not.toHaveTextContent(TYPED_KEY);
-    expect(screen.queryByText('catalog page')).not.toBeInTheDocument();
-  });
 
   test(
     'deletes a catalog only after confirmation',

@@ -81,18 +81,25 @@ function isCatalogWrite(method: string, name?: string) {
   return (request: Request) => request.method() === method && new URL(request.url()).pathname.endsWith(path);
 }
 
-async function fillNewCatalog(page: Page, name: string, key: string, modelID = 'balanced') {
+async function fillNewCatalog(page: Page, name: string, key: string, providerModel = 'claude-sonnet-4-6') {
+  await page.getByRole('textbox', { name: /^Catalog name/ }).fill(name);
+  await page.getByRole('button', { name: 'Connect a provider' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('textbox', { name: /^Catalog name/ }).fill(name);
   await dialog.getByLabel(/^API key/).fill(key);
-  await dialog.getByRole('textbox', { name: /^Model ID/ }).fill(modelID);
-  await dialog.getByRole('textbox', { name: /^Display name/ }).fill('Balanced');
-  await dialog.getByRole('textbox', { name: /^Provider model/ }).fill('claude-sonnet-4-6');
-  return dialog;
+  await dialog.getByRole('button', { name: 'Connect' }).click();
+  await expect(dialog).toHaveCount(0);
+  await addModel(page, 'anthropic', providerModel);
 }
 
-function row(page: Page, name: string) {
-  return page.getByRole('listitem', { name, exact: true });
+async function addModel(page: Page, provider: string, providerModel: string) {
+  const card = page.getByRole('region', { name: provider });
+  await card.getByRole('textbox', { name: `Add a model to ${provider}` }).fill(providerModel);
+  await card.getByRole('button', { name: 'Add model' }).click();
+  await expect(card.getByRole('listitem', { name: providerModel, exact: true })).toBeVisible();
+}
+
+function card(page: Page, provider: string) {
+  return page.getByRole('region', { name: provider, exact: true });
 }
 
 test.describe('model catalog page', () => {
@@ -109,29 +116,34 @@ test.describe('model catalog page', () => {
     const name = uniqueName();
     const key = sentinelKey('create');
     await gotoPage(`/${ROUTES.Catalogs}`);
-    await page.getByRole('button', { name: 'New catalog' }).click();
+    await page.getByRole('link', { name: 'New catalog' }).click();
+    await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
     const watch = keyWatch(page);
-    const dialog = await fillNewCatalog(page, name, key);
+    await fillNewCatalog(page, name, key);
 
     const created = page.waitForRequest(isCatalogWrite('POST'));
-    await dialog.getByRole('button', { name: 'Create catalog' }).click();
+    await page.getByRole('button', { name: 'Create catalog' }).click();
     expect((await created).postDataJSON().secure).toEqual({ anthropic: { create: key } });
     await expect(page).toHaveURL(new RegExp(`${catalogPageURL(name)}$`));
-    await expect(row(page, 'anthropic').getByText('Key saved')).toBeVisible();
-    await expect(row(page, 'balanced')).toBeVisible();
+    await expect(card(page, 'anthropic').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'anthropic').getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeVisible();
 
     const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
     expect(Object.keys(stored.secure.anthropic)).toEqual(['name']);
     await watch.nowhere(key);
   });
 
-  test('an Admin edits a model and replaces a key, each saved at once', async ({ gotoPage, page, accounts }) => {
+  test('an Admin edits a catalog one change at a time and keeps or replaces its key', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
     const { name, key, object } = await createStored(accounts.Admin);
-    await gotoPage(`/${ROUTES.Catalogs}/${name}`);
-    await expect(row(page, 'claude').getByText('Key saved')).toBeVisible();
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
     const watch = keyWatch(page);
 
-    await page.getByRole('button', { name: 'Edit balanced' }).click();
+    await card(page, 'claude').getByRole('button', { name: 'balanced', exact: true }).click();
     await page
       .getByRole('dialog')
       .getByRole('textbox', { name: /^Display name/ })
@@ -142,53 +154,60 @@ test.describe('model catalog page', () => {
     const keptBody = keptResponse.request().postDataJSON();
     expect(keptBody).not.toHaveProperty('secure');
     expect(keptBody.metadata.resourceVersion).toBe(object.metadata.resourceVersion);
-    await expect(row(page, 'balanced').getByText('Renamed')).toBeVisible();
+    await expect(card(page, 'claude').getByText('Renamed')).toBeVisible();
     const afterKept = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
     expect(afterKept.spec.models.balanced.name).toBe('Renamed');
     expect(afterKept.secure).toEqual(object.secure);
 
+    const added = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await addModel(page, 'claude', 'claude-haiku-4-5');
+    const addedResponse = await added;
+    expect(addedResponse.request().postDataJSON().metadata.resourceVersion).toBe(
+      (await keptResponse.json()).metadata.resourceVersion
+    );
+
     const replacement = sentinelKey('replaced');
-    await page.getByRole('button', { name: 'Edit claude' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Reset' }).click();
+    await card(page, 'claude').getByRole('button', { name: 'Replace key' }).click();
     await page
       .getByRole('dialog')
-      .getByLabel(/^API key/)
+      .getByLabel(/^New API key/)
       .fill(replacement);
     const replaced = page.waitForRequest(isCatalogWrite('PUT', name));
-    await page.getByRole('dialog').getByRole('button', { name: 'Save provider' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Save key' }).click();
     const replacedBody = (await replaced).postDataJSON();
     expect(replacedBody.secure).toEqual({ claude: { create: replacement } });
-    expect(replacedBody.metadata.resourceVersion).toBe((await keptResponse.json()).metadata.resourceVersion);
+    expect(replacedBody.metadata.resourceVersion).toBe((await addedResponse.json()).metadata.resourceVersion);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(row(page, 'claude').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
 
     await page.reload();
-    await expect(row(page, 'claude').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'claude').getByRole('listitem', { name: 'claude-haiku-4-5' })).toBeVisible();
     await watch.nowhere(key);
     await watch.nowhere(replacement);
   });
 
-  test('an Admin adds a provider with its key and removes it again', async ({ gotoPage, page, accounts }) => {
+  test('an Admin connects a provider with its key and removes it again', async ({ gotoPage, page, accounts }) => {
     const { name } = await createStored(accounts.Admin);
-    await gotoPage(`/${ROUTES.Catalogs}/${name}`);
-    await expect(row(page, 'claude')).toBeVisible();
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    await expect(card(page, 'claude')).toBeVisible();
     const watch = keyWatch(page);
     const key = sentinelKey('added');
 
-    await page.getByRole('button', { name: 'Add provider' }).click();
+    await page.getByRole('button', { name: 'Connect a provider' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('radio', { name: 'OpenAI' }).check();
     await dialog.getByLabel(/^API key/).fill(key);
     const added = page.waitForRequest(isCatalogWrite('PUT', name));
-    await dialog.getByRole('button', { name: 'Add provider' }).click();
+    await dialog.getByRole('button', { name: 'Connect' }).click();
     expect((await added).postDataJSON().secure).toEqual({ openai: { create: key } });
-    await expect(row(page, 'openai').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'openai').getByText('Key saved')).toBeVisible();
 
-    await row(page, 'openai').getByRole('button', { name: 'Remove openai' }).click();
+    await card(page, 'openai').getByRole('button', { name: 'Remove openai' }).click();
     const removed = page.waitForRequest(isCatalogWrite('PUT', name));
     await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
     expect((await removed).postDataJSON().secure).toEqual({ openai: { remove: true } });
-    await expect(row(page, 'openai')).toHaveCount(0);
+    await expect(card(page, 'openai')).toHaveCount(0);
     const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
     expect(Object.keys(stored.secure)).toEqual(['claude']);
     await watch.nowhere(key);
@@ -206,31 +225,31 @@ test.describe('model catalog page', () => {
 
   test('an admission refusal is shown as returned', async ({ gotoPage, page }) => {
     const key = sentinelKey('refused');
-    await gotoPage(`/${ROUTES.Catalogs}`);
-    await page.getByRole('button', { name: 'New catalog' }).click();
+    await gotoPage(`/${ROUTES.NewCatalog}`);
+    await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
     const watch = keyWatch(page);
-    const dialog = await fillNewCatalog(page, uniqueName(), key, 'bad id');
+    await fillNewCatalog(page, uniqueName(), key, 'bad id');
 
     const refused = page.waitForResponse((response) => isCatalogWrite('POST')(response.request()));
-    await dialog.getByRole('button', { name: 'Create catalog' }).click();
+    await page.getByRole('button', { name: 'Create catalog' }).click();
     const response = await refused;
     expect(response.status()).toBe(400);
     const { message } = await response.json();
     expect(message).toContain(ADMISSION_REFUSAL);
     expect(message).toContain('public ID');
-    await expect(dialog.getByRole('alert').filter({ hasText: message })).toBeVisible();
-    await expect(dialog.getByRole('textbox', { name: /^Model ID/ })).toHaveValue('bad id');
+    await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
+    await expect(card(page, 'anthropic').getByRole('listitem', { name: 'bad id' })).toBeVisible();
     expect(await page.locator('body').innerText()).not.toContain(key);
     await watch.notFetched(key);
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Cancel' }).click();
+    await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toHaveCount(0);
     await watch.nowhere(key);
   });
 
   test('a concurrent edit is refused as returned', async ({ gotoPage, page, accounts }) => {
     const { name, object } = await createStored(accounts.Admin);
-    await gotoPage(`/${ROUTES.Catalogs}/${name}`);
-    await expect(row(page, 'balanced')).toBeVisible();
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    await expect(card(page, 'claude')).toBeVisible();
 
     const changed = {
       ...object,
@@ -241,7 +260,7 @@ test.describe('model catalog page', () => {
     };
     expect((await accounts.Admin.put(`${CATALOGS}/${name}`, { data: changed })).status()).toBe(200);
 
-    await page.getByRole('button', { name: 'Edit balanced' }).click();
+    await card(page, 'claude').getByRole('button', { name: 'balanced', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('textbox', { name: /^Display name/ }).fill('Stale');
     const conflict = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
@@ -262,16 +281,19 @@ test.describe('model catalog page', () => {
 
       await page.goto(prefixRoute(ROUTES.Catalogs));
       await expect(page.getByRole('link', { name })).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });
-      await expect(page.getByRole('button', { name: 'New catalog' })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'New catalog' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: `Delete ${name}` })).toHaveCount(0);
 
       await page.getByRole('link', { name }).click();
-      await expect(row(page, 'claude').getByText('Key saved')).toBeVisible();
+      await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
       await expect(page.getByText('Read-only')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Add provider' })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Add model' })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Edit balanced' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);
+
+      await page.goto(prefixRoute(ROUTES.NewCatalog));
+      await expect(page.getByText("You can't create model catalogs")).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });
+      await expect(page.getByRole('button', { name: 'Create catalog' })).toHaveCount(0);
     });
   }
 });
