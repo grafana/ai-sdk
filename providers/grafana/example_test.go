@@ -9,17 +9,20 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const exampleRoutePrefix = "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123"
+const (
+	exampleAPIRoot     = "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1"
+	exampleRoutePrefix = exampleAPIRoot + "/namespaces/stacks-123"
+)
 
 // An internal service exchanges its access policy token for one addressed to
-// the Gateway plugin and uses the configured models.
+// the Gateway's API group and uses the configured models of one stack.
 func ExampleNewWithTokenExchange() {
 	client, err := NewWithTokenExchange(TokenExchangeConfig{
 		CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
 		TokenExchangeURL: os.Getenv("GRAFANA_TOKEN_EXCHANGE_URL"),
 		Namespace:        "stacks-123",
-		Audience:         "grafana-aigateway-app",
-		BaseURL:          exampleRoutePrefix,
+		Audience:         "aigateway.ext.grafana.app",
+		BaseURL:          exampleAPIRoot,
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -35,6 +38,29 @@ func ExampleNewWithTokenExchange() {
 	}
 }
 
+// A service that serves several stacks leaves Namespace empty and selects the
+// stack of each call. Tokens are exchanged and cached per namespace.
+func ExampleWithNamespace() {
+	client, err := NewWithTokenExchange(TokenExchangeConfig{
+		CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
+		TokenExchangeURL: os.Getenv("GRAFANA_TOKEN_EXCHANGE_URL"),
+		Audience:         "aigateway.ext.grafana.app",
+		BaseURL:          exampleAPIRoot,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, namespace := range []string{"stacks-123", "stacks-456"} {
+		models, err := client.ListModels(WithNamespace(context.Background(), namespace))
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(namespace, len(models))
+	}
+}
+
 // An internal service calls on behalf of a user. The subject is the user's
 // Grafana ID token, or the delegated access token a plugin received for them.
 func ExampleWithOnBehalfOf() {
@@ -42,8 +68,8 @@ func ExampleWithOnBehalfOf() {
 		CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
 		TokenExchangeURL: os.Getenv("GRAFANA_TOKEN_EXCHANGE_URL"),
 		Namespace:        "stacks-123",
-		Audience:         "grafana-aigateway-app",
-		BaseURL:          exampleRoutePrefix,
+		Audience:         "aigateway.ext.grafana.app",
+		BaseURL:          exampleAPIRoot,
 	})
 	if err != nil {
 		fmt.Println(err)

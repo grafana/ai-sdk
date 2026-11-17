@@ -89,7 +89,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 				Feature: "responseFormat",
 				Details: "Bedrock requires a schema for JSON response format; ignoring",
 			})
-		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && supportsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
+		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && supportsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic) && supportsNativeStructuredOutputSchema(opts.ResponseFormat.Schema))) {
 			useNativeStructuredOutput = true
 		} else if isAnthropic && usesJSONInstructionForStructuredOutput(modelID, mode, len(opts.Tools) > 0) {
 			meta.usesJSONInstruction = true
@@ -236,6 +236,17 @@ func usesJSONInstructionForStructuredOutput(modelID string, mode StructuredOutpu
 		return true
 	}
 	return hasTools && !supportsStrictTools(modelID)
+}
+
+// supportsNativeStructuredOutputSchema reports whether native output_config
+// can represent the response schema; automatic mode falls back otherwise.
+// Undecodable schemas keep the native route so its decode error surfaces.
+func supportsNativeStructuredOutputSchema(raw json.RawMessage) bool {
+	schema, err := jsonschema.DecodeObject(raw)
+	if err != nil {
+		return true
+	}
+	return anthropicschema.SupportsNativeStructuredOutput(schema)
 }
 
 func hasActiveTools(pt preparedTools) bool {

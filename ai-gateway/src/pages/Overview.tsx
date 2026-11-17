@@ -2,188 +2,221 @@ import React, { useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
-import { Stack, Tab, TabContent, TabsBar, Text, TextLink, useStyles2 } from '@grafana/ui';
+import {
+  CollapsableSection,
+  Grid,
+  LinkButton,
+  Stack,
+  Tab,
+  TabContent,
+  TabsBar,
+  Text,
+  TextLink,
+  useStyles2,
+} from '@grafana/ui';
 import { CodeSnippet } from '../components/CodeSnippet/CodeSnippet';
+import { LinkCard } from '../components/LinkCard/LinkCard';
+import { SetupStep } from '../components/SetupStep/SetupStep';
 import { API_GROUP, API_VERSION } from '../constants';
-
-const REPOSITORY_URL = 'https://github.com/grafana/ai-sdk';
-const DOCS_URL = `${REPOSITORY_URL}/blob/main`;
-const EXAMPLE_MODEL = 'anthropic/claude-sonnet-5';
-
-const OUTCOMES = [
-  { title: 'Authenticate callers', href: `${DOCS_URL}/docs/guides/gateway-authentication.md` },
-  { title: 'Call the Gateway from Go', href: `${DOCS_URL}/docs/providers/grafana-gateway.md` },
-  {
-    title: 'Use your own provider keys',
-    href: `${DOCS_URL}/docs/providers/grafana-gateway.md#use-your-own-provider-credentials`,
-  },
-  { title: 'Configure the model catalog', href: `${DOCS_URL}/ai-gateway/README.md#configure-models` },
-  { title: 'Monitor the Gateway', href: `${DOCS_URL}/ai-gateway/docs/text-observability.md` },
-];
-
-const RESOURCES = [
-  { title: 'Gateway documentation', href: `${REPOSITORY_URL}/tree/main/ai-gateway` },
-  { title: 'Go API reference', href: 'https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana' },
-  { title: 'AI SDK for Go', href: 'https://grafana.ai/technology/ai-sdk' },
-  { title: 'Source and contributing', href: REPOSITORY_URL },
-];
-
-enum Language {
-  TypeScript = 'typescript',
-  Go = 'go',
-}
+import { CALLERS, LINKS, RESOURCES, SERVICE_ACCOUNT_PATH } from './overview/content';
+import { callExample, ENVIRONMENT, INSTALL, Language, LANGUAGES } from './overview/examples';
 
 export function gatewayEndpoint(appUrl: string, namespace: string): string {
   return `${appUrl.replace(/\/+$/, '')}/apis/${API_GROUP}/${API_VERSION}/namespaces/${encodeURIComponent(namespace)}`;
 }
 
-function typeScriptExample(endpoint: string): string {
-  return `import { createGateway } from '@ai-sdk/gateway';
-import { generateText } from 'ai';
-
-const gateway = createGateway({
-  baseURL: '${endpoint}',
-  apiKey: process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN,
-});
-
-const { text } = await generateText({
-  model: gateway('${EXAMPLE_MODEL}'),
-  prompt: 'Explain goroutines in one sentence.',
-});
-
-console.log(text);`;
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Stack direction="column" gap={2}>
+      <Text element="h2" variant="h3">
+        {title}
+      </Text>
+      {children}
+    </Stack>
+  );
 }
 
-function goExample(endpoint: string): string {
-  return `package main
+function QuickStart({ endpoint }: { endpoint: string }) {
+  const [language, setLanguage] = useState(Language.TypeScript);
 
-import (
-	"context"
-	"fmt"
-	"log"
-	"os"
-
-	aisdk "github.com/grafana/ai-sdk"
-	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/ai-sdk/providers/grafana"
-)
-
-func main() {
-	client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
-		Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
-		BaseURL: "${endpoint}",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	model, err := client.LanguageModel("${EXAMPLE_MODEL}")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	result, err := aisdk.GenerateText(context.Background(), model,
-		aisdk.WithModelMessages(provider.UserText("Explain goroutines in one sentence.")),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println(result.Text)
-}`;
+  return (
+    <Stack direction="column" gap={1}>
+      <TabsBar>
+        {LANGUAGES.map(({ value, label }) => (
+          <Tab key={value} label={label} active={language === value} onChangeTab={() => setLanguage(value)} />
+        ))}
+      </TabsBar>
+      <TabContent>
+        <Stack direction="column" gap={1}>
+          <CodeSnippet code={INSTALL[language]} />
+          <CodeSnippet code={ENVIRONMENT} />
+          <CodeSnippet code={callExample(language, endpoint)} />
+        </Stack>
+      </TabContent>
+    </Stack>
+  );
 }
 
-const INSTALL = {
-  [Language.TypeScript]: 'npm install ai @ai-sdk/gateway',
-  [Language.Go]: 'go get github.com/grafana/ai-sdk github.com/grafana/ai-sdk/providers/grafana',
-};
-
-function LinkList({ links }: { links: Array<{ title: string; href: string }> }) {
+function GetStarted({ endpoint }: { endpoint: string }) {
   const s = useStyles2(getStyles);
 
   return (
-    <ul className={s.list}>
-      {links.map((link) => (
-        <li key={link.href}>
-          <TextLink href={link.href} external>
-            {link.title}
-          </TextLink>
-        </li>
-      ))}
-    </ul>
+    <Section title="Get started in Grafana Cloud">
+      <ol className={s.steps}>
+        <SetupStep index={1} title="Create a service account token">
+          <Text element="p" color="secondary">
+            Create a service account for your application and add a token to it. No extra role is needed. Keep the token
+            in your server&apos;s secret store, never in browser code.
+          </Text>
+          <Stack gap={2} alignItems="center" wrap="wrap">
+            <LinkButton href={`${config.appSubUrl}${SERVICE_ACCOUNT_PATH}`} icon="plus" variant="secondary" size="sm">
+              Create service account
+            </LinkButton>
+            <TextLink href={LINKS.serviceAccountDocs} external>
+              About service accounts
+            </TextLink>
+          </Stack>
+        </SetupStep>
+
+        <SetupStep index={2} title="Copy your Gateway URL">
+          <CodeSnippet code={endpoint} />
+          <Text element="p" color="secondary">
+            Use it as the client&apos;s base URL. Clients that exchange tokens use the API root, without the namespace.{' '}
+            <TextLink href={LINKS.findGatewayURL} external inline>
+              Find your Gateway URL
+            </TextLink>
+          </Text>
+        </SetupStep>
+
+        <SetupStep index={3} title="Bring your provider key">
+          <Text element="p" color="secondary">
+            In Grafana Cloud, the Gateway calls Anthropic or OpenAI with your own account. Send your key with every call
+            under <code>providerOptions.gateway.byok</code>, and select the provider&apos;s model as{' '}
+            <code>provider/model</code>. Don&apos;t log request bodies, because they contain the key.{' '}
+            <TextLink href={LINKS.providerCredentials} external inline>
+              Use your own provider credentials
+            </TextLink>
+          </Text>
+        </SetupStep>
+
+        <SetupStep index={4} title="Make a call">
+          <QuickStart endpoint={endpoint} />
+        </SetupStep>
+      </ol>
+    </Section>
+  );
+}
+
+function Callers() {
+  return (
+    <Section title="Choose how you call">
+      <Text element="p" color="secondary">
+        Your credential decides which models you get.
+      </Text>
+      <Grid gap={2} columns={{ xs: 1, lg: 3 }}>
+        {CALLERS.map((caller) => (
+          <LinkCard key={caller.title} title={caller.title} href={caller.href}>
+            <Text color="secondary">
+              <Text weight="medium">Credential:</Text> {caller.credential}
+            </Text>
+            <Text color="secondary">
+              <Text weight="medium">Models:</Text> {caller.models}
+            </Text>
+          </LinkCard>
+        ))}
+      </Grid>
+    </Section>
+  );
+}
+
+const SELF_HOSTED_LINKS = [
+  { title: 'Install and enable the plugin', href: LINKS.install },
+  { title: 'Configure models', href: LINKS.configureModels },
+  { title: 'Choose who can use it', href: LINKS.accessMode },
+  { title: 'Store model catalogs in Grafana', href: LINKS.storedCatalogs },
+  { title: 'Authenticate in self-hosted Grafana', href: LINKS.selfHostedCallers },
+];
+
+function SelfHosted() {
+  const s = useStyles2(getStyles);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <CollapsableSection label="Running Grafana yourself?" isOpen={open} onToggle={setOpen}>
+      <Stack direction="column" gap={1}>
+        <Text element="p" color="secondary">
+          In self-hosted Grafana, the Gateway serves the models your administrator configures and refuses requests that
+          bring their own provider keys. Use the quick start without the <code>byok</code> option, and select a model by
+          its catalog ID or alias.
+        </Text>
+        <ul className={s.list}>
+          {SELF_HOSTED_LINKS.map((link) => (
+            <li key={link.href}>
+              <TextLink href={link.href} external>
+                {link.title}
+              </TextLink>
+            </li>
+          ))}
+        </ul>
+      </Stack>
+    </CollapsableSection>
+  );
+}
+
+function Resources() {
+  return (
+    <Section title="Resources">
+      <Grid gap={2} columns={{ xs: 1, sm: 2, lg: 4 }}>
+        {RESOURCES.map((resource) => (
+          <LinkCard key={resource.href} title={resource.title} href={resource.href}>
+            <Text color="secondary">{resource.description}</Text>
+          </LinkCard>
+        ))}
+      </Grid>
+    </Section>
+  );
+}
+
+function HeaderActions() {
+  return (
+    <Stack gap={1}>
+      <LinkButton href={LINKS.gatewayGuide} target="_blank" rel="noopener noreferrer" icon="book" variant="secondary">
+        Documentation
+      </LinkButton>
+      <LinkButton
+        href={LINKS.repository}
+        target="_blank"
+        rel="noopener noreferrer"
+        icon="github"
+        variant="secondary"
+        fill="text"
+      >
+        Source
+      </LinkButton>
+    </Stack>
   );
 }
 
 function Overview() {
   const s = useStyles2(getStyles);
-  const [language, setLanguage] = useState(Language.TypeScript);
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
-  const example = language === Language.TypeScript ? typeScriptExample(endpoint) : goExample(endpoint);
 
   return (
-    <PluginPage subTitle="Call language models from Go and TypeScript through Grafana.">
+    <PluginPage
+      subTitle="One API for Anthropic and OpenAI models, called through your Grafana stack."
+      actions={<HeaderActions />}
+    >
       <div className={s.page}>
-        <Stack direction="column" gap={4}>
-          <Stack direction="column" gap={1}>
-            <Text element="p">
-              The AI Gateway serves language models behind Grafana authentication. Depending on how it is deployed,
-              callers use the models configured for this Grafana instance or bring their own provider keys with each
-              request.
-            </Text>
-            <Text element="p">
-              It speaks the AI SDK language-model protocol, so Go services use the Grafana provider and TypeScript
-              services use the AI SDK gateway provider, with the same streaming, tool calling and structured output as a
-              direct provider.
-            </Text>
-          </Stack>
-
-          <Stack direction="column" gap={1}>
-            <Text element="h2" variant="h3">
-              Endpoint
-            </Text>
-            <Text element="p" color="secondary">
-              Point a client at this Grafana stack&apos;s Gateway routes:
-            </Text>
-            <CodeSnippet code={endpoint} />
-          </Stack>
-
-          <Stack direction="column" gap={1}>
-            <Text element="h2" variant="h3">
-              Quick start
-            </Text>
-            <Text element="p" color="secondary">
-              Create a service account token and call the Gateway from your server. Keep tokens and provider keys out of
-              browser code. In Grafana Cloud, service accounts bring their own provider keys with each request.
-            </Text>
-            <TabsBar>
-              <Tab
-                label="TypeScript"
-                active={language === Language.TypeScript}
-                onChangeTab={() => setLanguage(Language.TypeScript)}
-              />
-              <Tab label="Go" active={language === Language.Go} onChangeTab={() => setLanguage(Language.Go)} />
-            </TabsBar>
-            <TabContent>
-              <Stack direction="column" gap={1}>
-                <CodeSnippet code={INSTALL[language]} />
-                <CodeSnippet code={example} />
-              </Stack>
-            </TabContent>
-          </Stack>
-
-          <Stack direction="column" gap={1}>
-            <Text element="h2" variant="h3">
-              Start with your outcome
-            </Text>
-            <LinkList links={OUTCOMES} />
-          </Stack>
-
-          <Stack direction="column" gap={1}>
-            <Text element="h2" variant="h3">
-              Project resources
-            </Text>
-            <LinkList links={RESOURCES} />
-          </Stack>
+        <Stack direction="column" gap={5}>
+          <Text element="p">
+            The AI Gateway speaks the AI SDK language-model protocol, so Go services use the Grafana provider and
+            TypeScript services use the AI SDK Gateway provider, with the same streaming, tool calling and structured
+            output as a direct provider.
+          </Text>
+          <GetStarted endpoint={endpoint} />
+          <Callers />
+          <SelfHosted />
+          <Resources />
         </Stack>
       </div>
     </PluginPage>
@@ -194,11 +227,19 @@ export default Overview;
 
 const getStyles = (theme: GrafanaTheme2) => ({
   page: css({
-    maxWidth: theme.breakpoints.values.lg,
+    maxWidth: theme.breakpoints.values.xl,
+  }),
+  steps: css({
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(3),
   }),
   list: css({
     margin: 0,
     paddingLeft: theme.spacing(3),
-    lineHeight: theme.typography.body.lineHeight * 1.4,
+    lineHeight: theme.typography.base.lineHeight * 1.4,
   }),
 });

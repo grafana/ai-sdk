@@ -13,15 +13,20 @@ import (
 
 // Selection is the executable model a selector chose for one request, with its
 // logical identity and its source. A selection built by [CatalogSelector],
-// [ConfiguredSelection] or [AccountSelection] carries the expected attempts its
-// execution overview is projected from; any other selection publishes no overview.
+// [ConfiguredSelection], [StackCatalogSelection] or [AccountSelection] carries
+// the expected attempts its execution overview is projected from; any other
+// selection publishes no overview.
 type Selection struct {
 	ID    string
 	Model provider.LanguageModel
 	// Source names where the selected model and its provider keys come from.
-	Source      Source
+	Source Source
+	// Catalog is the stack catalog's name for [SourceStackCatalog], and empty
+	// for every other source.
+	Catalog     string
 	attribution attribution
 	expected    []ExpectedAttempt
+	keys        []string
 }
 
 // Source names where a selection's model and provider keys come from. A
@@ -34,6 +39,9 @@ const (
 	SourceOperatorCatalog Source = "operator-catalog"
 	// SourceRequestBYOK is the request's own provider accounts.
 	SourceRequestBYOK Source = "request-byok"
+	// SourceStackCatalog is a stack's stored model catalog, with that
+	// catalog's provider keys for the request.
+	SourceStackCatalog Source = "stack-catalog"
 )
 
 type attribution uint8
@@ -64,6 +72,14 @@ type ExpectedAttempt struct {
 // decision identity.
 func ConfiguredSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt) Selection {
 	return Selection{ID: id, Model: model, Source: SourceOperatorCatalog, attribution: attributionConfigured, expected: slices.Clone(expected)}
+}
+
+// StackCatalogSelection returns the [SourceStackCatalog] selection for model
+// from the stack catalog named catalog. It is attributed like
+// [ConfiguredSelection]. keys are that catalog's provider keys, which the
+// call's native failure summaries redact along with the configured keys.
+func StackCatalogSelection(id, catalog string, model provider.LanguageModel, expected []ExpectedAttempt, keys []string) Selection {
+	return Selection{ID: id, Model: model, Source: SourceStackCatalog, Catalog: catalog, attribution: attributionConfigured, expected: slices.Clone(expected), keys: slices.Clone(keys)}
 }
 
 // AccountSelection returns the [SourceRequestBYOK] selection for model, which
@@ -105,6 +121,9 @@ var (
 	ErrRoutingAttemptBound = errors.New("execution: routing exceeds the attempt bound")
 	// ErrUnknownFallbackModel reports a models entry that is not an available model.
 	ErrUnknownFallbackModel = errors.New("execution: unknown fallback model")
+	// ErrCatalogConfiguration reports a stored stack catalog that fails its
+	// checks, or a catalog provider without a key.
+	ErrCatalogConfiguration = errors.New("execution: invalid stack catalog configuration")
 )
 
 // CatalogSelector selects configured models from resolver as

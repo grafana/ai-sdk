@@ -62,6 +62,8 @@ type AgentObservabilitySettings struct {
 
 // Settings contains every plugin setting.
 type Settings struct {
+	// ModelCatalog is the operator catalog document. Without one, see
+	// [Settings.HasModelCatalog], the Gateway serves no configured models.
 	ModelCatalog       string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
@@ -137,15 +139,18 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	return settings, nil
 }
 
+// HasModelCatalog reports whether the operator catalog is set: an unset,
+// empty or whitespace-only document means none.
+func (settings Settings) HasModelCatalog() bool {
+	return strings.TrimSpace(settings.ModelCatalog) != ""
+}
+
 // Validate validates the settings without performing I/O.
 func (settings Settings) Validate() error {
-	if strings.TrimSpace(settings.ModelCatalog) == "" {
-		return fmt.Errorf("config: %s is required", SettingName(ModelCatalogSetting))
+	if len(settings.ModelCatalog) > MaxModelCatalogBytes {
+		return fmt.Errorf("config: %s exceeds %d bytes", SettingName(ModelCatalogSetting), MaxModelCatalogBytes)
 	}
-	if err := settings.AgentObservability.validate(); err != nil {
-		return err
-	}
-	return nil
+	return settings.AgentObservability.validate()
 }
 
 var ambientAgentObservabilityEnvironment = []string{

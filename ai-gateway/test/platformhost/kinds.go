@@ -60,6 +60,51 @@ func (s *kindStore) kindPath(path string) (app.ManifestVersionKind, string, bool
 	return kind, "", true
 }
 
+// kindRoute splits a namespaced route path into a declared kind's object and
+// the subresource path below it, such as `modelcatalogs/team/config`.
+func (s *kindStore) kindRoute(path string) (app.ManifestVersionKind, string, string, bool) {
+	segments := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 3)
+	if len(segments) != 3 || segments[1] == "" || segments[2] == "" {
+		return app.ManifestVersionKind{}, "", "", false
+	}
+	kind, ok := s.kinds[segments[0]]
+	return kind, segments[1], segments[2], ok
+}
+
+// routeParent returns the stored object a subresource route is called on, as
+// the platform sends it: its resource, name, resource version, JSON with
+// secure value names, and the plaintext of each secure value. The JSON
+// carries the kind's API version and kind, as stored objects do on the
+// platform.
+func (h *Host) routeParent(kind app.ManifestVersionKind, key objectKey) (*pluginv3.RouteResource, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	object, ok := h.kinds.objects[key]
+	if !ok {
+		return nil, false
+	}
+	stored := maps.Clone(object)
+	stored["apiVersion"] = h.config.Group + "/" + h.config.Version
+	stored["kind"] = kind.Kind
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return nil, false
+	}
+	parent := &pluginv3.RouteResource{}
+	parent.SetResource(key.plural)
+	parent.SetName(key.name)
+	parent.SetRv(resourceVersion(object))
+	parent.SetRaw(raw)
+	values := map[string]string{}
+	for field, name := range secureNameMap(object) {
+		if value, ok := h.kinds.secrets[key.namespace+"/"+name]; ok {
+			values[field] = value
+		}
+	}
+	parent.SetDecryptedSecureValues(values)
+	return parent, true
+}
+
 // SecureValue returns the plaintext of an inline secure value the host
 // created in namespace. It is test-only.
 func (h *Host) SecureValue(namespace, name string) (string, bool) {
