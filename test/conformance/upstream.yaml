@@ -32,8 +32,9 @@ knownGaps:
       Invalid extensions are dropped with unary warnings or non-retryable
       recoverable stream errors, preserving content and later chunks. Synthetic
       HTTP and frontend tests cover this extension; no live provider recording
-      or provider-boundary conformance is claimed. Default normalization and
-      provider-option passthrough remain unchanged.
+      or provider-boundary conformance is claimed. The extension does not change
+      default normalization, which returns refusals as text content, or
+      provider-option passthrough.
   - id: agent-ui-validation-schemas
     surface: core-agent
     status: gap

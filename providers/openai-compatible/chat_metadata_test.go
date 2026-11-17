@@ -147,7 +147,8 @@ func TestChatCompletionMetadata_MultiChunkStream(t *testing.T) {
 				case provider.PartFinish:
 					finishes++
 					require.NotNil(t, part.FinishReason)
-					assert.Equal(t, provider.FinishReasonStop, part.FinishReason.Unified)
+					assert.Equal(t, provider.FinishReasonContentFilter, part.FinishReason.Unified)
+					assert.Equal(t, "stop", part.FinishReason.Raw)
 					var namespace map[string]json.RawMessage
 					require.NoError(t, json.Unmarshal(part.ProviderMetadata["openai-compatible"], &namespace))
 					var chat ChatCompletionMetadata
@@ -162,9 +163,10 @@ func TestChatCompletionMetadata_MultiChunkStream(t *testing.T) {
 			assert.Equal(t, 1, finishes)
 			if malformed {
 				assert.Equal(t, 1, errors)
-				assert.Equal(t, "still here", text)
+				assert.Equal(t, "Cannot still herehelp", text)
 			} else {
 				assert.Zero(t, errors)
+				assert.Equal(t, "Cannot help", text)
 			}
 		})
 	}

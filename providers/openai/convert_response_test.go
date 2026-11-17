@@ -643,18 +643,21 @@ func TestMapFinishReason(t *testing.T) {
 	tests := []struct {
 		reason          string
 		hasFunctionCall bool
+		hasRefusal      bool
 		want            provider.UnifiedFinishReason
 	}{
-		{"", false, provider.FinishReasonStop},
-		{"", true, provider.FinishReasonToolCalls},
-		{"max_output_tokens", false, provider.FinishReasonLength},
-		{"content_filter", false, provider.FinishReasonContentFilter},
-		{"weird", false, provider.FinishReasonOther},
-		{"weird", true, provider.FinishReasonToolCalls},
+		{"", false, false, provider.FinishReasonStop},
+		{"", true, false, provider.FinishReasonToolCalls},
+		{"", false, true, provider.FinishReasonContentFilter},
+		{"", true, true, provider.FinishReasonToolCalls},
+		{"max_output_tokens", false, true, provider.FinishReasonLength},
+		{"content_filter", false, false, provider.FinishReasonContentFilter},
+		{"weird", false, true, provider.FinishReasonOther},
+		{"weird", true, false, provider.FinishReasonToolCalls},
 	}
 	for _, tc := range tests {
-		got := mapFinishReason(tc.reason, tc.hasFunctionCall)
-		assert.Equal(t, tc.want, got.Unified, "reason=%q hasFn=%v", tc.reason, tc.hasFunctionCall)
+		got := mapFinishReason(tc.reason, tc.hasFunctionCall, tc.hasRefusal)
+		assert.Equal(t, tc.want, got.Unified, "reason=%q hasFn=%v hasRefusal=%v", tc.reason, tc.hasFunctionCall, tc.hasRefusal)
 	}
 }
 

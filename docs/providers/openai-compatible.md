@@ -91,6 +91,12 @@ Per-call `OpenAIOptions` cover compatible reasoning and schema settings where
 the server supports them. Unsupported values may be ignored or rejected by the
 server, so include the target implementation in integration tests.
 
+## Recognize refusals
+
+A refusal the server returns instead of content arrives as text, and a `stop`
+finish becomes `content-filter` with `stop` as the raw reason. Non-string
+refusal values are ignored.
+
 ## Preserve Chat-specific output
 
 Construct the model with `WithChatCompletionMetadata()` when a protocol codec

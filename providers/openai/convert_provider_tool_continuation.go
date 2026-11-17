@@ -103,7 +103,7 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 			return nil, nil
 		}
 		ctx.emittedParallelCalls[id] = true
-		item := responses.ResponseInputItemParamOfFunctionCall(group.metadata.Input, id, group.metadata.ToolName)
+		item := responses.ResponseInputItemParamOfFunctionCall(*group.metadata.Input, id, group.metadata.ToolName)
 		return &item, nil
 	}
 	po := ctx.partOptions(part)
