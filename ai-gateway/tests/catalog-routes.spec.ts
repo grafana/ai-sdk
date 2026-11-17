@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { test, expect, ROLES } from './fixtures';
+import { accountsTest as test, expect, ROLES } from './fixtures';
 import { API_GROUP, API_VERSION } from '../src/constants';
 
 const PREFIX = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default`;

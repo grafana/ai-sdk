@@ -1,5 +1,5 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { accountsTest as test, expect } from './fixtures';
 import { API_GROUP, API_VERSION } from '../src/constants';
 
 async function permissions(request: APIRequestContext): Promise<string[]> {
