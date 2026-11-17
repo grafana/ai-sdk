@@ -28,7 +28,7 @@ The root middleware denial option is delivered by the `record-middleware-denials
 - [x] 4.2 Construct instances with scoped dependencies, refuse instances with no phase, contain factory panics, close built instances on failure, and build per-ownership ordered lists; verify `TestNew_Construction` and `TestHost_Compose`, including a source the vocabulary does not name yet.
 - [x] 4.3 Run request phases, the per-transform policy check, failure policies, panic containment and per-call state; verify `TestPipeline_PhaseOrder`, `TestPipeline_GatesStopAtFirstDenial`, `TestPipeline_TransformOrder`, `TestPipeline_HostPolicyAfterEachTransform`, `TestPipeline_FailurePolicies`, `TestPipeline_PanicContainment` and `TestPipeline_PartialImplementationAndPerCallState` under `-race`.
 - [x] 4.4 Run unary and stream response phases on normalized parts with validation and abort; verify `TestPipeline_NormalizedParts` and `TestPipeline_ResponseAbort` under `-race`.
-- [x] 4.5 Dispatch Observe asynchronously, bounded, tracked and drained by `Close`, with dropped observations counted; verify `TestPipeline_Observe`, `TestPipeline_ObservationIsOffTheResponsePath` and `TestHost_CloseRespectsTheDeadline`.
+- [x] 4.5 Dispatch Observe asynchronously, bounded, tracked and drained by `Close`, with dropped observations counted and in-band stream errors recorded as errors; verify `TestPipeline_Observe`, `TestPipeline_StreamOutcome`, `TestPipeline_ObservationIsOffTheResponsePath` and `TestHost_CloseRespectsTheDeadline`.
 - [x] 4.6 Add the caller type to `auth.Caller` and the service request-info accessor; verify `TestAccessPolicy_Decide` and `TestPipeline_RequestInfo`.
 
 ## 5. Wiring and observation
