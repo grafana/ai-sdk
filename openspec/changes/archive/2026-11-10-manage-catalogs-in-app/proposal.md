@@ -7,12 +7,12 @@ A stack can store `ModelCatalog` resources and call them through their catalog r
 ## What Changes
 
 - **A "Model catalogs" page** in the app, built from `@grafana/ui` and `@grafana/runtime`, on the `ModelCatalog` API of the request namespace:
-  - a list of catalogs with their providers and models;
-  - a structured form to create and edit a catalog: providers with their keys, then models with aliases, primaries and fallbacks;
+  - a list of catalogs with their URLs, providers and models, and a dialog to create one with its first provider and model;
+  - a page per catalog with its providers and models, each added, edited and removed in a dialog and saved at once: providers with their keys, models with aliases, primaries and fallbacks;
   - delete with a confirmation.
 - **Controls follow the caller's permissions.** The page reads the caller's Grafana permissions for the `modelcatalogs` `get`, `create`, `update` and `delete` actions, not their org role. Without `get` it shows nothing. Without `create`, `update` or `delete` the matching control is absent or read-only. So a Viewer, or an Editor without the writer role, sees catalogs read-only.
-- **Write-only keys.** A key typed into the form is sent only as `secure.<provider>.create`. It is never read back or displayed: a saved key shows as configured, with a control to replace it. An update omits every unchanged key, so Grafana keeps the stored value. It sends `remove` for a deleted provider's key, and asks for a new key when a provider is added or renamed.
-- **Platform errors as returned.** Admission refusals, authorization refusals, conflicts and name errors are shown with the message Grafana returns, and the form keeps its input. The page checks only what a request body can't express, such as two providers with the same name. It doesn't repeat admission's checks.
+- **Write-only keys.** A key typed into the page is sent only as `secure.<provider>.create`. It is never read back or displayed: a saved key shows as configured, with a control to replace it. An update omits every unchanged key, so Grafana keeps the stored value. It sends `remove` for a removed provider's key, and asks for a new key when a provider is added or changes type.
+- **Platform errors as returned.** Admission refusals, authorization refusals, conflicts and name errors are shown with the message Grafana returns, and the dialog keeps its input. The page checks only missing values and what a request body can't express, such as a provider name the catalog already has. It leaves format and policy rules to admission.
 - **Overview:** for callers who can read catalogs, the overview lists each catalog's base URL, `.../namespaces/{namespace}/modelcatalogs/{name}`, with a copy button.
 - **Tests:**
   - Jest tests for the request bodies, the permission matrix, key states, error display and the overview;
@@ -37,7 +37,7 @@ A stack can store `ModelCatalog` resources and call them through their catalog r
 ## Impact
 
 - **Code:** `ai-gateway/src/`:
-  - new catalog pages, form components, API module and permission helper;
+  - new catalog pages, dialog components, API module and permission helper;
   - `components/App/App.tsx` routes;
   - `pages/Overview.tsx`;
   - `constants.ts`;
