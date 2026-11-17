@@ -21,7 +21,7 @@ describe('Components/App', () => {
       basename: 'a/grafana-aigateway-app',
       meta: {
         id: 'grafana-aigateway-app',
-        name: 'Grafana AI Gateway',
+        name: 'AI Gateway',
         type: PluginType.app,
         enabled: true,
         jsonData: {},

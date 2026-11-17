@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "app",
-  "name": "Grafana AI Gateway",
+  "name": "AI Gateway",
   "id": "grafana-aigateway-app",
   "backend": true,
   "executable": "gpx_aigateway",
@@ -28,7 +28,15 @@
       {
         "name": "Source",
         "url": "https://github.com/grafana/ai-sdk/tree/main/ai-gateway"
+      },
+      {
+        "name": "Report an issue",
+        "url": "https://github.com/grafana/ai-sdk/issues/new"
       }
+    ],
+    "screenshots": [
+      { "name": "Overview", "path": "img/screenshots/overview-dark.png" },
+      { "name": "Overview, light theme", "path": "img/screenshots/overview-light.png" }
     ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
