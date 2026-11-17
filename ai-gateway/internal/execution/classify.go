@@ -37,6 +37,9 @@ const (
 	// CategoryUnavailable is a call that an extension failure ended under its
 	// fail-closed policy.
 	CategoryUnavailable
+	// CategoryCatalogConfiguration is a stored stack catalog that fails its
+	// checks or lacks a provider key.
+	CategoryCatalogConfiguration
 )
 
 // Reason refines [CategoryInvalidRequest] for host policy and routing refusals
@@ -86,6 +89,8 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryBYOKSelector, ReasonNone
 	case errors.Is(err, ErrUnsupportedGatewayControl):
 		return CategoryGatewayControl, ReasonNone
+	case errors.Is(err, ErrCatalogConfiguration):
+		return CategoryCatalogConfiguration, ReasonNone
 	case errors.Is(err, ErrReservedProviderOptions):
 		return CategoryInvalidRequest, ReasonReservedProviderOptions
 	case errors.Is(err, ErrProtectedCallHeader):

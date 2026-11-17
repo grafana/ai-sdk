@@ -30,11 +30,13 @@
 //   - the closed failure categories and reasons, including extension denials
 //     (permission) and fail-closed extension failures ([CategoryUnavailable]);
 //   - request-local attempt capture, projected into an overview from the
-//     expected attempts of [ConfiguredSelection] and [AccountSelection], with
-//     the served model the selected output reports after an Anthropic
-//     server-side fallback. A call enters its model only when the selected
-//     model itself is invoked, beneath every composed layer, so a layer that
-//     refuses first records no attempt.
+//     expected attempts of [ConfiguredSelection], [StackCatalogSelection] and
+//     [AccountSelection], with native failure summaries redacting the
+//     configured keys and the selection's own request keys, and the served
+//     model the selected output reports after an Anthropic server-side
+//     fallback. A call enters its model only when the selected model itself is
+//     invoked, beneath every composed layer, so a layer that refuses first
+//     records no attempt.
 //
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,

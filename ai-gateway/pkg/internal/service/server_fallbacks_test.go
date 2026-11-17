@@ -258,7 +258,7 @@ func TestNativeServerFallbacks_BYOKIgnoresConfiguredPolicy(t *testing.T) {
 		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
 			backend := &serverFallbackBackend{}
 			client := backend.client()
-			selector := NewSelector(serverFallbackCatalog(t, client, &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false), &BYOKOptions{Client: client, Factory: identityModelFactory})
+			selector := NewSelector(serverFallbackCatalog(t, client, &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false), &BYOKOptions{Client: client, Factory: identityModelFactory}, nil)
 
 			configured, _ := serveConfigured(t, selector, "public", serverFallbackDefault, streaming)
 			require.Equal(t, http.StatusBadRequest, configured.Code, configured.Body.String())

@@ -186,10 +186,11 @@ func lookup(values map[string]string) func(string) (string, bool) {
 }
 
 type harnessOptions struct {
-	routeDeadline time.Duration
-	fallback      bool
-	extensions    []extension.Definition
-	env           map[string]string
+	routeDeadline  time.Duration
+	fallback       bool
+	withoutCatalog bool
+	extensions     []extension.Definition
+	env            map[string]string
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -209,6 +210,9 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 		"GF_PLUGIN_MODEL_CATALOG": modelCatalog(anthropic.server.URL, options.fallback),
 		"GRAFANA_JWKS":            string(keys),
 		"ANTHROPIC_SECRET":        providerSecret,
+	}
+	if options.withoutCatalog {
+		delete(env, "GF_PLUGIN_MODEL_CATALOG")
 	}
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"
@@ -379,6 +383,28 @@ func TestGateway_CloudAccess(t *testing.T) {
 		assert.Contains(t, h.logs.String(), `"caller_identity":"user:private-user-uid"`)
 		assert.Contains(t, h.logs.String(), `"caller_identity":"service-account:private-account-uid"`)
 	})
+}
+
+func TestGateway_WithoutOperatorCatalog(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{withoutCatalog: true})
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+
+	status, body := do(t, discoveryRequest(t, h.url("config"), internal))
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, `{"models":[]}`, body)
+	for _, request := range []string{unaryBody, `{"prompt":[],"providerOptions":{"gateway":{"models":["other"]}}}`} {
+		status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), request, false, internal))
+		assert.Equal(t, http.StatusNotFound, status)
+		assert.Contains(t, body, `"code":"model_not_found"`)
+	}
+	status, body = do(t, discoveryRequest(t, h.url("config"), account))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, body, "catalog discovery is unsupported for BYOK")
+	status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, account))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, body, "BYOK requires a supported provider/model selector")
+	assert.Zero(t, h.anthropic.requests.Load())
 }
 
 func TestGateway_SelfHostedAccess(t *testing.T) {
@@ -603,3 +629,66 @@ func TestGateway_RouteDeadlineEndsTheModelCall(t *testing.T) {
 }
 
 const unaryBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16}`
+
+func chatRequest(t *testing.T, url, body string, auth credential) *http.Request {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	auth(request)
+	return request
+}
+
+func TestGateway_ChatCompletionsAccess(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	url := h.url("v1/chat/completions")
+	body := `{"model":"public","messages":[{"role":"user","content":"hello"}]}`
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+	other := accessToken(h.serviceToken(t, "svc-b"))
+
+	status, response := do(t, chatRequest(t, url, body, internal))
+	assert.Equal(t, http.StatusOK, status, response)
+	assert.Contains(t, response, `"object":"chat.completion"`)
+	assert.Contains(t, response, "hello")
+
+	before := h.anthropic.requests.Load()
+	for _, tc := range []struct {
+		auth   credential
+		status int
+	}{{account, http.StatusBadRequest}, {other, http.StatusForbidden}} {
+		status, response = do(t, chatRequest(t, url, body, tc.auth))
+		assert.Equal(t, tc.status, status, response)
+		assert.Contains(t, response, `"error"`)
+	}
+	assert.Equal(t, before, h.anthropic.requests.Load())
+	assert.Contains(t, h.logs.String(), `"route":"chat_completions"`)
+}
+
+func TestGateway_ChatCompletionsSelfHosted(t *testing.T) {
+	h := newHarness(t, platformhost.TopologySelfHosted)
+	body := `{"model":"public","messages":[{"role":"user","content":"hello"}]}`
+	for _, auth := range []credential{bearer(h.host.AddServiceAccount("chat-sa", testNamespace)), session(h.host.AddSession(types.TypeUser, "chat-user", testNamespace))} {
+		for _, streaming := range []bool{false, true} {
+			requestBody := body
+			if streaming {
+				requestBody = strings.TrimSuffix(body, "}") + `,"stream":true}`
+			}
+			status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), requestBody, auth))
+			assert.Equal(t, http.StatusOK, status, response)
+			if streaming {
+				assert.Contains(t, response, "first")
+				assert.Contains(t, response, "second")
+				assert.Contains(t, response, "[DONE]")
+			} else {
+				assert.Contains(t, response, "hello")
+			}
+		}
+	}
+	before := h.anthropic.requests.Load()
+	anonymous := session(h.host.AddSession(types.TypeAnonymous, "chat-anon", testNamespace))
+	status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), body, anonymous))
+	assert.Equal(t, http.StatusForbidden, status, response)
+	assert.Contains(t, response, `"error"`)
+	assert.Equal(t, before, h.anthropic.requests.Load())
+}
