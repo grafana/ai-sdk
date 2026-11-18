@@ -78,11 +78,14 @@ func TestUserFileReferences_MixedContentMetadata(t *testing.T) {
 	}
 	text := provider.TextPart("before")
 	text.ProviderOptions = provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"tag":"text"}`)}}
+	inlineText := provider.FilePart("text/markdown", provider.TextDataContent("# Notes"))
+	inlineText.ProviderOptions = provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"tag":"inline"}`)}}
 	message := provider.NewUserMessage(text, reference,
 		provider.FilePart("application/pdf", provider.Base64DataContent("")),
 		provider.FilePart("image/png", provider.URLDataContent("https://example.com/image.png")),
 		provider.FilePart("image/png", provider.BytesDataContent([]byte{1, 2})),
 		provider.FilePart("text/plain", provider.URLDataContent("https://example.com/text.txt")),
+		inlineText,
 		provider.TextPart("after"))
 	message.ProviderOptions = provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"tag":"message"}`)}}
 	checkUserFileReferenceRequest(t, "custom-provider.chat", []provider.Message{message}, `[{"role":"user","tag":"message","content":[
@@ -92,6 +95,7 @@ func TestUserFileReferences_MixedContentMetadata(t *testing.T) {
   {"type":"image_url","image_url":{"url":"https://example.com/image.png"}},
   {"type":"image_url","image_url":{"url":"data:image/png;base64,AQI="}},
   {"type":"text","text":"https://example.com/text.txt"},
+  {"type":"text","text":"# Notes","tag":"inline"},
   {"type":"text","text":"after"}
  ]}]`, "")
 	t.Run("part metadata overrides generated file", func(t *testing.T) {

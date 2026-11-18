@@ -728,18 +728,22 @@ func TestFileSelectedEmptyDataAndUnsupportedText(t *testing.T) {
 		data      provider.DataContent
 		wantType  string
 		wantData  string
-		invalid   bool
+		invalid   string
 	}{
 		{name: "PDF empty data", mediaType: "application/pdf", data: provider.Base64DataContent(""), wantType: "file", wantData: "data:application/pdf;base64,"},
 		{name: "plain text empty data", mediaType: "text/plain", data: provider.BytesDataContent(nil), wantType: "text", wantData: ""},
-		{name: "text arm unsupported", mediaType: "text/plain", data: provider.TextDataContent(""), invalid: true},
+		{name: "inline text", mediaType: "text/markdown", data: provider.TextDataContent("# Notes"), wantType: "text", wantData: "# Notes"},
+		{name: "inline text empty", mediaType: "text/plain", data: provider.TextDataContent(""), wantType: "text", wantData: ""},
+		{name: "inline text top-level type", mediaType: "text", data: provider.TextDataContent("hello"), wantType: "text", wantData: "hello"},
+		{name: "inline text non-text media", mediaType: "application/json", data: provider.TextDataContent("{}"), invalid: "inline text data is supported only for text file parts"},
+		{name: "inline text image media", mediaType: "image/png", data: provider.TextDataContent("x"), invalid: "inline text data is supported only for text file parts"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{
 				Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, tc.data))},
 			}, false)
-			if tc.invalid {
-				require.Error(t, err)
+			if tc.invalid != "" {
+				require.ErrorContains(t, err, tc.invalid)
 				return
 			}
 			require.NoError(t, err)

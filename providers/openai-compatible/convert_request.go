@@ -550,6 +550,12 @@ func convertFileContent(part provider.ContentPart, providerName string) (chatCon
 		}
 		return chatContentPart{Type: "file", File: &filePart{FileID: &id}}, nil
 	}
+	if part.Data.IsText() {
+		if topLevelMediaType(part.MediaType) != "text" {
+			return chatContentPart{}, fmt.Errorf("openai: inline text data is supported only for text file parts, got %q", part.MediaType)
+		}
+		return chatContentPart{Type: "text", Text: part.Data.Text}, nil
+	}
 	var err error
 	part, err = normalizeDataURLFilePart(part)
 	if err != nil {
