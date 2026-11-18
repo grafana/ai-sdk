@@ -173,10 +173,12 @@ describe('pages/CatalogPage', () => {
     type(search, 'listed');
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     expect(search.getAttribute('aria-activedescendant')).toBeTruthy();
+    const useSelection = provider.getByRole('button', { name: 'Use selected model' });
+    expect(useSelection).toBeDisabled();
     fireEvent.keyDown(search, { key: 'Tab' });
     fireEvent.blur(search, { relatedTarget: provider.getByRole('button', { name: 'Close model picker' }) });
+    expect(useSelection).toBeEnabled();
     expect(manual).toHaveValue('claude-custom');
-    expect(provider.getByRole('button', { name: 'Use selected model' })).toHaveAttribute('aria-disabled', 'false');
     expect(updateModelCatalog).not.toHaveBeenCalled();
   });
 
