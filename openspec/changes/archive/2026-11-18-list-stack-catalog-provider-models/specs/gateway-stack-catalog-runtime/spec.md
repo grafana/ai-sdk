@@ -19,7 +19,7 @@ The `available-models` action SHALL accept exactly one `provider` query paramete
 
 #### Scenario: Invalid stored configuration
 - **WHEN** the saved catalog fails shared shape, endpoint or key checks
-- **THEN** the action SHALL return a fixed `424` without using the cache or contacting the provider
+- **THEN** the action SHALL return a fixed `424` without contacting the provider
 
 ### Requirement: Return bounded listing outcomes
 An accepted listing request SHALL return `200` JSON with `status` and `modelIds`. Status SHALL be one of `ok`, `partial`, `invalidKey`, `unreachable`, `refused`, or `notChecked`. `modelIds` SHALL be a bounded, sorted array of exact, distinct IDs from valid pages, with no upstream metadata. `ok` and `partial` describe the listing only and SHALL NOT attest to inference. Other statuses SHALL return an empty array.
@@ -40,17 +40,13 @@ An accepted listing request SHALL return `200` JSON with `status` and `modelIds`
 Inventory and health SHALL share endpoint validation and the bounded listing operation, with deadlines, response size and page limits, no redirects or request retries, and shared per-catalog and per-process admission for probes. The inventory route SHALL return fixed `429` on admission refusal. Gateway responses and telemetry SHALL NOT expose keys or serialize upstream URLs, cursors, headers, raw bodies or errors.
 
 #### Scenario: Provider echoes the key in a successful listing
-- **WHEN** a provider returns the auth key in an ID or continuation cursor
-- **THEN** the ID SHALL NOT be returned or cached, and the cursor SHALL NOT be followed
+- **WHEN** a provider returns any saved key from the parent or its HTTP header wire form in an ID or continuation cursor
+- **THEN** the ID SHALL NOT be returned, and the cursor SHALL NOT be followed
 - **AND** the key SHALL NOT appear in logs, metrics or traces
 
-### Requirement: Cache only validated successful inventory
-The Gateway SHALL cache only complete, safe listing results, including empty lists, for a short TTL with bounded process-local storage. Reuse SHALL require the same namespace, catalog UID, stored resource version and provider, and SHALL still require authorization and shared preflight. All Gateway-produced action responses SHALL use `Cache-Control: no-store`.
+### Requirement: Do not cache provider inventory
+Each admitted, valid request SHALL query the provider using the current checked parent. The Gateway SHALL NOT cache inventory, and Gateway-produced action responses SHALL use `Cache-Control: no-store`.
 
-#### Scenario: A second request arrives before expiry
-- **WHEN** an authorized request passes preflight for the same saved revision and named provider within the TTL
-- **THEN** it SHALL return the cached IDs without a provider call
-
-#### Scenario: A catalog key is replaced or an entry expires
-- **WHEN** the saved revision changes, the catalog is recreated, the TTL expires, or the previous result was partial or failed
-- **THEN** the action SHALL NOT serve that previous result
+#### Scenario: A writer replaces a provider key
+- **WHEN** an authorized caller requests a listing after key replacement
+- **THEN** the action SHALL query the provider using the newly saved key rather than reuse the earlier listing

@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health` and `ModelCatalog/available-models`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model` and `ModelCatalog/config`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
+The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health` and `ModelCatalog/available-models`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model`, `ModelCatalog/config` and `ModelCatalog/messages`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace
@@ -14,7 +14,7 @@ The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `
 - **THEN** authorization SHALL allow the request, subject to admission
 
 #### Scenario: Invoker
-- **WHEN** an Editor or Admin calls `language-model` or `config` on a catalog in their namespace
+- **WHEN** an Editor or Admin calls `language-model`, `config` or `v1/messages` on a catalog in their namespace
 - **THEN** Grafana's declared check SHALL allow it, and a Viewer's call SHALL be refused with `403` before the plugin is called
 
 #### Scenario: Authorized health check
@@ -31,4 +31,4 @@ The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `
 
 #### Scenario: Reader or invoker without listing access
 - **WHEN** a caller can read the parent catalog but does not have `get` on `modelcatalogs/available-models`
-- **THEN** Grafana SHALL return `403` before decrypting the parent's keys or calling the plugin, including when a result is cached
+- **THEN** Grafana SHALL return `403` before decrypting the parent's keys or calling the plugin

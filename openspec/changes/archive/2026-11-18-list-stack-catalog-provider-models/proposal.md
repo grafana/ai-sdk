@@ -6,9 +6,9 @@ Catalog writers type provider model IDs by hand. A typo or retired ID can be sav
 
 ## What Changes
 
-- Add a searchable list to **Add model** on each saved provider card. Selecting a listed ID fills the field; writers can always enter an ID that the provider does not list.
+- Add a searchable list to **Add model** on each saved provider card. Confirming a listed ID fills the field; writers can always enter an ID that the provider does not list.
 - Recommend **(a), saved providers only**. The create flow still uses manual IDs for its initial models. Once saved, writers can browse for additional models. No new request accepts draft credentials, and neither creating nor saving a catalog triggers a listing.
-- Add one writer-gated `available-models` action on the parent catalog. It uses only the selected named provider's saved key, reuses the health check's listing implementation and bounds, and briefly caches successful results per catalog revision and provider.
+- Add one writer-gated `available-models` action on the parent catalog. It uses only the selected named provider's saved key, reuses the health check's listing implementation and bounds. The action does not cache results.
 - Support Anthropic and OpenAI on this base. Custom endpoints and `openai-compatible` remain refused by the shared preflight until the operator allowlist is available.
 
 ## Capabilities
@@ -20,7 +20,7 @@ None.
 ### Modified Capabilities
 
 - `gateway-catalog-management`: searchable suggestions and free-form IDs for adding models, with manual-only creation.
-- `gateway-stack-catalog-runtime`: bounded, secret-safe inventory for one saved provider, with revision-scoped caching.
+- `gateway-stack-catalog-runtime`: bounded, secret-safe inventory for one saved provider.
 - `gateway-model-catalog-kind`: grant the new subresource permission to catalog writers only by default.
 - `gateway-plugin-host`: declare and serve one more catalog-scoped action.
 
