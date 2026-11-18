@@ -1055,6 +1055,18 @@ Message `output_item.added`/`output_text.delta`/`output_item.done` SHALL emit te
 - **WHEN** message added, output_text.delta and message done events arrive with phase and annotations
 - **THEN** text-start, text-delta and text-end SHALL appear in order carrying phase and annotations
 
+### Requirement: Assistant function arguments from history
+
+String-valued `function_call` input SHALL become unchanged `arguments` text if accepted as JSON by the registered upstream parser, or remain JSON-encoded otherwise. Inputs provided as objects SHALL retain their existing encoding.
+
+#### Scenario: Assistant function call with serialized arguments
+- **WHEN** the input of an assistant call emitted as `function_call` is a string containing JSON text accepted by the registered upstream parser
+- **THEN** the request SHALL use that text unchanged as `arguments`, including whitespace and non-object JSON values
+
+#### Scenario: Assistant function call with malformed argument text
+- **WHEN** the input of an assistant call emitted as `function_call` is a string containing malformed or rejected JSON text
+- **THEN** the request SHALL keep the JSON encoding of the original string as `arguments`
+
 ### Requirement: Tool-call input serialization matches upstream
 
 Tool-call input strings that the OpenAI Responses adapter builds from structured data SHALL be compact JSON without HTML escaping of `<`, `>` and `&`, with fields in the order upstream serializes them.

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/mediatype"
+	"github.com/grafana/ai-sdk/internal/toolhistory"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -440,7 +441,7 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 				Type: "function",
 				Function: toolCallFunction{
 					Name:      part.ToolName,
-					Arguments: input,
+					Arguments: toolhistory.Arguments(input),
 				},
 			}
 			partExtra, err := openAICompatibleMetadata(part.ProviderOptions)

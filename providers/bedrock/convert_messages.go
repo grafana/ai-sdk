@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/grafana/ai-sdk/internal/toolhistory"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -678,8 +679,15 @@ func toBedrockToolInput(input json.RawMessage) json.RawMessage {
 		wrapped, _ := json.Marshal(map[string]any{"rawInvalidInput": string(input)})
 		return json.RawMessage(wrapped)
 	}
-	if _, ok := value.(map[string]any); ok {
+	switch v := value.(type) {
+	case map[string]any:
 		return input
+	case string:
+		if object, ok := toolhistory.Object(v); ok {
+			if encoded, err := json.Marshal(object); err == nil {
+				return encoded
+			}
+		}
 	}
 	wrapped, _ := json.Marshal(map[string]any{"rawInvalidInput": value})
 	return json.RawMessage(wrapped)

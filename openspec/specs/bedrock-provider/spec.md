@@ -176,6 +176,16 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **WHEN** the prompt contains an `AssistantMessage` with a `ToolCallPart` of name `lookup` and input `{"q": "x"}`
 - **THEN** the assistant message content includes `{toolUse: {toolUseId, name: "lookup", input: {"q": "x"}}}`
 
+#### Scenario: Assistant tool call with serialized object input
+
+- **WHEN** a tool call in assistant history has string-valued input that parses once to a JSON object accepted by the registered upstream parser
+- **THEN** the request SHALL use that object as `toolUse.input`
+
+#### Scenario: Assistant tool call with malformed or non-object input text
+
+- **WHEN** the call has input text that is malformed, rejected by the parser, or parses to an array, scalar, or null
+- **THEN** the request SHALL set `toolUse.input` to an object with `rawInvalidInput` set to the original string
+
 #### Scenario: Tool result message
 
 - **WHEN** the prompt contains a `ToolMessage` with a tool result for tool call id `abc`
