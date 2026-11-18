@@ -60,8 +60,9 @@ var namePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 var reservedMembers = []string{"type", "enabled"}
 
 // problems returns what is wrong with a registry: invalid or repeated names,
-// reserved or shared members, examples that don't match the schema, and
-// schema shapes a manifest member can't mirror.
+// reserved or shared members, examples that don't match the schema, a type
+// enabled by default whose schema refuses the empty configuration, and schema
+// shapes a manifest member can't mirror.
 func problems(types []Type) []string {
 	var found []string
 	names := map[string]bool{}
@@ -90,6 +91,9 @@ func problems(types []Type) []string {
 		members[member] = tenantType.Name
 		if tenantType.Example == nil || tenantType.ConfigSchema.Validate(tenantType.Example) != nil {
 			found = append(found, fmt.Sprintf("%q needs an example its schema accepts", tenantType.Name))
+		}
+		if tenantType.EnabledByDefault && tenantType.ConfigSchema.Validate(json.RawMessage(`{}`)) != nil {
+			found = append(found, fmt.Sprintf("%q is enabled by default but its schema refuses the empty configuration", tenantType.Name))
 		}
 		decoder := json.NewDecoder(bytes.NewReader(tenantType.ConfigSchema.JSON()))
 		decoder.UseNumber()
@@ -172,20 +176,93 @@ func schemaProblems(node map[string]any, at string) []string {
 
 func TestAll(t *testing.T) {
 	assert.Empty(t, problems(All()))
-	assert.Empty(t, All(), "the shipped registry is empty")
+	types := All()
+	require.Len(t, types, 2)
+	assert.Equal(t, []string{"default-instructions", "default-settings"}, []string{types[0].Name, types[1].Name})
+	types[0].Example[0] = 'x'
+	assert.Equal(t, byte('{'), registry[0].Example[0], "All returns copies")
+
 	previous := registry
 	t.Cleanup(func() { registry = previous })
 	registry = []Type{{Name: "b"}, {Name: "a"}}
-	types := All()
-	assert.Equal(t, []Type{{Name: "a"}, {Name: "b"}}, types)
-	types[0].Name = "changed"
-	assert.Equal(t, "b", registry[0].Name, "All returns a copy")
+	assert.Equal(t, []Type{{Name: "a"}, {Name: "b"}}, All())
+}
+
+func TestShippedTypes(t *testing.T) {
+	for _, tc := range []struct {
+		tenantType Type
+		member     string
+		accepted   []string
+		refused    []string
+	}{
+		{
+			tenantType: DefaultInstructions(),
+			member:     "defaultInstructions",
+			accepted:   []string{`{"messages":[{"content":"a"},{"content":"b"}]}`},
+			refused: []string{
+				`{}`,
+				`{"messages":[]}`,
+				`{"messages":[{"content":""}]}`,
+				`{"messages":[{}]}`,
+				`{"messages":[{"content":"a","providerOptions":{}}]}`,
+				`{"messages":[{"content":"a","role":"system"}]}`,
+				`{"messages":[{"content":"a"}],"providerOptions":{}}`,
+				`{"messages":"a"}`,
+			},
+		},
+		{
+			tenantType: DefaultSettings(),
+			member:     "defaultSettings",
+			accepted: []string{
+				`{"temperature":0,"topP":1,"topK":40,"maxOutputTokens":1,"stopSequences":[],"seed":-1,"presencePenalty":-0.5,"frequencyPenalty":0.5}`,
+				`{"stopSequences":["a","b"]}`,
+				`{"maxOutputTokens":1.0,"topK":4e1}`,
+			},
+			refused: []string{
+				`{}`,
+				`{"headers":{"x":"y"}}`,
+				`{"providerOptions":{"anthropic":{}}}`,
+				`{"tools":[]}`,
+				`{"toolChoice":{"type":"auto"}}`,
+				`{"responseFormat":{"type":"json"}}`,
+				`{"reasoning":"high"}`,
+				`{"temperature":"0.2"}`,
+				`{"maxOutputTokens":0}`,
+				`{"topK":1.5}`,
+				`{"seed":9007199254740992}`,
+				`{"maxOutputTokens":9007199254740992}`,
+				`{"stopSequences":[1]}`,
+			},
+		},
+	} {
+		t.Run(tc.tenantType.Name, func(t *testing.T) {
+			assert.Equal(t, tc.member, tc.tenantType.Member())
+			assert.False(t, tc.tenantType.EnabledByDefault)
+			assert.NotEmpty(t, tc.tenantType.Description)
+			require.NotNil(t, tc.tenantType.ConfigSchema.Compiled(), "the schema compiles")
+			require.NoError(t, tc.tenantType.ConfigSchema.Validate(tc.tenantType.Example))
+			for _, configuration := range tc.accepted {
+				assert.NoError(t, tc.tenantType.ConfigSchema.Validate(json.RawMessage(configuration)), configuration)
+			}
+			for _, configuration := range tc.refused {
+				assert.Error(t, tc.tenantType.ConfigSchema.Validate(json.RawMessage(configuration)), configuration)
+			}
+		})
+	}
+}
+
+func TestNewType_InvalidSchema(t *testing.T) {
+	tenantType := newType("broken", "A broken type.", `{"type":`, json.RawMessage(`{}`))
+	assert.Nil(t, tenantType.ConfigSchema.JSON())
+	assert.JSONEq(t, `{}`, string(tenantType.Example), "the example stays, so startup refuses the type")
 }
 
 func TestProblems(t *testing.T) {
 	configSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"text":{"type":"string","maxLength":4}},"additionalProperties":false}`))
 	require.NoError(t, err)
 	instructions := Type{Name: "default-instructions", ConfigSchema: configSchema, Example: json.RawMessage(`{"text":"hi"}`)}
+	required, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`))
+	require.NoError(t, err)
 	with := func(change func(*Type)) []Type {
 		changed := instructions
 		change(&changed)
@@ -202,6 +279,7 @@ func TestProblems(t *testing.T) {
 		{name: "shared member", types: []Type{{Name: "a-1b", ConfigSchema: configSchema, Example: instructions.Example}, {Name: "a1b", ConfigSchema: configSchema, Example: instructions.Example}}, problem: `"a-1b" and "a1b" share the member "a1b"`},
 		{name: "schema without example", types: with(func(tt *Type) { tt.Example = nil }), problem: `"default-instructions" needs an example its schema accepts`},
 		{name: "example the schema refuses", types: with(func(tt *Type) { tt.Example = json.RawMessage(`{"text":"too long"}`) }), problem: `"default-instructions" needs an example its schema accepts`},
+		{name: "default-enabled type whose schema refuses the empty configuration", types: []Type{{Name: "required", EnabledByDefault: true, ConfigSchema: required, Example: json.RawMessage(`{"text":"hi"}`)}}, problem: `"required" is enabled by default but its schema refuses the empty configuration`},
 		{name: "example without schema", types: []Type{{Name: "marker", Example: json.RawMessage(`{}`)}}, problem: `"marker" has an example but no schema`},
 		{name: "schema not an object", types: withSchema(t, `{"type":"string"}`), problem: `"shaped": the schema must be an object`},
 		{name: "open object", types: withSchema(t, object(`"a":{"type":"object"}`)), problem: `"shaped": /properties/a must declare properties and set additionalProperties to false`},

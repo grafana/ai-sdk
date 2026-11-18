@@ -61,4 +61,10 @@ export const test = base.extend<AppTestFixture, WorkerFixture>({
   ],
 });
 
+// accountsTest is test for specs that use accounts. It records no traces, so
+// the service-account tokens never reach a Playwright report.
+export const accountsTest = test.extend({
+  trace: ['off', { scope: 'worker' }],
+});
+
 export { expect };

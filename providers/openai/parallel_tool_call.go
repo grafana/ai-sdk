@@ -14,12 +14,12 @@ import (
 const parallelToolName = "parallel"
 
 type parallelToolCallMetadata struct {
-	ItemID     string `json:"itemId"`
-	ToolCallID string `json:"toolCallId"`
-	ToolName   string `json:"toolName"`
-	Input      string `json:"input"`
-	Index      int    `json:"index"`
-	Count      int    `json:"count"`
+	ItemID     string  `json:"itemId"`
+	ToolCallID string  `json:"toolCallId"`
+	ToolName   string  `json:"toolName"`
+	Input      *string `json:"input,omitempty"`
+	Index      int     `json:"index"`
+	Count      int     `json:"count"`
 }
 
 func (b buildResult) isUndeclaredParallelTool(name string) bool {
@@ -54,12 +54,16 @@ func (b buildResult) expandParallelToolCall(call responses.ResponseFunctionToolC
 		if json.Compact(&compact, parameters) != nil {
 			return nil
 		}
+		childMetadata := parallelToolCallMetadata{
+			ItemID: call.ID, ToolCallID: call.CallID, ToolName: call.Name,
+			Index: index, Count: len(input.ToolUses),
+		}
+		if index == 0 {
+			childMetadata.Input = &call.Arguments
+		}
 		metadata, err := json.Marshal(struct {
 			ParallelToolCall parallelToolCallMetadata `json:"parallelToolCall"`
-		}{ParallelToolCall: parallelToolCallMetadata{
-			ItemID: call.ID, ToolCallID: call.CallID, ToolName: call.Name,
-			Input: call.Arguments, Index: index, Count: len(input.ToolUses),
-		}})
+		}{ParallelToolCall: childMetadata})
 		if err != nil {
 			return nil
 		}
@@ -88,10 +92,13 @@ func parallelMetadata(part provider.ContentPart, namespace string) *parallelTool
 	if json.Unmarshal(raw, &fields) != nil {
 		return nil
 	}
-	for _, key := range []string{"itemId", "toolCallId", "toolName", "input", "index", "count"} {
+	for _, key := range []string{"itemId", "toolCallId", "toolName", "index", "count"} {
 		if len(fields[key]) == 0 || isJSONNull(fields[key]) {
 			return nil
 		}
+	}
+	if input, present := fields["input"]; present && isJSONNull(input) {
+		return nil
 	}
 	var metadata parallelToolCallMetadata
 	if json.Unmarshal(raw, &metadata) != nil || metadata.Index < 0 || metadata.Count <= metadata.Index {
@@ -101,8 +108,11 @@ func parallelMetadata(part provider.ContentPart, namespace string) *parallelTool
 }
 
 func sameParallelCall(left, right parallelToolCallMetadata) bool {
-	left.Index, right.Index = 0, 0
-	return left == right
+	return left.ItemID == right.ItemID &&
+		left.ToolCallID == right.ToolCallID &&
+		left.ToolName == right.ToolName &&
+		(left.Input == nil || right.Input == nil || *left.Input == *right.Input) &&
+		left.Count == right.Count
 }
 
 func collectParallelResults(prompt []provider.Message, namespace string) map[string]*parallelToolResultGroup {
@@ -129,11 +139,14 @@ func collectParallelResults(prompt []provider.Message, namespace string) map[str
 				group.invalid = true
 				continue
 			}
+			if group.metadata.Input == nil && metadata.Input != nil {
+				group.metadata = *metadata
+			}
 			group.results[metadata.Index] = part
 		}
 	}
 	for id, group := range groups {
-		if group.invalid || len(group.results) != group.metadata.Count {
+		if group.invalid || len(group.results) != group.metadata.Count || group.metadata.Input == nil {
 			delete(groups, id)
 		}
 	}

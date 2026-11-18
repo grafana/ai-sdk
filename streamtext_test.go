@@ -869,10 +869,9 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 			}
 		}
 		require.NotNil(t, inputError)
-		require.NotNil(t, outputError)
+		assert.Nil(t, outputError, "the tool-input-error chunk alone reports an invalid tool call")
 		assert.Nil(t, inputError.Dynamic)
-		assert.Nil(t, outputError.Dynamic)
-		assert.Nil(t, outputError.ProviderMetadata)
+		assert.Equal(t, steps[0].ToolResults[0].ModelOutput.Text, inputError.ErrorText)
 	})
 
 	t.Run("optional empty string is valid without minLength", func(t *testing.T) {
@@ -3858,12 +3857,13 @@ func TestStreamTextUnavailableToolRejection(t *testing.T) {
 	assert.Equal(t, "unknown_tool", ie.ToolName)
 	assert.Equal(t, json.RawMessage(`{"q":"test"}`), ie.Input)
 	assert.Equal(t, boolPtr(true), ie.Dynamic)
-	assert.Equal(t, "An error occurred.", ie.ErrorText)
+	const modelErrorText = "AI_NoSuchToolError: Model tried to call unavailable tool 'unknown_tool'. Available tools: known_tool."
+	assert.Equal(t, modelErrorText, ie.ErrorText)
 
 	oe := outputErrors[0]
 	assert.Equal(t, "c1", oe.ToolCallID)
 	assert.Equal(t, boolPtr(true), oe.Dynamic)
-	assert.Equal(t, "An error occurred.", oe.ErrorText)
+	assert.Equal(t, modelErrorText, oe.ErrorText)
 
 	steps := result.Steps()
 	require.GreaterOrEqual(t, len(steps), 2, "should continue to next step after unavailable tool error")

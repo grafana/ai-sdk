@@ -23,6 +23,9 @@ func buildAnthropicProviderMetadata(fields map[string]json.RawMessage, usageRaw,
 		"container":         mapContainerMetadata(rawJSONValue(fields["container"])),
 		"contextManagement": mapContextManagementMetadata(rawJSONValue(fields["context_management"])),
 	}
+	if serviceTier, ok := resolveServiceTier(usageRaw, fields["service_tier"]); ok {
+		metadata["serviceTier"] = serviceTier
+	}
 	if stopDetails := mapStopDetailsMetadata(rawJSONValue(fields["stop_details"])); stopDetails != nil {
 		metadata["stopDetails"] = stopDetails
 	}
@@ -155,6 +158,22 @@ func usageIterationsField(usageRaw json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return usage["iterations"]
+}
+
+// resolveServiceTier returns the applied tier from usage.service_tier, falling
+// back to the message's top-level service_tier as compatible providers send it.
+func resolveServiceTier(usageRaw, messageTier json.RawMessage) (string, bool) {
+	var usage struct {
+		ServiceTier *string `json:"service_tier"`
+	}
+	if json.Unmarshal(usageRaw, &usage) == nil && usage.ServiceTier != nil {
+		return *usage.ServiceTier, true
+	}
+	var tier *string
+	if json.Unmarshal(messageTier, &tier) == nil && tier != nil {
+		return *tier, true
+	}
+	return "", false
 }
 
 func messageMetadataFields(raw string) map[string]json.RawMessage {

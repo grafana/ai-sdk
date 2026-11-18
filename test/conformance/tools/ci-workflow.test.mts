@@ -148,7 +148,12 @@ describe("candidate-source workflow gates", () => {
     }
     assert.match(commands("plugin-build"), /git status --porcelain --untracked-files=all -- ai-gateway\)"/);
     const e2e = jobSteps.find((step) => step.run === "mise run test-ai-gateway-e2e")!;
-    assert.match(e2e.env?.GRAFANA_VERSION ?? "", /^nightly@sha256:[0-9a-f]{64}$/);
+    assert.equal(e2e.env?.GRAFANA_VERSION, undefined, "end-to-end tests use the Grafana image pinned in docker-compose.yaml");
+    assert.match(
+      readFileSync(resolve(root, "ai-gateway/docker-compose.yaml"), "utf8"),
+      /grafana_version: \$\{GRAFANA_VERSION:-nightly@sha256:[0-9a-f]{64}\}/,
+      "local development and end-to-end tests run a nightly pinned by digest",
+    );
     assert.ok((e2e["timeout-minutes"] ?? 0) > 0, "end-to-end tests must time out");
     assert.doesNotMatch(readFileSync(resolve(root, "ai-gateway/scripts/e2e.sh"), "utf8"), /--with-deps/, "end-to-end tests use the runner's system packages");
     const build = jobSteps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;

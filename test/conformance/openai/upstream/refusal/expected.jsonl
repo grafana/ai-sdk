@@ -1,0 +1,7 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_0c23285ace96282b006aebf3a6877887d095e452766dc4c948","providerMetadata":{"openai":{"itemId":"msg_0c23285ace96282b006aebf3a6877887d095e452766dc4c948"}}}
+{"type":"text-delta","id":"msg_0c23285ace96282b006aebf3a6877887d095e452766dc4c948","delta":"I'm very sorry, but I can't assist with that."}
+{"type":"text-end","id":"msg_0c23285ace96282b006aebf3a6877887d095e452766dc4c948","providerMetadata":{"openai":{"itemId":"msg_0c23285ace96282b006aebf3a6877887d095e452766dc4c948"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"content-filter"}

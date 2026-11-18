@@ -52,3 +52,25 @@ func TestNormalizeConcurrentToolOutputs(t *testing.T) {
 	normalizeConcurrentToolOutputs(in)
 	assert.Equal(t, "b", in[0]["toolCallId"], "the caller's slice is not reordered")
 }
+
+func TestNormalizeNoSuchToolErrorText(t *testing.T) {
+	const prefix = "AI_NoSuchToolError: Model tried to call unavailable tool 'x'. "
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"sorts the available tools", prefix + "Available tools: weather, calculator.", prefix + "Available tools: calculator, weather."},
+		{"keeps a single tool", prefix + "Available tools: weather.", prefix + "Available tools: weather."},
+		{"keeps the no-tools text", prefix + "No tools are available.", prefix + "No tools are available."},
+		{"keeps other errors", "Available tools: b, a.", "Available tools: b, a."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := []map[string]any{{"type": "tool-input-error", "errorText": tt.text}}
+			got := normalizeNoSuchToolErrorText(in)
+			assert.Equal(t, tt.want, got[0]["errorText"])
+			assert.Equal(t, tt.text, in[0]["errorText"], "the caller's chunk is not modified")
+		})
+	}
+}

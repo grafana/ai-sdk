@@ -5,7 +5,6 @@
 {"type":"text-end","id":"0"}
 {"type":"tool-input-start","toolCallId":"tool-use-id","toolName":"updateIssueList","dynamic":false}
 {"type":"tool-input-delta","toolCallId":"tool-use-id","inputTextDelta":""}
-{"type":"tool-input-error","toolCallId":"tool-use-id","toolName":"updateIssueList","input":{},"dynamic":true,"errorText":"An error occurred."}
-{"type":"tool-output-error","toolCallId":"tool-use-id","errorText":"An error occurred.","dynamic":true}
+{"type":"tool-input-error","toolCallId":"tool-use-id","toolName":"updateIssueList","input":{},"dynamic":true,"errorText":"AI_NoSuchToolError: Model tried to call unavailable tool 'updateIssueList'. Available tools: list_issues."}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"tool-calls"}

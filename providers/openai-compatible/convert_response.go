@@ -27,6 +27,13 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 			Text: choice.Message.Content,
 		})
 	}
+	hasRefusal := choice.Message.Refusal != ""
+	if hasRefusal {
+		content = append(content, provider.GenerateContentPart{
+			Type: provider.ContentText,
+			Text: string(choice.Message.Refusal),
+		})
+	}
 	if choice.Message.ReasoningContent != "" {
 		content = append(content, provider.GenerateContentPart{
 			Type: provider.ContentReasoning,
@@ -73,7 +80,7 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 	return &provider.GenerateResult{
 		Content:          content,
 		Warnings:         warnings,
-		FinishReason:     mapFinishReason(choice.FinishReason),
+		FinishReason:     mapFinishReason(choice.FinishReason, hasRefusal),
 		Usage:            convertUsage(parsed.Usage),
 		ProviderMetadata: metadata,
 		Response: &provider.GenerateResponse{
@@ -107,12 +114,17 @@ func responseMetadata(id, modelID, providerName string, created *int64) provider
 	return md
 }
 
-func mapFinishReason(reason *string) provider.FinishReason {
+// mapFinishReason maps a Chat Completions finish reason. OpenAI reports a
+// refusal as a completed response, so a refusal turns stop into content-filter.
+func mapFinishReason(reason *string, hasRefusal bool) provider.FinishReason {
 	if reason == nil {
 		return provider.FinishReason{Unified: provider.FinishReasonOther}
 	}
 	switch *reason {
 	case "stop":
+		if hasRefusal {
+			return provider.FinishReason{Unified: provider.FinishReasonContentFilter, Raw: *reason}
+		}
 		return provider.FinishReason{Unified: provider.FinishReasonStop, Raw: *reason}
 	case "length":
 		return provider.FinishReason{Unified: provider.FinishReasonLength, Raw: *reason}

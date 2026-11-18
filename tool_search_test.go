@@ -412,7 +412,7 @@ func TestStreamText_DeferredToolDiscovery(t *testing.T) {
 				}
 			}
 		}
-		assert.Equal(t, 2, errors)
+		assert.Equal(t, 1, errors)
 	})
 	for _, tc := range []struct {
 		name string
@@ -486,7 +486,7 @@ func TestToolSearch_StreamingInputClassification(t *testing.T) {
 				}
 			}
 			require.NoError(t, result.Err())
-			assert.Equal(t, 3, seen)
+			assert.Equal(t, 2, seen)
 			assert.Zero(t, callbacks)
 		})
 	}

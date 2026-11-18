@@ -130,6 +130,9 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.carryMessageStartMetadata(msg.RawJSON()); err != nil {
 			return err
 		}
+		if err := a.resetServiceTier(msg.Usage.RawJSON(), msg.RawJSON()); err != nil {
+			return err
+		}
 		if msg.StopReason != "" {
 			a.finishReason = a.mapStopReason(msg.StopReason)
 		}
@@ -591,6 +594,23 @@ func (a *streamAdapter) carryMessageStartMetadata(raw string) error {
 		}
 		a.metadataFields["input_transformations"] = transformations
 	}
+	return nil
+}
+
+// resetServiceTier starts each message with the tier its message_start
+// reports. A later non-null usage.service_tier in message_delta overrides it
+// through the merged usage.
+func (a *streamAdapter) resetServiceTier(usageRaw, messageRaw string) error {
+	tier, ok := resolveServiceTier(json.RawMessage(usageRaw), messageMetadataFields(messageRaw)["service_tier"])
+	if !ok {
+		delete(a.metadataFields, "service_tier")
+		return nil
+	}
+	encoded, err := json.Marshal(tier)
+	if err != nil {
+		return fmt.Errorf("marshaling service tier: %w", err)
+	}
+	a.metadataFields["service_tier"] = encoded
 	return nil
 }
 

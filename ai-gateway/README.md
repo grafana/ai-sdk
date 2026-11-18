@@ -326,6 +326,10 @@ export ANTHROPIC_API_KEY=...        # optional; needed only to call models
 pnpm --filter ./ai-gateway server
 ```
 
+Grafana runs the nightly image that the end-to-end tests use, pinned by digest
+in `docker-compose.yaml`, because the plugin needs features that only recent
+nightlies have. Set `GRAFANA_VERSION` to another tag to try it.
+
 Any Anthropic API key works. Create one with your own Anthropic account or
 organization; this repository does not provide one. The automated tests use a
 deterministic stand-in for Anthropic and need no key.

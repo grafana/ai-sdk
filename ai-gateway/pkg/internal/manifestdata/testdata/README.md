@@ -3,7 +3,7 @@
 `generated-middleware-schemas.json` is the `Middleware` kind schema that
 grafana-app-sdk v0.60.16 generates for a hand-written `modelAccess` member.
 `TestMemberProblems` uses it to prove the member consistency check against real
-generator output while the tenant type registry is empty.
+generator output, independently of the shipped tenant types.
 
 To regenerate it, for example after an app-sdk upgrade, copy `kinds/`,
 `.config/app-sdk/`, `go.mod` and `go.sum` to a scratch directory, replace

@@ -52,7 +52,7 @@ jobs:
       id-token: write
       attestations: write
       pull-requests: read
-    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.1.1
     with:
       branch: ${{ inputs.commit }}
       environment: ops

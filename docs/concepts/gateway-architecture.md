@@ -53,6 +53,7 @@ flowchart LR
       compose[Request routing: models, order, only]
       logical[Logical model observation]
       extensions[Extension pipeline]
+      tenantcfg[Namespace tenant configuration cache]
       routing[Configured or request-composed ordered candidates]
     end
     subgraph outbound[Outbound provider adapters]
@@ -62,6 +63,7 @@ flowchart LR
     end
   end
   apis[Upstream model APIs]
+  grafanaapi[Grafana API: Middleware resources]
   go --> host
   ts --> host
   chatclient --> host
@@ -82,6 +84,8 @@ flowchart LR
   logical --> extensions
   extensions --> routing
   extensions --> byok
+  extensions -->|tenant extensions| tenantcfg
+  tenantcfg -->|read as the plugin| grafanaapi
   byok --> anthropic
   byok --> openai
   routing --> anthropic --> apis
@@ -115,8 +119,12 @@ setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
 one typed member per public tenant type in the `tenanttype` registry, and its
 validator checks each member against the tenant extensions the distribution
-implements. Stored `Middleware` resources do not yet change which extensions
-run.
+implements. The registry holds `default-instructions` and `default-settings`,
+which the shipped Gateway implements. Stored `Middleware` resources decide, per namespace, which tenant
+extensions run and with which configuration: the Gateway reads them through
+the host's API access configuration, as the plugin, and caches each namespace
+(see step 4 below). Without API access, tenant extensions keep their defaults
+and the validator refuses every `Middleware` create and update.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery
@@ -137,7 +145,8 @@ the app provider that receives the host's API access configuration, the
 lifecycle events and the final flush, so another Go module can build a
 Gateway distribution without repeating or missing any of them. A distribution
 passes its [extensions](../guides/gateway-extensions.md) in `Options`; the
-shipped backend passes none.
+shipped backend passes `DefaultExtensions()`, the `default-instructions` and
+`default-settings` tenant extensions.
 
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
 supported request subset into the same execution runtime. Its call-scoped
@@ -252,7 +261,15 @@ sequenceDiagram
    stack-catalog chain whose metrics use the fixed model `catalog` and whose
    logs and exports name the catalog. Inside the observers and outside the
    selected model, the [extension pipeline](../guides/gateway-extensions.md)
-   runs the distribution's extensions that apply to the call's key ownership:
+   runs the distribution's extensions that apply to the call's key ownership.
+   Every extension, operator or tenant, is built once at startup. The shipped
+   tenant extensions apply to every call, so the shipped Gateway reads every
+   namespace it serves. When a tenant extension applies, the pipeline first resolves the call namespace's
+   configuration from a cache that reads the namespace's `Middleware`
+   resources as the plugin, never as the caller, on its own context and
+   timeout. It decodes the namespace's configuration once per change and
+   passes it to each call, refreshes in the background after a one-minute
+   TTL, and never falls back to a default when a read fails. The phases are
    admit, request transforms with a host policy check after each, request
    inspection, then response inspection on each output part and one
    asynchronous observation. Every phase sees the caller, including its
