@@ -45,7 +45,7 @@ Native output SHALL treat the original schema as unrepresentable if it has any o
 
 - **WHEN** direct Anthropic or Vertex receives an unrepresentable schema in `auto` mode on a native-capable model, for generation or streaming
 - **THEN** `OutputConfig.Format` SHALL be absent and the `json` tool SHALL use the original schema
-- **AND** the tool choice SHALL be `any`, or `auto` on a model that rejects forced tool use, with parallel tool use disabled
+- **AND** the tool choice SHALL be `any`, or `auto` if the model rejects forced tool use or the resolved thinking type is `enabled`, with parallel tool use disabled
 - **AND** input from a `json` tool call SHALL be returned as text, not exposed as a tool call
 
 ### Requirement: Tool-based JSON fallback
@@ -65,7 +65,7 @@ When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and
 
 ### Requirement: Tool choice override in fallback mode
 
-JSON-tool fallback SHALL override caller choice to required (OfAny) with `DisableParallelToolUse:true`. Models rejecting forced tools SHALL instead use auto (OfAuto), parallel-disabled, with one unsupported `toolChoice` warning for required, as in `@ai-sdk/anthropic` 4.0.67. Caller none SHALL send only json; other caller choices SHALL neither filter tools nor add warnings.
+JSON-tool fallback SHALL use `any` with parallel tool use disabled. If the model rejects forced tool use or the resolved thinking type is `enabled`, the request SHALL instead use `auto` with parallel tool use disabled and one unsupported `toolChoice` warning for required choice. Adaptive thinking alone SHALL NOT cause a downgrade. Caller `none` SHALL send only `json`; other caller choices SHALL NOT filter tools or add warnings.
 
 #### Scenario: Tool choice forced to required
 
@@ -82,6 +82,11 @@ JSON-tool fallback SHALL override caller choice to required (OfAny) with `Disabl
 - **WHEN** the tool-based fallback is active for `claude-sonnet-5-5`
 - **THEN** `ToolChoice` SHALL be `OfAuto` with `DisableParallelToolUse: true`
 - **AND** one unsupported warning with feature `toolChoice` SHALL be emitted
+
+#### Scenario: Budget-based thinking with the JSON response tool
+- **WHEN** direct Anthropic or Vertex selects JSON-tool fallback with resolved `thinking.type: enabled`
+- **THEN** the request SHALL include the `json` tool and `tool_choice: {type: "auto", disable_parallel_tool_use: true}`
+- **AND** one unsupported `toolChoice` warning for required choice SHALL be emitted
 
 #### Scenario: Caller forced choice with the fallback on Sonnet 5.5
 - **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` and the caller set `ToolChoice` to `tool` for one of several tools
@@ -147,17 +152,32 @@ When the json response tool was injected (tool-based fallback), the `streamAdapt
 
 ### Requirement: Finish reason remapping for JSON response tool
 
-When the json response tool was injected and the model's stop reason is `tool_use`, the stream adapter SHALL remap the finish reason to `stop` so the orchestration layer treats it as a completed text response.
+When the model calls the synthetic `json` tool and stops with `tool_use`, unary and streaming conversion SHALL remap the unified finish reason to `stop` and retain `tool_use` as the raw reason. A call to another tool without a `json` call SHALL NOT cause this remapping.
 
 #### Scenario: Stop reason remapped from tool_use to stop
 
-- **WHEN** the json response tool is active and the model finishes with `stop_reason: tool_use`
-- **THEN** the stream adapter SHALL emit `PartFinish` with `FinishReason: "stop"`
+- **WHEN** the model calls the synthetic `json` tool and finishes with `stop_reason: tool_use`
+- **THEN** generate and stream SHALL report a unified finish reason of `stop`
 
 #### Scenario: Stop reason preserved when not tool_use
 
 - **WHEN** the json response tool is active and the model finishes with `stop_reason: end_turn`
 - **THEN** the stream adapter SHALL emit `PartFinish` with the original finish reason
+
+### Requirement: Final text without a JSON response tool call
+
+When the synthetic `json` tool is present but never called, direct Anthropic and Vertex SHALL return plain text blocks after the last tool call or result, except when the raw stop reason is `tool_use` or `pause_turn`. Thinking blocks SHALL NOT discard pending text. Calling the synthetic tool SHALL suppress all plain text; its input remains the text answer. Eligible plain text SHALL retain its citations and their provider metadata.
+
+#### Scenario: Text answer follows a tool result
+- **WHEN** the model emits a text preamble, a tool call or result, and final cited text, then stops with `end_turn` without calling `json`
+- **THEN** generate SHALL return only the final text as text content, with its citations
+- **AND** stream SHALL emit that text at `message_stop` as start, delta, and end parts, with citations on the end part
+- **AND** non-text content and retrieval sources SHALL continue through their own conversion paths
+
+#### Scenario: Text does not carry into a continuation
+- **WHEN** a message in a stream stops with `tool_use` or `pause_turn`
+- **THEN** the stream SHALL discard that message's pending text and SHALL NOT emit it in a later message
+- **AND** unary conversion SHALL omit pending text for either stop reason
 
 ### Requirement: JSON response tool state passing
 

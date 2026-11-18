@@ -149,9 +149,9 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	// Override any user-set tool choice to required (OfAny). The json tool must
 	// be callable, and DisableParallelToolUse prevents multi-tool turns that
 	// would complicate response remapping. This matches upstream behavior.
-	// Models that reject forced tool use get auto instead, as upstream
-	// prepareTools does for a required tool choice.
-	if caps.rejectsForcedToolUse {
+	// Models that reject forced tool use and budget-based thinking requests
+	// get auto instead, as upstream prepareTools does for required choice.
+	if caps.rejectsForcedToolUse || p.Thinking.OfEnabled != nil {
 		warnings = append(warnings, forcedToolChoiceWarning(provider.ToolChoice{Type: provider.ToolChoiceRequired}))
 		p.ToolChoice = anthropic.BetaToolChoiceUnionParam{
 			OfAuto: &anthropic.BetaToolChoiceAutoParam{
@@ -397,26 +397,6 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 
 	warnings = append(warnings, v.warnings...)
 
-	// forcedToolChoice is a required or named tool choice for a model that
-	// rejects forced tool use. It is resolved after the response format,
-	// because the JSON response tool replaces the caller's tool choice.
-	var forcedToolChoice *provider.ToolChoice
-	if opts.ToolChoice != nil {
-		if opts.ToolChoice.Type == provider.ToolChoiceNone {
-			// Upstream drops tools for none; sending tool_choice none keeps
-			// tool definitions in the prompt cache prefix.
-			if len(p.Tools) > 0 {
-				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &anthropic.BetaToolChoiceNoneParam{}}
-			}
-		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
-			forcedToolChoice = opts.ToolChoice
-			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
-		} else if opts.ToolChoice.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
-			p.ToolChoice = convertToolChoice(*opts.ToolChoice, mapping)
-		}
-	}
-	applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
-
 	if opts.Temperature != nil {
 		temperature := *opts.Temperature
 		if temperature > 1 {
@@ -466,32 +446,6 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			Feature: "seed",
 			Details: "Anthropic does not support seed",
 		})
-	}
-
-	var br buildResult
-	if opts.ResponseFormat != nil {
-		responseFormatCaps := caps
-		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
-		br = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
-		warnings = append(warnings, br.warnings...)
-	}
-	// Mirrors upstream prepareTools (@ai-sdk/anthropic 4.0.67): send auto,
-	// and for a named tool send only that tool.
-	if forcedToolChoice != nil && !br.usesJsonResponseTool {
-		warnings = append(warnings, forcedToolChoiceWarning(*forcedToolChoice))
-		if forcedToolChoice.Type == provider.ToolChoiceTool {
-			p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(forcedToolChoice.ToolName))
-		}
-	}
-	// The JSON response tool forces tool use, so none sends only that tool.
-	// applyResponseFormat appends it last; a caller tool may share its name.
-	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
-	if noneWithJSONTool {
-		p.Tools = p.Tools[len(p.Tools)-1:]
-	}
-	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
-	if len(p.Tools) > 0 && !noneWithJSONTool {
-		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
 	}
 
 	// Map top-level Reasoning to Anthropic thinking/effort. Provider options
@@ -562,6 +516,48 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			Details: fmt.Sprintf("effort '%s' is not supported with 'between_tools' thinking. The effort has been lowered to 'high'.", anthropicOpts.Effort),
 		})
 		anthropicOpts.Effort = "high"
+	}
+
+	applyThinkingOption(&p, anthropicOpts.Thinking)
+	var br buildResult
+	if opts.ResponseFormat != nil {
+		responseFormatCaps := caps
+		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
+		br = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
+		warnings = append(warnings, br.warnings...)
+	}
+	// The JSON response tool replaces caller tool choice. For none, keep only
+	// the synthetic tool, which was appended last (a caller tool may share its name).
+	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
+	if noneWithJSONTool {
+		p.Tools = p.Tools[len(p.Tools)-1:]
+	}
+	if !br.usesJsonResponseTool {
+		if tc := opts.ToolChoice; tc != nil {
+			switch {
+			case tc.Type == provider.ToolChoiceNone:
+				// Keeping tool definitions on none preserves the prompt cache prefix.
+				if len(p.Tools) > 0 {
+					p.ToolChoice = convertToolChoice(*tc, mapping)
+				}
+			case (caps.rejectsForcedToolUse || p.Thinking.OfEnabled != nil) &&
+				(tc.Type == provider.ToolChoiceRequired || tc.Type == provider.ToolChoiceTool):
+				warnings = append(warnings, forcedToolChoiceWarning(*tc))
+				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
+				if tc.Type == provider.ToolChoiceTool {
+					p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(tc.ToolName))
+				}
+			default:
+				if tc.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
+					p.ToolChoice = convertToolChoice(*tc, mapping)
+				}
+			}
+		}
+		applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
+	}
+	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
+	if len(p.Tools) > 0 && !noneWithJSONTool {
+		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
 	}
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
@@ -2918,12 +2914,11 @@ func extractWebFetchArgs(args map[string]json.RawMessage) webFetchArgs {
 	return a
 }
 
-// forcedToolChoiceWarning reports a required or named tool choice sent as auto
-// to a model that rejects forced tool use.
+// forcedToolChoiceWarning reports a required or named tool choice sent as auto.
 func forcedToolChoiceWarning(tc provider.ToolChoice) provider.Warning {
-	details := "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+	details := "toolChoice 'required' is not supported with this model or thinking configuration. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
 	if tc.Type == provider.ToolChoiceTool {
-		details = fmt.Sprintf("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
+		details = fmt.Sprintf("toolChoice 'tool' is not supported with this model or thinking configuration. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
 	}
 	return provider.Warning{Type: provider.WarnUnsupported, Feature: "toolChoice", Details: details}
 }
@@ -3089,17 +3084,13 @@ func hasCodeExecutionTool(tools []provider.Tool) bool {
 	return false
 }
 
-func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, tools []provider.Tool, warnings *[]provider.Warning) {
-	if !ok {
-		return
-	}
-
-	if ao.Thinking != nil {
-		switch ao.Thinking.Type {
+func applyThinkingOption(p *anthropic.BetaMessageNewParams, thinking *ThinkingConfig) {
+	if thinking != nil {
+		switch thinking.Type {
 		case ThinkingEnabled:
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
 				OfEnabled: &anthropic.BetaThinkingConfigEnabledParam{
-					BudgetTokens: int64(ao.Thinking.BudgetTokens),
+					BudgetTokens: int64(thinking.BudgetTokens),
 				},
 			}
 		case ThinkingDisabled:
@@ -3112,13 +3103,19 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 			}
 		case ThinkingAdaptive:
 			adaptive := &anthropic.BetaThinkingConfigAdaptiveParam{}
-			if ao.Thinking.Display != "" {
-				adaptive.Display = anthropic.BetaThinkingConfigAdaptiveDisplay(ao.Thinking.Display)
+			if thinking.Display != "" {
+				adaptive.Display = anthropic.BetaThinkingConfigAdaptiveDisplay(thinking.Display)
 			}
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
 				OfAdaptive: adaptive,
 			}
 		}
+	}
+}
+
+func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, tools []provider.Tool, warnings *[]provider.Warning) {
+	if !ok {
+		return
 	}
 
 	if ao.Effort != "" {

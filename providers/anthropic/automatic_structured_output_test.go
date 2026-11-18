@@ -24,6 +24,8 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 		name, schema, output, toolChoice string
 		mode                             StructuredOutputMode
 		modelID                          string
+		thinking                         *ThinkingConfig
+		textFallback                     bool
 	}{
 		{
 			name:   "closed",
@@ -55,6 +57,16 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 		{
 			name: "explicit_output_format", schema: openObject, output: `{}`, mode: StructuredOutputFormat,
 		},
+		{
+			name: "manual_thinking_text_fallback", modelID: "claude-3-haiku", textFallback: true,
+			schema: `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`,
+			output: `{"answer":"42"}`, toolChoice: "auto",
+			thinking: &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 1024},
+		},
+		{
+			name: "adaptive_thinking_keeps_any", modelID: "claude-sonnet-4-6", schema: openObject,
+			output: `{"answer":42}`, toolChoice: "any", thinking: &ThinkingConfig{Type: ThinkingAdaptive},
+		},
 	}
 
 	original := vertexGoogleAuth
@@ -83,7 +95,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
 						return nil, err
 					}
-					return structuredOutputResponse(r, modelID, tc.output, tc.toolChoice != "", route.stream), nil
+					return structuredOutputResponse(r, modelID, tc.output, tc.toolChoice != "" && !tc.textFallback, route.stream), nil
 				})}
 				requestOptions := WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0))
 				var m provider.LanguageModel
@@ -99,16 +111,19 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					MaxOutputTokens: new(64),
 					Prompt:          []provider.Message{provider.UserText("Return JSON.")},
 					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(tc.schema)},
-					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: tc.mode}),
+					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: tc.mode, Thinking: tc.thinking}),
 				}
 				var output string
 				var finish provider.UnifiedFinishReason
+				var warnings []provider.Warning
 				if route.stream {
 					result, err := m.DoStream(t.Context(), opts)
 					require.NoError(t, err)
 					var text strings.Builder
 					for part := range result.Stream {
 						switch part.Type {
+						case provider.PartStreamStart:
+							warnings = part.Warnings
 						case provider.PartTextDelta:
 							text.WriteString(part.Delta)
 						case provider.PartFinish:
@@ -122,6 +137,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					result, err := m.DoGenerate(t.Context(), opts)
 					require.NoError(t, err)
 					finish = result.FinishReason.Unified
+					warnings = result.Warnings
 					assert.Len(t, result.Content, 1)
 					for _, part := range result.Content {
 						assert.Equal(t, provider.ContentText, part.Type)
@@ -148,6 +164,13 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					require.Len(t, tools, 1)
 					assert.Equal(t, "json", tools[0].Name)
 					assert.JSONEq(t, tc.schema, string(tools[0].Schema))
+				}
+				if tc.textFallback {
+					assert.JSONEq(t, `{"type":"enabled","budget_tokens":1024}`, string(wire["thinking"]))
+					require.Len(t, warnings, 1)
+					assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+					assert.Equal(t, "toolChoice", warnings[0].Feature)
+					assert.Contains(t, warnings[0].Details, "'required' is not supported with this model or thinking configuration")
 				}
 				assert.Equal(t, provider.FinishReasonStop, finish)
 				assert.JSONEq(t, tc.output, output)
