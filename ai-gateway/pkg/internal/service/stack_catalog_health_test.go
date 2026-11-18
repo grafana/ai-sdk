@@ -113,7 +113,7 @@ func TestCatalogHealthChecker_ListingOutcomes(t *testing.T) {
 		{name: "transport", replies: []*http.Response{nil}, status: HealthUnreachable},
 		{name: "not a listing", replies: []*http.Response{listingResponse(200, `{"data":null}`)}, status: HealthRefused},
 		{name: "malformed ID", replies: []*http.Response{listingResponse(200, `{"data":[{}]}`)}, status: HealthRefused},
-		{name: "oversized listing", replies: []*http.Response{listingResponse(200, strings.Repeat(" ", healthResponseBytes+1))}, status: HealthNotChecked},
+		{name: "oversized listing", replies: []*http.Response{listingResponse(200, strings.Repeat(" ", listingResponseBytes+1))}, status: HealthNotChecked},
 		{name: "compatible listing", replies: []*http.Response{listingResponse(200, `{"data":[{"id":"listed"}]}`)}, status: HealthOK, found: HealthOK, custom: true},
 		{name: "no compatible listing", replies: []*http.Response{listingResponse(501, "secret")}, status: HealthNotChecked, custom: true},
 		{name: "later page fails", replies: []*http.Response{listingResponse(200, `{"data":[{"id":"listed"}],"has_more":true,"last_id":"1"}`), listingResponse(401, "secret")}, status: HealthOK, found: HealthOK, anthropic: true},
@@ -205,7 +205,7 @@ func TestCatalogHealthChecker_Bounds(t *testing.T) {
 			start := time.Now()
 			got, err := checker.Check(t.Context(), "stack", stack)
 			require.NoError(t, err)
-			assert.Equal(t, 2*healthProviderTimeout, time.Since(start))
+			assert.Equal(t, 2*listingProviderTimeout, time.Since(start))
 			assert.EqualValues(t, healthMaxProviders, calls.Load())
 			assert.EqualValues(t, healthProviderWorkers, peak.Load())
 			assert.Equal(t, HealthUnreachable, got.Providers["claude"])

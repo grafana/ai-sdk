@@ -2,18 +2,14 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"maps"
 	"net/http"
-	"net/url"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
-	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
 )
 
 const (
@@ -21,10 +17,6 @@ const (
 	healthMaxProviders    = 8
 	healthProviderWorkers = 4
 	healthRunTimeout      = 8 * time.Second
-	healthProviderTimeout = 3 * time.Second
-	healthResponseBytes   = 512 << 10
-	healthAnthropicPages  = 3
-	healthAnthropicLimit  = "100"
 )
 
 // ErrCatalogHealthBusy reports that a health check could not be admitted.
@@ -158,122 +150,15 @@ func (health providerHealth) model(id string) HealthStatus {
 	return HealthNotChecked
 }
 
-type listingPage struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
-	HasMore *bool  `json:"has_more"`
-	LastID  string `json:"last_id"`
-}
-
 func (c *CatalogHealthChecker) list(ctx context.Context, p config.ResolvedProvider, targets map[string]struct{}) providerHealth {
-	ctx, cancel := context.WithTimeout(ctx, healthProviderTimeout)
-	defer cancel()
-
-	base, path, pages := p.BaseURL, "models", 1
-	custom := base != ""
-	switch p.Type {
-	case "anthropic":
-		path, pages = "v1/models", healthAnthropicPages
-		if !custom {
-			base = nativemodel.AnthropicBaseURL
-		}
-	case "openai":
-		if !custom {
-			base = nativemodel.OpenAIBaseURL
-		}
-	case "openai-compatible":
-		if !custom {
-			return providerHealth{status: HealthRefused}
-		}
-	default:
-		return providerHealth{status: HealthRefused}
-	}
-	endpoint, err := url.JoinPath(base, path)
-	if err != nil {
-		return providerHealth{status: HealthRefused}
-	}
-
-	health := providerHealth{found: make(map[string]struct{})}
-	seen := make(map[string]struct{}, pages)
-	var cursor string
-	for range pages {
-		page, status := c.listPage(ctx, p, endpoint, cursor, custom)
-		if status != HealthOK {
-			if health.status == "" {
-				health.status = status
-			}
-			return health
-		}
-		health.status = HealthOK
+	found := make(map[string]struct{})
+	status, complete := c.walkListing(ctx, p, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			if _, wanted := targets[entry.ID]; wanted {
-				health.found[entry.ID] = struct{}{}
+				found[entry.ID] = struct{}{}
 			}
 		}
-		if page.HasMore == nil || !*page.HasMore {
-			health.complete = !custom
-			return health
-		}
-		if len(health.found) == len(targets) || page.LastID == "" {
-			return health
-		}
-		if _, repeated := seen[page.LastID]; repeated {
-			return health
-		}
-		cursor = page.LastID
-		seen[cursor] = struct{}{}
-	}
-	return health
-}
-
-func (c *CatalogHealthChecker) listPage(ctx context.Context, p config.ResolvedProvider, endpoint, cursor string, custom bool) (listingPage, HealthStatus) {
-	var page listingPage
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return page, HealthRefused
-	}
-	req.Header.Set("Accept", "application/json")
-	if p.Type == "anthropic" {
-		req.Header.Set("x-api-key", p.APIKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
-		query := url.Values{"limit": {healthAnthropicLimit}}
-		if cursor != "" {
-			query.Set("after_id", cursor)
-		}
-		req.URL.RawQuery = query.Encode()
-	} else {
-		req.Header.Set("Authorization", "Bearer "+p.APIKey)
-	}
-	resp, err := c.transport.RoundTrip(req)
-	if err != nil {
-		return page, HealthUnreachable
-	}
-	defer func() { _ = resp.Body.Close() }()
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
-		return page, HealthInvalidKey
-	case custom && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented):
-		return page, HealthNotChecked
-	case resp.StatusCode >= http.StatusInternalServerError:
-		return page, HealthUnreachable
-	case resp.StatusCode != http.StatusOK:
-		return page, HealthRefused
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, healthResponseBytes+1))
-	if err != nil {
-		return page, HealthUnreachable
-	}
-	if len(body) > healthResponseBytes {
-		return page, HealthNotChecked
-	}
-	if json.Unmarshal(body, &page) != nil || page.Data == nil || (p.Type == "anthropic" && page.HasMore == nil) {
-		return page, HealthRefused
-	}
-	for _, entry := range page.Data {
-		if entry.ID == "" {
-			return page, HealthRefused
-		}
-	}
-	return page, HealthOK
+		return len(found) != len(targets)
+	})
+	return providerHealth{status: status, found: found, complete: complete && p.BaseURL == ""}
 }
