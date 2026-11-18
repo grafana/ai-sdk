@@ -106,18 +106,6 @@ For direct and Vertex generate and stream requests, the provider SHALL stably mo
 - **WHEN** a segment contains `[tool_use(a), mcp_tool_use(m)]` or `[text(x), tool_use(a), server_tool_use(s), web_search_tool_result(s)]`
 - **THEN** the client `tool_use(a)` SHALL move after the MCP or server blocks, which keep their relative order
 
-### Requirement: Client tool-use input from assistant history
-
-For a client `tool_use` block, the Anthropic provider SHALL parse a string-valued input once and send the parsed input only if it is a JSON object accepted by the registered upstream parser. It SHALL wrap the original string as `rawInvalidInput` if parsing fails or produces a non-object value. Inputs already supplied as objects SHALL be unchanged.
-
-#### Scenario: History contains serialized object input
-- **WHEN** a client tool call has the input string `{"city":"Berlin"}`
-- **THEN** the request SHALL contain a `tool_use` block whose `input` is the object `{"city":"Berlin"}`
-
-#### Scenario: History contains malformed or non-object input text
-- **WHEN** the call has input text that is malformed, rejected by the parser, or parses to an array, scalar, or null
-- **THEN** the block's input SHALL be an object with `rawInvalidInput` set to the original string
-
 ### Requirement: Final assistant prefill text is trimmed
 
 The Anthropic provider SHALL apply ECMAScript `String.prototype.trim()` only to ordinary text that is the final content part of the final source assistant message in the final grouped prompt block. All earlier text SHALL retain its whitespace, including text before a final non-text part. Text with `ProviderOptions["anthropic"].type == "compaction"` SHALL follow the separate compaction contract instead.
@@ -165,6 +153,18 @@ Assistant text with `ProviderOptions["anthropic"].type == "compaction"` SHALL se
 - **WHEN** the prompt is `[RoleSystem("a"), RoleSystem("b"), RoleUser([text("hi")])]`
 - **THEN** the resulting request SHALL have two entries in `System` (`Text == "a"` then `Text == "b"`), and exactly one `BetaMessageParam` with `Role: "user"`
 
+### Requirement: Client tool-use input normalization from assistant history
+
+For a client `tool_use` block, the Anthropic provider SHALL parse a string-valued input once and send the parsed input only if it is a JSON object accepted by the registered upstream parser. It SHALL wrap the original string as `rawInvalidInput` if parsing fails or produces a non-object value. Inputs already supplied as objects SHALL be unchanged.
+
+#### Scenario: History contains serialized object input
+- **WHEN** a client tool call has the input string `{"city":"Berlin"}`
+- **THEN** the request SHALL contain a `tool_use` block whose `input` is the object `{"city":"Berlin"}`
+
+#### Scenario: History contains malformed or non-object input text
+- **WHEN** the call has input text that is malformed, rejected by the parser, or parses to an array, scalar, or null
+- **THEN** the block's input SHALL be an object with `rawInvalidInput` set to the original string
+
 ### Requirement: Single shared helper builds Anthropic tool_result blocks
 
 `convertUserContent` and `convertToolContent` SHALL share one helper for `ContentPartTypeToolResult`, producing `OfToolResult` through `serializeToolOutput` for both `RoleUser` and `RoleTool` parts, with the tool-result cache-control cascade from anthropic-prompt-caching. The helper SHALL NOT produce `OfMCPToolResult`.
@@ -199,7 +199,7 @@ On the `tool_result` path, the Anthropic provider SHALL convert a URL file entry
 The `provider.LanguageModel` interface, the `BuildParams` signature, and the SSE chunk types emitted by the orchestration layer SHALL remain unchanged. Apart from the prompt-conversion behaviors specified above, Anthropic request serialization SHALL remain byte-identical for unaffected prompts.
 
 #### Scenario: Unaffected prompts produce identical wire requests
-- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, assistant compaction serialization, client tool-use ordering or input normalization, or tool-result file references
+- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, assistant compaction serialization, client tool-use normalization, or tool-result file references
 - **THEN** the resulting Anthropic API request body SHALL be byte-identical to the pre-change output for the same input
 
 ### Requirement: Tool-result file references
