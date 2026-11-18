@@ -7,7 +7,7 @@ Define request reasoning conversion, backward-compatible request transformation,
 
 ### Requirement: Reasoning effort in the converted request
 
-For generation and streaming, a non-empty `OpenAIOptions.ReasoningEffort` SHALL be written unchanged to `reasoning_effort`, taking precedence over `CallOptions.Reasoning`. Otherwise, request conversion SHALL write any non-default top-level reasoning value unchanged, including `none`. Provider-default reasoning SHALL leave the field absent. These rules apply before any configured request transform.
+For generation and streaming, a non-empty `OpenAIOptions.ReasoningEffort` SHALL be written unchanged to `reasoning_effort`, taking precedence over `CallOptions.Reasoning`. Without a non-empty override, request conversion SHALL write any non-default top-level reasoning value unchanged, including `none`, and SHALL omit the field for provider-default reasoning. These rules apply before any configured request transform.
 
 #### Scenario: Explicitly disabled reasoning
 

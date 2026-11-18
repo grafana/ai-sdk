@@ -72,6 +72,11 @@ func TestPrepareRequest_ReasoningEffort(t *testing.T) {
 					require.NoError(t, err)
 					var body map[string]any
 					require.NoError(t, json.Unmarshal(request, &body))
+					if mode.streaming {
+						assert.Equal(t, true, body["stream"])
+					} else {
+						assert.NotContains(t, body, "stream")
+					}
 					if tc.want == "" {
 						assert.NotContains(t, body, "reasoning_effort")
 					} else {
