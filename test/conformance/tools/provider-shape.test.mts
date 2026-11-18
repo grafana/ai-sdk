@@ -125,6 +125,22 @@ test("provider shape reports imported upstream and Go-only stream drift together
   assert.match(result.output, /tool result output upstream-only: output-extra/);
 });
 
+test("provider shape does not ignore Go constants with parenthesized types", async (t) => {
+  for (const [kind, declaration] of [
+    ["explicit type", `const Extra (StreamPartType) = "go-extra"`],
+    ["conversion", `const Extra = (StreamPartType)("go-extra")`],
+    ["alias", `type Alias = (StreamPartType)\nconst Extra Alias = "go-extra"`],
+  ]) {
+    await t.test(kind, (t) => {
+      const f = fixture(t);
+      f.file("provider/another.go", `package provider\n${declaration}\n`);
+      const result = f.run();
+      assert.equal(result.status, 1, result.output);
+      assert.match(result.output, /stream part Go-only: go-extra/);
+    });
+  }
+});
+
 test("provider shape reports an exact allowed difference but still rejects other drift", (t) => {
   const f = fixture(t);
   f.baseline(pingGap);
@@ -143,7 +159,8 @@ test("provider shape rejects stale exceptions, including when the direction flip
     await t.test(kind, (t) => {
       const f = fixture(t);
       if (kind !== "wrong direction") f.stream("ping");
-      if (kind !== "wrong version") f.localStream("imported", "metadata", "ping");
+      if (kind === "matched") f.file("provider/ping.go", `package provider\nconst Ping = (StreamPartType)("ping")\n`);
+      if (kind === "wrong direction") f.localStream("imported", "metadata", "ping");
       f.baseline(kind === "wrong version" ? {
         ...pingGap,
         providerShapeException: { ...pingGap.providerShapeException, version: "4.0.37" },
@@ -152,6 +169,20 @@ test("provider shape rejects stale exceptions, including when the direction flip
       assert.equal(result.status, 1, result.output);
       assert.match(result.output, /stale.*test-ping/);
       if (kind === "wrong direction") assert.match(result.output, /stream part Go-only: ping/);
+    });
+  }
+});
+
+test("provider shape does not use a private type in place of an import", async (t) => {
+  for (const kind of ["missing export", "re-export shadows private type"]) {
+    await t.test(kind, (t) => {
+      const f = fixture(t);
+      const reExport = kind === "missing export" ? "" : `export type { RealPart as Part } from './real-part';`;
+      f.file(`${v4}/part.ts`, `type Part = { type: 'imported' }; ${reExport}`);
+      f.file(`${v4}/real-part.ts`, `export type RealPart = { type: 'imported' } | { type: 'added-imported' };`);
+      const result = f.run();
+      assert.equal(result.status, 1, result.output);
+      assert.match(result.output, /stream part.*part\.ts:.*export.*\bPart\b/);
     });
   }
 });

@@ -28,7 +28,8 @@ func main() {
 		fail(fmt.Errorf("usage: gateway-contract-inventory <provider source directory> [type ...]"))
 	}
 	roots := os.Args[2:]
-	if len(roots) == 0 {
+	selectedTypes := len(roots) > 0
+	if !selectedTypes {
 		roots = []string{"CallOptions"}
 	}
 	fset := token.NewFileSet()
@@ -151,7 +152,7 @@ func main() {
 	var constantType func(constant, map[string]bool) string
 	constantType = func(value constant, seen map[string]bool) string {
 		if value.typ != nil {
-			return printNode(value.typ)
+			return printNode(ast.Unparen(value.typ))
 		}
 		switch expression := value.value.(type) {
 		case *ast.Ident:
@@ -160,7 +161,7 @@ func main() {
 				return constantType(alias, seen)
 			}
 		case *ast.CallExpr:
-			return printNode(expression.Fun)
+			return printNode(ast.Unparen(expression.Fun))
 		case *ast.ParenExpr:
 			return constantType(constant{value: expression.X}, seen)
 		case *ast.UnaryExpr:
@@ -178,7 +179,7 @@ func main() {
 		seen := map[string]bool{}
 		for aliases[typ] != nil && !seen[typ] {
 			seen[typ] = true
-			typ = printNode(aliases[typ])
+			typ = printNode(ast.Unparen(aliases[typ]))
 		}
 		if _, relevant := result.Types[typ]; !relevant {
 			continue
@@ -186,7 +187,16 @@ func main() {
 		if result.Constants[typ] == nil {
 			result.Constants[typ] = map[string]string{}
 		}
-		result.Constants[typ][name] = printNode(value.value)
+		expression := value.value
+		if selectedTypes {
+			expression = ast.Unparen(expression)
+			if conversion, ok := expression.(*ast.CallExpr); ok {
+				normalized := *conversion
+				normalized.Fun = ast.Unparen(conversion.Fun)
+				expression = &normalized
+			}
+		}
+		result.Constants[typ][name] = printNode(expression)
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 		fail(err)

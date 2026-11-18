@@ -26,7 +26,10 @@ type Statement = ReturnType<typeof parse>["program"]["body"][number];
 type Declaration = Extract<Statement, { type: "TSTypeAliasDeclaration" | "TSInterfaceDeclaration" }>;
 type TypeNode = Extract<Declaration, { type: "TSTypeAliasDeclaration" }>["typeAnnotation"];
 type Members = Extract<TypeNode, { type: "TSTypeLiteral" }>["members"];
-type Source = { declarations: Map<string, Declaration>; imports: Map<string, { specifier: string; name: string }> };
+type Source = {
+  declarations: Map<string, { node: Declaration; exported: boolean }>;
+  imports: Map<string, { specifier: string; name: string }>;
+};
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -87,7 +90,7 @@ function providerTypes(root: string) {
   function source(path: string): Source {
     const prior = sources.get(path);
     if (prior) return prior;
-    const declarations = new Map<string, Declaration>();
+    const declarations: Source["declarations"] = new Map();
     const imports: Source["imports"] = new Map();
     const { program } = parse(readFileSync(path, "utf8"), { sourceType: "module", plugins: ["typescript"] });
     for (const statement of program.body) {
@@ -102,7 +105,7 @@ function providerTypes(root: string) {
       const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
       if (declaration?.type === "TSTypeAliasDeclaration" || declaration?.type === "TSInterfaceDeclaration") {
         if (declarations.has(declaration.id.name)) throw new Error(`${path}: duplicate type ${declaration.id.name}`);
-        declarations.set(declaration.id.name, declaration);
+        declarations.set(declaration.id.name, { node: declaration, exported: statement.type === "ExportNamedDeclaration" });
       }
     }
     const result = { declarations, imports };
@@ -134,13 +137,17 @@ function providerTypes(root: string) {
       }
       return values;
     }
-    function named(path: string, name: string): string[] {
+    function named(path: string, name: string, requireExport = false): string[] {
       const key = `${path}:${name}`;
       if (active.has(key)) throw new Error(`${path}: circular discriminator reference to ${name}`);
       active.add(key);
       try {
         const { imports, declarations } = source(path);
-        const declaration = declarations.get(name);
+        const binding = declarations.get(name);
+        if (requireExport && !binding?.exported) {
+          throw new Error(`${path}: cannot resolve direct type export ${name}`);
+        }
+        const declaration = binding?.node;
         if (declaration?.type === "TSTypeAliasDeclaration" && !declaration.typeParameters) {
           return collect(declaration.typeAnnotation, path);
         }
@@ -154,7 +161,7 @@ function providerTypes(root: string) {
           if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`)) {
             throw new Error(`${path}: ${name} resolves outside the provider source`);
           }
-          return named(target, imported.name);
+          return named(target, imported.name, true);
         }
         throw new Error(`${path}: cannot resolve discriminator type ${name}`);
       } finally {
@@ -180,7 +187,7 @@ function providerTypes(root: string) {
       }
       throw new Error(`${path}: unsupported ${property} discriminator declaration (${type.type})`);
     }
-    const values = named(join(root, file), name);
+    const values = named(join(root, file), name, true);
     if (!values.length) throw new Error(`${file}: no discriminator values found for ${name}.${property}`);
     return new Set(values);
   };
