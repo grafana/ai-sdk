@@ -740,6 +740,7 @@ func TestBuildRequest_SelectedFileData(t *testing.T) {
 			want:         `{"type":"text","text":"Résumé: café, 日本語","cache_control":{"type":"ephemeral"}}`,
 		},
 		{name: "empty inline text", mediaType: "text/plain", data: provider.TextDataContent(""), want: `{"type":"text","text":""}`},
+		{name: "inline text with uppercase media type", mediaType: "TEXT/PLAIN", data: provider.TextDataContent("hello"), want: `{"type":"text","text":"hello"}`},
 		{name: "inline text rejected for PDF", mediaType: "application/pdf", data: provider.TextDataContent("not a PDF"), wantError: "expected binary data"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -757,17 +758,9 @@ func TestBuildRequest_SelectedFileData(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			encoded, err := json.Marshal(body)
+			encoded, err := json.Marshal(body["messages"])
 			require.NoError(t, err)
-			var native struct {
-				Messages []struct {
-					Content []json.RawMessage `json:"content"`
-				} `json:"messages"`
-			}
-			require.NoError(t, json.Unmarshal(encoded, &native))
-			require.Len(t, native.Messages, 1)
-			require.Len(t, native.Messages[0].Content, 1)
-			assert.JSONEq(t, tc.want, string(native.Messages[0].Content[0]))
+			assert.JSONEq(t, `[{"role":"user","content":[`+tc.want+`]}]`, string(encoded))
 		})
 	}
 }
