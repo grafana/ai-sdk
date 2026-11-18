@@ -7,14 +7,18 @@ import (
 
 const jsonWhitespace = " \t\r\n"
 
-// Object parses JSON text stored as a tool input string and accepts only objects.
-func Object(text string) (map[string]any, bool) {
+// Object serializes an accepted JSON object stored as a tool input string.
+func Object(text string) (json.RawMessage, bool) {
 	value, ok := parse(text)
 	if !ok {
 		return nil, false
 	}
 	object, ok := value.(map[string]any)
-	return object, ok
+	if !ok {
+		return nil, false
+	}
+	body, err := json.Marshal(object)
+	return body, err == nil
 }
 
 // Arguments unwraps one JSON string when its contents are already serialized arguments.

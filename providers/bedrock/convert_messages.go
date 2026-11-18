@@ -684,9 +684,7 @@ func toBedrockToolInput(input json.RawMessage) json.RawMessage {
 		return input
 	case string:
 		if object, ok := toolhistory.Object(v); ok {
-			if encoded, err := json.Marshal(object); err == nil {
-				return encoded
-			}
+			return object
 		}
 	}
 	wrapped, _ := json.Marshal(map[string]any{"rawInvalidInput": value})

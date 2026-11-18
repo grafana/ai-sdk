@@ -161,6 +161,10 @@ For a client `tool_use` block, the Anthropic provider SHALL parse a string-value
 - **WHEN** a client tool call has the input string `{"city":"Berlin"}`
 - **THEN** the request SHALL contain a `tool_use` block whose `input` is the object `{"city":"Berlin"}`
 
+#### Scenario: Structured replay uses Go JSON value handling
+- **WHEN** accepted input text decodes to an object
+- **THEN** the provider SHALL serialize it without rounding JSON numbers through a floating-point type, keep the last value for duplicate members, and use ordinary Go JSON decoding for Unicode (unpaired surrogate escapes become U+FFFD)
+
 #### Scenario: History contains malformed or non-object input text
 - **WHEN** the call has input text that is malformed, rejected by the parser, or parses to an array, scalar, or null
 - **THEN** the block's input SHALL be an object with `rawInvalidInput` set to the original string

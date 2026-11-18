@@ -181,6 +181,11 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **WHEN** a tool call in assistant history has string-valued input that parses once to a JSON object accepted by the registered upstream parser
 - **THEN** the request SHALL use that object as `toolUse.input`
 
+#### Scenario: Structured replay uses Go JSON value handling
+
+- **WHEN** accepted input text decodes to an object
+- **THEN** Converse conversion SHALL serialize it without rounding JSON numbers through a floating-point type, keep the last value for duplicate members, and use ordinary Go JSON decoding for Unicode (unpaired surrogate escapes become U+FFFD)
+
 #### Scenario: Assistant tool call with malformed or non-object input text
 
 - **WHEN** the call has input text that is malformed, rejected by the parser, or parses to an array, scalar, or null

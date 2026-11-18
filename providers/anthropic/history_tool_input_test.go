@@ -14,6 +14,10 @@ func TestBuildParams_AssistantHistoryToolInput(t *testing.T) {
 		name, input, want string
 	}{
 		{"object", `{"city":"Berlin"}`, `{"city":"Berlin"}`},
+		{"direct object retains representation", `{"id":9007199254740993,"label":"\ud800"}`, `{"id":9007199254740993,"label":"\ud800"}`},
+		{"string object preserves numeric precision", `"{\"id\":9007199254740993}"`, `{"id":9007199254740993}`},
+		{"string object uses Go Unicode decoding", `"{\"label\":\"\\ud800\\ud83d\\ude00\"}"`, `{"label":"�😀"}`},
+		{"string object keeps the last duplicate member", `"{\"meta\":{\"city\":\"Paris\",\"city\":\"Berlin\"}}"`, `{"meta":{"city":"Berlin"}}`},
 		{"string object", `"  { \"city\": \"Berlin\" }\n"`, `{"city":"Berlin"}`},
 		{"string array", `"[1]"`, `{"rawInvalidInput":"[1]"}`},
 		{"string scalar", `"42"`, `{"rawInvalidInput":"42"}`},
@@ -28,13 +32,22 @@ func TestBuildParams_AssistantHistoryToolInput(t *testing.T) {
 				)},
 			}, false)
 			require.NoError(t, err)
-			require.Len(t, params.Messages, 1)
-			require.Len(t, params.Messages[0].Content, 1)
-			block := params.Messages[0].Content[0].OfToolUse
-			require.NotNil(t, block)
-			body, err := json.Marshal(block.Input)
+			body, err := params.MarshalJSON()
 			require.NoError(t, err)
-			assert.JSONEq(t, tc.want, string(body))
+			var wire struct {
+				Messages []struct {
+					Content []struct {
+						Type  string          `json:"type"`
+						Input json.RawMessage `json:"input"`
+					} `json:"content"`
+				} `json:"messages"`
+			}
+			require.NoError(t, json.Unmarshal(body, &wire))
+			require.Len(t, wire.Messages, 1)
+			require.Len(t, wire.Messages[0].Content, 1)
+			block := wire.Messages[0].Content[0]
+			assert.Equal(t, "tool_use", block.Type)
+			assert.Equal(t, tc.want, string(block.Input))
 		})
 	}
 }
