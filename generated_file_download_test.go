@@ -59,6 +59,45 @@ func TestGeneratedFileDownload_DataAndValidation(t *testing.T) {
 	}
 }
 
+func TestGeneratedFileDownload_InternalHostnames(t *testing.T) {
+	for _, raw := range []string{
+		"http://host.internal/file",
+		"https://HOST.INTERNAL./file",
+		"https://service.namespace.internal/file",
+		"http://host.internal:8080/file",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			var lookups, dials atomic.Int32
+			client := newGeneratedFileClient(func(context.Context, string) ([]net.IPAddr, error) {
+				lookups.Add(1)
+				return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}}, nil
+			}, func(context.Context, string, string) (net.Conn, error) {
+				dials.Add(1)
+				return nil, errors.New("unexpected dial")
+			})
+			defer client.CloseIdleConnections()
+
+			_, err := downloadGeneratedFileWithClient(context.Background(), raw, client)
+			assert.ErrorContains(t, err, "hostname is not public")
+			assert.Zero(t, lookups.Load())
+			assert.Zero(t, dials.Load())
+		})
+	}
+	for _, raw := range []string{
+		"https://internal.example.com/file",
+		"https://service.internal.example.com/file",
+		"https://service.notinternal/file",
+		"https://example.com/service.internal",
+		"https://EXAMPLE.COM./file",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			parsed, err := url.Parse(raw)
+			require.NoError(t, err)
+			assert.NoError(t, validateGeneratedFileURL(parsed))
+		})
+	}
+}
+
 func TestGeneratedFileDownload_ValidatedNetwork(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +109,10 @@ func TestGeneratedFileDownload_ValidatedNetwork(t *testing.T) {
 			http.Redirect(w, r, "/file", http.StatusFound)
 		case "/private-redirect":
 			http.Redirect(w, r, "http://127.0.0.1/internal", http.StatusFound)
+		case "/internal-redirect":
+			http.Redirect(w, r, "http://host.internal/file", http.StatusFound)
+		case "/internal-dot-redirect":
+			http.Redirect(w, r, "http://HOST.INTERNAL./file", http.StatusFound)
 		case "/error":
 			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
@@ -80,7 +123,9 @@ func TestGeneratedFileDownload_ValidatedNetwork(t *testing.T) {
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 	var addresses []string
+	var lookups atomic.Int32
 	client := newGeneratedFileClient(func(context.Context, string) ([]net.IPAddr, error) {
+		lookups.Add(1)
 		return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}}, nil
 	}, func(ctx context.Context, network, address string) (net.Conn, error) {
 		addresses = append(addresses, address)
@@ -97,6 +142,17 @@ func TestGeneratedFileDownload_ValidatedNetwork(t *testing.T) {
 	assert.EqualValues(t, 3, calls.Load())
 	_, err = downloadGeneratedFileWithClient(context.Background(), base+"/error", client)
 	require.ErrorContains(t, err, "HTTP 503")
+
+	for _, path := range []string{"/internal-redirect", "/internal-dot-redirect"} {
+		t.Run(path, func(t *testing.T) {
+			previousLookups, previousDials, previousCalls := lookups.Load(), len(addresses), calls.Load()
+			_, err := downloadGeneratedFileWithClient(context.Background(), base+path, client)
+			assert.ErrorContains(t, err, "hostname is not public")
+			assert.Equal(t, previousLookups, lookups.Load())
+			assert.Len(t, addresses, previousDials)
+			assert.Equal(t, previousCalls+1, calls.Load())
+		})
+	}
 
 	t.Run("tries next validated address", func(t *testing.T) {
 		var attempts []string
