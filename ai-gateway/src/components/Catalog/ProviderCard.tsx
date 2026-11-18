@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Badge, Button, Field, IconButton, Input, Stack, Text, useStyles2 } from '@grafana/ui';
-import { CatalogHealth, errorMessage } from '../../api/modelCatalogs';
+import { CatalogHealth, errorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 import { CatalogHealthBadge } from './CatalogHealthBadge';
+import { ModelPicker } from './ModelPicker';
 import { fieldErrors, providerTypeLabel, targetLabel } from './catalogSpec';
 import { useFieldErrors } from './useFieldErrors';
 import { Model, Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
@@ -27,6 +28,8 @@ interface Props {
   lastModel: boolean;
   onOpenModel: (id: string) => void;
   onRemoveModel: (id: string) => void;
+  listingRevision?: string;
+  listModels?: () => Promise<ProviderModelListing>;
   onAddModel: (providerModel: string) => Promise<void>;
   addError: (providerModel: string) => string | undefined;
   onReplaceKey: () => void;
@@ -111,7 +114,16 @@ export function ProviderCard(props: Props) {
           </li>
         ))}
       </ul>
-      {!readOnly && <QuickAdd name={name} label={label} onAdd={props.onAddModel} addError={props.addError} />}
+      {!readOnly && (
+        <QuickAdd
+          name={name}
+          label={label}
+          onAdd={props.onAddModel}
+          addError={props.addError}
+          listModels={props.listModels}
+          listingRevision={props.listingRevision}
+        />
+      )}
     </section>
   );
 }
@@ -120,10 +132,12 @@ interface QuickAddProps {
   name: string;
   label: string;
   onAdd: (providerModel: string) => Promise<void>;
+  listModels?: () => Promise<ProviderModelListing>;
+  listingRevision?: string;
   addError: (providerModel: string) => string | undefined;
 }
 
-function QuickAdd({ name, label, onAdd, addError }: QuickAddProps) {
+function QuickAdd({ name, label, onAdd, addError, listModels, listingRevision }: QuickAddProps) {
   const s = useStyles2(getStyles);
   const [value, setValue] = useState('');
   const [refusal, setRefusal] = useState<string>();
@@ -148,36 +162,41 @@ function QuickAdd({ name, label, onAdd, addError }: QuickAddProps) {
     }
   };
 
+  const setModel = (model: string) => {
+    setValue(model);
+    setRefusal(undefined);
+  };
+
   return (
-    <form
-      className={s.add}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void add();
-      }}
-    >
-      <Field
-        className={s.addField}
-        description={`The model ID in ${label}'s API. Applications request it by the same ID.`}
-        invalid={error !== undefined}
-        error={error}
-        noMargin
+    <div className={s.addModels}>
+      <form
+        className={s.add}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void add();
+        }}
       >
-        <Input
-          aria-label={`Add a model to ${name}`}
-          value={value}
-          placeholder="Provider model ID"
-          onChange={(event) => {
-            setValue(event.currentTarget.value);
-            setRefusal(undefined);
-          }}
-          onBlur={() => checks.leave('model')}
-        />
-      </Field>
-      <Button type="submit" variant="secondary" icon="plus" disabled={saving}>
-        Add model
-      </Button>
-    </form>
+        <Field
+          className={s.addField}
+          description={`The model ID in ${label}'s API. Applications request it by the same ID.`}
+          invalid={error !== undefined}
+          error={error}
+          noMargin
+        >
+          <Input
+            aria-label={`Add a model to ${name}`}
+            value={value}
+            placeholder="Provider model ID"
+            onChange={(event) => setModel(event.currentTarget.value)}
+            onBlur={() => checks.leave('model')}
+          />
+        </Field>
+        <Button type="submit" variant="secondary" icon="plus" disabled={saving}>
+          Add model
+        </Button>
+      </form>
+      {listModels && <ModelPicker key={listingRevision} listModels={listModels} onSelect={setModel} />}
+    </div>
   );
 }
 
@@ -227,11 +246,13 @@ const getStyles = (theme: GrafanaTheme2) => ({
       textDecoration: 'underline',
     },
   }),
+  addModels: css({
+    padding: theme.spacing(1.5, 2),
+  }),
   add: css({
     display: 'flex',
     alignItems: 'flex-start',
     gap: theme.spacing(1),
-    padding: theme.spacing(1.5, 2),
   }),
   addField: css({
     flex: 1,

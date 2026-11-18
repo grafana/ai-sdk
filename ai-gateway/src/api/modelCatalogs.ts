@@ -48,6 +48,18 @@ export function checkModelCatalogHealth(name: string): Promise<CatalogHealth> {
   return getBackendSrv().post<CatalogHealth>(`${modelCatalogURL(name)}/health`, undefined, REQUEST_OPTIONS);
 }
 
+/** ProviderModelListing contains a fixed outcome and the provider model IDs observed. */
+export interface ProviderModelListing {
+  status: Exclude<HealthStatus, 'unknownModel'> | 'partial';
+  modelIds: string[];
+}
+
+/** listProviderModels lists one provider using its saved key. */
+export function listProviderModels(name: string, provider: string): Promise<ProviderModelListing> {
+  const url = `${modelCatalogURL(name)}/available-models?provider=${encodeURIComponent(provider)}`;
+  return getBackendSrv().post<ProviderModelListing>(url, undefined, REQUEST_OPTIONS);
+}
+
 /** catalogHealthErrorMessage gives fixed feedback without displaying error details. */
 export function catalogHealthErrorMessage(error: unknown): string {
   if (isFetchError(error)) {

@@ -5,6 +5,7 @@ import { API_GROUP } from './constants';
 export const CatalogActions = {
   Read: `${API_GROUP}/modelcatalogs:get`,
   CheckHealth: `${API_GROUP}/modelcatalogs/health:get`,
+  ListProviderModels: `${API_GROUP}/modelcatalogs/available-models:get`,
   Create: `${API_GROUP}/modelcatalogs:create`,
   Update: `${API_GROUP}/modelcatalogs:update`,
   Delete: `${API_GROUP}/modelcatalogs:delete`,
@@ -14,6 +15,7 @@ export const CatalogActions = {
 export interface CatalogPermissions {
   read: boolean;
   checkHealth: boolean;
+  listProviderModels: boolean;
   create: boolean;
   update: boolean;
   delete: boolean;
@@ -27,6 +29,7 @@ export function catalogPermissions(): CatalogPermissions {
   return {
     read: hasPermission(CatalogActions.Read),
     checkHealth: hasPermission(CatalogActions.CheckHealth),
+    listProviderModels: hasPermission(CatalogActions.ListProviderModels),
     create: hasPermission(CatalogActions.Create),
     update: hasPermission(CatalogActions.Update),
     delete: hasPermission(CatalogActions.Delete),

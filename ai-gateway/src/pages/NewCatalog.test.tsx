@@ -4,13 +4,14 @@ import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import NewCatalog from './NewCatalog';
-import { createModelCatalog, updateModelCatalog } from '../api/modelCatalogs';
+import { createModelCatalog, listProviderModels, updateModelCatalog } from '../api/modelCatalogs';
 import { CatalogActions } from '../permissions';
 import { signInAs } from '../testUtils';
 
 jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   createModelCatalog: jest.fn(),
+  listProviderModels: jest.fn(),
   updateModelCatalog: jest.fn(),
 }));
 
@@ -75,7 +76,10 @@ describe('pages/NewCatalog', () => {
     expect(screen.getByText(`${URL}/ops`)).toBeInTheDocument();
     await connect('Anthropic', KEY);
     expect(within(screen.getByRole('region', { name: 'anthropic' })).getByText('Key entered')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Browse models' })).not.toBeInTheDocument();
+    expect(screen.getByText(/After saving the catalog, you can browse/)).toBeInTheDocument();
     await addModel('anthropic', 'claude-sonnet-4-6');
+    expect(listProviderModels).not.toHaveBeenCalled();
     expect(createModelCatalog).not.toHaveBeenCalled();
     expect(updateModelCatalog).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, Button, ConfirmModal, Stack, Text } from '@grafana/ui';
-import { CatalogHealth, errorMessage } from '../../api/modelCatalogs';
+import { CatalogHealth, errorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 import { ConnectProviderModal } from './ConnectProviderModal';
 import { ModelDrawer } from './ModelDrawer';
 import { ProviderCard } from './ProviderCard';
@@ -31,6 +31,8 @@ interface Props {
   stored: boolean;
   health?: CatalogHealth;
   readOnly: boolean;
+  listingRevision?: string;
+  listModels?: (provider: string) => Promise<ProviderModelListing>;
   onChange: (change: CatalogChange) => Promise<void>;
 }
 
@@ -41,7 +43,16 @@ interface Props {
  * one model, and a provider can't be removed while other providers' models
  * fall back to it.
  */
-export function CatalogEditor({ spec, keys, stored, health, readOnly, onChange }: Props) {
+export function CatalogEditor({
+  spec,
+  keys,
+  stored,
+  health,
+  readOnly,
+  listingRevision,
+  listModels,
+  onChange,
+}: Props) {
   const [dialog, setDialog] = useState<Dialog>();
   const [error, setError] = useState<string>();
   const providers = Object.entries(spec.providers);
@@ -122,6 +133,8 @@ export function CatalogEditor({ spec, keys, stored, health, readOnly, onChange }
           keyState={!keys.includes(name) ? 'missing' : stored ? undefined : 'entered'}
           health={health}
           readOnly={readOnly}
+          listingRevision={listingRevision}
+          listModels={stored && keys.includes(name) && listModels ? () => listModels(name) : undefined}
           removeBlocked={removeBlocked(name)}
           lastModel={stored && modelCount === 1}
           onOpenModel={(id) => setDialog({ kind: 'model', id })}
