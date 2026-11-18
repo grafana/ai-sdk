@@ -14,13 +14,14 @@ import (
 
 func TestModel_MCPToolsRespectEffectiveToolChoice(t *testing.T) {
 	const (
-		openObject   = `{"type":"object","additionalProperties":true}`
-		closedObject = `{"type":"object","properties":{},"additionalProperties":false}`
-		autoChoice   = `{"type":"auto"}`
-		anyChoice    = `{"type":"any","disable_parallel_tool_use":true}`
-		namedChoice  = `{"type":"tool","name":"lookup"}`
-		noneChoice   = `{"type":"none"}`
-		preservedMCP = `[
+		openObject     = `{"type":"object","additionalProperties":true}`
+		closedObject   = `{"type":"object","properties":{},"additionalProperties":false}`
+		autoChoice     = `{"type":"auto"}`
+		jsonAutoChoice = `{"type":"auto","disable_parallel_tool_use":true}`
+		anyChoice      = `{"type":"any","disable_parallel_tool_use":true}`
+		namedChoice    = `{"type":"tool","name":"lookup"}`
+		noneChoice     = `{"type":"none"}`
+		preservedMCP   = `[
 			{"type":"url","name":"default","url":"https://default.invalid/mcp"},
 			{"type":"url","name":"enabled","url":"https://enabled.invalid/mcp","authorization_token":"test-token","tool_configuration":{"enabled":true,"allowed_tools":["lookup","other"]}},
 			{"type":"url","name":"empty","url":"https://empty.invalid/mcp","tool_configuration":{"allowed_tools":[]}},
@@ -56,6 +57,8 @@ func TestModel_MCPToolsRespectEffectiveToolChoice(t *testing.T) {
 		{name: "none_with_automatic_json_tool", choice: provider.ToolChoiceNone, schema: openObject, wantChoice: anyChoice, wantMCP: disabledMCP, jsonTool: true},
 		{name: "named_with_explicit_json_tool", choice: provider.ToolChoiceTool, schema: closedObject, mode: StructuredOutputJSONTool, wantChoice: anyChoice, wantMCP: disabledMCP, jsonTool: true},
 		{name: "none_with_explicit_json_tool", choice: provider.ToolChoiceNone, schema: closedObject, mode: StructuredOutputJSONTool, wantChoice: anyChoice, wantMCP: disabledMCP, jsonTool: true},
+		{name: "none_keeps_json_tool_on_rejecting_model", modelID: "claude-sonnet-5-5", choice: provider.ToolChoiceNone, schema: openObject, mode: StructuredOutputJSONTool, wantChoice: jsonAutoChoice, wantMCP: disabledMCP, jsonTool: true},
+		{name: "none_kept_when_json_tool_switches_to_native_output", modelID: "claude-sonnet-5-5", choice: provider.ToolChoiceNone, schema: closedObject, mode: StructuredOutputJSONTool, wantChoice: noneChoice, wantMCP: preservedMCP},
 		{name: "default_with_json_tool", schema: openObject, wantChoice: anyChoice, wantMCP: preservedMCP, jsonTool: true},
 		{name: "auto_with_json_tool", choice: provider.ToolChoiceAuto, schema: openObject, wantChoice: anyChoice, wantMCP: preservedMCP, jsonTool: true},
 		{name: "required_with_json_tool", choice: provider.ToolChoiceRequired, schema: openObject, wantChoice: anyChoice, wantMCP: preservedMCP, jsonTool: true},
