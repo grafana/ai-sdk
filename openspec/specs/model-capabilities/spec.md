@@ -78,10 +78,10 @@ The system SHALL provide unexported `getModelCapabilities(modelID string)` retur
 
 #### Scenario: Base Fable 5 capability classification
 
-- **WHEN** an ID identifies base `claude-fable-5`, including a resolved Vertex ID
+- **WHEN** an ID contains `claude-fable-5` followed by the end of the ID, `@`, or `-` and exactly eight ASCII digits followed by the end of the ID, `-`, `@`, or `:`
 - **THEN** metadata SHALL report 128000 max output, adaptive thinking and structured output supported, sampling rejected, xhigh effort supported, both disabled and budget-based thinking rejected, and known
 - **AND** metadata SHALL NOT reject forced tool use or report support for `between_tools`
-- **AND** the base model's restrictions SHALL NOT be inferred for other Fable 5 versions from the shared prefix alone
+- **AND** the base model's restrictions SHALL NOT be inferred from a shared prefix alone for other Fable 5 versions or arbitrary suffixes
 
 #### Scenario: General Claude 4.7, 4.8 and Sonnet 5 capability classification
 
