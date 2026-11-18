@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,28 @@ func init() {
 type jsonFallbackTransport struct{}
 
 func (jsonFallbackTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	var request struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+		ToolChoice struct {
+			Type                   provider.ToolChoiceType `json:"type"`
+			DisableParallelToolUse bool                    `json:"disable_parallel_tool_use"`
+		} `json:"tool_choice"`
+	}
+	decodeErr := json.NewDecoder(r.Body).Decode(&request)
+	closeErr := r.Body.Close()
+	if decodeErr != nil {
+		return nil, fmt.Errorf("decoding Anthropic test request: %w", decodeErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("closing Anthropic test request: %w", closeErr)
+	}
+	if len(request.Tools) != 1 || request.Tools[0].Name != "json" ||
+		request.ToolChoice.Type != provider.ToolChoiceAuto || !request.ToolChoice.DisableParallelToolUse {
+		return nil, fmt.Errorf("anthropic test request: want only the JSON tool with auto choice and parallel tool use disabled, got %+v", request)
+	}
+
 	const sse = `event: message_start
 data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-3-haiku","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}
 

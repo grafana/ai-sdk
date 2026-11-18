@@ -86,6 +86,10 @@ func TestJSONToolFallback_FinalText(t *testing.T) {
 	const search = `{"type":"server_tool_use","name":"web_search","id":"srvtoolu_search","input":{"query":"answer"}}`
 	const result = `{"type":"web_search_tool_result","tool_use_id":"srvtoolu_search","content":[]}`
 	const answer = `{"type":"text","text":"Final answer","citations":[` + citation + `]}`
+	const suffix = `{"type":"text","text":"Answer follows."}`
+	const reasoning = "Double-checking"
+	const signature = `{"signature":"sig"}`
+	const thinking = `{"type":"thinking","thinking":"` + reasoning + `","signature":"sig"}`
 	const jsonCall = `{"type":"tool_use","name":"json","id":"toolu_json","input":{"answer":42}}`
 
 	for _, tc := range []struct {
@@ -93,10 +97,11 @@ func TestJSONToolFallback_FinalText(t *testing.T) {
 		blocks        []string
 		wantText      []string
 		wantCitations bool
+		wantReasoning bool
 		finish        provider.UnifiedFinishReason
 	}{
 		{name: "text_only", stop: "end_turn", blocks: []string{answer}, wantText: []string{"Final answer"}, wantCitations: true, finish: provider.FinishReasonStop},
-		{name: "tool_and_result_discard_preamble", stop: "end_turn", blocks: []string{preamble, search, preamble, result, answer}, wantText: []string{"Final answer"}, wantCitations: true, finish: provider.FinishReasonStop},
+		{name: "tool_and_result_discard_preamble", stop: "end_turn", blocks: []string{preamble, search, preamble, result, suffix, thinking, answer}, wantText: []string{"Answer follows.", "Final answer"}, wantCitations: true, wantReasoning: true, finish: provider.FinishReasonStop},
 		{name: "json_call_suppresses_all_plain_text", stop: "end_turn", blocks: []string{preamble, jsonCall, answer}, wantText: []string{`{"answer":42}`}, finish: provider.FinishReasonStop},
 		{name: "tool_use", stop: "tool_use", blocks: []string{search, answer}, finish: provider.FinishReasonToolCalls},
 		{name: "pause_turn", stop: "pause_turn", blocks: []string{answer}, finish: provider.FinishReasonStop},
@@ -113,11 +118,20 @@ func TestJSONToolFallback_FinalText(t *testing.T) {
 			require.NoError(t, err)
 			var gotText []string
 			var textPart provider.GenerateContentPart
+			var reasoningParts []provider.GenerateContentPart
 			for _, part := range generated.Content {
-				if part.Type == provider.ContentText {
+				switch part.Type {
+				case provider.ContentText:
 					gotText = append(gotText, part.Text)
 					textPart = part
+				case provider.ContentReasoning:
+					reasoningParts = append(reasoningParts, part)
 				}
+			}
+			if tc.wantReasoning {
+				require.Len(t, reasoningParts, 1)
+				assert.Equal(t, reasoning, reasoningParts[0].Text)
+				assert.JSONEq(t, signature, string(reasoningParts[0].ProviderMetadata["anthropic"]))
 			}
 			assert.Equal(t, tc.wantText, gotText, "generate")
 			assert.Equal(t, provider.FinishReason{Unified: tc.finish, Raw: tc.stop}, generated.FinishReason)
@@ -133,22 +147,40 @@ func TestJSONToolFallback_FinalText(t *testing.T) {
 				require.NoError(t, adapter.handleEvent(unmarshalEvent(t, event), ch))
 			}
 			var streamText []string
-			var textParts []provider.StreamPart
+			var textParts, reasoningStream []provider.StreamPart
+			var order []provider.StreamPartType
 			drain := func() {
 				for len(ch) > 0 {
 					part := <-ch
 					switch part.Type {
 					case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
 						textParts = append(textParts, part)
+						order = append(order, part.Type)
 						if part.Type == provider.PartTextDelta {
 							streamText = append(streamText, part.Delta)
 						}
+					case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+						reasoningStream = append(reasoningStream, part)
+						order = append(order, part.Type)
+					case provider.PartSource:
+						order = append(order, part.Type)
 					case provider.PartFinish:
+						order = append(order, part.Type)
 						assert.Equal(t, &generated.FinishReason, part.FinishReason)
 					}
 				}
 			}
 			drain()
+			var wantOrder []provider.StreamPartType
+			if tc.wantReasoning {
+				require.Len(t, reasoningStream, 4, "reasoning must be streamed before message_stop")
+				assert.Equal(t, reasoning, reasoningStream[1].Delta)
+				assert.JSONEq(t, signature, string(reasoningStream[2].ProviderMetadata["anthropic"]))
+				for _, part := range reasoningStream[1:] {
+					assert.Equal(t, reasoningStream[0].ID, part.ID)
+				}
+				wantOrder = append(wantOrder, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningDelta, provider.PartReasoningEnd)
+			}
 			if tc.name != "json_call_suppresses_all_plain_text" {
 				assert.Empty(t, textParts, "plain text must not appear before message_stop")
 			}
@@ -156,15 +188,18 @@ func TestJSONToolFallback_FinalText(t *testing.T) {
 			drain()
 			assert.Equal(t, tc.wantText, streamText, "stream")
 			if tc.wantCitations {
-				require.Len(t, textParts, 3)
-				assert.Equal(t, provider.PartTextStart, textParts[0].Type)
-				assert.Equal(t, provider.PartTextDelta, textParts[1].Type)
-				assert.Equal(t, provider.PartTextEnd, textParts[2].Type)
-				assert.Equal(t, textParts[0].ID, textParts[1].ID)
-				assert.Equal(t, textParts[0].ID, textParts[2].ID)
-				require.Len(t, textParts[2].Citations, 1)
-				assert.Equal(t, textPart.Citations, textParts[2].Citations)
-				assert.Equal(t, textPart.ProviderMetadata, textParts[2].ProviderMetadata)
+				require.Len(t, textParts, len(tc.wantText)*3)
+				wantOrder = append(wantOrder, provider.PartSource)
+				for i := 0; i < len(textParts); i += 3 {
+					wantOrder = append(wantOrder, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd)
+					assert.Equal(t, textParts[i].ID, textParts[i+1].ID)
+					assert.Equal(t, textParts[i].ID, textParts[i+2].ID)
+				}
+				assert.Equal(t, append(wantOrder, provider.PartFinish), order)
+				end := textParts[len(textParts)-1]
+				require.Len(t, end.Citations, 1)
+				assert.Equal(t, textPart.Citations, end.Citations)
+				assert.Equal(t, textPart.ProviderMetadata, end.ProviderMetadata)
 			}
 		})
 	}
@@ -216,6 +251,8 @@ func jsonFallbackMessageEvents(t *testing.T, id, reason string, blocks ...string
 			Type      string
 			Text      string
 			Citations []json.RawMessage
+			Thinking  string
+			Signature string
 			Input     json.RawMessage
 		}
 		require.NoError(t, json.Unmarshal([]byte(raw), &block))
@@ -223,6 +260,8 @@ func jsonFallbackMessageEvents(t *testing.T, id, reason string, blocks ...string
 		switch block.Type {
 		case "text":
 			start = `{"type":"text","text":""}`
+		case "thinking":
+			start = `{"type":"thinking","thinking":"","signature":""}`
 		case "tool_use":
 			start = `{"type":"tool_use","name":"json","id":"toolu_json","input":{}}`
 		}
@@ -236,6 +275,11 @@ func jsonFallbackMessageEvents(t *testing.T, id, reason string, blocks ...string
 			for _, citation := range block.Citations {
 				events = append(events, fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"citations_delta","citation":%s}}`, i, citation))
 			}
+		case "thinking":
+			events = append(events,
+				fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"thinking_delta","thinking":%q}}`, i, block.Thinking),
+				fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"signature_delta","signature":%q}}`, i, block.Signature),
+			)
 		case "tool_use":
 			events = append(events, fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":%q}}`, i, string(block.Input)))
 		}
