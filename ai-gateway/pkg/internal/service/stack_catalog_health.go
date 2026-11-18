@@ -56,7 +56,7 @@ type CatalogHealth struct {
 
 type healthCatalogID struct{ namespace, name string }
 
-// CatalogHealthChecker runs bounded checks using the shared model HTTP client.
+// CatalogHealthChecker runs bounded model-listing checks.
 type CatalogHealthChecker struct {
 	client *http.Client
 	mu     sync.Mutex
