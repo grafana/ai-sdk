@@ -123,7 +123,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					for part := range result.Stream {
 						switch part.Type {
 						case provider.PartStreamStart:
-							warnings = part.Warnings
+							warnings = append(warnings, part.Warnings...)
 						case provider.PartTextDelta:
 							text.WriteString(part.Delta)
 						case provider.PartFinish:
@@ -165,11 +165,13 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					assert.Equal(t, "json", tools[0].Name)
 					assert.JSONEq(t, tc.schema, string(tools[0].Schema))
 				}
-				if tc.textFallback {
-					assert.JSONEq(t, `{"type":"enabled","budget_tokens":1024}`, string(wire["thinking"]))
+				if tc.toolChoice == "auto" {
 					require.Len(t, warnings, 1)
 					assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
 					assert.Equal(t, "toolChoice", warnings[0].Feature)
+				}
+				if tc.textFallback {
+					assert.JSONEq(t, `{"type":"enabled","budget_tokens":1024}`, string(wire["thinking"]))
 					assert.Contains(t, warnings[0].Details, "'required' is not supported with this model or thinking configuration")
 				}
 				assert.Equal(t, provider.FinishReasonStop, finish)
