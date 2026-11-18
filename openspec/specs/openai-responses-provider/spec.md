@@ -823,20 +823,24 @@ Subsequent assistant provider-executed calls/results SHALL retain Responses taxo
 
 #### Scenario: Replay a web search without storage
 
-- **WHEN** an assistant tool result named `web_search` or `web_search_preview` (including configured aliases) has a valid JSON action, storage is disabled, and there is no active conversation
-- **THEN** the request SHALL contain one `web_search_call` with status `completed`, using the result's item ID from the active provider options namespace or its tool-call ID when no item ID is supplied
-- **AND** `search` SHALL retain optional `query` and `queries` and place any URL or API sources under the native action; `openPage` and `findInPage` SHALL become `open_page` and `find_in_page`, preserving absent and null URL or pattern fields where applicable
+- **WHEN** storage is disabled, there is no active conversation, and an assistant result named `web_search` or `web_search_preview` (including configured aliases) is not a synthetic execution denial and has JSON output with a valid action and valid sources if present
+- **THEN** the request SHALL contain one `web_search_call` with status `completed`, using the result's item ID from the active provider options namespace or its tool-call ID if the item ID is absent or null
+- **AND** `search` SHALL retain optional `query` and `queries` and place any URL or API sources supplied in that JSON output under the native action; `openPage` and `findInPage` SHALL become `open_page` and `find_in_page`, preserving absent and null URL or pattern fields where applicable
 
 #### Scenario: Omit an unreplayable web search
 
-- **WHEN** storage is disabled, there is no active conversation, and a web-search result has missing or invalid action data, invalid sources, or a non-JSON output (including an error result)
+- **WHEN** storage is disabled, there is no active conversation, and a web-search result other than a synthetic execution denial has missing or invalid action data, invalid sources, or a non-JSON output
 - **THEN** the adapter SHALL omit the item and retain the existing warning that the tool's results are not sent when storage is disabled
 
-#### Scenario: Keep stored references and conversation skips for web search
+#### Scenario: Keep stored references for web search
 
-- **WHEN** storage is enabled and no active conversation is supplied
+- **WHEN** storage is enabled, there is no active conversation, and the web-search result is not a synthetic execution denial
 - **THEN** the adapter SHALL reference the web-search result's item ID or fall back to its tool-call ID, without requiring a replayable action
-- **AND** with an active conversation, or for synthetic execution-denied results, the adapter SHALL omit the result without a replay warning
+
+#### Scenario: Skip web-search results already in a conversation or denied
+
+- **WHEN** there is an active conversation or the web-search result is a synthetic execution denial, including a JSON output with `"type": "execution-denied"`
+- **THEN** the adapter SHALL omit the result without a replay warning
 
 ### Requirement: OpenAI scalar result breakpoint precedence
 

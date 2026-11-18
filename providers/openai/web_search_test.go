@@ -3,9 +3,12 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
+	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +50,8 @@ func TestWebSearch_ResultStatus(t *testing.T) {
 					require.Equal(t, wantTypes, types)
 					assert.True(t, result.Content[0].ProviderExecuted)
 					assert.Equal(t, "lookup", result.Content[0].ToolName)
+					assert.Equal(t, "ws_1", result.Content[0].ToolCallID)
+					assert.Equal(t, provider.FinishReasonStop, result.FinishReason.Unified)
 					part := result.Content[1]
 					assert.Equal(t, "ws_1", part.ToolCallID)
 					assert.Equal(t, "lookup", part.ToolName)
@@ -60,8 +65,9 @@ func TestWebSearch_ResultStatus(t *testing.T) {
 					parts := collectPartsWithBuildResult(t, br,
 						`{"type":"response.output_item.added","output_index":0,"item":{"type":"web_search_call","id":"ws_1","status":"in_progress"}}`,
 						`{"type":"response.output_item.done","output_index":0,"item":`+item+`}`,
+						`{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[`+item+`]}}`,
 					)
-					var calls, results, sources []provider.StreamPart
+					var calls, results, sources, finishes []provider.StreamPart
 					for _, part := range parts {
 						switch part.Type {
 						case provider.PartToolCall:
@@ -70,6 +76,8 @@ func TestWebSearch_ResultStatus(t *testing.T) {
 							results = append(results, part)
 						case provider.PartSource:
 							sources = append(sources, part)
+						case provider.PartFinish:
+							finishes = append(finishes, part)
 						case provider.PartError:
 							t.Errorf("search outcome became a stream error: %v", part.APICallError)
 						}
@@ -77,6 +85,10 @@ func TestWebSearch_ResultStatus(t *testing.T) {
 					require.Len(t, calls, 1)
 					assert.True(t, calls[0].ProviderExecuted)
 					assert.Equal(t, "lookup", calls[0].ToolName)
+					assert.Equal(t, "ws_1", calls[0].ToolCallID)
+					require.Len(t, finishes, 1)
+					require.NotNil(t, finishes[0].FinishReason)
+					assert.Equal(t, provider.FinishReasonStop, finishes[0].FinishReason.Unified)
 					require.Len(t, results, 1)
 					part := results[0]
 					assert.Equal(t, "ws_1", part.ToolCallID)
@@ -162,16 +174,76 @@ func TestWebSearch_AssistantHistory(t *testing.T) {
 	}
 }
 
+func TestWebSearch_StatelessReplayMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, activeOptions, wantID, extraField string
+	}{
+		{name: "only the active item ID is read", activeOptions: `{"itemId":"ws_azure","async":"invalid"}`, wantID: "ws_azure"},
+		{name: "another key cannot clear the canonical item ID", activeOptions: `{"itemId":"ws_azure","ITEMID":null}`, wantID: "ws_azure"},
+		{name: "another key cannot invalidate the canonical item ID", activeOptions: `{"itemId":"ws_azure","ITEMID":42}`, wantID: "ws_azure"},
+		{name: "only the lowercase denial key is meaningful", activeOptions: `{"itemId":"ws_azure"}`, wantID: "ws_azure", extraField: `,"Type":"execution-denied"`},
+		{name: "null active item ID falls back to tool call", activeOptions: `{"itemId":null}`, wantID: "ws_call"},
+		{name: "explicit empty item ID is not absent", activeOptions: `{"itemId":""}`, wantID: ""},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
+				output := webSearchJSON(`{"action":{"type":"findInPage","url":"https://example.com","pattern":"news"}` + tc.extraField + `}`)
+				part := provider.ToolResultPart("ws_call", "lookup", &output)
+				part.ProviderOptions = withAzureOptions(t, json.RawMessage(tc.activeOptions))
+				part.ProviderOptions["openai"] = OpenAIPartOptions{ItemID: "ws_openai"}
+				opts := provider.CallOptions{
+					Prompt:          []provider.Message{provider.NewAssistantMessage(part)},
+					Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "lookup"}},
+					ProviderOptions: withAzureOptions(t, OpenAIResponsesOptions{Store: new(false)}),
+				}
+				want := fmt.Sprintf(`[{"type":"web_search_call","id":%q,"status":"completed","action":{"type":"find_in_page","url":"https://example.com","pattern":"news"}}]`, tc.wantID)
+				assertWebSearchHistoryRequest(t, opts, streaming, want, nil, WithProviderName("azure"))
+			})
+		}
+	}
+}
+
+func TestWebSearch_ReplayCompletedStreamHistory(t *testing.T) {
+	const action = `{"type":"search","query":"news","sources":[{"type":"url","url":"https://example.com"}]}`
+	events := []string{
+		transportEvents[0],
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"web_search_call","id":"ws_1","status":"in_progress"}}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"web_search_call","id":"ws_1","status":"completed","action":` + action + `}}`,
+		transportEvents[2],
+	}
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := transportResponse(r, true)
+		response.Body = io.NopCloser(strings.NewReader(transportSSE(events)))
+		return response, nil
+	})}
+	m := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+	noStore := OpenAIResponsesOptions{Store: new(false)}
+	first := aisdk.StreamText(t.Context(), m,
+		aisdk.WithModelMessages(provider.UserText("search")),
+		aisdk.WithTools(aisdk.ToolSet{"lookup": {Type: aisdk.UserToolProvider, ID: toolIDWebSearch}}),
+		aisdk.WithProviderOptions(noStore),
+	)
+	history := first.ResponseMessages()
+	require.NoError(t, first.Err())
+	opts := provider.CallOptions{
+		Prompt:          append(history, provider.UserText("next")),
+		Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "lookup"}},
+		ProviderOptions: withOpenAIOptions(noStore),
+	}
+	want := `[{"type":"web_search_call","id":"ws_1","status":"completed","action":` + action + `},{"role":"user","content":[{"type":"input_text","text":"next"}]}]`
+	assertWebSearchHistoryRequest(t, opts, true, want, nil)
+}
+
 func webSearchJSON(raw string) provider.ToolResultOutput {
 	return provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(raw)}
 }
 
-func assertWebSearchHistoryRequest(t *testing.T, opts provider.CallOptions, streaming bool, want string, warnings []provider.Warning) {
+func assertWebSearchHistoryRequest(t *testing.T, opts provider.CallOptions, streaming bool, want string, warnings []provider.Warning, modelOpts ...Option) {
 	t.Helper()
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return transportResponse(r, streaming), nil
 	})}
-	m := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+	m := NewResponses("test-key", "gpt-4o", append(modelOpts, WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))...)
 	var request *provider.RequestMetadata
 	var gotWarnings []provider.Warning
 	if streaming {

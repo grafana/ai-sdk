@@ -25,14 +25,55 @@ const (
 	webSearchSourceAPI webSearchSourceType = "api"
 )
 
-func webSearchHistoryItem(output *provider.ToolResultOutput, id string) *responses.ResponseInputItemUnionParam {
-	if output == nil || output.Type != provider.ToolOutputJSON {
-		return nil
+func webSearchHistoryItem(part provider.ContentPart, namespace string) (item *responses.ResponseInputItemUnionParam, denied bool) {
+	output := part.Output
+	if output == nil {
+		return nil, false
+	}
+	if output.Type == provider.ToolOutputExecutionDenied {
+		return nil, true
+	}
+	if output.Type != provider.ToolOutputJSON {
+		return nil, false
 	}
 	var result map[string]json.RawMessage
 	if json.Unmarshal(output.JSON, &result) != nil {
-		return nil
+		return nil, false
 	}
+	var resultType provider.ToolResultOutputType
+	if json.Unmarshal(result["type"], &resultType) == nil && resultType == provider.ToolOutputExecutionDenied {
+		return nil, true
+	}
+
+	action := webSearchHistoryAction(result)
+	if action == nil {
+		return nil, false
+	}
+	return &responses.ResponseInputItemUnionParam{OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{
+		ID:     webSearchHistoryItemID(part, namespace),
+		Status: responses.ResponseFunctionWebSearchStatusCompleted,
+		Action: param.Override[responses.ResponseFunctionWebSearchActionUnionParam](action),
+	}}, false
+}
+
+func webSearchHistoryItemID(part provider.ContentPart, namespace string) string {
+	switch options := part.ProviderOptions[namespace].(type) {
+	case OpenAIPartOptions:
+		if options.ItemID != "" {
+			return options.ItemID
+		}
+	case provider.RawProviderOption:
+		var history map[string]json.RawMessage
+		if json.Unmarshal(options.Raw, &history) == nil {
+			if id, err := requiredString(history["itemId"], "itemId"); err == nil {
+				return id
+			}
+		}
+	}
+	return part.ToolCallID
+}
+
+func webSearchHistoryAction(result map[string]json.RawMessage) map[string]any {
 	var action map[string]json.RawMessage
 	if json.Unmarshal(result["action"], &action) != nil {
 		return nil
@@ -81,11 +122,7 @@ func webSearchHistoryItem(output *provider.ToolResultOutput, id string) *respons
 		return nil
 	}
 
-	return &responses.ResponseInputItemUnionParam{OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{
-		ID:     id,
-		Status: responses.ResponseFunctionWebSearchStatusCompleted,
-		Action: param.Override[responses.ResponseFunctionWebSearchActionUnionParam](native),
-	}}
+	return native
 }
 
 func copyNullishWebSearchString(native map[string]any, action map[string]json.RawMessage, key string) bool {
