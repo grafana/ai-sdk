@@ -821,6 +821,23 @@ Subsequent assistant provider-executed calls/results SHALL retain Responses taxo
 - **WHEN** stateless hosted history and a client shell call/output are supplied
 - **THEN** hosted items SHALL follow their taxonomy-specific omission/reconstruction; shell SHALL retain native paired types and call_id, and synthetic unmatched denied assistant results SHALL be omitted
 
+#### Scenario: Replay a web search without storage
+
+- **WHEN** an assistant tool result named `web_search` or `web_search_preview` (including configured aliases) has a valid JSON action, storage is disabled, and there is no active conversation
+- **THEN** the request SHALL contain one `web_search_call` with status `completed`, using the result's item ID from the active provider options namespace or its tool-call ID when no item ID is supplied
+- **AND** `search` SHALL retain optional `query` and `queries` and place any URL or API sources under the native action; `openPage` and `findInPage` SHALL become `open_page` and `find_in_page`, preserving absent and null URL or pattern fields where applicable
+
+#### Scenario: Omit an unreplayable web search
+
+- **WHEN** storage is disabled, there is no active conversation, and a web-search result has missing or invalid action data, invalid sources, or a non-JSON output (including an error result)
+- **THEN** the adapter SHALL omit the item and retain the existing warning that the tool's results are not sent when storage is disabled
+
+#### Scenario: Keep stored references and conversation skips for web search
+
+- **WHEN** storage is enabled and no active conversation is supplied
+- **THEN** the adapter SHALL reference the web-search result's item ID or fall back to its tool-call ID, without requiring a replayable action
+- **AND** with an active conversation, or for synthetic execution-denied results, the adapter SHALL omit the result without a replay warning
+
 ### Requirement: OpenAI scalar result breakpoint precedence
 
 Scalar output-level cache breakpoints SHALL precede tool-result-part breakpoints in the active OpenAI/Azure namespace. Content-array output SHALL instead preserve ordered input_text/input_image/input_file elements and take cache breakpoints from each element, not result/output-level scalar options.
@@ -1000,6 +1017,13 @@ Generated provider-executed built-ins SHALL include web_search_call, file_search
 
 - **WHEN** the response contains a web_search_call with ID search_1
 - **THEN** conversion SHALL emit the corresponding provider-executed tool call and tool result linked to search_1 rather than an ordinary client function call
+
+#### Scenario: Report web-search outcome in unary and streaming results
+
+- **WHEN** a unary `web_search_call` item or its streaming `output_item.done` event has a status other than `completed`
+- **THEN** the tool result SHALL set `IsError` and contain only the original status as `{"status": "<status>"}`, even when the item has an action
+- **AND** a `completed` item SHALL retain the success result shape, or an empty object if there is no action
+- **AND** both paths SHALL preserve the call ID, configured tool name, and existing standalone source and citation mapping
 
 ### Requirement: OpenAI annotation source title field
 

@@ -236,13 +236,18 @@ func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionCo
 		return item, nil, err
 	}
 
+	itemID := ctx.partOptions(part).ItemID
+	if itemID == "" {
+		itemID = part.ToolCallID
+	}
 	if ctx.store {
-		itemID := ctx.partOptions(part).ItemID
-		if itemID == "" {
-			itemID = part.ToolCallID
-		}
 		item := itemReference(itemID)
 		return &item, nil, nil
+	}
+	if toolName == "web_search" || toolName == "web_search_preview" {
+		if item := webSearchHistoryItem(part.Output, itemID); item != nil {
+			return item, nil, nil
+		}
 	}
 
 	return nil, []provider.Warning{{
