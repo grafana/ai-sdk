@@ -103,12 +103,15 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 				}
 				var output string
 				var finish provider.UnifiedFinishReason
+				var warnings []provider.Warning
 				if route.stream {
 					result, err := m.DoStream(t.Context(), opts)
 					require.NoError(t, err)
 					var text strings.Builder
 					for part := range result.Stream {
 						switch part.Type {
+						case provider.PartStreamStart:
+							warnings = append(warnings, part.Warnings...)
 						case provider.PartTextDelta:
 							text.WriteString(part.Delta)
 						case provider.PartFinish:
@@ -122,6 +125,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					result, err := m.DoGenerate(t.Context(), opts)
 					require.NoError(t, err)
 					finish = result.FinishReason.Unified
+					warnings = result.Warnings
 					assert.Len(t, result.Content, 1)
 					for _, part := range result.Content {
 						assert.Equal(t, provider.ContentText, part.Type)
@@ -148,6 +152,11 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					require.Len(t, tools, 1)
 					assert.Equal(t, "json", tools[0].Name)
 					assert.JSONEq(t, tc.schema, string(tools[0].Schema))
+				}
+				if tc.toolChoice == "auto" {
+					require.Len(t, warnings, 1)
+					assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+					assert.Equal(t, "toolChoice", warnings[0].Feature)
 				}
 				assert.Equal(t, provider.FinishReasonStop, finish)
 				assert.JSONEq(t, tc.output, output)
