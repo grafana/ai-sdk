@@ -108,12 +108,13 @@ type CreateUIMessageStreamParams struct {
 	// OnError maps a stream failure to the text of the emitted error chunk. It
 	// receives the error Execute returns, ErrExecuteRequired when Execute is nil,
 	// and a panic recovered from Execute. That text reaches the client, so return
-	// err.Error() only when every one of those sources is safe to disclose. The
-	// default masks them all as "An error occurred." and discards the detail, so
-	// log it here when an operator needs it.
+	// err.Error() only when every one of those sources is safe to disclose.
+	// It also receives panics recovered from OnStepEnd, but its returned text
+	// for those panics is not sent to the client.
 	OnError func(error) string
 	// OriginalMessages is the prior conversation. It supplies the continuation
 	// message ID and history for callbacks; it is not a persistence mode switch.
+	// When a stream callback is configured, the history is copied before Execute.
 	OriginalMessages []UIMessage
 	// OnStepEnd runs after each finish-step chunk is applied and before it is
 	// forwarded, including for chunks from a merged stream.
@@ -170,23 +171,20 @@ type UIMessageStreamOnFinishState struct {
 // callback state's AssemblyError.
 func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageChunk {
 	out := make(chan UIMessageChunk, defaultWriterBuffer)
+	cfg := uiMessageStreamConfig{
+		originalMessages:    params.OriginalMessages,
+		hasOriginalMessages: true,
+		generateMessageID:   params.GenerateID,
+		onStepEnd:           params.OnStepEnd,
+		onFinish:            params.OnFinish,
+		onError:             params.OnError,
+	}
+	cfg = cfg.withCallbackHistorySnapshot()
 
 	go func() {
 		defer close(out)
 
 		writer := newUIMessageStreamWriter(defaultWriterBuffer)
-
-		// Like upstream createUIMessageStream, emit no start or finish chunk of
-		// our own. Start chunks without a message ID get the response ID, which
-		// continues the last original message when it is an assistant message.
-		cfg := uiMessageStreamConfig{
-			originalMessages:    params.OriginalMessages,
-			hasOriginalMessages: true,
-			generateMessageID:   params.GenerateID,
-			onStepEnd:           params.OnStepEnd,
-			onFinish:            params.OnFinish,
-			onError:             params.OnError,
-		}
 		messageID := responseUIMessageID(cfg)
 		assembly := cfg.newCallbackAssembly(messageID)
 
@@ -235,6 +233,16 @@ func newUIMessageStreamAssembly(messageID string, initial *UIMessage) *uiMessage
 	return &uiMessageStreamAssembly{reader: reader, initErr: err}
 }
 
+func (cfg uiMessageStreamConfig) withCallbackHistorySnapshot() uiMessageStreamConfig {
+	if cfg.onStepEnd != nil || cfg.onFinish != nil {
+		cfg.originalMessages = cloneUIMessages(cfg.originalMessages)
+		for i := range cfg.originalMessages {
+			cfg.originalMessages[i] = cloneUIMessage(cfg.originalMessages[i])
+		}
+	}
+	return cfg
+}
+
 func (cfg uiMessageStreamConfig) newCallbackAssembly(messageID string) *uiMessageStreamAssembly {
 	if cfg.onStepEnd == nil && cfg.onFinish == nil {
 		return nil
@@ -278,13 +286,30 @@ func (a *uiMessageStreamAssembly) beforeForward(chunk UIMessageChunk, cfg uiMess
 		for i := range messages {
 			messages[i] = cloneUIMessage(messages[i])
 		}
-		cfg.onStepEnd(UIMessageStreamOnStepEndState{
+		callbackErr := runUIStepEnd(cfg.onStepEnd, UIMessageStreamOnStepEndState{
 			Messages:        messages,
 			IsContinuation:  isContinuation,
 			ResponseMessage: response,
 			AssemblyError:   err,
 		})
+		if callbackErr != nil && cfg.onError != nil {
+			cfg.onError(callbackErr)
+		}
 	}
+}
+
+func runUIStepEnd(fn func(UIMessageStreamOnStepEndState), state UIMessageStreamOnStepEndState) (err error) {
+	defer func() {
+		switch r := recover().(type) {
+		case nil:
+		case error:
+			err = fmt.Errorf("aisdk: panic in UI stream step-end callback: %w", r)
+		default:
+			err = fmt.Errorf("aisdk: panic in UI stream step-end callback: %v", r)
+		}
+	}()
+	fn(state)
+	return nil
 }
 
 func (a *uiMessageStreamAssembly) finish(cfg uiMessageStreamConfig) {
@@ -414,6 +439,8 @@ func WithUIMessageStreamStart(send bool) UIMessageStreamOption {
 }
 
 // OnUIMessageStreamError configures error-to-text conversion for UI streams.
+// It also receives panics recovered from the step-end callback, without
+// emitting the returned text.
 func OnUIMessageStreamError(fn func(error) string) UIMessageStreamOption {
 	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
 		cfg.onError = fn

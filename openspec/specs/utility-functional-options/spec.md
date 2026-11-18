@@ -143,6 +143,16 @@ An invalid application tool call SHALL produce one `tool-input-error` chunk; the
 - **THEN** the step-end state marks `IsContinuation` and the accumulated response replaces that last entry in `Messages`
 - **AND** when there is no such continuation, the step-end state clears `IsContinuation` and appends the response instead
 
+#### Scenario: Assembly uses the original history at stream construction
+- **WHEN** a step-end or stream-finish callback is configured
+- **THEN** the stream captures the supplied history before starting to produce output and uses that same history for ID selection, assembly, and callback history
+- **AND** changes to the input history after construction do not change the callbacks' response or continuation
+
+#### Scenario: A step-end callback panic does not change the wire
+- **WHEN** a step-end callback panics
+- **THEN** the stream recovers the panic and notifies its configured error handler, if any
+- **AND** it forwards the boundary and subsequent chunks without emitting an error chunk for that panic
+
 #### Scenario: Assembly errors do not change the wire
 - **WHEN** a chunk cannot be applied while assembling the step-end snapshot
 - **THEN** the callback reports the error in `AssemblyError` with the partial snapshot, consistent with finish callback assembly

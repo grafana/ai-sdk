@@ -195,6 +195,7 @@ func (r *StreamTextResult) Stream() <-chan TextStreamPart {
 func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-chan UIMessageChunk {
 	cfg := buildUIMessageStreamConfig(opts)
 	cfg.toolTypes = r.toolTypes
+	cfg = cfg.withCallbackHistorySnapshot()
 	out := make(chan UIMessageChunk, defaultStreamBuffer)
 	go func() {
 		defer close(out)
