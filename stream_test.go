@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func assembleResponseMessage(messageID string, chunks []UIMessageChunk) (UIMessage, error) {
-	return assembleResponseMessageWithInitial(messageID, chunks, nil)
+func assembleResponseMessage(chunks []UIMessageChunk) (UIMessage, error) {
+	return assembleResponseMessageWithInitial("msg-1", chunks, nil)
 }
 
 func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
@@ -431,7 +431,7 @@ func TestCreateUIMessageStream(t *testing.T) {
 }
 
 func TestAssembleResponseMessageReportsEveryApplyFailure(t *testing.T) {
-	msg, err := assembleResponseMessage("msg-1", []UIMessageChunk{
+	msg, err := assembleResponseMessage([]UIMessageChunk{
 		TextStartChunk("ok"),
 		TextDeltaChunk("ok", "kept"),
 		TextDeltaChunk("first-missing", "a"),
@@ -578,7 +578,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t2"},
 		}
 
-		msg, err := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage(chunks)
 		require.NoError(t, err)
 		require.Len(t, msg.Parts, 2)
 
@@ -604,7 +604,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t1"},
 		}
 
-		msg, err := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage(chunks)
 		require.NoError(t, err)
 		require.Len(t, msg.Parts, 3)
 
@@ -625,7 +625,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 		chunks := []UIMessageChunk{
 			{Type: ChunkToolInputError, ToolCallID: "c1", ToolName: "calc", Input: json.RawMessage(`{"x":1}`), ErrorText: "invalid input"},
 		}
-		msg, err := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage(chunks)
 		require.NoError(t, err)
 		require.Len(t, msg.Parts, 1)
 
