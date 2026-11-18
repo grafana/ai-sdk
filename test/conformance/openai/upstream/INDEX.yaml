@@ -42,6 +42,10 @@ openai-shell-tool.1: shell
 openai-tool-search.1: tool-search
 openai-web-search-tool.1: web-search-tool
 
+# Streaming fixtures not yet imported, with their non-streaming counterparts:
+openai-refusal.1: refusal
+openai-refusal.1.json: null
+
 # Non-streaming fixtures not yet imported:
 reasoning-model-temperature-error: null
 

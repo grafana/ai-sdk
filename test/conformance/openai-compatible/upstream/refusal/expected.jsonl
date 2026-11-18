@@ -1,0 +1,17 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"txt-0"}
+{"type":"text-delta","id":"txt-0","delta":"I'm"}
+{"type":"text-delta","id":"txt-0","delta":" sorry"}
+{"type":"text-delta","id":"txt-0","delta":","}
+{"type":"text-delta","id":"txt-0","delta":" but"}
+{"type":"text-delta","id":"txt-0","delta":" I"}
+{"type":"text-delta","id":"txt-0","delta":" can't"}
+{"type":"text-delta","id":"txt-0","delta":" assist"}
+{"type":"text-delta","id":"txt-0","delta":" with"}
+{"type":"text-delta","id":"txt-0","delta":" that"}
+{"type":"text-delta","id":"txt-0","delta":" request"}
+{"type":"text-delta","id":"txt-0","delta":"."}
+{"type":"text-end","id":"txt-0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"content-filter"}

@@ -24,6 +24,10 @@ type streamState struct {
 
 	textActive      bool
 	reasoningActive bool
+	hasRefusal      bool
+	// rawFinishReason is mapped when the stream ends, because the last delta,
+	// which can carry a refusal, often shares a chunk with the finish reason.
+	rawFinishReason *string
 	finishReason    provider.FinishReason
 	// finishReasonSet records that the stream reported a finish reason or that
 	// an error already decided it. A stream that ends with neither was cut short.
@@ -204,7 +208,7 @@ func streamError(data []byte) (json.RawMessage, string, bool, error) {
 
 func (s *streamState) handleChoice(choice chatChoice) bool {
 	if choice.FinishReason != nil {
-		s.finishReason = mapFinishReason(choice.FinishReason)
+		s.rawFinishReason = choice.FinishReason
 		s.finishReasonSet = true
 	}
 
@@ -225,20 +229,12 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 		}
 	}
 
-	if delta.Content != "" {
-		if s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
-				return false
-			}
-			s.reasoningActive = false
-		}
-		if !s.textActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
-				return false
-			}
-			s.textActive = true
-		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta.Content}) {
+	if delta.Content != "" && !s.sendTextDelta(delta.Content) {
+		return false
+	}
+	if delta.Refusal != "" {
+		s.hasRefusal = true
+		if !s.sendTextDelta(string(delta.Refusal)) {
 			return false
 		}
 	}
@@ -258,6 +254,24 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	}
 
 	return true
+}
+
+// sendTextDelta appends to the stream's single text part, ending active
+// reasoning first. Content and refusal deltas share the part.
+func (s *streamState) sendTextDelta(delta string) bool {
+	if s.reasoningActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
+			return false
+		}
+		s.reasoningActive = false
+	}
+	if !s.textActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
+			return false
+		}
+		s.textActive = true
+	}
+	return sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta})
 }
 
 func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
@@ -433,6 +447,9 @@ func (s *streamState) flush() {
 			URL:     s.endpoint,
 		}))
 	}
+	if s.rawFinishReason != nil {
+		s.finishReason = mapFinishReason(s.rawFinishReason, s.hasRefusal)
+	}
 	metadata, err := withChatCompletionMetadata(responseProviderMetadata(s.metadataKey, s.rawUsage), s.metadataKey, s.chatMetadata)
 	if err != nil {
 		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(s.endpoint, err)}) {
@@ -480,6 +497,7 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 
 func (s *streamState) emitProviderError(err *provider.APICallError) {
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	s.rawFinishReason = nil
 	s.finishReasonSet = true
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
@@ -494,6 +512,7 @@ func (s *streamState) emitError(err *provider.APICallError) {
 
 func (s *streamState) emitRecoverableError(err *provider.APICallError) {
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	s.rawFinishReason = nil
 	s.finishReasonSet = true
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,

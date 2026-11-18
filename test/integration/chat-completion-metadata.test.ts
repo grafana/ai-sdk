@@ -4,7 +4,7 @@ import { readUIMessageStream, uiMessageChunkSchema, type UIMessage, type UIMessa
 import { fetchScenario } from "./helpers.js";
 
 describe("Chat completion metadata", () => {
-  it("keeps accumulated metadata out of UI content and history", async () => {
+  it("keeps accumulated metadata out of custom UI chunks while refusal text joins the content", async () => {
     const response = await fetchScenario("chat-completion-metadata");
     expect(response.status).toBe(200);
     const chunks: UIMessageChunk[] = [];
@@ -20,7 +20,7 @@ describe("Chat completion metadata", () => {
       terminateOnError: true,
     })) message = next;
     expect(message?.parts.filter(part => part.type !== "step-start")).toEqual([
-      expect.objectContaining({ type: "text", text: "hello world" }),
+      expect.objectContaining({ type: "text", text: "hello Cannot worldhelp" }),
     ]);
   });
 });

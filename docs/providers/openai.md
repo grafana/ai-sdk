@@ -114,6 +114,12 @@ and stored continuations.
 Provider-executed tools are different from Go tools with an `Execute` function:
 they run in OpenAI's environment and follow OpenAI's data and security model.
 
+## Recognize refusals
+
+When the model refuses, the refusal arrives as ordinary text and the response
+finishes with `content-filter`, unless the same response also calls a function
+tool, which finishes with `tool-calls` so the tools still run.
+
 ## Handle unsupported generic settings
 
 Responses does not accept every Chat Completions parameter. Unsupported generic

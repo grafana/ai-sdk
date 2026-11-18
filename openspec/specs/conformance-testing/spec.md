@@ -410,6 +410,15 @@ In expected and actual sequences, the comparator SHALL sort each maximal adjacen
 - **WHEN** adjacent local success and error outputs arrive in opposite completion order
 - **THEN** the comparator SHALL sort the maximal run by `toolCallId` in both sequences without crossing other chunk types or step boundaries
 
+### Requirement: Unavailable tool list normalization
+
+In expected and actual sequences, the comparator SHALL sort the comma-separated tool names in an `errorText` of the form `AI_NoSuchToolError: Model tried to call unavailable tool '<name>'. Available tools: <names>.`, because upstream lists tools in object insertion order and Go ToolSet maps have none. Tool names, the remaining text and every other field SHALL stay exact.
+
+#### Scenario: Unavailable tool list normalization
+- **WHEN** upstream lists the available tools in declaration order and Go lists them by name
+- **THEN** the comparison passes when the same names are listed
+- **AND** a missing, extra or renamed tool still fails the comparison
+
 ### Requirement: Rejected and provider-executed output ordering
 
 An output whose `toolCallId` has a `tool-input-error` in the sequence is a rejected call emitted during model-stream reading; it SHALL be excluded from and end local-output runs. A chunk with `providerExecuted: true` SHALL also be excluded from and end runs: provider-executed outputs SHALL retain exact recorded provider order.

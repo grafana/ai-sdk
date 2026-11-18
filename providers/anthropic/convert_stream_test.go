@@ -273,6 +273,58 @@ func TestStreamAdapter_MetadataIsStreamLevel(t *testing.T) {
 	})
 }
 
+func TestStreamAdapter_ServiceTier(t *testing.T) {
+	start := func(id, usageTier, messageTier string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[],"usage":{"input_tokens":1,"output_tokens":0` + usageTier + `}` + messageTier + `}}`
+	}
+	delta := func(usageTier string) string {
+		return `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":2` + usageTier + `}}`
+	}
+	const stop = `{"type":"message_stop"}`
+
+	tiers := func(t *testing.T, events ...string) []json.RawMessage {
+		t.Helper()
+		var parsed []anthropic.BetaRawMessageStreamEventUnion
+		for _, raw := range events {
+			parsed = append(parsed, unmarshalEvent(t, raw))
+		}
+		var out []json.RawMessage
+		for _, part := range collectParts(parsed) {
+			if part.Type != provider.PartFinish {
+				continue
+			}
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(part.ProviderMetadata["anthropic"], &metadata))
+			out = append(out, metadata["serviceTier"])
+		}
+		return out
+	}
+
+	for _, tc := range []struct {
+		name   string
+		events []string
+		want   []string
+	}{
+		{name: "usage tier on message start", events: []string{start("msg_1", `,"service_tier":"standard"`, ""), delta(""), stop}, want: []string{`"standard"`}},
+		{name: "top-level fallback", events: []string{start("msg_1", "", `,"service_tier":"priority"`), delta(""), stop}, want: []string{`"priority"`}},
+		{name: "final usage delta overrides", events: []string{start("msg_1", `,"service_tier":"standard"`, ""), delta(`,"service_tier":"priority"`), stop}, want: []string{`"priority"`}},
+		{name: "null delta keeps the start tier", events: []string{start("msg_1", `,"service_tier":"standard"`, ""), delta(`,"service_tier":null`), stop}, want: []string{`"standard"`}},
+		{name: "each message resets the tier", events: []string{start("msg_1", `,"service_tier":"standard"`, ""), delta(""), stop, start("msg_2", "", ""), delta(""), stop}, want: []string{`"standard"`, ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tiers(t, tc.events...)
+			require.Len(t, got, len(tc.want))
+			for i, want := range tc.want {
+				if want == "" {
+					assert.Nil(t, got[i])
+					continue
+				}
+				assert.JSONEq(t, want, string(got[i]))
+			}
+		})
+	}
+}
+
 func TestSafeguardsStreamTextProviderMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

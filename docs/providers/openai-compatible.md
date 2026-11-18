@@ -91,6 +91,12 @@ Per-call `OpenAIOptions` cover compatible reasoning and schema settings where
 the server supports them. Unsupported values may be ignored or rejected by the
 server, so include the target implementation in integration tests.
 
+## Recognize refusals
+
+A refusal the server returns instead of content arrives as text, and a `stop`
+finish becomes `content-filter` with `stop` as the raw reason. Non-string
+refusal values are ignored.
+
 ## Preserve Chat-specific output
 
 Construct the model with `WithChatCompletionMetadata()` when a protocol codec
@@ -103,8 +109,8 @@ The resolved provider metadata namespace contains `chatCompletion`; use
 `ChatCompletionMetadataKey` and decode its value as `ChatCompletionMetadata`.
 Unary responses carry complete values. Streaming concatenates refusal fragments
 and appends both logprob channels, publishing them only on the finish part.
-There are no custom content parts, so these fields do not accumulate in message
-history or UI content. Native token accounting, including cache-write and audio
+There are no custom content parts, so the metadata does not accumulate in message
+history or UI content; the refusal text itself arrives as ordinary text. Native token accounting, including cache-write and audio
 counts and absent-versus-zero distinctions, remains in `Usage.Raw`.
 
 Only the first choice's metadata is decoded. Invalid extensions are dropped with

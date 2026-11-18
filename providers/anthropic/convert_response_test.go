@@ -118,6 +118,32 @@ func TestConvertResponse_FallbackProviderMetadata(t *testing.T) {
 	}`, string(result.ProviderMetadata["anthropic"]))
 }
 
+func TestConvertResponse_ServiceTier(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tier string
+		want string
+	}{
+		{name: "usage tier", tier: `,"usage":{"input_tokens":1,"output_tokens":1,"service_tier":"standard"},"service_tier":"priority"`, want: `"standard"`},
+		{name: "top-level fallback", tier: `,"usage":{"input_tokens":1,"output_tokens":1},"service_tier":"priority"`, want: `"priority"`},
+		{name: "null usage tier falls back", tier: `,"usage":{"input_tokens":1,"output_tokens":1,"service_tier":null},"service_tier":"priority"`, want: `"priority"`},
+		{name: "absent", tier: `,"usage":{"input_tokens":1,"output_tokens":1}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := unmarshalMessage(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn"`+tc.tier+`}`)
+			result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+			require.NoError(t, err)
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(result.ProviderMetadata["anthropic"], &metadata))
+			if tc.want == "" {
+				assert.NotContains(t, metadata, "serviceTier")
+				return
+			}
+			assert.JSONEq(t, tc.want, string(metadata["serviceTier"]))
+		})
+	}
+}
+
 func TestBuildAnthropicProviderMetadata_PreservesEmptyStrings(t *testing.T) {
 	metadata, err := buildAnthropicProviderMetadata(map[string]json.RawMessage{
 		"stop_details": json.RawMessage(`{"type":"refusal","category":"","explanation":"","recommended_model":""}`),

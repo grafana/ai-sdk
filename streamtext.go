@@ -204,9 +204,13 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 		var assembledChunks []UIMessageChunk
 		var finishReason provider.FinishReason
 		var isAborted bool
+		invalidToolCallIDs := make(map[string]struct{})
 		for part := range r.consumeStream() {
 			metadata := messageMetadataForPart(part, cfg)
-			chunks := translateToChunksWithMetadata(part, cfg, metadata)
+			var chunks []UIMessageChunk
+			if !isInvalidToolCallError(part, invalidToolCallIDs) {
+				chunks = translateToChunksWithMetadata(part, cfg, metadata)
+			}
 			if metadata != nil && !isStreamMessageMetadataCarrier(part) {
 				chunks = append(chunks, UIMessageChunk{Type: ChunkMessageMetadata, MessageMetadata: metadata})
 			}
@@ -360,7 +364,11 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolCall:
 		dynamic := uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes)
 		if p.Invalid {
-			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errorText(p.Error, cfg), ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+			errText := toolErrorText(p.Error, cfg)
+			if p.ProviderExecuted {
+				errText = errorText(p.Error, cfg)
+			}
+			return []UIMessageChunk{{Type: ChunkToolInputError, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ErrorText: errText, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 		}
 		return []UIMessageChunk{{Type: ChunkToolInputAvailable, ToolCallID: p.ToolCallID, ToolName: p.ToolName, Input: p.Input, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolApprovalRequest:
@@ -373,7 +381,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamToolResult:
 		return []UIMessageChunk{{Type: ChunkToolOutputAvailable, ToolCallID: p.ToolCallID, Output: p.Output, ProviderExecuted: p.ProviderExecuted, Dynamic: uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes), Preliminary: p.Preliminary, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolError:
-		errText := errorText(p.Error, cfg)
+		errText := toolErrorText(p.Error, cfg)
 		if p.ProviderExecuted {
 			errText = p.Error.Error()
 		}
@@ -405,6 +413,34 @@ func errorText(err error, cfg uiMessageStreamConfig) string {
 		return cfg.onError(err)
 	}
 	return "An error occurred."
+}
+
+// toolErrorText returns the UI error text of a failed application tool call.
+// Unless tool errors are redacted, it is the text the model receives as the
+// tool result, so converting the UI message back keeps the history unchanged.
+func toolErrorText(err error, cfg uiMessageStreamConfig) string {
+	if sendOption(cfg.redactToolErrors, cfg.onError != nil) || err == nil {
+		return errorText(err, cfg)
+	}
+	return err.Error()
+}
+
+// isInvalidToolCallError reports whether part is the tool error StreamText
+// emits after an invalid application tool call so the model receives a tool
+// result. Its tool-input-error chunk already reports the failure to the UI.
+func isInvalidToolCallError(part TextStreamPart, invalidToolCallIDs map[string]struct{}) bool {
+	switch p := part.(type) {
+	case StreamToolCall:
+		if p.Invalid && !p.ProviderExecuted {
+			invalidToolCallIDs[p.ToolCallID] = struct{}{}
+		}
+	case StreamToolError:
+		if _, invalid := invalidToolCallIDs[p.ToolCallID]; invalid && !p.ProviderExecuted {
+			delete(invalidToolCallIDs, p.ToolCallID)
+			return true
+		}
+	}
+	return false
 }
 
 func toolMetadataFromProviderMetadata(meta provider.ProviderMetadata) json.RawMessage {
@@ -1511,6 +1547,9 @@ func (r *StreamTextResult) handleToolCall(
 		// format in @ai-sdk/provider. Keeping it byte-identical lets
 		// conformance fixtures compare without per-provider patching.
 		errMsg := fmt.Sprintf("AI_NoSuchToolError: Model tried to call unavailable tool '%s'. Available tools: %s.", part.ToolName, strings.Join(availableTools, ", "))
+		if cfg.tools == nil {
+			errMsg = fmt.Sprintf("AI_NoSuchToolError: Model tried to call unavailable tool '%s'. No tools are available.", part.ToolName)
+		}
 		r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, errors.New(errMsg))
 		return
 	}

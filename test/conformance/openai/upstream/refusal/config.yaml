@@ -1,0 +1,17 @@
+# A Responses stream whose message content is a refusal part, with a JSON
+# response format as in the upstream doStream refusal test.
+model: gpt-4o
+prompt: Hello
+responseFormat:
+  type: json
+  name: response
+  schema:
+    type: object
+    properties:
+      steps:
+        type: array
+        items:
+          type: string
+    required:
+      - steps
+    additionalProperties: false

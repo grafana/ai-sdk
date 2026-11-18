@@ -663,8 +663,9 @@ The provider SHALL expand an undeclared function named parallel only when its
 nonempty tool_uses array contains object parameters and functions-prefixed
 recipients that are all declared function tools. Expansion SHALL be atomic and
 preserve original wrapper identity and child index/count in provider metadata.
-Streaming SHALL buffer wrapper input until it can emit child input lifecycles;
-unexpandable wrappers SHALL retain their original input deltas and call identity.
+Streaming SHALL buffer
+wrapper input until it can emit child input lifecycles; unexpandable wrappers
+SHALL retain their original input deltas and call identity.
 
 #### Scenario: Valid wrapper expands
 - **WHEN** a wrapper references two declared function tools
@@ -685,6 +686,17 @@ unexpandable wrappers SHALL retain their original input deltas and call identity
 - **THEN** one wrapper output contains child outputs in index order
 - **AND** conversations omit the existing wrapper call while previous-response chains reconstruct it
 - **AND** incomplete or conflicting groups remain ordinary child results
+
+### Requirement: Parallel wrapper input is retained once
+Only the first expanded child SHALL carry the original wrapper input in its
+provider metadata, so streamed and persisted siblings do not repeat it. Result
+grouping SHALL accept the input from any one child or from several identical
+copies.
+
+#### Scenario: Grouping uses the retained wrapper input
+- **WHEN** a complete group's wrapper input appears on one child, or on several children as in older histories
+- **THEN** results are grouped and a previous-response chain reconstructs the wrapper call from that input, in any result order
+- **AND** a group with no child carrying the input, or with children carrying different inputs, remains ordinary child results
 
 ### Requirement: Recoverable malformed Responses stream events
 
