@@ -279,7 +279,8 @@ The provider package SHALL define `PartReasoningFile StreamPartType = "reasoning
 
 #### Scenario: Generated-file redirects cannot downgrade HTTPS
 - **WHEN** an HTTPS download hop redirects to an HTTP URL, even if the download originally started on HTTP
-- **THEN** the download SHALL report a redirect downgrade error without requesting the HTTP target
+- **THEN** the download SHALL fail without requesting the HTTP target
+- **AND** it SHALL report a redirect downgrade error if the hop is within the redirect limit, or the redirect-limit error otherwise
 - **AND** initial HTTP URLs, redirects that keep the same scheme, and HTTP-to-HTTPS redirects SHALL remain allowed subject to the existing download checks
 
 #### Scenario: Validated generated-file DNS fallback
