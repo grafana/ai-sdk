@@ -80,6 +80,7 @@ the service your application calls:
 - [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
 - [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose the right Grafana credential for your application, in Go or server-side TypeScript.
 - [Use official OpenAI clients](guides/openai-chat-completions.md) with the Gateway Chat Completions adapter.
+- [Use Anthropic clients and Claude Code](guides/anthropic-messages.md) with the Gateway Messages adapter.
 
 ## Extend model infrastructure
 
