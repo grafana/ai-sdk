@@ -498,41 +498,42 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	// top-level reasoning hint. Mirrors upstream
 	// anthropic-language-model.ts:390-413.
 	if opts.Reasoning != provider.ReasoningProviderDefault && !hasProviderEffort(opts.ProviderOptions) {
-		rc := resolveReasoningConfig(opts.Reasoning, caps, &warnings)
+		rc := resolveReasoningConfig(modelID, opts.Reasoning, caps, &warnings)
 		if rc != nil {
 			providerThinking := providerThinkingType(opts.ProviderOptions)
 			applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
 		}
 	}
 
-	// Some models always think and reject disabled and budget-based enabled
-	// thinking with a 400. Replace the unsupported setting so the request
-	// still succeeds. Mirrors upstream anthropic-language-model.ts
-	// (@ai-sdk/anthropic 4.0.67).
-	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil {
-		switch {
-		case anthropicOpts.Thinking.Type == ThinkingDisabled && caps.supportsBetweenToolsThinking:
+	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil && anthropicOpts.Thinking.Type == ThinkingDisabled {
+		if caps.supportsBetweenToolsThinking {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "providerOptions.anthropic.thinking",
 				Details: fmt.Sprintf("thinking cannot be disabled for %s. Using 'between_tools' thinking, the lowest thinking setting, instead.", modelID),
 			})
 			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingBetweenTools}
-		case anthropicOpts.Thinking.Type == ThinkingDisabled:
+		} else {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "providerOptions.anthropic.thinking",
 				Details: fmt.Sprintf("thinking cannot be disabled for %s; it always uses adaptive thinking. The thinking setting has been removed. Lower 'effort' to reduce thinking.", modelID),
 			})
 			anthropicOpts.Thinking = nil
-		case anthropicOpts.Thinking.Type == ThinkingEnabled:
-			warnings = append(warnings, provider.Warning{
-				Type:    provider.WarnUnsupported,
-				Feature: "providerOptions.anthropic.thinking",
-				Details: fmt.Sprintf("budget-based thinking is not supported by %s; it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID),
-			})
-			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
 		}
+	}
+
+	if caps.rejectsBudgetThinking && anthropicOpts.Thinking != nil && anthropicOpts.Thinking.Type == ThinkingEnabled {
+		qualifier := ""
+		if caps.rejectsThinkingDisabled {
+			qualifier = "; it always uses adaptive thinking"
+		}
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.anthropic.thinking",
+			Details: fmt.Sprintf("budget-based thinking is not supported by %s%s. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID, qualifier),
+		})
+		anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
 	}
 
 	if caps.rejectsThinkingDisabledAboveHighEffort &&

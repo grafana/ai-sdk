@@ -6,7 +6,7 @@ Define Anthropic model capability lookup and the model-aware validation, default
 
 ### Requirement: Model capabilities lookup
 
-The system SHALL provide unexported `getModelCapabilities(modelID string)` returning model metadata without rewriting the request ID. Specific family checks SHALL precede generic Claude 4 checks, and Sonnet 5.5 SHALL precede Sonnet 5. Classification SHALL use registered baseline families plus Sonnet 5.5 ported ahead from `@ai-sdk/anthropic` 4.0.67. Boolean capabilities not explicitly enabled in a classification SHALL be false; bare Sonnet/Opus 4 SHALL remain unknown-Claude.
+The system SHALL provide unexported `getModelCapabilities(modelID string)` returning model metadata without rewriting the request ID. Specific family checks SHALL precede generic Claude 4 checks, and Sonnet 5.5 SHALL precede Sonnet 5. Classification SHALL distinguish disabled-thinking rejection from budget-thinking rejection. Boolean capabilities not explicitly enabled in a classification SHALL be false; bare Sonnet/Opus 4 SHALL remain unknown-Claude.
 
 #### Scenario: Known model claude-opus-4-7
 - **WHEN** `getModelCapabilities` is called with model ID `claude-opus-4-7`
@@ -14,11 +14,11 @@ The system SHALL provide unexported `getModelCapabilities(modelID string)` retur
 
 #### Scenario: Known model claude-sonnet-5-5
 - **WHEN** `getModelCapabilities` is called with `claude-sonnet-5-5`, `anthropic.claude-sonnet-5-5` or `global.anthropic.claude-sonnet-5-5`
-- **THEN** it SHALL return maxOutputTokens=128000, supportsAdaptiveThinking=true, supportsStructuredOutput=true, rejectsSamplingParams=true, supportsXHighEffort=true, rejectsThinkingDisabledAboveHighEffort=true, rejectsThinkingDisabled=true, rejectsForcedToolUse=true, supportsBetweenToolsThinking=true, isKnownModel=true
+- **THEN** it SHALL return maxOutputTokens=128000, supportsAdaptiveThinking=true, supportsStructuredOutput=true, rejectsSamplingParams=true, supportsXHighEffort=true, rejectsThinkingDisabledAboveHighEffort=true, rejectsThinkingDisabled=true, rejectsBudgetThinking=true, rejectsForcedToolUse=true, supportsBetweenToolsThinking=true, isKnownModel=true
 
 #### Scenario: Claude Sonnet 5 keeps disabled thinking and forced tool use
 - **WHEN** `getModelCapabilities` is called with `claude-sonnet-5`
-- **THEN** rejectsThinkingDisabled, rejectsForcedToolUse and supportsBetweenToolsThinking SHALL be false
+- **THEN** rejectsThinkingDisabled, rejectsBudgetThinking, rejectsForcedToolUse and supportsBetweenToolsThinking SHALL be false
 
 #### Scenario: Known model claude-sonnet-4-6
 - **WHEN** `getModelCapabilities` is called with model ID `claude-sonnet-4-6`
@@ -70,9 +70,22 @@ The system SHALL provide unexported `getModelCapabilities(modelID string)` retur
 - **WHEN** an ID contains `claude-opus-5`
 - **THEN** metadata SHALL report 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, known; boolean capabilities not enabled here SHALL be false
 
-#### Scenario: Newest Claude capability classification
+#### Scenario: Haiku 5.5 capability classification
 
-- **WHEN** an ID contains `claude-opus-4-8`, `claude-opus-4-7`, `claude-fable-5`, or `claude-sonnet-5` but does not match Sonnet 5.5
+- **WHEN** an ID identifies `claude-haiku-5-5`, including a resolved Vertex ID
+- **THEN** metadata SHALL report 128000 max output, adaptive thinking and structured output supported, sampling and budget-based thinking rejected, xhigh effort supported, disabled thinking rejected only above high effort, and known
+- **AND** metadata SHALL NOT reject forced tool use or report support for `between_tools`
+
+#### Scenario: Base Fable 5 capability classification
+
+- **WHEN** an ID identifies base `claude-fable-5`, including a resolved Vertex ID
+- **THEN** metadata SHALL report 128000 max output, adaptive thinking and structured output supported, sampling rejected, xhigh effort supported, both disabled and budget-based thinking rejected, and known
+- **AND** metadata SHALL NOT reject forced tool use or report support for `between_tools`
+- **AND** the base model's restrictions SHALL NOT be inferred for other Fable 5 versions from the shared prefix alone
+
+#### Scenario: General Claude 4.7, 4.8 and Sonnet 5 capability classification
+
+- **WHEN** an ID contains `claude-opus-4-8`, `claude-opus-4-7`, or `claude-sonnet-5` but does not match Sonnet 5.5
 - **THEN** metadata SHALL report 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, known; boolean capabilities not enabled here SHALL be false
 
 #### Scenario: Claude 4.6 capability classification
@@ -204,23 +217,42 @@ For both direct and Vertex request paths, the Anthropic provider SHALL use class
 - **WHEN** an unrecognized Claude model ID or a non-Claude model ID is requested without explicit max tokens
 - **THEN** the request SHALL keep its existing unknown-model default max tokens and compatibility warning; it SHALL not be classified as a known dated Claude 4 model
 
-### Requirement: Thinking normalization for models that reject disabled thinking
+### Requirement: Explicit disabled thinking normalization
 
-For `rejectsThinkingDisabled` models, explicit thinking `disabled` SHALL become `between_tools` if supported, else be removed; budget-based `enabled` SHALL become budgetless `adaptive`. As in `@ai-sdk/anthropic` 4.0.67, each rewrite SHALL warn `unsupported` with feature `providerOptions.anthropic.thinking` and model ID in details, before disabled-above-high and between-tools effort caps.
+For `rejectsThinkingDisabled` models, explicit thinking `disabled` SHALL become `between_tools` if supported, else be removed. The rewrite SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.thinking` and the model ID before applying effort caps.
 
 #### Scenario: Explicit disabled thinking on Sonnet 5.5
 - **WHEN** `claude-sonnet-5-5` is called with `thinking: {type: "disabled"}`
 - **THEN** the request SHALL contain `thinking: {type: "between_tools"}`
 - **AND** an unsupported warning with feature `providerOptions.anthropic.thinking` SHALL say that thinking cannot be disabled and that `between_tools` is used instead
 
-#### Scenario: Budget-based thinking on Sonnet 5.5
-- **WHEN** `claude-sonnet-5-5` is called with `thinking: {type: "enabled", budgetTokens: 5000}`
-- **THEN** the request SHALL contain `thinking: {type: "adaptive"}` without `budget_tokens`, and `MaxTokens` SHALL NOT include the budget
-- **AND** an unsupported warning with feature `providerOptions.anthropic.thinking` SHALL be emitted
+#### Scenario: Explicit disabled thinking on base Fable 5
+- **WHEN** base `claude-fable-5` is called with `thinking: {type: "disabled"}`
+- **THEN** the request SHALL omit `thinking`
+- **AND** the unsupported warning SHALL say the model always uses adaptive thinking
 
-#### Scenario: Other models keep their thinking setting
-- **WHEN** `claude-sonnet-5` is called with `thinking: {type: "disabled"}`
-- **THEN** the request SHALL contain `thinking: {type: "disabled"}` and no thinking rewrite warning
+#### Scenario: Models that allow disabled thinking keep the setting
+- **WHEN** `claude-sonnet-5` or `claude-haiku-5-5` is called with `thinking: {type: "disabled"}` at effort `high`
+- **THEN** the request SHALL keep `thinking: {type: "disabled"}` and emit no thinking rewrite warning
+
+#### Scenario: Disabled thinking on Haiku 5.5 above high effort
+- **WHEN** `claude-haiku-5-5` is called with `thinking: {type: "disabled"}` and effort `xhigh` or `max`
+- **THEN** the request SHALL keep `thinking: {type: "disabled"}` and lower effort to `high`
+- **AND** an unsupported warning with feature `providerOptions.anthropic.effort` SHALL be emitted
+
+### Requirement: Explicit budget-based thinking normalization
+
+For `rejectsBudgetThinking` models, explicit budget-based thinking SHALL become budgetless adaptive thinking. The rewrite SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.thinking` before applying effort caps. The warning SHALL identify the model and replacement, and SHALL only say the model always uses adaptive thinking when it also rejects disabled thinking.
+
+#### Scenario: Budget-based thinking on Sonnet 5.5 or base Fable 5
+- **WHEN** `claude-sonnet-5-5` or base `claude-fable-5` is called with `thinking: {type: "enabled", budgetTokens: 5000}`
+- **THEN** the request SHALL contain `thinking: {type: "adaptive"}` without `budget_tokens`, and the budget SHALL NOT be added to `max_tokens`
+- **AND** the unsupported warning SHALL say the model always uses adaptive thinking
+
+#### Scenario: Budget-based thinking on Haiku 5.5
+- **WHEN** `claude-haiku-5-5` is called with `thinking: {type: "enabled", budgetTokens: 4000}`
+- **THEN** the request SHALL contain `thinking: {type: "adaptive"}` without `budget_tokens`, and the budget SHALL NOT be added to `max_tokens`
+- **AND** the unsupported warning SHALL NOT say the model always uses adaptive thinking
 
 ### Requirement: Between-tools thinking effort limit
 `between_tools` thinking SHALL be sent as `{type: "between_tools"}` with no `display` or `budget_tokens`, and SHALL count as active thinking for sampling-parameter removal. When the effective effort is `xhigh` or `max`, the provider SHALL lower it to `high` and emit an `unsupported` warning with feature `providerOptions.anthropic.effort`, as `@ai-sdk/anthropic` 4.0.67 does, because the API rejects `between_tools` above `high`.
@@ -267,7 +299,7 @@ For `rejectsForcedToolUse` models without a JSON response tool, required choice 
 
 ### Requirement: Anthropic capability metadata fields
 
-Capability metadata SHALL include `maxOutputTokens`, `supportsAdaptiveThinking`, `supportsStructuredOutput`, `rejectsSamplingParams`, `supportsXHighEffort`, `rejectsThinkingDisabledAboveHighEffort`, `rejectsThinkingDisabled`, `rejectsForcedToolUse`, `supportsBetweenToolsThinking` and `isKnownModel`.
+Capability metadata SHALL include `maxOutputTokens`, `supportsAdaptiveThinking`, `supportsStructuredOutput`, `rejectsSamplingParams`, `supportsXHighEffort`, `rejectsThinkingDisabledAboveHighEffort`, `rejectsThinkingDisabled`, `rejectsBudgetThinking`, `rejectsForcedToolUse`, `supportsBetweenToolsThinking` and `isKnownModel`.
 
 #### Scenario: Anthropic capability metadata fields
 
