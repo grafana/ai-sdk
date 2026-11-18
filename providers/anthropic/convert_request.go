@@ -371,9 +371,10 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			var content []anthropic.BetaContentBlockParamUnion
 			mcpToolUseIDs := make(map[string]bool)
 			for messageIndex, msg := range block.messages {
-				parts := slices.DeleteFunc(slices.Clone(msg.Content), func(part provider.ContentPart) bool {
-					return part.Type == provider.ContentPartTypeText && part.Text == ""
-				})
+				parts := msg.Content
+				if slices.ContainsFunc(parts, isEmptyText) {
+					parts = slices.DeleteFunc(slices.Clone(parts), isEmptyText)
+				}
 				converted := convertAssistantContent(v, mapping, parts, msg.ProviderOptions, mcpToolUseIDs, &warnings)
 				isFinalAssistantText := blockIndex == len(blocks)-1 &&
 					messageIndex == len(block.messages)-1 &&
@@ -1120,6 +1121,10 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 	}
 	applyDocumentMetadata(&doc, p)
 	return anthropic.BetaContentBlockParamUnion{OfDocument: &doc}, true
+}
+
+func isEmptyText(part provider.ContentPart) bool {
+	return part.Type == provider.ContentPartTypeText && part.Text == ""
 }
 
 func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {

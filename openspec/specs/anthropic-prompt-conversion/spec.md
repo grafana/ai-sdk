@@ -60,7 +60,7 @@ The Anthropic provider SHALL skip `ContentPartTypeToolApprovalResponse` parts in
 
 ### Requirement: Cache-control cascade is keyed off source provider message, not merged Anthropic block
 
-For merged Anthropic user or assistant blocks, each source `provider.Message`'s `ProviderOptions["anthropic"].cache_control` SHALL cascade only to the last part of that source message's `Content`, after filtering empty assistant text, not the merged block's last part. Each source SHALL independently consume the breakpoint budget, matching upstream (`packages/anthropic/src/convert-to-anthropic-prompt.ts:130-145, 326-338`).
+For merged Anthropic user or assistant blocks, each source `provider.Message`'s `ProviderOptions["anthropic"].cache_control` SHALL cascade only to the last part of that source message's `Content`, after filtering empty assistant text, not the merged block's last part. Each source SHALL consume the breakpoint budget only for its eligible annotations. An assistant source left empty by filtering SHALL consume no breakpoint.
 
 #### Scenario: Per-source-message message-level cascade survives the merge
 - **WHEN** the prompt is `[RoleTool([tool_result(call_1, "r1")] with msgOpts cache_control=ephemeral), RoleUser([text("hello")] with no opts)]`

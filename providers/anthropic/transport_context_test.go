@@ -127,10 +127,16 @@ func TestModel_FiltersEmptyAssistantText(t *testing.T) {
 			empty := provider.TextPart("")
 			empty.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"opaque"}`)})
 			prefill := provider.NewAssistantMessage(provider.TextPart("  Answer  "), empty)
-			prefill.ProviderOptions = makeProviderOpts(`{"cacheControl":{"type":"ephemeral"}}`)
+			cacheOpts := provider.BuildProviderOptions(CacheControl("ephemeral"))
+			prefill.ProviderOptions = cacheOpts
+			cachedText := func(s string) provider.ContentPart {
+				part := provider.TextPart(s)
+				part.ProviderOptions = cacheOpts
+				return part
+			}
 			opts := provider.CallOptions{MaxOutputTokens: new(64), Prompt: []provider.Message{
 				provider.UserText("question"),
-				provider.NewAssistantMessage(provider.TextPart("Earlier  "), provider.TextPart("")),
+				provider.NewAssistantMessage(cachedText("First"), cachedText(""), cachedText("Second"), provider.TextPart(""), cachedText("Earlier  ")),
 				prefill,
 			}}
 			if streaming {
@@ -138,14 +144,23 @@ func TestModel_FiltersEmptyAssistantText(t *testing.T) {
 				require.NoError(t, err)
 				for part := range result.Stream {
 					assert.NotEqual(t, provider.PartError, part.Type, "%+v", part)
+					if part.Type == provider.PartStreamStart {
+						assert.Empty(t, part.Warnings)
+					}
 				}
 			} else {
-				_, err := m.DoGenerate(t.Context(), opts)
+				result, err := m.DoGenerate(t.Context(), opts)
 				require.NoError(t, err)
+				assert.Empty(t, result.Warnings)
 			}
 			assert.JSONEq(t, `[
 				{"role":"user","content":[{"type":"text","text":"question"}]},
-				{"role":"assistant","content":[{"type":"text","text":"Earlier  "},{"type":"text","text":"Answer","cache_control":{"type":"ephemeral"}}]}
+				{"role":"assistant","content":[
+					{"type":"text","text":"First","cache_control":{"type":"ephemeral"}},
+					{"type":"text","text":"Second","cache_control":{"type":"ephemeral"}},
+					{"type":"text","text":"Earlier  ","cache_control":{"type":"ephemeral"}},
+					{"type":"text","text":"Answer","cache_control":{"type":"ephemeral"}}
+				]}
 			]`, string(captured.Messages))
 			assert.Equal(t, empty, prefill.Content[1])
 		})

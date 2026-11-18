@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -174,7 +175,10 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 		case promptBlockAssistant:
 			blockStart := len(out.Messages)
 			for messageIndex, msg := range block.messages {
-				parts := slices.DeleteFunc(slices.Clone(msg.Content), isForeignEmptyText)
+				parts := msg.Content
+				if slices.ContainsFunc(parts, isForeignEmptyText) {
+					parts = slices.DeleteFunc(slices.Clone(parts), isForeignEmptyText)
+				}
 				trimLastText := blockIndex == len(blocks)-1 && messageIndex == len(block.messages)-1
 				segments, err := convertAssistantContent(parts, &documentCounter, &warnings, isMistral, trimLastText)
 				if err != nil {
@@ -229,6 +233,9 @@ func isForeignEmptyText(part provider.ContentPart) bool {
 	for _, key := range providerOptionKeys {
 		opt := part.ProviderOptions[key]
 		if opt == nil {
+			continue
+		}
+		if v := reflect.ValueOf(opt); v.Kind() == reflect.Pointer && v.IsNil() {
 			continue
 		}
 		if raw, ok := opt.(provider.RawProviderOption); ok && (len(raw.Raw) == 0 || bytes.Equal(bytes.TrimSpace(raw.Raw), []byte("null"))) {

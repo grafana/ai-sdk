@@ -168,7 +168,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Final assistant prefill whitespace
 
-- **WHEN** the final source message in the final assistant block ends with text containing surrounding whitespace after foreign empty text is filtered
+- **WHEN** the final prompt block is an assistant block and its final source message ends with text containing surrounding whitespace after foreign empty text is filtered
 - **THEN** that final text is trimmed before it is emitted to Converse, while every other retained text part and signed reasoning text are emitted byte-for-byte unchanged
 
 #### Scenario: Foreign empty assistant text is not replayed

@@ -1649,6 +1649,8 @@ func TestBuildRequest_FiltersForeignEmptyAssistantText(t *testing.T) {
 	result := provider.ToolResultPart("c1", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "ok"})
 	nullNative := provider.TextPart("")
 	nullNative.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "bedrock", Raw: json.RawMessage(`null`)})
+	typedNilNative := provider.TextPart("")
+	typedNilNative.ProviderOptions = provider.ProviderOptions{"amazonBedrock": (*TextPartOptions)(nil)}
 	for _, tc := range []struct {
 		name   string
 		prompt []provider.Message
@@ -1662,6 +1664,11 @@ func TestBuildRequest_FiltersForeignEmptyAssistantText(t *testing.T) {
 		{
 			name:   "null native namespace does not preserve empty text",
 			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), nullNative)},
+			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+		{
+			name:   "typed nil native namespace does not preserve empty text",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), typedNilNative)},
 			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
 		},
 		{
@@ -1713,7 +1720,10 @@ func TestBuildRequest_PreservesNativeEmptyTextWithSignedReasoning(t *testing.T) 
 			reasoning := provider.ReasoningPart(" signed \n")
 			reasoning.ProviderOptions = partOptions
 			empty := provider.TextPart("")
-			empty.ProviderOptions = partOptions
+			empty.ProviderOptions = provider.ProviderOptions{namespace: partOptions[namespace]}
+			if namespace == "bedrock" {
+				empty.ProviderOptions["amazonBedrock"] = (*TextPartOptions)(nil)
+			}
 			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 				Prompt: []provider.Message{provider.NewAssistantMessage(reasoning, empty, provider.TextPart("Answer"))},
 			})
@@ -1723,6 +1733,17 @@ func TestBuildRequest_PreservesNativeEmptyTextWithSignedReasoning(t *testing.T) 
 			assert.JSONEq(t, `[{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":" signed \n","signature":"sig"}}},{},{"text":"Answer"}]}]`, string(got))
 		})
 	}
+}
+
+func TestBuildRequest_ValidatesCachePointOnRetainedEmptyAssistantText(t *testing.T) {
+	empty := provider.TextPart("")
+	empty.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "amazonBedrock", Raw: json.RawMessage(`{"cachePoint":false}`)})
+	reasoning := provider.ReasoningPart("signed")
+	reasoning.ProviderOptions = provider.BuildProviderOptions(ReasoningMetadata{Signature: "sig"})
+	_, _, _, err := buildRequest(testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewAssistantMessage(reasoning, empty)},
+	})
+	require.ErrorContains(t, err, `invalid provider options for "amazonBedrock"`)
 }
 
 func TestBuildRequest_AssistantWhitespaceMatchesECMAScript(t *testing.T) {
