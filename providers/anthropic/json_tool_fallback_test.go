@@ -220,13 +220,15 @@ func jsonFallbackMessageEvents(t *testing.T, id, reason string, blocks ...string
 		}
 		require.NoError(t, json.Unmarshal([]byte(raw), &block))
 		start := raw
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			start = `{"type":"text","text":""}`
-		} else if block.Type == "tool_use" {
+		case "tool_use":
 			start = `{"type":"tool_use","name":"json","id":"toolu_json","input":{}}`
 		}
 		events = append(events, fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":%s}`, i, start))
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			mid := len(block.Text) / 2
 			for _, text := range []string{block.Text[:mid], block.Text[mid:]} {
 				events = append(events, fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"text_delta","text":%q}}`, i, text))
@@ -234,7 +236,7 @@ func jsonFallbackMessageEvents(t *testing.T, id, reason string, blocks ...string
 			for _, citation := range block.Citations {
 				events = append(events, fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"citations_delta","citation":%s}}`, i, citation))
 			}
-		} else if block.Type == "tool_use" {
+		case "tool_use":
 			events = append(events, fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":%q}}`, i, string(block.Input)))
 		}
 		events = append(events, fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, i))
