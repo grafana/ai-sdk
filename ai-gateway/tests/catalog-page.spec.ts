@@ -366,6 +366,7 @@ test.describe('model catalog page', () => {
     const search = provider.getByRole('combobox', { name: 'Search provider models' });
     await search.fill('sonnet');
     await page.getByRole('option', { name: 'claude-sonnet-4-6' }).click();
+    await provider.getByRole('button', { name: 'Use selected model' }).click();
     await expect(provider.getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('claude-sonnet-4-6');
     await provider.getByRole('button', { name: 'Add model' }).click();
     await expect(provider.getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeVisible();

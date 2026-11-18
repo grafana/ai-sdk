@@ -151,12 +151,33 @@ describe('pages/CatalogPage', () => {
     expect(listProviderModels).toHaveBeenCalledWith('team', 'anthropic');
     const search = await provider.findByRole('combobox', { name: 'Search provider models' });
     await chooseOption(search, 'claude-listed');
+    expect(provider.getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('');
+    fireEvent.click(provider.getByRole('button', { name: 'Use selected model' }));
     expect(listProviderModels).toHaveBeenCalledTimes(1);
     expect(updateModelCatalog).not.toHaveBeenCalled();
     expect(provider.getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('claude-listed');
     fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
     await provider.findByRole('listitem', { name: 'claude-listed' });
     expect(lastUpdate()[1].models['claude-listed']?.primary).toEqual({ provider: 'anthropic', model: 'claude-listed' });
+  });
+
+  test('tabbing away from a highlighted suggestion preserves a custom ID', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const manual = provider.getByRole('textbox', { name: 'Add a model to anthropic' });
+    type(manual, 'claude-custom');
+    fireEvent.click(provider.getByRole('button', { name: 'Browse models' }));
+    const search = await provider.findByRole('combobox', { name: 'Search provider models' });
+    fireEvent.click(search);
+    type(search, 'listed');
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(search.getAttribute('aria-activedescendant')).toBeTruthy();
+    fireEvent.keyDown(search, { key: 'Tab' });
+    fireEvent.blur(search, { relatedTarget: provider.getByRole('button', { name: 'Close model picker' }) });
+    expect(manual).toHaveValue('claude-custom');
+    expect(provider.getByRole('button', { name: 'Use selected model' })).toHaveAttribute('aria-disabled', 'false');
+    expect(updateModelCatalog).not.toHaveBeenCalled();
   });
 
   test.each([

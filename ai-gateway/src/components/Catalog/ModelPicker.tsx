@@ -22,15 +22,18 @@ interface Props {
 /** ModelPicker looks up one saved account's suggestions without submitting the model form. */
 export function ModelPicker({ listModels, onSelect }: Props) {
   const [state, setState] = useState<State>({ kind: 'closed' });
+  const [selected, setSelected] = useState<string>();
   const generation = useRef(0);
 
   const close = () => {
     generation.current++;
+    setSelected(undefined);
     setState({ kind: 'closed' });
   };
 
   const browse = async () => {
     const current = ++generation.current;
+    setSelected(undefined);
     setState({ kind: 'loading' });
     try {
       const listing = await listModels();
@@ -67,17 +70,29 @@ export function ModelPicker({ listModels, onSelect }: Props) {
     <Stack direction="column" gap={1}>
       <div role="status">{message}</div>
       {models.length > 0 && (
-        <Combobox
-          aria-label="Search provider models"
-          placeholder="Search provider models"
-          noOptionsMessage="No matching models. You can enter a model ID."
-          options={models.map((value) => ({ value }))}
-          value={null}
-          onChange={({ value }) => {
-            onSelect(value);
-            close();
-          }}
-        />
+        <Stack gap={1}>
+          <Combobox
+            aria-label="Search provider models"
+            placeholder="Search provider models"
+            noOptionsMessage="No matching models. You can enter a model ID."
+            options={models.map((value) => ({ value }))}
+            value={selected ?? null}
+            onChange={({ value }) => setSelected(value)}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={selected === undefined}
+            onClick={() => {
+              if (selected !== undefined) {
+                onSelect(selected);
+                close();
+              }
+            }}
+          >
+            Use selected model
+          </Button>
+        </Stack>
       )}
       <Stack gap={1}>
         {(state.kind === 'failed' || (listing && listing.status !== 'ok')) && (
