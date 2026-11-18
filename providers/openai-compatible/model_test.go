@@ -24,7 +24,7 @@ func TestReasoningEffort(t *testing.T) {
 		want      string
 	}{
 		{name: "provider default", reasoning: provider.ReasoningProviderDefault},
-		{name: "none", reasoning: provider.ReasoningNone},
+		{name: "none", reasoning: provider.ReasoningNone, want: "none"},
 		{name: "minimal", reasoning: provider.ReasoningMinimal, want: "minimal"},
 		{name: "low", reasoning: provider.ReasoningLow, want: "low"},
 		{name: "medium", reasoning: provider.ReasoningMedium, want: "medium"},
@@ -36,6 +36,57 @@ func TestReasoningEffort(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, reasoningEffort(tc.reasoning, tc.opts))
+		})
+	}
+}
+
+func TestPrepareRequest_ReasoningEffort(t *testing.T) {
+	m := &model{modelID: "test-model", providerName: defaultProviderName, baseURL: defaultBaseURL}
+	const optionsKey = "openaiCompatible"
+	raw := provider.RawProviderOption{Key: optionsKey, Raw: json.RawMessage(`{"reasoning_effort":"low"}`)}
+	tests := []struct {
+		name      string
+		reasoning provider.ReasoningEffort
+		option    provider.ProviderOption
+		want      string
+		warnRaw   bool
+	}{
+		{name: "none", reasoning: provider.ReasoningNone, want: "none"},
+		{name: "typed override", reasoning: provider.ReasoningNone, option: OpenAIOptions{ReasoningEffort: "high"}, want: "high"},
+		{name: "provider default", reasoning: provider.ReasoningProviderDefault},
+		{name: "raw field cannot override none", reasoning: provider.ReasoningNone, option: raw, want: "none", warnRaw: true},
+		{name: "raw field cannot set default", reasoning: provider.ReasoningProviderDefault, option: raw, warnRaw: true},
+	}
+	for _, mode := range []struct {
+		name      string
+		streaming bool
+	}{{name: "generate"}, {name: "stream", streaming: true}} {
+		t.Run(mode.name, func(t *testing.T) {
+			for _, tc := range tests {
+				t.Run(tc.name, func(t *testing.T) {
+					opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: tc.reasoning}
+					if tc.option != nil {
+						opts.ProviderOptions = provider.ProviderOptions{optionsKey: tc.option}
+					}
+					warnings, request, _, err := m.prepareRequest(opts, mode.streaming)
+					require.NoError(t, err)
+					var body map[string]any
+					require.NoError(t, json.Unmarshal(request, &body))
+					if tc.want == "" {
+						assert.NotContains(t, body, "reasoning_effort")
+					} else {
+						assert.Equal(t, tc.want, body["reasoning_effort"])
+					}
+					assert.NotContains(t, body, "reasoningEffort")
+					if tc.warnRaw {
+						require.Len(t, warnings, 1)
+						assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+						assert.Equal(t, "providerOptions.reasoning_effort", warnings[0].Feature)
+					} else {
+						assert.Empty(t, warnings)
+					}
+				})
+			}
 		})
 	}
 }
