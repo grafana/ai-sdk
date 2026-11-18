@@ -19,8 +19,8 @@ Evidence is grouped by kind. Do not read one kind as another.
 
 - Claude Code 2.1.326 ran a multi-turn read-and-edit task through a local plugin
   against a live Anthropic model. The task completed and five `POST v1/messages`
-  calls returned 200. Run with a developer's own key and a local Grafana from the
-  CI-pinned image digest. Not repeatable in CI.
+  calls returned 200. Run with a developer's own key and a local Grafana. Not
+  repeatable in CI.
 - Authentication was checked live: a bearer token works and `x-api-key` gets 403
   from the platform before the plugin runs.
 

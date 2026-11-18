@@ -121,9 +121,6 @@ provider-fixture provenance rules do not apply to them.
 - [Claude Code's model names do not match catalog aliases] → Operators set
   model aliases in the catalog, or clients set the model environment
   variables. The guide documents both.
-- [Local and CI runs depend on a Grafana image that supplies the plugin's
-  signing keys] → Use the CI-pinned image digest; a floating nightly fails every
-  call with "plugin has no authenticator configured".
 - [Client drift: Claude Code changes the fields it sends] → Evidence names the
   client version; a version bump re-runs the smoke scenario.
 
