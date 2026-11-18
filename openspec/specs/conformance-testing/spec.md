@@ -750,17 +750,28 @@ OpenAI fixtures SHALL cover at least simple text, function calls, reasoning summ
 
 ### Requirement: Parity coverage inventory
 
-The repository SHALL provide a parity coverage inventory command that validates local conformance fixture completeness and provider upstream fixture index coverage.
+The repository SHALL provide a parity coverage inventory command that validates local conformance fixture completeness and provider upstream fixture index coverage. For Anthropic, Bedrock, OpenAI, and OpenAI-compatible, it SHALL use the exact Git release tag of each provider package version registered in `test/conformance/upstream.yaml`, not the repository-wide `upstream.commit`. Before checking fixtures, it SHALL verify the package name and version in the manifest at the resolved tag.
 
 #### Scenario: Fixture artifacts are complete
 
 - **WHEN** a conformance test case has a `config.yaml`
-- **THEN** the inventory verifies the test case has `expected.jsonl` and `expected-requests.jsonl`
+- **THEN** the inventory verifies the test case has `expected-requests.jsonl` and the expected output file for its operation (`expected-generate.json` for generation, `expected.jsonl` for streaming)
 
-#### Scenario: Upstream fixture is intentionally missing
+#### Scenario: Provider packages have different release commits
 
-- **WHEN** an upstream streaming fixture exists in the local upstream clone but is not imported
-- **THEN** the provider `INDEX.yaml` records the fixture as `null`
+- **WHEN** the registered provider releases point to different commits
+- **THEN** each provider `INDEX.yaml` covers the fixtures at its own release commit
+- **AND** each index entry refers to a source at that commit, and each imported input is byte-identical to its source
+
+#### Scenario: Provider release source cannot be verified
+
+- **WHEN** the exact release tag is missing or its package manifest is unavailable or does not match the registered name and version
+- **THEN** the inventory fails with a diagnostic identifying the release, without falling back to the repository-wide revision
+
+#### Scenario: Upstream fixture is not imported
+
+- **WHEN** a fixture exists at the registered provider release but is not imported
+- **THEN** an unimported unary fixture is indexed as `null`, but an unimported streaming fixture fails the inventory check
 
 ### Requirement: Expanded conformance configuration
 
