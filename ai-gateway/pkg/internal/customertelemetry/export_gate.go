@@ -45,6 +45,14 @@ func (g *ExportGate) refresh(until time.Time) {
 	g.mu.Unlock()
 }
 
+func (g *ExportGate) limit(until time.Time) {
+	g.mu.Lock()
+	if until.Before(g.until) {
+		g.until = until
+	}
+	g.mu.Unlock()
+}
+
 func (g *ExportGate) revoke() { g.cancel() }
 
 func (g *ExportGate) operation(parent context.Context) (context.Context, func(), error) {

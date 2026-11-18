@@ -84,6 +84,7 @@ type cacheSlot struct {
 	next       time.Time
 	retryUntil time.Time
 	pending    *cacheAttempt
+	expired    bool
 }
 
 type cacheAttempt struct {
@@ -97,6 +98,11 @@ type cacheEntry struct {
 	stack    Stack
 	lastUsed time.Time
 	slots    [2]cacheSlot
+}
+
+type cachePublisher interface {
+	publish(Stack, CacheResult)
+	forget(Stack)
 }
 
 // Cache owns bounded metadata work and immutable per-stack snapshots.
@@ -115,11 +121,21 @@ type Cache struct {
 	wake         chan struct{}
 	done         chan struct{}
 	workers      sync.WaitGroup
+	publisher    cachePublisher
 }
 
 // NewCache creates an empty cache without invoking either resolver. Close must be
 // called by its owner. No caller context is retained or used as shared authority.
 func NewCache(destinations DestinationResolver, policies PolicyResolver, options CacheOptions) (*Cache, error) {
+	c, err := newCache(destinations, policies, options)
+	if err != nil {
+		return nil, err
+	}
+	c.run()
+	return c, nil
+}
+
+func newCache(destinations DestinationResolver, policies PolicyResolver, options CacheOptions) (*Cache, error) {
 	if destinations == nil || policies == nil || options.MaxEntries <= 0 ||
 		options.LookupTimeout <= 0 || options.InferenceHeadroom < 0 ||
 		options.RefreshInterval <= 0 || options.RetryInterval <= 0 ||
@@ -132,10 +148,13 @@ func NewCache(destinations DestinationResolver, policies PolicyResolver, options
 	c := &Cache{destinations: destinations, policies: policies, options: options, now: time.Now,
 		entries: make(map[Stack]*cacheEntry), ctx: ctx, cancel: cancel,
 		wake: make(chan struct{}, 1), done: make(chan struct{})}
+	return c, nil
+}
+
+func (c *Cache) run() {
 	c.workers.Add(1)
 	go c.maintain()
 	go func() { c.workers.Wait(); close(c.done) }()
-	return c, nil
 }
 
 // Lookup resolves an authorized stack on demand, sharing in-flight component work.
@@ -212,18 +231,22 @@ func (c *Cache) Lookup(ctx context.Context, stack Stack) CacheResult {
 // deadline. Repeated calls may wait again for a non-cooperative resolver to exit.
 // Go cannot terminate arbitrary resolver code; canceled calls retain their slots.
 func (c *Cache) Close(ctx context.Context) error {
-	c.mu.Lock()
-	if !c.closed {
-		c.closed = true
-		c.cancel()
-	}
-	c.mu.Unlock()
+	c.stop()
 	select {
 	case <-c.done:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (c *Cache) stop() {
+	c.mu.Lock()
+	if !c.closed {
+		c.closed = true
+		c.cancel()
+	}
+	c.mu.Unlock()
 }
 
 func cacheOutcome(outcome LookupOutcome) CacheResult {
@@ -253,7 +276,7 @@ func (c *Cache) start(entry *cacheEntry, kind cacheComponent) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if !a.finished {
-			if !c.closed {
+			if !c.closed && c.entries[entry.stack] == entry && entry.slots[kind].pending == a {
 				c.apply(entry, kind, cacheValue{}, LookupTimeout, c.now())
 			}
 			a.finished = true
@@ -268,7 +291,7 @@ func (c *Cache) start(entry *cacheEntry, kind cacheComponent) {
 		defer c.mu.Unlock()
 		a.stop()
 		if !a.finished {
-			if !c.closed {
+			if !c.closed && c.entries[entry.stack] == entry && entry.slots[kind].pending == a {
 				outcome := classifyLookup(err)
 				if ctx.Err() != nil {
 					outcome = LookupTimeout
@@ -328,6 +351,7 @@ func (c *Cache) apply(entry *cacheEntry, kind cacheComponent, value cacheValue, 
 			outcome = LookupInvalid
 		} else {
 			slot.value = value
+			slot.expired = false
 			ready := len(value.destinations.signals) > 0
 			if kind == policyComponent {
 				for _, allowed := range value.policy.allowed {
@@ -347,6 +371,13 @@ func (c *Cache) apply(entry *cacheEntry, kind cacheComponent, value cacheValue, 
 	slot.outcome = outcome
 	slot.next = now.Add(delay)
 	slot.retryUntil = now.Add(c.options.RetryInterval)
+	c.publish(entry, now)
+}
+
+func (c *Cache) publish(entry *cacheEntry, now time.Time) {
+	if c.publisher != nil {
+		c.publisher.publish(entry.stack, c.result(entry, now))
+	}
 }
 
 func (c *Cache) prune(now time.Time) {
@@ -354,6 +385,9 @@ func (c *Cache) prune(now time.Time) {
 		if !now.Before(entry.lastUsed.Add(c.options.IdleRetention)) &&
 			entry.slots[0].pending == nil && entry.slots[1].pending == nil &&
 			!now.Before(entry.slots[0].retryUntil) && !now.Before(entry.slots[1].retryUntil) {
+			if c.publisher != nil {
+				c.publisher.forget(stack)
+			}
 			delete(c.entries, stack)
 		}
 	}
@@ -378,6 +412,22 @@ func (c *Cache) maintain() {
 		c.prune(now)
 		delay := c.options.MaintenanceInterval
 		for _, entry := range c.entries {
+			expired := false
+			for kind := destinationComponent; kind <= policyComponent; kind++ {
+				slot := &entry.slots[kind]
+				if slot.value.validUntil.IsZero() || slot.expired {
+					continue
+				}
+				if !now.Before(slot.value.validUntil) {
+					slot.expired = true
+					expired = true
+				} else {
+					delay = min(delay, slot.value.validUntil.Sub(now))
+				}
+			}
+			if expired {
+				c.publish(entry, now)
+			}
 			idleAt := entry.lastUsed.Add(c.options.IdleRetention)
 			if !now.Before(idleAt) {
 				continue

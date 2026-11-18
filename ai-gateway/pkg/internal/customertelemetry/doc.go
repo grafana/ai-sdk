@@ -1,6 +1,7 @@
 // Package customertelemetry defines the Gateway's customer telemetry contracts,
-// bounded discovery cache and exporter lifecycle. It has no live discovery or
-// secret-service adapter, production exporter wiring, or recording activation.
+// bounded discovery cache, ordered delivery controller and exporter lifecycle.
+// It has no live discovery or secret-service adapter, production exporter wiring,
+// or recording activation.
 // Production request handling does not yet consume this package.
 //
 // Stack attribution comes from an authorized auth.Caller. Destination discovery,
@@ -26,17 +27,24 @@
 // A transient refresh failure preserves a snapshot only until its original
 // expiry. Observed denial or invalid data clears it; valid replacements apply
 // disablement and removal immediately. Previously returned snapshots cannot be
-// revoked in place. Future recorder leases must enforce their own lifecycle.
+// revoked in place. Controller publishes changes directly to delivery gates,
+// including background refresh, expiry and eviction without another request.
 // The owner must Close the cache with a finite shutdown context. Resolvers must
 // honor cancellation and bound transport calls; a non-cooperative call remains
 // charged to capacity until it actually returns, even after lookup timeout.
 //
 // Pool owns typed exporter resources through immutable bindings and recording
-// leases. An ordered configuration owner calls Update; arbitrary request snapshots
-// must not reconcile out of order. Acquire shares construction without retaining
+// leases. Controller is the ordered configuration owner for attached pools;
+// arbitrary request snapshots cannot call their Update. Delivery.Acquire selects
+// current state and constructs outside the publication lock without retaining
 // caller context values. Matching transport settings reuse a client across policy
 // revisions; endpoint, signal identity, or credential-version changes replace it.
-// Old leases may drain only while their original authority remains valid.
+// Old leases may drain only while their original authority remains valid, shortened
+// by any earlier successor deadline. Successor refresh never extends retiring gates.
+// Controller adds no per-stack map beyond the cache and pool's existing ownership.
+// Idle cache eviction revokes even held leases; background work never counts as
+// activity. Close stops publication before concurrently draining cache and pools.
+// Acquisition failures omit telemetry; they do not execute or reject inference.
 //
 // Factories must install ExportGate at their real transport seam, use the exact
 // credential reference/version, and bound their SDK queues/retries. The gate checks
