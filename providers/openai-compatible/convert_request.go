@@ -491,28 +491,54 @@ func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, er
 	return meta, nil
 }
 
-type thoughtSignatureOptions struct {
-	ThoughtSignature *string `json:"thoughtSignature,omitempty"`
+type googleOptions struct {
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 
 func googleThoughtSignature(opts provider.ProviderOptions, metadataKey string) (string, error) {
 	if metadataKey != "" && metadataKey != "google" {
-		configured, _, err := provider.ResolveOption[thoughtSignatureOptions](opts, metadataKey)
+		configured, err := configuredThoughtSignature(opts[metadataKey])
 		if err != nil {
 			return "", fmt.Errorf("openai: reading %s provider options: %w", metadataKey, err)
 		}
-		if configured.ThoughtSignature != nil {
-			return *configured.ThoughtSignature, nil
+		if configured != nil {
+			return *configured, nil
 		}
 	}
-	google, _, err := provider.ResolveOption[thoughtSignatureOptions](opts, "google")
+	google, ok, err := provider.ResolveOption[googleOptions](opts, "google")
 	if err != nil {
 		return "", fmt.Errorf("openai: reading google provider options: %w", err)
 	}
-	if google.ThoughtSignature == nil {
+	if !ok {
 		return "", nil
 	}
-	return *google.ThoughtSignature, nil
+	return google.ThoughtSignature, nil
+}
+
+func configuredThoughtSignature(opt provider.ProviderOption) (*string, error) {
+	var raw []byte
+	switch opt := opt.(type) {
+	case nil:
+		return nil, nil
+	case provider.RawProviderOption:
+		if len(opt.Raw) == 0 {
+			return nil, nil
+		}
+		raw = opt.Raw
+	default:
+		var err error
+		raw, err = json.Marshal(opt)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var configured struct {
+		ThoughtSignature *string `json:"thoughtSignature,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &configured); err != nil {
+		return nil, err
+	}
+	return configured.ThoughtSignature, nil
 }
 
 func convertToolMessages(parts []provider.ContentPart) ([]chatMessage, error) {

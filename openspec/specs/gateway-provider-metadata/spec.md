@@ -119,7 +119,7 @@ Scope witnesses SHALL include supported Anthropic tool-call caller and reasoning
 - **THEN** continuation tests SHALL cover those supported native values, with compatible google tool-call signatures sourced from unary output or the initial streaming tool-call delta
 
 ### Requirement: Compatible continuation namespace and timing boundary
-The compatible Gateway witness SHALL retain returned metadata under the unchanged `google` key. The native adapter reads thought signatures under its resolved provider metadata key, with `google` as a fallback for missing or null values. This adapter behavior SHALL NOT be implemented by Gateway metadata rewriting. The `google` witness does not establish Gateway continuation coverage for other configured names or for signatures that arrive after a tool call's initial delta.
+The compatible Gateway witness SHALL retain returned metadata under the unchanged `google` key. The Gateway SHALL NOT rewrite metadata to implement the [native adapter's thought-signature lookup](../openai-compatible-stream-metadata/spec.md#requirement-tool-call-thought-signature-continuation). The `google` witness does not establish Gateway continuation coverage for other configured names or for signatures that arrive after a tool call's initial delta.
 
 #### Scenario: Compatible google continuation namespace and timing boundary
 - **WHEN** a configured `providerName` of `google` returns a tool-call thought signature in unary output or the initial streaming delta

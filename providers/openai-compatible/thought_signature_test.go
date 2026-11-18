@@ -13,6 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type testThoughtSignatureOption struct {
+	ThoughtSignature *string `json:"thoughtSignature,omitempty"`
+}
+
+func (testThoughtSignatureOption) ProviderKey() string { return "custom-provider" }
+
 func TestThoughtSignatureRequest(t *testing.T) {
 	t.Parallel()
 
@@ -21,7 +27,9 @@ func TestThoughtSignatureRequest(t *testing.T) {
 		name        string
 		callOptions string
 		partOptions string
+		configured  provider.ProviderOption
 		want        string
+		wantError   string
 	}{
 		{
 			name:        "raw configured name",
@@ -40,6 +48,11 @@ func TestThoughtSignatureRequest(t *testing.T) {
 			want:        "fallback",
 		},
 		{
+			name:        "legacy google string is not cleared by null",
+			partOptions: `{"google":{"thoughtSignature":"fallback","thoughtSignature":null}}`,
+			want:        "fallback",
+		},
+		{
 			name:        "google fallback for missing field; do not use unresolved alias",
 			callOptions: `{"customProvider":{}}`,
 			partOptions: `{"customProvider":{"other":true},"custom-provider":{"thoughtSignature":"raw"},"google":{"thoughtSignature":"fallback"}}`,
@@ -55,6 +68,29 @@ func TestThoughtSignatureRequest(t *testing.T) {
 			partOptions: `{"custom-provider":{"thoughtSignature":""},"google":{"thoughtSignature":"fallback"}}`,
 		},
 		{
+			name:        "google fallback for typed option without signature",
+			partOptions: `{"google":{"thoughtSignature":"fallback"}}`,
+			configured:  testThoughtSignatureOption{},
+			want:        "fallback",
+		},
+		{
+			name:        "typed option takes precedence",
+			partOptions: `{"google":{"thoughtSignature":"fallback"}}`,
+			configured:  testThoughtSignatureOption{ThoughtSignature: new("typed")},
+			want:        "typed",
+		},
+		{
+			name:        "google fallback for empty raw option",
+			partOptions: `{"google":{"thoughtSignature":"fallback"}}`,
+			configured:  provider.RawProviderOption{Key: "custom-provider"},
+			want:        "fallback",
+		},
+		{
+			name:        "non-string configured signature fails instead of falling back",
+			partOptions: `{"custom-provider":{"thoughtSignature":42},"google":{"thoughtSignature":"fallback"}}`,
+			wantError:   "cannot unmarshal number",
+		},
+		{
 			name:        "no signature",
 			partOptions: `{}`,
 		},
@@ -62,13 +98,27 @@ func TestThoughtSignatureRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			call := provider.ToolCallPart("call-1", "weather", json.RawMessage(`{}`))
 			require.NoError(t, json.Unmarshal([]byte(tc.partOptions), &call.ProviderOptions))
+			if tc.configured != nil {
+				call.ProviderOptions[tc.configured.ProviderKey()] = tc.configured
+			}
 			opts := provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(call)}}
 			if tc.callOptions != "" {
 				require.NoError(t, json.Unmarshal([]byte(tc.callOptions), &opts.ProviderOptions))
 			}
-			_, body, _, err := m.prepareRequest(opts, false)
-			require.NoError(t, err)
-			assertRequestThoughtSignature(t, body, tc.want)
+			for _, mode := range []struct {
+				name      string
+				streaming bool
+			}{{"generate", false}, {"stream", true}} {
+				t.Run(mode.name, func(t *testing.T) {
+					_, body, _, err := m.prepareRequest(opts, mode.streaming)
+					if tc.wantError != "" {
+						require.ErrorContains(t, err, tc.wantError)
+						return
+					}
+					require.NoError(t, err)
+					assertRequestThoughtSignature(t, body, tc.want)
+				})
+			}
 		})
 	}
 }
