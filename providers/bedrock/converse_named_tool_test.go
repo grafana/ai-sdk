@@ -12,6 +12,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBuildRequest_NamedToolDefinitionsMatchAuto(t *testing.T) {
+	opts := provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")},
+		Tools: []provider.Tool{
+			{
+				Type: provider.ToolTypeFunction, Name: "unused",
+				Description: "List recent orders",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`),
+				Strict:      new(true),
+			},
+			{
+				Type: provider.ToolTypeFunction, Name: "lookup",
+				Description: "Look up an order",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+			},
+		},
+		ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto},
+	}
+	auto, _, _ := mustBuildRequest(t, testAnthropicModel, opts)
+	require.NotNil(t, auto.ToolConfig)
+	require.Len(t, auto.ToolConfig.Tools, len(opts.Tools))
+	want, err := json.Marshal(auto.ToolConfig.Tools)
+	require.NoError(t, err)
+
+	opts.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}
+	named, _, _ := mustBuildRequest(t, testAnthropicModel, opts)
+	require.NotNil(t, named.ToolConfig)
+	got, err := json.Marshal(named.ToolConfig.Tools)
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got))
+}
+
 func TestConverse_NamedToolChoice(t *testing.T) {
 	allTools := []string{"unused", "lookup"}
 	onlyNamed := []string{"lookup"}

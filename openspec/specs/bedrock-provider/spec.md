@@ -201,7 +201,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Specific tool choice on a non-Anthropic model
 
-- **WHEN** the consumer supplies function tools and selects the tool named `weather` on a non-Anthropic model
+- **WHEN** the consumer supplies function tools to a non-Anthropic model and the effective tool choice after response-format routing is the tool named `weather`
 - **THEN** `toolConfig.tools` SHALL contain only `weather` and `toolConfig.toolChoice` SHALL be `{tool: {name: "weather"}}`
 
 #### Scenario: Auto tool choice
@@ -586,13 +586,13 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: Named tool choice keeps the function-tool list
 
-- **WHEN** a Converse or ConverseStream request selects a tool named `lookup` on an Anthropic model that accepts forced tool use
-- **THEN** `toolConfig.tools` SHALL retain every function tool in caller order so the tool list does not change between unforced and named steps
+- **WHEN** a Converse or ConverseStream request uses an Anthropic model that accepts forced tool use and the effective tool choice after response-format routing is the tool named `lookup`
+- **THEN** `toolConfig.tools` SHALL retain every function tool in caller order, with the same definitions as an `auto` request with the same tool inputs
 - **AND** when `anthropic.disableParallelToolUse` is omitted or `true`, `additionalModelRequestFields.tool_choice` SHALL be `{type: "tool", name: "lookup", disable_parallel_tool_use: true}` and `toolConfig.toolChoice` SHALL be absent
 
 #### Scenario: Named tool choice with parallel use explicitly allowed
 
-- **WHEN** an Anthropic model accepts forced tool use, the caller selects `lookup`, and `anthropic.disableParallelToolUse` is `false`
+- **WHEN** an Anthropic model accepts forced tool use, the effective tool choice after response-format routing is the tool named `lookup`, and `anthropic.disableParallelToolUse` is `false`
 - **THEN** every function tool SHALL be retained; with only function tools the adapter SHALL emit `toolConfig.toolChoice = {tool: {name: "lookup"}}` instead of an additional-fields choice
 - **AND** with supported Anthropic provider tools present, the adapter SHALL retain those definitions and emit the additional-fields choice with `disable_parallel_tool_use:false` instead of `toolConfig.toolChoice`
 
