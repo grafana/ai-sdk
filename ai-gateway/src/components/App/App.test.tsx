@@ -80,7 +80,7 @@ describe('Components/App', () => {
       );
 
       expect(await find()).toBeInTheDocument();
-      expect(screen.queryByText('Quick start')).not.toBeInTheDocument();
+      expect(screen.queryByText('Get started in Grafana Cloud')).not.toBeInTheDocument();
     },
     EMPTY_STATE_TIMEOUT_MS
   );
