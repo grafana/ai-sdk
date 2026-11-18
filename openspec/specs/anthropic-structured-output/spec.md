@@ -206,16 +206,17 @@ Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Sch
 - **THEN** the sanitized schema SHALL contain `anyOf` (not `oneOf`) with each
   branch sanitized
 
-#### Scenario: $ref short-circuits
+#### Scenario: $ref preserves its definitions
 
-- **WHEN** a node is `{$ref: "#/$defs/Foo", minLength: 1}`
-- **THEN** the sanitized node SHALL be `{$ref: "#/$defs/Foo"}` with all
-  sibling keywords dropped
+- **WHEN** a node has a `$ref` alongside `definitions` or `$defs`
+- **THEN** the sanitized node SHALL keep the reference and recursively
+  sanitize each sibling definition map
+- **AND** it SHALL drop all other sibling keywords
 
 #### Scenario: Object nodes get additionalProperties: false
 
-- **WHEN** the sanitizer visits a node whose `type` is `"object"` or that has
-  a non-nil `properties`
+- **WHEN** the sanitizer visits a node without a `$ref` whose `type` is
+  `"object"` or that has a non-nil `properties`
 - **THEN** the sanitized node SHALL set `additionalProperties` to `false`,
   including when the input did not specify it
 
@@ -249,16 +250,23 @@ Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Sch
   result validation) SHALL be byte-identical to what it was before the call
 
 ### Requirement: JSON tool mode on models that reject forced tool use
-When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use while the model and provider transport both support native structured output, `buildParams` SHALL use native JSON schema mode instead, as `@ai-sdk/anthropic` 4.0.67 does. It SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.structuredOutputMode` and details `structuredOutputMode 'jsonTool' is not supported by <modelID> because it rejects forced tool use. Using 'outputFormat' instead.`
+When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use, `buildParams` SHALL switch to native JSON schema mode only if the model and transport support native output and it can represent the original schema. When switching modes, it SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.structuredOutputMode`.
 
-#### Scenario: jsonTool mode on direct Sonnet 5.5
-- **WHEN** the direct Anthropic provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
+#### Scenario: jsonTool mode with a representable schema
+
+- **WHEN** direct Anthropic or Vertex calls `claude-sonnet-5-5` with `structuredOutputMode: jsonTool` and a small closed object schema
 - **THEN** `OutputConfig.Format` SHALL contain the sanitized schema and no `json` tool SHALL be added
-- **AND** the warning SHALL name `claude-sonnet-5-5`
+- **AND** the mode-switch warning SHALL say `structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.`
 
-#### Scenario: jsonTool mode on Vertex Sonnet 5.5
-- **WHEN** the Vertex provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
-- **THEN** `OutputConfig.Format` SHALL contain the sanitized schema, no `json` tool SHALL be added, and the same warning SHALL be emitted
+#### Scenario: jsonTool mode with an unrepresentable schema
+
+- **WHEN** direct Anthropic or Vertex calls `claude-sonnet-5-5` with `structuredOutputMode: jsonTool` and the schema has any of:
+  - a circular local `$ref` reachable from the root
+  - an open object (`additionalProperties` true or a schema, non-empty `patternProperties`, or object type with neither `properties` nor `additionalProperties: false`)
+  - more than ten optional properties across subschemas, counting each use of a referenced definition
+- **THEN** `OutputConfig.Format` SHALL be absent and the `json` tool SHALL use the original schema
+- **AND** the tool choice SHALL be `auto` with parallel tool use disabled
+- **AND** the unsupported `toolChoice` warning SHALL be emitted without a mode-switch warning
 
 #### Scenario: jsonTool mode without native transport support
 - **WHEN** a provider transport without native structured output calls `claude-sonnet-5-5` with a JSON schema response
@@ -302,7 +310,7 @@ False boolean constraint values SHALL NOT be reported. Names SHALL be space-sepa
 
 ### Requirement: Anthropic recursive schema transformation
 
-The sanitizer SHALL recurse into anyOf/oneOf/allOf, items, properties, definitions and $defs; oneOf SHALL become anyOf. A $ref node SHALL short-circuit to only {"$ref":<value>}, dropping siblings. Object nodes (type object or non-nil properties) SHALL receive additionalProperties:false regardless of input.
+The sanitizer SHALL recurse into `anyOf`/`oneOf`/`allOf`, `items`, `properties`, `definitions`, and `$defs`; `oneOf` SHALL become `anyOf`. A `$ref` node SHALL retain the reference and any recursively sanitized `definitions` and `$defs`, dropping other siblings. Object nodes without a `$ref` (type object or non-nil properties) SHALL receive `additionalProperties: false` regardless of input.
 
 #### Scenario: Anthropic recursive schema transformation
 
