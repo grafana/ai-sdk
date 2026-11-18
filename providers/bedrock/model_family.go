@@ -177,9 +177,8 @@ var claude5ReasoningModelPattern = regexp.MustCompile(`(?:^|[./])(claude-(?:fabl
 type anthropicReasoningCapabilities struct {
 	maxOutputTokens                        int
 	supportsAdaptiveThinking               bool
-	supportsBetweenToolsThinking           bool
+	disabledThinkingFallback               string
 	supportsXHighEffort                    bool
-	rejectsThinkingDisabled                bool
 	rejectsThinkingDisabledAboveHighEffort bool
 	preserveLegacyReasoning                bool
 }
@@ -189,7 +188,7 @@ func getAnthropicReasoningCapabilities(modelID string) anthropicReasoningCapabil
 		switch model[1] {
 		case "claude-fable-5":
 			return anthropicReasoningCapabilities{
-				maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true, rejectsThinkingDisabled: true,
+				maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true, disabledThinkingFallback: "adaptive",
 			}
 		case "claude-opus-5":
 			return anthropicReasoningCapabilities{
@@ -203,7 +202,7 @@ func getAnthropicReasoningCapabilities(modelID string) anthropicReasoningCapabil
 	case strings.Contains(modelID, "claude-sonnet-5-5"):
 		return anthropicReasoningCapabilities{
 			maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true,
-			supportsBetweenToolsThinking: true, rejectsThinkingDisabled: true, rejectsThinkingDisabledAboveHighEffort: true,
+			disabledThinkingFallback: reasoningTypeBetweenTools,
 		}
 	case strings.Contains(modelID, "claude-haiku-5-5"):
 		return anthropicReasoningCapabilities{

@@ -1009,6 +1009,12 @@ On Nova 2 Lite, portable `none` SHALL not derive effort or warn. On non-OpenAI, 
 - **WHEN** Nova Micro receives portable reasoning first without and then with explicit provider reasoning config
 - **THEN** the first request SHALL omit reasoning and warn; the second SHALL forward and merge the explicit config
 
+#### Scenario: Portable none on an explicitly configured other model family
+
+- **WHEN** Nova Micro receives portable `none` and an explicit `reasoningConfig` with no effort and no disabled type
+- **THEN** the generated reasoning config SHALL use effort `low` with a compatibility warning and replace any pass-through `additionalModelRequestFields.reasoningConfig` object
+- **AND** an explicitly present budget, including raw zero, SHALL warn as a non-Anthropic budget and SHALL be forwarded only with type `enabled`
+
 ### Requirement: Converse between-tools thinking extension
 
 As a Go extension, `reasoningConfig.type` SHALL accept `between_tools`, sent as `thinking:{type:"between_tools"}` without `display` or `budget_tokens`, and treated as active thinking for sampling removal. It SHALL lower `maxReasoningEffort` `xhigh`/`max` to `high` with unsupported warning feature `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort`. The registered upstream provider option does not accept this explicit type.

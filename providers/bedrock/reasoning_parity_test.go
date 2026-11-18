@@ -61,6 +61,112 @@ func TestBuildRequest_DisabledThinkingParity(t *testing.T) {
 	}
 }
 
+func TestBuildRequest_DisabledThinkingTypedPassThrough(t *testing.T) {
+	const fable = "us.anthropic.claude-fable-5-v1:0"
+	const opus = "us.anthropic.claude-opus-5-v1:0"
+	for _, tc := range []struct {
+		name, model string
+		reasoning   provider.ReasoningEffort
+		config      *ReasoningConfig
+		output      any
+		want        string
+		warning     provider.Warning
+	}{
+		{"opaque fallback", fable, provider.ReasoningNone, nil,
+			json.RawMessage(`{"effort":"max","custom":true}`),
+			`{"thinking":{"type":"adaptive"},"output_config":{"effort":"max","custom":true}}`,
+			provider.Warning{Type: provider.WarnCompatibility, Feature: "reasoning", Details: "thinking cannot be disabled for " + fable + ". Using 'adaptive' thinking instead."}},
+		{"typed map cap", opus, provider.ReasoningProviderDefault, &ReasoningConfig{Type: "disabled"},
+			map[string]string{"effort": "max", "custom": "kept"},
+			`{"thinking":{"type":"disabled"},"output_config":{"effort":"high","custom":"kept"}}`,
+			provider.Warning{Type: provider.WarnUnsupported, Feature: "providerOptions.amazonBedrock.additionalModelRequestFields.output_config.effort", Details: "effort 'max' is not supported by " + opus + " with 'disabled' thinking. The effort has been lowered to 'high'."}},
+		{"opaque object cap", opus, provider.ReasoningNone, nil,
+			json.RawMessage(`{"effort":"max","custom":9007199254740993}`),
+			`{"thinking":{"type":"disabled"},"output_config":{"effort":"high","custom":9007199254740993}}`,
+			provider.Warning{Type: provider.WarnUnsupported, Feature: "providerOptions.amazonBedrock.additionalModelRequestFields.output_config.effort", Details: "effort 'max' is not supported by " + opus + " with 'disabled' thinking. The effort has been lowered to 'high'."}},
+		{"opaque member cap", opus, provider.ReasoningNone, nil,
+			map[string]any{"effort": json.RawMessage(`"xhigh"`), "custom": true},
+			`{"thinking":{"type":"disabled"},"output_config":{"effort":"high","custom":true}}`,
+			provider.Warning{Type: provider.WarnUnsupported, Feature: "providerOptions.amazonBedrock.additionalModelRequestFields.output_config.effort", Details: "effort 'xhigh' is not supported by " + opus + " with 'disabled' thinking. The effort has been lowered to 'high'."}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bo := BedrockOptions{ReasoningConfig: tc.config, AdditionalModelRequestFields: map[string]any{"output_config": tc.output}}
+			before, err := json.Marshal(bo)
+			require.NoError(t, err)
+			opts := provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: tc.reasoning,
+				ProviderOptions: provider.BuildProviderOptions(bo),
+			}
+			for range 2 {
+				req, warnings, _ := mustBuildRequest(t, tc.model, opts)
+				fields, err := json.Marshal(req.AdditionalModelRequestFields)
+				require.NoError(t, err)
+				assert.JSONEq(t, tc.want, string(fields))
+				if tc.name == "opaque object cap" {
+					assert.Contains(t, string(fields), `"custom":9007199254740993`)
+				}
+				assert.Equal(t, []provider.Warning{tc.warning}, warnings)
+			}
+			after, err := json.Marshal(bo)
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+		})
+	}
+}
+
+func TestBuildRequest_DisabledThinkingTypedPassThroughJSONTool(t *testing.T) {
+	bo := BedrockOptions{
+		StructuredOutputMode: StructuredOutputModeJSONTool,
+		AdditionalModelRequestFields: map[string]any{
+			"output_config": json.RawMessage(`{"effort":"max","custom":true,"format":{"type":"json_schema"}}`),
+		},
+	}
+	req, warnings, _ := mustBuildRequest(t, "us.anthropic.claude-fable-5-v1:0", provider.CallOptions{
+		Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: provider.ReasoningNone,
+		ProviderOptions: provider.BuildProviderOptions(bo),
+	})
+	fields, err := json.Marshal(req.AdditionalModelRequestFields)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"thinking":{"type":"adaptive"},"output_config":{"effort":"max","custom":true}}`, string(fields))
+	require.Len(t, warnings, 1)
+	assert.Equal(t, provider.WarnCompatibility, warnings[0].Type)
+	assert.Equal(t, "reasoning", warnings[0].Feature)
+	assert.JSONEq(t, `{"effort":"max","custom":true,"format":{"type":"json_schema"}}`, string(bo.AdditionalModelRequestFields["output_config"].(json.RawMessage)))
+}
+
+func TestBuildRequest_PortableNoneWithOtherFamilyConfig(t *testing.T) {
+	const modelID = "amazon.nova-micro-v1:0"
+	for _, tc := range []struct {
+		name, config, want string
+		derived            bool
+		budgetWarning      bool
+	}{
+		{"empty config opts in", `{}`, `{"reasoningConfig":{"maxReasoningEffort":"low"}}`, true, false},
+		{"explicit zero is preserved", `{"type":"enabled","budgetTokens":0}`, `{"reasoningConfig":{"type":"enabled","budgetTokens":0,"maxReasoningEffort":"low"}}`, true, true},
+		{"budget without enabled type is omitted", `{"budgetTokens":0}`, `{"reasoningConfig":{"maxReasoningEffort":"low"}}`, true, true},
+		{"explicit effort still takes precedence", `{"type":"enabled","maxReasoningEffort":"medium"}`, `{"reasoningConfig":{"type":"enabled","budgetTokens":5000,"maxReasoningEffort":"medium","stale":true}}`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := json.RawMessage(`{"reasoningConfig":` + tc.config + `,"additionalModelRequestFields":{"reasoningConfig":{"type":"disabled","budgetTokens":5000,"stale":true}}}`)
+			req, warnings, _ := mustBuildRequest(t, modelID, provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: provider.ReasoningNone,
+				ProviderOptions: provider.ProviderOptions{"amazonBedrock": provider.RawProviderOption{Key: "amazonBedrock", Raw: raw}},
+			})
+			fields, err := json.Marshal(req.AdditionalModelRequestFields)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(fields))
+			var wantWarnings []provider.Warning
+			if tc.derived {
+				wantWarnings = append(wantWarnings, provider.Warning{Type: provider.WarnCompatibility, Feature: "reasoning", Details: `reasoning "none" is not directly supported by this model. mapped to effort "low".`})
+			}
+			if tc.budgetWarning {
+				wantWarnings = append(wantWarnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "budgetTokens", Details: "budgetTokens applies only to Anthropic models on Bedrock and will be ignored for this model."})
+			}
+			assert.Equal(t, wantWarnings, warnings)
+		})
+	}
+}
+
 func TestBuildRequest_DeferredClaudeReasoningUnchanged(t *testing.T) {
 	for _, modelID := range []string{
 		"global.anthropic.claude-fable-5-1",

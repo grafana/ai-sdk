@@ -66,10 +66,11 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	isAnthropic := isAnthropicModelForCall(modelID, family, hasBudgetTokens)
 	explicitReasoning := bo.ReasoningConfig
 	bo.ReasoningConfig = resolveReasoningConfig(modelID, isAnthropic, opts.Reasoning, explicitReasoning, &warnings)
+	var outputConfig map[string]any
 	replaceThinking := false
 	if isAnthropic && bo.ReasoningConfig != nil && bo.ReasoningConfig.Type == "disabled" {
-		outputConfig, _ := bo.AdditionalModelRequestFields["output_config"].(map[string]any)
-		warnings = append(warnings, normalizeAnthropicDisabledThinking(modelID, bo.ReasoningConfig, explicitReasoning, outputConfig["effort"])...)
+		outputConfig = reasoningOutputConfig(bo.AdditionalModelRequestFields["output_config"])
+		warnings = append(warnings, normalizeAnthropicDisabledThinking(modelID, bo.ReasoningConfig, explicitReasoning, reasoningOutputEffort(outputConfig["effort"]))...)
 		replaceThinking = bo.ReasoningConfig.Type != ""
 	}
 
@@ -139,7 +140,8 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	warnings = append(warnings, addWarn...)
 
 	// OpenAI / Nova effort routing (non-Anthropic, model-prefix gated).
-	applyNonAnthropicEffort(addRequestFields, modelID, isAnthropic, bo)
+	deriveNoneEffort := opts.Reasoning == provider.ReasoningNone && explicitReasoning != nil && explicitReasoning.MaxReasoningEffort == ""
+	replaceReasoningConfig := applyNonAnthropicEffort(addRequestFields, modelID, isAnthropic, deriveNoneEffort, bo.ReasoningConfig)
 	warnings = append(warnings, omitNovaHighReasoningMaxTokens(modelID, bo, &inf)...)
 
 	// Native structured output goes through additionalModelRequestFields.
@@ -158,9 +160,21 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	// Merge in the caller's pass-through fields while preserving derived nested
 	// fields such as output_config.format/effort.
 	for k, v := range bo.AdditionalModelRequestFields {
-		if k != "thinking" || !replaceThinking {
-			mergeAdditionalModelRequestField(addRequestFields, k, v)
+		switch k {
+		case "thinking":
+			if replaceThinking {
+				continue
+			}
+		case "output_config":
+			if replaceThinking && outputConfig != nil && (addRequestFields[k] != nil || mode == StructuredOutputModeJSONTool) {
+				v = outputConfig
+			}
+		case "reasoningConfig":
+			if replaceReasoningConfig {
+				continue
+			}
 		}
+		mergeAdditionalModelRequestField(addRequestFields, k, v)
 	}
 	if mode == StructuredOutputModeJSONTool {
 		if original, ok := addRequestFields["output_config"].(map[string]any); ok {
@@ -460,6 +474,47 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 	return warnings
 }
 
+func reasoningOutputConfig(value any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	if object, ok := value.(map[string]any); ok {
+		return object
+	}
+	wire, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &members); err != nil || members == nil {
+		return nil
+	}
+	object := make(map[string]any, len(members))
+	for key, member := range members {
+		object[key] = member
+	}
+	return object
+}
+
+func reasoningOutputEffort(value any) any {
+	switch value.(type) {
+	case nil, string:
+		return value
+	}
+	wire, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var effort *string
+	if err := json.Unmarshal(wire, &effort); err != nil {
+		return value
+	}
+	if effort == nil {
+		return nil
+	}
+	return *effort
+}
+
 func normalizeAnthropicDisabledThinking(modelID string, resolved, explicit *ReasoningConfig, rawEffort any) []provider.Warning {
 	caps := getAnthropicReasoningCapabilities(modelID)
 	if caps.preserveLegacyReasoning || claudeRejectsThinkingFieldPattern.MatchString(modelID) {
@@ -468,19 +523,15 @@ func normalizeAnthropicDisabledThinking(modelID string, resolved, explicit *Reas
 	}
 
 	var warnings []provider.Warning
-	if caps.rejectsThinkingDisabled {
+	if caps.disabledThinkingFallback != "" {
 		explicitDisabled := explicit != nil && explicit.Type == "disabled"
-		if caps.supportsBetweenToolsThinking {
-			resolved.Type = reasoningTypeBetweenTools
-		} else {
-			resolved.Type = "adaptive"
-			if !explicitDisabled {
-				if explicit != nil {
-					resolved.MaxReasoningEffort = explicit.MaxReasoningEffort
-				}
-				if resolved.MaxReasoningEffort == "" && rawEffort == nil {
-					resolved.MaxReasoningEffort = "low"
-				}
+		resolved.Type = caps.disabledThinkingFallback
+		if resolved.Type == "adaptive" && !explicitDisabled {
+			if explicit != nil {
+				resolved.MaxReasoningEffort = explicit.MaxReasoningEffort
+			}
+			if resolved.MaxReasoningEffort == "" && rawEffort == nil {
+				resolved.MaxReasoningEffort = "low"
 			}
 		}
 		warning := provider.Warning{
@@ -694,32 +745,29 @@ func reasoningEffort(modelID string, isAnthropic bool, reasoning provider.Reason
 	return string(mapped), true
 }
 
-// applyNonAnthropicEffort routes effort hints to OpenAI/Nova-specific shapes.
-func applyNonAnthropicEffort(addFields map[string]any, modelID string, isAnthropic bool, bo BedrockOptions) {
-	if bo.ReasoningConfig == nil || bo.ReasoningConfig.MaxReasoningEffort == "" {
-		return
+func applyNonAnthropicEffort(addFields map[string]any, modelID string, isAnthropic, deriveNoneEffort bool, rc *ReasoningConfig) bool {
+	if isAnthropic || rc == nil || rc.MaxReasoningEffort == "" {
+		return false
 	}
-	if isAnthropic {
-		return
-	}
-	effort := bo.ReasoningConfig.MaxReasoningEffort
 	if isOpenAIModel(modelID) {
 		if isOpenAIGptOSSModel(modelID) {
-			addFields["reasoning_effort"] = effort
+			addFields["reasoning_effort"] = rc.MaxReasoningEffort
 		} else {
-			ensureMap(addFields, "reasoning")["effort"] = effort
+			ensureMap(addFields, "reasoning")["effort"] = rc.MaxReasoningEffort
 		}
-		return
+		return false
 	}
 	// Default to Nova-style reasoningConfig nesting for other model families.
-	reasoningConfig := map[string]any{"maxReasoningEffort": effort}
-	if bo.ReasoningConfig.Type != "" && bo.ReasoningConfig.Type != "adaptive" {
-		reasoningConfig["type"] = bo.ReasoningConfig.Type
+	replaceReasoningConfig := deriveNoneEffort && !isNova2ReasoningModel(modelID)
+	reasoningConfig := map[string]any{"maxReasoningEffort": rc.MaxReasoningEffort}
+	if rc.Type != "" && rc.Type != "adaptive" {
+		reasoningConfig["type"] = rc.Type
 	}
-	if bo.ReasoningConfig.Type == "enabled" && bo.ReasoningConfig.BudgetTokens > 0 {
-		reasoningConfig["budgetTokens"] = bo.ReasoningConfig.BudgetTokens
+	if rc.Type == "enabled" && (rc.BudgetTokens > 0 || (replaceReasoningConfig && (rc.budgetTokensPresent || rc.BudgetTokens != 0))) {
+		reasoningConfig["budgetTokens"] = rc.BudgetTokens
 	}
 	addFields["reasoningConfig"] = reasoningConfig
+	return replaceReasoningConfig
 }
 
 // omitNovaHighReasoningMaxTokens drops maxTokens for Nova 2 Lite with enabled
