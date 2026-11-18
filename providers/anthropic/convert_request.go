@@ -95,6 +95,8 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 
 	useStructuredOutput := caps.supportsStructuredOutput
 	switch opts.StructuredOutputMode {
+	case "", StructuredOutputAuto:
+		useStructuredOutput = useStructuredOutput && anthropicschema.SupportsNativeStructuredOutput(schemaMap)
 	case StructuredOutputFormat:
 		useStructuredOutput = true
 	case StructuredOutputJSONTool:
@@ -105,7 +107,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	// The JSON response tool relies on forced tool use, which some models
 	// reject. Fall back to native structured output only if it can represent
 	// the original schema.
-	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
+	if opts.StructuredOutputMode == StructuredOutputJSONTool && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
 		anthropicschema.SupportsNativeStructuredOutput(schemaMap) {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
