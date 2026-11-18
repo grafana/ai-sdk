@@ -58,6 +58,16 @@ Anthropic/shared Vertex, Bedrock, OpenAI Responses and OpenAI-compatible SHALL i
 - **WHEN** an Anthropic or Bedrock request uses an explicitly selected empty text file supported by that converter
 - **THEN** native request conversion SHALL retain the text-document representation and empty content
 
+#### Scenario: OpenAI-compatible inline user text
+- **WHEN** an OpenAI-compatible user file part selects inline text with top-level media type `text`
+- **THEN** request conversion SHALL emit a text content part with the selected text verbatim, including an explicitly empty string, and apply the file part's `openaiCompatible` metadata using existing overlay precedence
+
+#### Scenario: OpenAI-compatible rejects inline text for non-text media
+- **WHEN** an OpenAI-compatible user file part selects inline text with a non-text media type
+- **THEN** request conversion SHALL reject the part before HTTP transport
+
+Coverage for these OpenAI-compatible cases establishes request projection and rejection before transport, not live endpoint acceptance.
+
 #### Scenario: Nullish filename defaults
 - **WHEN** OpenAI Responses receives otherwise equivalent PDF inputs with absent and explicit empty filenames
 - **THEN** only the absent filename SHALL receive its default, and raw native request JSON SHALL preserve the explicit empty value

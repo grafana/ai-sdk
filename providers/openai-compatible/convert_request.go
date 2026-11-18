@@ -725,6 +725,8 @@ func base64Data(data *provider.DataContent) (string, error) {
 
 func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
+	case data.IsText():
+		return data.Text, nil
 	case data.IsURL():
 		return data.URL, nil
 	case data.Bytes != nil:
