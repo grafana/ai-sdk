@@ -85,6 +85,7 @@ An invalid application tool call SHALL produce one `tool-input-error` chunk; the
 #### Scenario: Invalid tool calls are reported once
 - **WHEN** a new application tool call is reported as invalid, including when the tool is excluded by effective active tools
 - **THEN** the UI stream carries one `tool-input-error` chunk for the call and no `tool-output-error` chunk
+- **AND** for an unavailable tool, the chunk preserves unparseable input as the original string, including blank input
 - **AND** the error callback, when redacting, is called once for that call
 
 ### Requirement: ToUIMessageStream uses functional options
