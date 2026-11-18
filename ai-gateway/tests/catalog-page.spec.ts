@@ -336,7 +336,7 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
-      expect((await accounts[role].post(`${CATALOGS}/${name}/health`)).status()).toBe(403);
+      expect((await page.request.post(`${CATALOGS}/${name}/health`)).status()).toBe(403);
 
       await page.goto(prefixRoute(ROUTES.NewCatalog));
       await expect(page.getByText("You can't create model catalogs")).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });

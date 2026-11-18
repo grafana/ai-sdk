@@ -146,7 +146,8 @@ export function ModelDrawer({ spec, id, fallbackHealth, readOnly, onSave, onClos
             {fallback.map((target, index) => {
               const title = `Fallback ${index + 1}`;
               const saved = stored.fallback?.[index];
-              const status = saved?.provider === target.provider && saved.model === target.model ? fallbackHealth?.[index] : undefined;
+              const status =
+                saved?.provider === target.provider && saved.model === target.model ? fallbackHealth?.[index] : undefined;
               return (
                 <TargetFields
                   key={index}
@@ -163,23 +164,23 @@ export function ModelDrawer({ spec, id, fallbackHealth, readOnly, onSave, onClos
                       <CatalogHealthBadge status={status} />
                       {!readOnly && (
                         <>
-                        <IconButton
-                          name="arrow-up"
-                          tooltip={`Move ${title.toLowerCase()} up`}
-                          disabled={index === 0}
-                          onClick={() => move(index, index - 1)}
-                        />
-                        <IconButton
-                          name="arrow-down"
-                          tooltip={`Move ${title.toLowerCase()} down`}
-                          disabled={index === fallback.length - 1}
-                          onClick={() => move(index, index + 1)}
-                        />
-                        <IconButton
-                          name="trash-alt"
-                          tooltip={`Remove ${title.toLowerCase()}`}
-                          onClick={() => setFallback(fallback.filter((_, i) => i !== index))}
-                        />
+                          <IconButton
+                            name="arrow-up"
+                            tooltip={`Move ${title.toLowerCase()} up`}
+                            disabled={index === 0}
+                            onClick={() => move(index, index - 1)}
+                          />
+                          <IconButton
+                            name="arrow-down"
+                            tooltip={`Move ${title.toLowerCase()} down`}
+                            disabled={index === fallback.length - 1}
+                            onClick={() => move(index, index + 1)}
+                          />
+                          <IconButton
+                            name="trash-alt"
+                            tooltip={`Remove ${title.toLowerCase()}`}
+                            onClick={() => setFallback(fallback.filter((_, i) => i !== index))}
+                          />
                         </>
                       )}
                     </>
