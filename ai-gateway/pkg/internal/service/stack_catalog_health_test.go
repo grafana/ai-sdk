@@ -143,7 +143,7 @@ func TestCatalogHealthChecker_ListingOutcomes(t *testing.T) {
 				resp.Header = http.Header{"Content-Type": {"text/event-stream"}}
 				return resp, nil
 			}))
-			got := checker.list(t.Context(), p, map[string]struct{}{"listed": {}, "missing": {}})
+			got := checker.list(t.Context(), p, map[string]struct{}{"listed": {}, "missing": {}}, listingKeyMatcher([]string{p.APIKey}))
 			assert.Equal(t, len(tc.replies), calls)
 			assert.Equal(t, tc.status, got.status)
 			if tc.missing == "" {

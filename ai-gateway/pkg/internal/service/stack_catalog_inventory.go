@@ -53,13 +53,14 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 	result := CatalogProviderModels{ModelIDs: []string{}}
 	seen := make(map[string]struct{})
 	omitted := false
-	status, complete := c.walkListing(ctx, resolveStackProvider(configured, stack, provider), func(page listingPage) bool {
+	containsKey := listingKeyMatcher(keys)
+	status, complete := c.walkListing(ctx, resolveStackProvider(configured, stack, provider), containsKey, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			id := entry.ID
 			if _, duplicate := seen[id]; duplicate {
 				continue
 			}
-			if len(seen) == maxListedModelIDs || !safeListedID(id, keys) {
+			if len(seen) == maxListedModelIDs || len(id) > maxListedModelBytes || strings.ContainsFunc(id, unicode.IsControl) || containsKey(id) {
 				omitted = true
 				continue
 			}
@@ -74,9 +75,4 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 	}
 	slices.Sort(result.ModelIDs)
 	return result, nil
-}
-
-func safeListedID(id string, keys []string) bool {
-	return len(id) <= maxListedModelBytes && !strings.ContainsFunc(id, unicode.IsControl) &&
-		!slices.ContainsFunc(keys, func(key string) bool { return strings.Contains(id, key) })
 }

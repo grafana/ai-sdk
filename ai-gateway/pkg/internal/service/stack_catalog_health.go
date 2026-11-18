@@ -69,7 +69,7 @@ func (c *CatalogHealthChecker) Check(ctx context.Context, namespace string, stac
 	defer c.release(id)
 	ctx, cancel := context.WithTimeout(ctx, healthRunTimeout)
 	defer cancel()
-	file, _, err := parseStackCatalog(stack)
+	file, keys, err := parseStackCatalog(stack)
 	if err != nil {
 		return CatalogHealth{}, err
 	}
@@ -86,13 +86,14 @@ func (c *CatalogHealthChecker) Check(ctx context.Context, namespace string, stac
 		}
 	}
 
+	containsKey := listingKeyMatcher(keys)
 	results := make([]providerHealth, min(len(names), healthMaxProviders))
 	var workers sync.WaitGroup
 	for worker := range min(healthProviderWorkers, len(results)) {
 		workers.Go(func() {
 			for i := worker; i < len(results) && ctx.Err() == nil; i += healthProviderWorkers {
 				name := names[i]
-				results[i] = c.list(ctx, resolveStackProvider(file.Providers[name], stack, name), targets[name])
+				results[i] = c.list(ctx, resolveStackProvider(file.Providers[name], stack, name), targets[name], containsKey)
 			}
 		})
 	}
@@ -150,9 +151,9 @@ func (health providerHealth) model(id string) HealthStatus {
 	return HealthNotChecked
 }
 
-func (c *CatalogHealthChecker) list(ctx context.Context, p config.ResolvedProvider, targets map[string]struct{}) providerHealth {
+func (c *CatalogHealthChecker) list(ctx context.Context, p config.ResolvedProvider, targets map[string]struct{}, containsKey func(string) bool) providerHealth {
 	found := make(map[string]struct{})
-	status, complete := c.walkListing(ctx, p, func(page listingPage) bool {
+	status, complete := c.walkListing(ctx, p, containsKey, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			if _, wanted := targets[entry.ID]; wanted {
 				found[entry.ID] = struct{}{}

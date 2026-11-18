@@ -411,6 +411,14 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Browse models' })).toHaveCount(0);
       const listingDenied = await page.request.post(`${CATALOGS}/${name}/available-models?provider=claude`);
       expect(listingDenied.status(), await listingDenied.text()).toBe(403);
+      expect(await listingDenied.json()).toEqual(
+        expect.objectContaining({
+          status: 'Failure',
+          reason: 'Forbidden',
+          code: 403,
+          message: expect.stringContaining('get modelcatalogs is not allowed'),
+        })
+      );
       const denied = await page.request.post(`${CATALOGS}/${name}/health`);
       expect(denied.status(), await denied.text()).toBe(403);
       expect(await denied.json()).toEqual(

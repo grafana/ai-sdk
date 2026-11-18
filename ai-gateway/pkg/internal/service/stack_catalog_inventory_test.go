@@ -65,6 +65,30 @@ func TestAvailableModels_CompletionAndSecretHandling(t *testing.T) {
 	}
 }
 
+func TestAvailableModels_ProtectsSavedKeysInIDsAndCursors(t *testing.T) {
+	for _, cursor := range []string{"selected-key", "other-key", "other-key \t"} {
+		t.Run(fmt.Sprintf("cursor %q", cursor), func(t *testing.T) {
+			stack := testStackCatalog()
+			stack.Keys["claude"] = " \tselected-key\t "
+			stack.Keys["gpt"] = "other-key \t"
+			encodedCursor, err := json.Marshal(cursor)
+			require.NoError(t, err)
+			var calls int
+			checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
+				calls++
+				require.Equal(t, 1, calls, "continuation must stop")
+				assert.Empty(t, r.URL.Query().Get("after_id"))
+				body := fmt.Sprintf(`{"data":[{"id":"id-selected-key"},{"id":"id-other-key"},{"id":"listed"}],"has_more":true,"last_id":%s}`, encodedCursor)
+				return listingResponse(200, body), nil
+			}))
+			result, err := checker.AvailableModels(t.Context(), "stack", stack, "claude")
+			require.NoError(t, err)
+			assert.Equal(t, CatalogProviderModels{ListingPartial, []string{"listed"}}, result)
+			assert.Equal(t, 1, calls)
+		})
+	}
+}
+
 func TestAvailableModels_CapsInventory(t *testing.T) {
 	ids := make([]map[string]string, 0, maxListedModelIDs+1)
 	for i := range maxListedModelIDs + 1 {

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,7 +31,22 @@ type listingPage struct {
 	LastID  string `json:"last_id"`
 }
 
-func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.ResolvedProvider, visit func(listingPage) bool) (status HealthStatus, complete bool) {
+func listingKeyMatcher(keys []string) func(string) bool {
+	forms := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key != "" {
+			forms = append(forms, key)
+		}
+		if wire := textproto.TrimString(key); wire != "" && wire != key {
+			forms = append(forms, wire)
+		}
+	}
+	return func(value string) bool {
+		return slices.ContainsFunc(forms, func(key string) bool { return strings.Contains(value, key) })
+	}
+}
+
+func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.ResolvedProvider, containsKey func(string) bool, visit func(listingPage) bool) (status HealthStatus, complete bool) {
 	ctx, cancel := context.WithTimeout(ctx, listingProviderTimeout)
 	defer cancel()
 
@@ -72,7 +89,7 @@ func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.Resolve
 		if page.HasMore == nil || !*page.HasMore {
 			return status, true
 		}
-		if !more || p.Type != "anthropic" || page.LastID == "" || len(page.LastID) > listingCursorBytes || strings.Contains(page.LastID, p.APIKey) {
+		if !more || p.Type != "anthropic" || page.LastID == "" || len(page.LastID) > listingCursorBytes || containsKey(page.LastID) {
 			return status, false
 		}
 		if _, repeated := seen[page.LastID]; repeated {

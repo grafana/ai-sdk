@@ -168,7 +168,7 @@ func TestCatalogHealth_ParentAndConfiguration(t *testing.T) {
 		{"missing key", &resource.RouteRequestInfo{FullIdentifier: testCatalogInfo(nil).FullIdentifier, Parent: testCatalogParent(t, nil)}, http.StatusFailedDependency},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			request := callerRequest(bodyBYOKCaller, http.MethodPost, "/modelcatalogs/"+testCatalogName+"/health", nil)
+			request := callerRequest(bodyBYOKCaller, "/modelcatalogs/"+testCatalogName+"/health", nil)
 			request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), tc.info))
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
