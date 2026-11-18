@@ -554,6 +554,59 @@ describe("stack-catalog routes through the authenticated command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
   });
 
+  it("refuses unlisted custom endpoints of request accounts and stack catalogs before any connection", async () => {
+    let connections = 0;
+    const listener = createNetServer(socket => { connections++; socket.destroy(); });
+    await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
+    const port = (listener.address() as { port: number }).port;
+    const [native, gateway] = await startCloudGateway([], undefined, { GF_PLUGIN_CUSTOM_ENDPOINTS: `https://127.0.0.1:${port}/team` });
+    try {
+      const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "byok-unlisted" }] }];
+      const model = createGateway({ baseURL: gateway.baseURL, apiKey: TEST_TOKEN })(BYOK_MODEL);
+      for (const baseURL of [`https://127.0.0.1:${port}/teams`, `http://127.0.0.1:${port}/team`, `https://localhost:${port}/team`, `https://127.0.0.1:${port}/team/../admin`]) {
+        const options: LanguageModelV4CallOptions = { prompt, maxOutputTokens: 32, providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key", baseURL }] } } } };
+        for (const mode of ["generate", "stream"] as const) {
+          let failure: any;
+          try {
+            if (mode === "generate") await model.doGenerate(options);
+            else await collectGatewayStream((await model.doStream(options)).stream);
+          } catch (error) { failure = error; }
+          assert.equal(failure?.statusCode, 400, `${baseURL} ${mode}`);
+          assert.equal(failure.isRetryable, false);
+          assert.match(failure.message, /providerOptions\.gateway\.byok requires supported provider arrays with valid accounts/);
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
+          assert.equal(go.error?.statusCode, 400, `${baseURL} ${mode}`);
+          assert.equal(go.error.isRetryable, false);
+          assert.match(go.error.message, /providerOptions\.gateway\.byok requires supported provider arrays with valid accounts/);
+          for (const exported of [JSON.stringify(failure.cause?.data ?? null), JSON.stringify(go.error)]) {
+            assert.equal(exported.includes(`:${port}`), false);
+            assert.equal(exported.includes("request-only-key"), false);
+          }
+        }
+      }
+      const catalog = {
+        apiVersion: "aigateway.ext.grafana.app/v1alpha1",
+        kind: "ModelCatalog",
+        metadata: { name: CATALOG_NAME },
+        spec: {
+          providers: { claude: { type: "anthropic", baseURL: `https://127.0.0.1:${port}/teams` } },
+          models: { "team-model": { name: "Team model", primary: { provider: "claude", model: "unlisted-model" } } },
+        },
+        secure: { claude: { create: CATALOG_KEY } },
+      };
+      const created = await fetch(`${gateway.baseURL}/modelcatalogs`, { method: "POST", headers: { Authorization: `Bearer ${TEST_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(catalog), signal: AbortSignal.timeout(5_000) });
+      const refusal = await created.text();
+      assert.equal(created.status, 400, refusal);
+      assert.match(refusal, /modelcatalog: providers\.claude\.baseURL is not a listed custom endpoint/);
+      assert.equal(refusal.includes(`:${port}`), false);
+      assert.equal(refusal.includes(CATALOG_KEY), false);
+      assert.equal(connections, 0, "an unlisted endpoint receives no connection");
+      assert.equal(native.requests.length, 0);
+      await gateway.stop();
+      assert.equal(gateway.stderr.includes(`:${port}`), false);
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop(), () => new Promise<void>(resolve => listener.close(() => resolve()))); }
+  });
+
   it("surfaces the platform's Kubernetes Status for a missing catalog as a client error", async () => {
     const [native, gateway] = await startCloudGateway();
     try {

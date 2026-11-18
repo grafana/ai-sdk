@@ -17,7 +17,7 @@ A stack-catalog selection SHALL be built from three inputs: one catalog's spec, 
 - **THEN** a stack-catalog selection of `assistant` SHALL attempt only the stack catalog's candidates, with the stack catalog's keys
 
 ### Requirement: Stored catalog checked on every request
-Every stack-catalog selection SHALL check the stored spec with the stack-catalog provider policy, the shared catalog shape checks and the key check, before resolving a model. A spec that fails, or a provider whose decrypted value is missing or empty, SHALL fail the call with the catalog configuration category before any provider request. The failure SHALL NOT carry check messages, spec identifiers or key values.
+Every stack-catalog selection SHALL check the stored spec with the stack-catalog provider policy, the custom endpoint list, the shared catalog shape checks and the key check, before resolving a model. A spec that fails, or a provider whose decrypted value is missing or empty, SHALL fail the call with the catalog configuration category before any provider request. The failure SHALL NOT carry check messages, spec identifiers or key values.
 
 #### Scenario: Stored catalog fails the checks
 - **WHEN** a stored spec has an unknown provider type or an alias collision
@@ -35,6 +35,10 @@ Every stack-catalog selection SHALL check the stored spec with the stack-catalog
 - **WHEN** a catalog is valid for one request and invalid for the next
 - **THEN** the first SHALL succeed and the second SHALL fail with the catalog configuration category
 
+#### Scenario: Endpoint no longer listed
+- **WHEN** a stored catalog's custom `baseURL` is not in the current list
+- **THEN** the call SHALL fail with the catalog configuration category, with zero provider requests
+
 ### Requirement: Only needed candidates are constructed
 A stack-catalog selection SHALL construct provider models only for the candidates its composed attempt chain contains. Those come from the requested model and any `gateway.models` entries, filtered by `only` and ordered by `order`. It SHALL NOT construct candidates of other catalog models, and SHALL keep no built model after the call.
 
@@ -47,7 +51,7 @@ A stack-catalog selection SHALL construct provider models only for the candidate
 - **THEN** only the `openai` candidate SHALL be constructed
 
 ### Requirement: Stack-catalog routing and fallback
-Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be the provider types.
+Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be derived as for operator providers: an `openai-compatible` provider's `providerName` when set, otherwise the provider type.
 
 #### Scenario: Alias call
 - **WHEN** a call requests an alias of a catalog model
@@ -68,6 +72,10 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 #### Scenario: Composed chain above the bound
 - **WHEN** routing controls compose more than 8 candidates
 - **THEN** the call SHALL fail with the attempt-bound document, with zero constructed models and zero provider requests
+
+#### Scenario: Compatible provider slug
+- **WHEN** a catalog has an `openai-compatible` provider with `providerName: acme` and a call sends `only: ["acme"]`
+- **THEN** the selection SHALL keep that provider's candidates, and `only: ["openai-compatible"]` SHALL exclude them
 
 ### Requirement: BYOK controls refused on stack catalogs
 A stack-catalog selection SHALL refuse `gateway.byok` and any other unsupported control with the unsupported gateway control category, before checking the stored catalog and before any provider request. It SHALL never fall back to the operator catalog, server-held provider keys or ambient credentials.

@@ -7,14 +7,28 @@
 // the key appearing anywhere. A unary call whose last user text is the echo
 // marker returns the JSON of the request fields that Middleware call defaults
 // change.
+//
+// It also listens with TLS, with the certificate scripts/e2e.sh generates, as
+// the custom endpoint of stack catalogs. Those calls answer with the key
+// digest and the backend model.
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
 
 const port = Number(process.env.PORT ?? 8080);
+const securePort = Number(process.env.TLS_PORT ?? 8443);
+const certificateDirectory = '/etc/native-proxy';
 const model = 'fake-model';
 const fixedText = ['fake ', 'stream'];
 const nativeHost = 'api.anthropic.com';
 const keyDigestLength = 12;
+
+function keyDigest(request) {
+  const key = String(request.headers['x-api-key'] ?? '');
+  return createHash('sha256').update(key).digest('hex').slice(0, keyDigestLength);
+}
+
 const echoMarker = 'e2e-echo-request';
 
 function lastUserText(body) {
@@ -35,12 +49,13 @@ function echoed(body) {
 }
 
 function replyText(request, body) {
+  if (request.socket.encrypted) {
+    return [`custom ${keyDigest(request)} `, String(body.model)];
+  }
   if (request.headers.host !== nativeHost) {
     return fixedText;
   }
-  const key = String(request.headers['x-api-key'] ?? '');
-  const digest = createHash('sha256').update(key).digest('hex').slice(0, keyDigestLength);
-  return [`native ${digest} `, String(body.model)];
+  return [`native ${keyDigest(request)} `, String(body.model)];
 }
 
 function unary(response, text) {
@@ -88,7 +103,7 @@ function stream(response, text) {
   response.end();
 }
 
-createServer((request, response) => {
+function handle(request, response) {
   if (request.method === 'GET' && request.url?.split('?')[0] === '/v1/models') {
     const key = String(request.headers['x-api-key'] ?? '');
     const accepted = key === 'e2e-health-accepted-key' && request.headers['anthropic-version'] === '2023-06-01';
@@ -125,4 +140,10 @@ createServer((request, response) => {
       unary(response, text);
     }
   });
-}).listen(port);
+}
+
+createServer(handle).listen(port);
+createSecureServer(
+  { cert: readFileSync(`${certificateDirectory}/cert.pem`), key: readFileSync(`${certificateDirectory}/key.pem`) },
+  handle
+).listen(securePort);

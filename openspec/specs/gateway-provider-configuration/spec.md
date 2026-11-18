@@ -6,7 +6,7 @@ Define how the authenticated Gateway command configures named provider instances
 ## Requirements
 
 ### Requirement: Configured provider state cannot influence BYOK
-All startup provider-instance and candidate-policy configuration, secret resolution, custom endpoints and account-bound models SHALL belong exclusively to configured-account access. BYOK provider construction SHALL use supported built-in adapters, fixed native destinations and supplied request credentials without consulting that configuration or ambient SDK credentials. Credential-independent transport/lifecycle infrastructure SHALL remain reusable without shared mutable authentication state.
+Startup provider-instance and candidate-policy configuration, secret resolution, configured endpoints and account-bound models SHALL belong only to configured-account access. BYOK construction SHALL use built-in adapters, native destinations or the account's listed baseURL, and request credentials, without that configuration or ambient SDK credentials. Credential-independent transport infrastructure SHALL stay reusable without shared mutable authentication state.
 
 #### Scenario: Configured provider of the same type exists
 - **WHEN** an OpenAI BYOK request arrives and an OpenAI instance has a configured custom endpoint and key
@@ -248,7 +248,7 @@ The compatible model HTTP client SHALL be the shared model HTTP client used for 
 - **THEN** the shared client SHALL enforce the same bounds without provider-specific settings, and only the long stream SHALL succeed
 
 ### Requirement: Stack catalog provider keys
-Provider keys MAY also come from a stack catalog, as the decrypted secure value keyed by the provider name. Such a key SHALL be used only for that catalog's candidates in the request that supplied it, with the provider type's native endpoint and the shared model HTTP client. Operator providers, their keys and endpoints, BYOK accounts and ambient SDK credentials SHALL NOT affect a stack-catalog call, and stack-catalog keys SHALL NOT affect other calls.
+A stack catalog MAY supply provider keys as decrypted secure values keyed by provider name. Each key SHALL be used only for that catalog's candidates in the request that supplied it, with the provider's listed `baseURL` when set, otherwise its type's native endpoint, through the shared model HTTP client. Operator providers, their keys and endpoints, BYOK accounts and ambient SDK credentials SHALL NOT affect a stack-catalog call, and stack-catalog keys SHALL NOT affect other calls.
 
 #### Scenario: Stack catalog and operator catalog share a provider name
 - **WHEN** the operator catalog's `anthropic` provider has a custom endpoint and key, and a stack catalog's `anthropic` provider has its own key
@@ -261,6 +261,10 @@ Provider keys MAY also come from a stack catalog, as the decrypted secure value 
 #### Scenario: Concurrent catalogs
 - **WHEN** two requests for different stack catalogs with different keys for the same provider type run at once
 - **THEN** each provider request SHALL carry only its own catalog's key
+
+#### Scenario: Stack catalog with a listed endpoint
+- **WHEN** a stack catalog's `openai-compatible` provider sets a listed `baseURL: https://llm.example.com/v1`
+- **THEN** its key SHALL be sent only to that endpoint, through the shared model client
 
 ### Requirement: Serving without an operator catalog
 Without an operator catalog, configured callers SHALL get a discovery document with no models, and every model ID SHALL fail as model not found with zero provider requests. BYOK SHALL behave as with an operator catalog.

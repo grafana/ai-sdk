@@ -228,9 +228,10 @@ Reads return `secure.anthropic.name: inline-<generated>` in place of the key.
 Grafana creates that secret for the catalog and owns it there: replacing a key
 deletes the old secret, and deleting the catalog deletes its secrets.
 
-- `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
-  `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
-  can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
+- `spec` uses the catalog format above without `apiKeyEnv`. Providers are
+  named with lowercase letters, digits and `-`. A `baseURL` other than the
+  provider's own endpoint must be listed; see
+  [Custom endpoints](#custom-endpoints).
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.
@@ -238,6 +239,47 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   and Admins can write them (`aigateway:catalogwriter`).
 - The Gateway validates every create and update, so writes fail while the
   plugin is unavailable. Deletes always work.
+
+### Custom endpoints
+
+A stored catalog's providers, and in `cloud` mode each account a caller brings
+with its own keys, can use a `baseURL` other than the provider's own endpoint,
+such as a regional endpoint, a proxy or an `openai-compatible` backend. The
+request leaves from the Gateway, so only endpoints the operator lists in
+`custom_endpoints` are accepted:
+
+```ini
+[plugin.grafana-aigateway-app]
+custom_endpoints = https://llm.corp.example/v1, https://eu.anthropic-proxy.example
+```
+
+- Each entry is a base URL. An endpoint matches when its scheme, host and port
+  equal the entry's and its path is the entry's path or continues it after a
+  `/`: with `https://llm.corp.example/v1`, `https://llm.corp.example/v1/team`
+  matches, and `https://llm.corp.example/v10`, `http://llm.corp.example/v1` and
+  `https://llm.corp.example:8443/v1` don't. Scheme and host ignore case, a
+  trailing `/` is ignored, and the port must be written the same way.
+- `http` endpoints are accepted only where an entry lists them, and their keys
+  travel unencrypted. Entries have no wildcards. Paths with `.` or `..`
+  segments, a backslash, or an encoded `/`, `\` or `%` are refused, and hosts
+  must be ASCII.
+- Without the setting, only the providers' own endpoints work. A `baseURL` that
+  equals the provider's own endpoint, such as `https://api.openai.com/v1`,
+  needs no entry.
+- The Gateway checks the list when a catalog is saved, on every call to a
+  stored catalog, and when it reads the accounts a call brings. It doesn't
+  resolve or connect to anything to check it. A refused catalog write gets a
+  `400` naming the field, a stored catalog whose endpoint is no longer listed
+  gets the `424` catalog error described below, and a refused account gets the
+  fixed `400` BYOK error. None of them names the endpoint.
+- Custom endpoints use the same connection settings as the providers' own,
+  including `HTTPS_PROXY`, the response limits and the redirect refusal. The
+  `model_catalog` setting's endpoints aren't checked.
+
+List only endpoints you control, or vendors whose DNS you trust. The Gateway
+trusts a listed hostname, so whoever controls its DNS controls where requests
+and keys go, including addresses inside your network. In `cloud` mode, any user
+or service account can use a listed endpoint with its own keys.
 
 ### Call a stored catalog
 
@@ -284,6 +326,7 @@ With Go token exchange, keep the Gateway API root and select the catalog with
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated service identities of the Grafana services that get the configured models in `cloud` mode. |
+| `custom_endpoints` | Comma-separated base URLs that stored catalogs and the accounts callers bring may use as a `baseURL`; see [Custom endpoints](#custom-endpoints). |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 | `extensions` | Optional YAML configuration of a distribution's operator extensions; see [Extend Grafana AI Gateway](../docs/guides/gateway-extensions.md). |
 

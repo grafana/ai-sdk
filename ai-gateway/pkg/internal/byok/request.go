@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 )
 
@@ -52,10 +52,14 @@ type requestAccount struct {
 // controls.Models. An invalid selector, requested or fallback, wraps
 // [ErrInvalidSelector]; invalid accounts, a destination without accounts, or
 // more requested-provider accounts than the attempt bound wrap
-// [ErrInvalidRequest]. Fallback destinations are bounded by routing
-// composition instead. A repeated selector is decoded once, and destinations
-// of the same provider share one read-only account slice.
-func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs map[Provider][]string) (Request, error) {
+// [ErrInvalidRequest]. An account's baseURL equal to its provider's native
+// endpoint is cleared, and any other must match one of endpoints, without a
+// DNS lookup, and is stored normalized; error messages never contain it.
+// Fallback
+// destinations are bounded by routing composition instead. A repeated selector
+// is decoded once, and destinations of the same provider share one read-only
+// account slice.
+func DecodeRequest(selector string, controls routing.Controls, endpoints outbound.CustomEndpoints) (Request, error) {
 	selected, model, ok := parseSelector(selector)
 	if !ok {
 		return Request{}, ErrInvalidSelector
@@ -69,7 +73,7 @@ func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs 
 	}
 	configs := make(map[Provider][]nativemodel.Config, len(accountsByProvider))
 	for name, accounts := range accountsByProvider {
-		if err := validateAccounts(name, accounts, approvedBaseURLs); err != nil {
+		if err := validateAccounts(name, accounts, endpoints); err != nil {
 			return Request{}, err
 		}
 		configs[name] = make([]nativemodel.Config, len(accounts))
@@ -114,20 +118,14 @@ func supportedProvider(name Provider) bool {
 	return name == Anthropic || name == OpenAI
 }
 
-func validateAccounts(name Provider, accounts []requestAccount, approvedBaseURLs map[Provider][]string) error {
-	var defaultURL string
-	switch name {
-	case Anthropic:
-		defaultURL = nativemodel.AnthropicBaseURL
-	case OpenAI:
-		defaultURL = nativemodel.OpenAIBaseURL
-	default:
+func validateAccounts(name Provider, accounts []requestAccount, endpoints outbound.CustomEndpoints) error {
+	if !supportedProvider(name) {
 		return fmt.Errorf("%w: unsupported gateway.byok provider", ErrInvalidRequest)
 	}
 	if len(accounts) == 0 {
 		return fmt.Errorf("%w: gateway.byok requires at least one account per provider", ErrInvalidRequest)
 	}
-	for _, account := range accounts {
+	for i, account := range accounts {
 		if len(account.ModelMappings) != 0 {
 			return fmt.Errorf("%w: modelMappings is not supported", ErrInvalidRequest)
 		}
@@ -137,9 +135,14 @@ func validateAccounts(name Provider, accounts []requestAccount, approvedBaseURLs
 		if name == Anthropic && (account.Organization != "" || account.Project != "") {
 			return fmt.Errorf("%w: organization and project require OpenAI", ErrInvalidRequest)
 		}
-		if account.BaseURL != "" && account.BaseURL != defaultURL && !slices.Contains(approvedBaseURLs[name], account.BaseURL) {
-			return fmt.Errorf("%w: baseURL is not service-approved for this provider", ErrInvalidRequest)
+		if account.BaseURL == "" {
+			continue
 		}
+		endpoint, err := endpoints.Check(account.BaseURL, nativemodel.DefaultBaseURL(string(name)))
+		if err != nil {
+			return fmt.Errorf("%w: baseURL must be the provider's native endpoint or a listed custom endpoint", ErrInvalidRequest)
+		}
+		accounts[i].BaseURL = endpoint
 	}
 	return nil
 }
