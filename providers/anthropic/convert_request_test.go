@@ -6417,6 +6417,21 @@ func TestBuildParams_MarkCodeExecutionDynamic(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, br.markCodeExecutionDynamic)
 	})
+
+	t.Run("set when JSON fallback keeps web_fetch but excludes code_execution", func(t *testing.T) {
+		opts := provider.CallOptions{
+			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object","additionalProperties":true}`)},
+			ToolChoice:     &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "fetch"},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260209", Name: "fetch"},
+				{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20260120", Name: "code_execution"},
+			},
+		}
+		_, _, _, br, err := buildParams("claude-sonnet-4-6", opts, false)
+		require.NoError(t, err)
+		require.True(t, br.usesJsonResponseTool)
+		assert.True(t, br.markCodeExecutionDynamic)
+	})
 }
 
 // TestConvertResponse_CodeExecutionDynamic exercises the upstream

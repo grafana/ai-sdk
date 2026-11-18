@@ -179,6 +179,84 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 	}
 }
 
+func TestModel_JSONToolFallbackFiltersCallerTools(t *testing.T) {
+	const modelID = "claude-sonnet-4-5"
+	const openObject = `{"type":"object","additionalProperties":true}`
+	const toolSchema = `{"type":"object","additionalProperties":false}`
+	for _, stream := range []bool{false, true} {
+		for _, tc := range []struct {
+			name     string
+			choice   provider.ToolChoice
+			thinking *ThinkingConfig
+			want     []string
+		}{
+			{name: "none", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}, want: []string{"json"}},
+			{name: "named", choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}, want: []string{"lookup", "json"}},
+			{name: "named provider alias", choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "search_web"}, want: []string{"web_search", "json"}},
+			{name: "auto", choice: provider.ToolChoice{Type: provider.ToolChoiceAuto}, want: []string{"lookup", "unused", "web_search", "json"}},
+			{name: "required", choice: provider.ToolChoice{Type: provider.ToolChoiceRequired}, want: []string{"lookup", "unused", "web_search", "json"}},
+			{
+				name: "named with manual thinking", choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"},
+				thinking: &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 1024}, want: []string{"lookup", "json"},
+			},
+		} {
+			t.Run(fmt.Sprintf("stream=%t/%s", stream, tc.name), func(t *testing.T) {
+				var wire struct {
+					OutputConfig json.RawMessage `json:"output_config"`
+					ToolChoice   json.RawMessage `json:"tool_choice"`
+					Tools        []struct {
+						Name   string          `json:"name"`
+						Schema json.RawMessage `json:"input_schema"`
+					} `json:"tools"`
+				}
+				client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+					if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+						return nil, err
+					}
+					return structuredOutputResponse(r, modelID, `{"answer":42}`, true, stream), nil
+				})}
+				m := New("test-key", modelID, WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+				opts := provider.CallOptions{
+					MaxOutputTokens: new(2048),
+					Prompt:          []provider.Message{provider.UserText("Return JSON.")},
+					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(openObject)},
+					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Thinking: tc.thinking}),
+					ToolChoice:      &tc.choice,
+					Tools: []provider.Tool{
+						{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(toolSchema)},
+						{Type: provider.ToolTypeFunction, Name: "unused", InputSchema: json.RawMessage(toolSchema)},
+						{Type: provider.ToolTypeProvider, ID: "anthropic.web_search_20250305", Name: "search_web"},
+					},
+				}
+				if stream {
+					result, err := m.DoStream(t.Context(), opts)
+					require.NoError(t, err)
+					for part := range result.Stream {
+						assert.NotEqual(t, provider.PartError, part.Type)
+					}
+				} else {
+					_, err := m.DoGenerate(t.Context(), opts)
+					require.NoError(t, err)
+				}
+
+				assert.Empty(t, wire.OutputConfig)
+				wantChoice := `{"type":"any","disable_parallel_tool_use":true}`
+				if tc.thinking != nil {
+					wantChoice = `{"type":"auto","disable_parallel_tool_use":true}`
+				}
+				assert.JSONEq(t, wantChoice, string(wire.ToolChoice))
+				names := make([]string, 0, len(wire.Tools))
+				for _, tool := range wire.Tools {
+					names = append(names, tool.Name)
+				}
+				assert.Equal(t, tc.want, names)
+				require.NotEmpty(t, wire.Tools)
+				assert.JSONEq(t, openObject, string(wire.Tools[len(wire.Tools)-1].Schema))
+			})
+		}
+	}
+}
+
 func structuredOutputResponse(r *http.Request, modelID, output string, tool, stream bool) *http.Response {
 	block := fmt.Sprintf(`{"type":"text","text":%q}`, output)
 	start := `{"type":"text","text":""}`

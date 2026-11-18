@@ -107,7 +107,14 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	tools := opts.Tools
 	toolChoice := opts.ToolChoice
 	if meta.usesJSONResponseTool {
-		tools = append(append([]provider.Tool(nil), tools...), provider.Tool{
+		tools = make([]provider.Tool, 0, len(opts.Tools)+1)
+		for _, tool := range opts.Tools {
+			if toolChoice == nil || (toolChoice.Type != provider.ToolChoiceNone &&
+				(toolChoice.Type != provider.ToolChoiceTool || tool.Name == toolChoice.ToolName)) {
+				tools = append(tools, tool)
+			}
+		}
+		tools = append(tools, provider.Tool{
 			Type: provider.ToolTypeFunction, Name: jsonResponseToolName,
 			Description: "Respond with a JSON object.", InputSchema: opts.ResponseFormat.Schema,
 		})
