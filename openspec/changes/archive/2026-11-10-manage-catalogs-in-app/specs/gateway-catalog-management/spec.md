@@ -102,7 +102,7 @@ An update SHALL omit the secure value of every provider whose stored key the wri
 - **THEN** the update SHALL carry `remove` for its stored key
 
 ### Requirement: Platform errors as returned
-When the platform refuses a read or write, the page SHALL show the message the platform returned, in the dialog of the refused change when there is one, and SHALL keep the change's input. The page SHALL refuse locally a missing value, a provider name or model ID the catalog already has, and a name, ID or alias outside the platform's format: Grafana's resource name rules for the catalog name, DNS labels for provider names, and the Gateway's public ID format for model IDs and aliases. It SHALL check the catalog name as the writer types, and SHALL show the catalog's URL only for a valid name. Collisions between aliases and IDs, and policy rules, SHALL be left to admission.
+When the platform refuses a read or write, the page SHALL show the message the platform returned, in the dialog of the refused change when there is one, and SHALL keep the change's input. The page SHALL refuse locally a missing value, a provider name or model ID the catalog already has, and a name, ID or alias outside the platform's format: Grafana's resource name rules for the catalog name, DNS labels for provider names, and the Gateway's public ID format for model IDs and aliases. It SHALL check the catalog name as the writer types, and SHALL show the catalog's URL only for a valid name. Other fields SHALL show a format error once the writer leaves them, and a missing value only when the writer saves; a shown error SHALL clear as soon as its value becomes valid. Collisions between aliases and IDs, and policy rules, SHALL be left to admission.
 
 #### Scenario: Admission refuses a catalog
 - **WHEN** admission refuses a create or update
@@ -111,6 +111,10 @@ When the platform refuses a read or write, the page SHALL show the message the p
 #### Scenario: Taken model ID
 - **WHEN** a writer adds a provider model whose ID the catalog already has
 - **THEN** the page SHALL refuse to send the request and say which ID is taken
+
+#### Scenario: Writer fixes a value
+- **WHEN** a field shows an error and the writer corrects its value
+- **THEN** the error SHALL disappear without another save
 
 #### Scenario: Invalid catalog name
 - **WHEN** a writer types a catalog name with a character Grafana refuses
