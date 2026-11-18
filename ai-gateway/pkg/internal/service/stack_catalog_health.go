@@ -58,14 +58,14 @@ type healthCatalogID struct{ namespace, name string }
 
 // CatalogHealthChecker runs bounded model-listing checks.
 type CatalogHealthChecker struct {
-	client *http.Client
-	mu     sync.Mutex
-	active map[healthCatalogID]struct{}
+	transport http.RoundTripper
+	mu        sync.Mutex
+	active    map[healthCatalogID]struct{}
 }
 
 // NewCatalogHealthChecker creates the checker shared by the Gateway's health requests.
-func NewCatalogHealthChecker(client *http.Client) *CatalogHealthChecker {
-	return &CatalogHealthChecker{client: client, active: make(map[healthCatalogID]struct{})}
+func NewCatalogHealthChecker(transport http.RoundTripper) *CatalogHealthChecker {
+	return &CatalogHealthChecker{transport: transport, active: make(map[healthCatalogID]struct{})}
 }
 
 // Check uses only the checked stored catalog and its decrypted keys.
@@ -245,7 +245,7 @@ func (c *CatalogHealthChecker) listPage(ctx context.Context, p config.ResolvedPr
 	} else {
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}
-	resp, err := c.client.Do(req)
+	resp, err := c.transport.RoundTrip(req)
 	if err != nil {
 		return page, HealthUnreachable
 	}

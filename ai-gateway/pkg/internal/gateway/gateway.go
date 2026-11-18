@@ -272,7 +272,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		return nil, err
 	}
 	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	health := catalogHealth(service.NewCatalogHealthChecker(outbound.NewProbeClient(config.ProviderResponseHeaderTimeout)))
+	health := catalogHealth(service.NewCatalogHealthChecker(outbound.NewProbeTransport(config.ProviderResponseHeaderTimeout)))
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat, messages, health))
 }
 

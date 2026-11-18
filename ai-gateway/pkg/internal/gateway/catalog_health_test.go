@@ -43,7 +43,11 @@ func TestCatalogHealth_ThroughPlatformHost(t *testing.T) {
 		assert.Equal(t, routeCatalogKey, r.Header.Get("X-Api-Key"))
 		code := int(status.Load())
 		if code != http.StatusOK {
-			w.Header().Set("Location", destination.URL)
+			if code == http.StatusTemporaryRedirect {
+				w.Header().Set("Location", "://malformed-redirect")
+			} else {
+				w.Header().Set("Location", destination.URL)
+			}
 			w.WriteHeader(code)
 			_, _ = fmt.Fprint(w, providerError, routeCatalogKey)
 			return
@@ -78,14 +82,14 @@ func TestCatalogHealth_ThroughPlatformHost(t *testing.T) {
 		for _, tc := range []struct {
 			code   int32
 			status string
-		}{{301, "refused"}, {401, "invalidKey"}, {429, "refused"}, {503, "unreachable"}} {
+		}{{301, "refused"}, {307, "refused"}, {401, "invalidKey"}, {429, "refused"}, {503, "unreachable"}} {
 			status.Store(tc.code)
 			code, body := send(http.MethodPost, h.catalogURL("health"), "", user)
 			require.Equal(t, http.StatusOK, code, body)
 			assert.JSONEq(t, fmt.Sprintf(`{"providers":{"claude":%q},"models":{"team-model":{"primary":"notChecked","fallback":[]}}}`, tc.status), body)
 		}
 		assert.Zero(t, redirects.Load())
-		assert.EqualValues(t, 5, calls.Load(), "no application retries")
+		assert.EqualValues(t, 6, calls.Load(), "no application retries")
 		for _, private := range []string{providerError, routeCatalogKey, destination.URL} {
 			assert.NotContains(t, h.logs.String(), private)
 			assert.NotContains(t, h.metrics(t), private)

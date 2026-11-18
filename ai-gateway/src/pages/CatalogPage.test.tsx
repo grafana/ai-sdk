@@ -1,5 +1,5 @@
 import React from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -82,9 +82,15 @@ function updated(catalog: ModelCatalog, spec: Spec, secure: SecureChanges): Mode
   return { ...catalog, metadata: { ...catalog.metadata, resourceVersion: '8' }, spec, secure: names };
 }
 
-function renderPage() {
+function renderPage(withNavigation = false) {
   return render(
     <MemoryRouter initialEntries={[`${APP}/catalogs/edit/team`]}>
+      {withNavigation && (
+        <>
+          <Link to={`${APP}/catalogs`}>Catalog list</Link>
+          <Link to={`${APP}/catalogs/edit/team`}>Team catalog</Link>
+        </>
+      )}
       <Routes>
         <Route path={`${APP}/catalogs`} element={<div>catalog list</div>} />
         <Route path={`${APP}/catalogs/edit/:name`} element={<CatalogPage />} />
@@ -164,6 +170,24 @@ describe('pages/CatalogPage', () => {
     await act(async () => finish(listing));
     expect(card('anthropic').queryByText('Listing accepted')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
+  });
+
+  test('ignores a pending health result after leaving and reopening the catalog', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage(true);
+    const first = await screen.findByRole('button', { name: 'Check health' });
+    let finish!: (result: CatalogHealth) => void;
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(new Promise((resolve) => {
+      finish = resolve;
+    }));
+    fireEvent.click(first);
+    fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+    expect(screen.queryByRole('button', { name: 'Checking health…' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Team catalog' }));
+    await act(async () => finish(listing));
+    expect(await screen.findByRole('button', { name: 'Check health' })).toBeEnabled();
+    expect(card('anthropic').queryByText('Listing accepted')).not.toBeInTheDocument();
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
   });
 
   test('uses fixed health failure text without displaying the underlying error', async () => {

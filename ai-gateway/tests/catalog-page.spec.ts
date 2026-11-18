@@ -336,7 +336,16 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
-      expect((await page.request.post(`${CATALOGS}/${name}/health`)).status()).toBe(403);
+      const denied = await page.request.post(`${CATALOGS}/${name}/health`);
+      expect(denied.status(), await denied.text()).toBe(403);
+      expect(await denied.json()).toEqual(
+        expect.objectContaining({
+          status: 'Failure',
+          reason: 'Forbidden',
+          code: 403,
+          message: expect.stringContaining('get modelcatalogs is not allowed'),
+        })
+      );
 
       await page.goto(prefixRoute(ROUTES.NewCatalog));
       await expect(page.getByText("You can't create model catalogs")).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });

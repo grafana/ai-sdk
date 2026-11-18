@@ -46,16 +46,16 @@ func NewModelClient(headerTimeout time.Duration, responseBytes int64) (*http.Cli
 	}, nil
 }
 
-// NewProbeClient uses the model transport's proxy and timeout policy, but
+// NewProbeTransport uses the model transport's proxy and timeout policy, but
 // disables connection reuse and HTTP/2 so a failed request is not replayed.
 // The caller owns the probe's deadline and decoded response byte limit.
-func NewProbeClient(headerTimeout time.Duration) *http.Client {
+func NewProbeTransport(headerTimeout time.Duration) *http.Transport {
 	transport := newTransport(headerTimeout)
 	transport.DisableKeepAlives = true
 	transport.ForceAttemptHTTP2 = false
 	transport.Protocols = new(http.Protocols)
 	transport.Protocols.SetHTTP1(true)
-	return &http.Client{Transport: transport, CheckRedirect: rejectRedirect}
+	return transport
 }
 
 // ValidateEndpoint validates a credential-free hierarchical http or https

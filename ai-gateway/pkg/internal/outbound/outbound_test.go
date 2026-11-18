@@ -53,7 +53,7 @@ func TestValidateEndpoint(t *testing.T) {
 	}
 }
 
-func TestNewProbeClient_UsesFreshHTTP1Connections(t *testing.T) {
+func TestNewProbeTransport_UsesFreshHTTP1Connections(t *testing.T) {
 	var requests atomic.Int32
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "HTTP/1.1", r.Proto)
@@ -70,14 +70,15 @@ func TestNewProbeClient_UsesFreshHTTP1Connections(t *testing.T) {
 	srv.EnableHTTP2 = true
 	srv.StartTLS()
 	defer srv.Close()
-	client := NewProbeClient(time.Second)
-	transport := client.Transport.(*http.Transport)
+	transport := NewProbeTransport(time.Second)
 	transport.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
-	resp, err := client.Get(srv.URL)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	resp, err := transport.RoundTrip(request)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-	resp, err = client.Get(srv.URL)
+	resp, err = transport.RoundTrip(request.Clone(t.Context()))
 	require.Error(t, err)
 	assert.Nil(t, resp)
 	assert.EqualValues(t, 2, requests.Load(), "one successful probe and one failed probe, without a replay")

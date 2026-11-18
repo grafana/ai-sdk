@@ -33,7 +33,7 @@ func TestCatalogHealthChecker_Check(t *testing.T) {
 	model.Fallback = append(model.Fallback, v1alpha1.Target{Provider: "claude", Model: "claude-opus"})
 	stack.Spec.Models["balanced"] = model
 	var calls atomic.Int32
-	checker := NewCatalogHealthChecker(&http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+	checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 		calls.Add(1)
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Nil(t, r.Body)
@@ -61,7 +61,7 @@ func TestCatalogHealthChecker_Check(t *testing.T) {
 		default:
 			return nil, errors.New("unexpected destination")
 		}
-	})})
+	}))
 	got, err := checker.Check(t.Context(), "stack", stack)
 	require.NoError(t, err)
 	assert.EqualValues(t, 4, calls.Load())
@@ -71,10 +71,10 @@ func TestCatalogHealthChecker_Check(t *testing.T) {
 }
 
 func TestCatalogHealthChecker_Preflight(t *testing.T) {
-	checker := NewCatalogHealthChecker(&http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+	checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 		t.Error("invalid catalog attempted a provider request")
 		return nil, errors.New("unexpected provider request")
-	})})
+	}))
 	for _, tc := range []struct {
 		name   string
 		mutate func(StackCatalog)
@@ -129,7 +129,7 @@ func TestCatalogHealthChecker_ListingOutcomes(t *testing.T) {
 				p.Type, p.BaseURL = "openai-compatible", "https://example.invalid/prefix/v1/"
 			}
 			calls := 0
-			checker := NewCatalogHealthChecker(&http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+			checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 				if tc.custom {
 					assert.Equal(t, "https://example.invalid/prefix/v1/models", r.URL.String())
 					assert.Equal(t, "Bearer stored-key", r.Header.Get("Authorization"))
@@ -142,7 +142,7 @@ func TestCatalogHealthChecker_ListingOutcomes(t *testing.T) {
 				}
 				resp.Header = http.Header{"Content-Type": {"text/event-stream"}}
 				return resp, nil
-			})})
+			}))
 			got := checker.list(t.Context(), p, map[string]struct{}{"listed": {}, "missing": {}})
 			assert.Equal(t, len(tc.replies), calls)
 			assert.Equal(t, tc.status, got.status)
@@ -161,10 +161,10 @@ func TestCatalogHealthChecker_ListingOutcomes(t *testing.T) {
 func TestCatalogHealthChecker_Bounds(t *testing.T) {
 	t.Run("admission does not queue and releases on cancellation", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			checker := NewCatalogHealthChecker(&http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+			checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 				<-r.Context().Done()
 				return nil, r.Context().Err()
-			})})
+			}))
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			for i := range healthMaxRuns {
@@ -187,7 +187,7 @@ func TestCatalogHealthChecker_Bounds(t *testing.T) {
 	t.Run("fan-out and deadlines", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var peak, active, calls atomic.Int32
-			checker := NewCatalogHealthChecker(&http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+			checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 				calls.Add(1)
 				n := active.Add(1)
 				defer active.Add(-1)
@@ -195,7 +195,7 @@ func TestCatalogHealthChecker_Bounds(t *testing.T) {
 				}
 				<-r.Context().Done()
 				return nil, r.Context().Err()
-			})})
+			}))
 			stack := testStackCatalog()
 			for i := range 10 {
 				name := fmt.Sprintf("extra-%02d", i)
