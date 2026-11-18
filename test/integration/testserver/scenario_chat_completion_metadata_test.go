@@ -19,7 +19,7 @@ func TestChatCompletionMetadata_History(t *testing.T) {
 	for range result.FullStream() {
 	}
 	require.NoError(t, result.Err())
-	assert.Equal(t, "hello world", result.Text())
+	assert.Equal(t, "hello Cannot worldhelp", result.Text(), "refusal deltas share the text part with content")
 	require.Len(t, result.Content(), 1)
 	messages := result.ResponseMessages()
 	require.Len(t, messages, 1)
