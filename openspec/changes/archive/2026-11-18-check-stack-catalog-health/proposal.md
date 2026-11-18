@@ -22,7 +22,7 @@ None.
 - `gateway-stack-catalog-runtime`: define stored-catalog checks, outcomes and egress bounds.
 - `gateway-plugin-host`: declare and register the additional catalog subresource route.
 - `gateway-model-catalog-kind`: grant the subresource action to catalog writers, independently of invocation and ordinary reads.
-- `gateway-catalog-management`: display on-demand health results for the saved revision.
+- `gateway-catalog-management`: display on-demand health results for the saved catalog.
 
 ## Impact
 

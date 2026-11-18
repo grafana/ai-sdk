@@ -13,11 +13,11 @@ The saved catalog page SHALL offer an explicit **Check health** action only to a
 - **WHEN** a caller without health permission opens a stored catalog
 - **THEN** the page SHALL neither show the control nor request health results
 
-### Requirement: Show results only for the saved revision
-The saved catalog page SHALL show provider status next to, but distinct from, key storage state, primary target status in the model row, and fallback statuses in model details. It SHALL explain that results reflect model listings, not an inference test, and SHALL use fixed UI labels. It SHALL discard results that do not match the displayed catalog revision and clear the result when that revision changes.
+### Requirement: Show results until the catalog is edited or left
+The saved catalog page SHALL show provider status next to, but distinct from, key storage state, primary target status in the model row, and fallback statuses in model details. It SHALL explain that results reflect model listings, not an inference test, and SHALL use fixed UI labels. It SHALL clear results on a successful save or navigation and disregard results from checks started before either event.
 
-#### Scenario: Catalog revision changes while the check is running
-- **WHEN** a check returns for an older revision than the page is displaying
+#### Scenario: Catalog is saved while the check is running
+- **WHEN** a check returns after the page saved an edit
 - **THEN** the page SHALL NOT put those statuses on the edited provider or model rows
 
 #### Scenario: Listing accepts one key but another fails

@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Health checks use only a saved catalog
-The health action SHALL accept no body or query parameters. It SHALL use only the checked parent catalog's spec, revision and decrypted keys, applying the same stored-catalog checks, endpoint policy and resolved destinations as selection before any probe. It SHALL NOT run on save, use caller-supplied credentials, or consult another catalog or ambient credentials.
+The health action SHALL accept no body or query parameters. It SHALL use only the checked parent catalog's spec and decrypted keys, applying the same stored-catalog checks, endpoint policy and resolved destinations as selection before any probe. It SHALL NOT run on save, use caller-supplied credentials, or consult another catalog or ambient credentials.
 
 #### Scenario: Invalid stored catalog
 - **WHEN** the saved catalog fails shape, endpoint policy or decrypted key checks
@@ -20,8 +20,8 @@ The action SHALL use read-only provider model listings, not inference. A valid l
 - **WHEN** a catalog has primary and fallback targets sharing a provider
 - **THEN** both SHALL be evaluated independently using the same listing traversal for that provider, not a call per model
 
-### Requirement: Closed health results for the saved revision
-On an accepted check the response SHALL be non-cacheable `200` JSON with `resourceVersion`, `providers` mapping provider names to statuses, and `models` mapping canonical model IDs to a `primary` status and ordered `fallback` statuses. Statuses SHALL use only `ok`, `invalidKey`, `unknownModel`, `unreachable`, `refused`, and `notChecked`. Aliases SHALL NOT produce separate model entries.
+### Requirement: Closed health results for the saved catalog
+On an accepted check the response SHALL be non-cacheable `200` JSON with `providers` mapping provider names to statuses, and `models` mapping canonical model IDs to a `primary` status and ordered `fallback` statuses. Statuses SHALL use only `ok`, `invalidKey`, `unknownModel`, `unreachable`, `refused`, and `notChecked`. Aliases SHALL NOT produce separate model entries.
 
 #### Scenario: Accepted native listing
 - **WHEN** the official endpoint returns a valid model listing
@@ -53,7 +53,7 @@ The action SHALL limit providers, pages, decoded bytes, concurrency, and elapsed
 
 #### Scenario: Too many health requests
 - **WHEN** the catalog already has a check running or the applicable admission budget is exhausted
-- **THEN** the action SHALL return a fixed `429` and `Retry-After` with zero provider requests for that check
+- **THEN** the action SHALL return a fixed `429` with zero provider requests for that check
 
 #### Scenario: Provider echoes a secret
 - **WHEN** an upstream error or response with a malformed listing contains a secret in its text
