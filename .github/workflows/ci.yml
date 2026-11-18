@@ -272,7 +272,7 @@ jobs:
           AI_SDK_UPSTREAM_ROOT: ${{ runner.temp }}/vercel-ai
         run: mise run parity-coverage
 
-      - name: Report provider API shape parity
+      - name: Check provider API shape parity
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run parity-provider-shape
 
