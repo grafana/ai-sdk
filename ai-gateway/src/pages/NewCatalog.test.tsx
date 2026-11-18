@@ -70,6 +70,7 @@ describe('pages/NewCatalog', () => {
     signInAs(OrgRole.Admin, ALL);
     renderPage();
 
+    expect(screen.queryByText(new RegExp(`^${URL}`))).not.toBeInTheDocument();
     type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
     expect(screen.getByText(`${URL}/ops`)).toBeInTheDocument();
     await connect('Anthropic', KEY);
@@ -119,6 +120,17 @@ describe('pages/NewCatalog', () => {
     expect(secure).toEqual({ openai: { create: OTHER_KEY } });
   });
 
+  test('checks the name as it is typed and shows the URL only for a valid one', () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+
+    type(screen.getByRole('textbox', { name: /^Catalog name/ }), '$%^&*');
+    expect(screen.getByText("Use only letters, digits and '-', '_', '.' or ':'.")).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(`^${URL}`))).not.toBeInTheDocument();
+    type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'team');
+    expect(screen.getByText(`${URL}/team`)).toBeInTheDocument();
+  });
+
   test('says what is missing without a request', async () => {
     signInAs(OrgRole.Admin, ALL);
     renderPage();
@@ -134,19 +146,20 @@ describe('pages/NewCatalog', () => {
   });
 
   test('shows a refused create as returned and keeps the input', async () => {
-    const message = 'admission hook for ModelCatalog denied the request: config: model "bad id": public ID';
+    const message =
+      'admission hook for ModelCatalog denied the request: config: alias "claude-sonnet-4-6" collides with canonical model';
     jest.mocked(createModelCatalog).mockRejectedValue({ status: 400, data: { kind: 'Status', message } });
     signInAs(OrgRole.Admin, ALL);
     renderPage();
 
     type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
     await connect('Anthropic', KEY);
-    await addModel('anthropic', 'bad id');
+    await addModel('anthropic', 'claude-sonnet-4-6');
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /^Catalog name/ })).toHaveValue('ops');
-    expect(screen.getByRole('listitem', { name: 'bad id' })).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(KEY);
     expect(screen.queryByText('catalog page')).not.toBeInTheDocument();
   });

@@ -83,8 +83,8 @@ function CatalogList() {
     if (catalogs.length === 0) {
       return (
         <EmptyState variant="call-to-action" message="No model catalogs yet" button={newCatalog}>
-          A catalog serves models from your own Anthropic or OpenAI accounts, with their API keys stored in Grafana.
-          Applications call it at its own URL.{' '}
+          A model catalog gives applications one URL for the models you choose from your own Anthropic or OpenAI
+          accounts, with fallbacks between them. Your API keys are stored as Grafana secrets.{' '}
           <TextLink href={DOCS_URL} external>
             Learn more
           </TextLink>
@@ -136,7 +136,7 @@ function CatalogList() {
 
   return (
     <PluginPage
-      subTitle="Serve models from your own provider accounts. Applications call each catalog at its own URL."
+      subTitle="A model catalog gives applications one URL for the models you choose from your own Anthropic or OpenAI accounts, with fallbacks between them."
       actions={catalogs && catalogs.length > 0 ? newCatalog : undefined}
     >
       <div className={s.page}>

@@ -1,4 +1,5 @@
 import {
+  catalogNameError,
   createSecure,
   defaultProviderName,
   draftKeys,
@@ -12,6 +13,7 @@ import {
   modelsOf,
   newCatalogProblems,
   providerNameError,
+  publicIDError,
   quickAddError,
   quickModel,
   withModel,
@@ -124,8 +126,37 @@ describe('components/Catalog/catalogSpec', () => {
     expect(createSecure(keys)).toEqual({ claude: { create: 'a' } });
   });
 
+  test.each([
+    ['', 'Enter a name.'],
+    ['team', undefined],
+    ['Team_2.prod:eu', undefined],
+    ['$%^&*', "Use only letters, digits and '-', '_', '.' or ':'."],
+    ['a b', "Use only letters, digits and '-', '_', '.' or ':'."],
+    ['trash', '"trash" is reserved. Choose another name.'],
+    ['x'.repeat(254), 'Use at most 253 characters.'],
+  ])('checks the catalog name %p as Grafana does', (name, expected) => {
+    expect(catalogNameError(name)).toBe(expected);
+  });
+
+  test.each([
+    ['claude-sonnet-4-6', true],
+    ['anthropic/claude:latest', true],
+    ['bad id', false],
+    ['-leading', false],
+    ['x'.repeat(129), false],
+  ])('checks the public ID %p as the Gateway does', (id, valid) => {
+    expect(publicIDError(id) === undefined).toBe(valid);
+  });
+
+  test('refuses provider models and aliases outside the public ID format', () => {
+    expect(quickAddError(spec, 'bad id')).toContain('Applications request the model by this ID.');
+    const draft = { ...modelDraft('gpt-5', spec.models['gpt-5']), aliases: ['ok', 'not ok'] };
+    expect(modelErrors(draft, [])).toEqual({ aliases: expect.stringContaining('"not ok" can\'t be an alias.') });
+  });
+
   test('checks a new provider name and a new catalog', () => {
     expect(providerNameError('', [])).toBe('Enter a name.');
+    expect(providerNameError('Anthropic', [])).toContain('lowercase letters');
     expect(providerNameError('claude', ['claude'])).toBe('A provider named "claude" already exists.');
     expect(newCatalogProblems('', { providers: {}, models: {} })).toEqual({
       name: 'Enter a name.',

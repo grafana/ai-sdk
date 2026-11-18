@@ -16,6 +16,12 @@ export const PROVIDER_TYPES: Array<{ label: string; value: ProviderType }> = [
 /** MAX_FALLBACKS is the most fallbacks a model can have: the Gateway tries at most eight providers per call. */
 export const MAX_FALLBACKS = 7;
 
+const MAX_CATALOG_NAME_LENGTH = 253;
+const CATALOG_NAME_PATTERN = /^[A-Za-z0-9:_.-]+$/;
+const RESERVED_CATALOG_NAMES = ['search', 'trash', 'history', 'query', 'list-keys'];
+const PROVIDER_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
+const PUBLIC_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+
 /** FieldErrors maps a field to the reason its value can't be saved. */
 export type FieldErrors = Record<string, string>;
 
@@ -127,18 +133,53 @@ export function keyError(key: string): string | undefined {
   return key === '' ? 'Enter the API key.' : undefined;
 }
 
-/** providerNameError returns why a new provider name can't be saved, or undefined. Name rules are the platform's. */
-export function providerNameError(name: string, taken: string[]): string | undefined {
-  if (name.trim() === '') {
+/**
+ * catalogNameError returns why a catalog name can't be saved, or undefined.
+ * It follows Grafana's rules for resource names.
+ */
+export function catalogNameError(name: string): string | undefined {
+  if (name === '') {
     return 'Enter a name.';
   }
+  if (name.length > MAX_CATALOG_NAME_LENGTH) {
+    return `Use at most ${MAX_CATALOG_NAME_LENGTH} characters.`;
+  }
+  if (!CATALOG_NAME_PATTERN.test(name)) {
+    return "Use only letters, digits and '-', '_', '.' or ':'.";
+  }
+  return RESERVED_CATALOG_NAMES.includes(name) ? `"${name}" is reserved. Choose another name.` : undefined;
+}
+
+/**
+ * providerNameError returns why a new provider name can't be saved, or
+ * undefined. Provider names are DNS labels, because they also key the
+ * provider's secure value.
+ */
+export function providerNameError(name: string, taken: string[]): string | undefined {
+  if (name === '') {
+    return 'Enter a name.';
+  }
+  if (!PROVIDER_NAME_PATTERN.test(name)) {
+    return "Use 1 to 63 lowercase letters, digits and '-', starting and ending with a letter or digit.";
+  }
   return taken.includes(name) ? `A provider named "${name}" already exists.` : undefined;
+}
+
+/** publicIDError returns why a model ID or alias can't be served, or undefined. */
+export function publicIDError(id: string): string | undefined {
+  return PUBLIC_ID_PATTERN.test(id)
+    ? undefined
+    : "Use up to 128 letters, digits and '.', '_', ':', '/' or '-', starting with a letter or digit.";
 }
 
 /** quickAddError returns why a provider model can't be added under its own ID, or undefined. */
 export function quickAddError(spec: Spec, providerModel: string): string | undefined {
   if (providerModel.trim() === '') {
     return "Enter the provider's model ID.";
+  }
+  const format = publicIDError(providerModel);
+  if (format !== undefined) {
+    return `Applications request the model by this ID. ${format}`;
   }
   return Object.hasOwn(spec.models, providerModel)
     ? `The catalog already has a model with ID "${providerModel}". Open it to route it here, or give this one another ID.`
@@ -184,14 +225,22 @@ export function modelFromDraft(draft: ModelDraft, stored: Model): Model {
 
 /**
  * modelErrors returns what keeps a model draft from being saved: a missing
- * value, or an ID another model has. ID and alias rules are the platform's.
+ * value, an ID or alias outside the Gateway's format, or an ID another model
+ * has. Collisions between aliases are the platform's to report.
  */
 export function modelErrors(draft: ModelDraft, otherIds: string[]): FieldErrors {
   const errors: FieldErrors = {};
+  const idFormat = publicIDError(draft.id);
   if (draft.id.trim() === '') {
     errors.id = 'Enter a model ID.';
+  } else if (idFormat !== undefined) {
+    errors.id = idFormat;
   } else if (otherIds.includes(draft.id)) {
     errors.id = `A model with ID "${draft.id}" already exists.`;
+  }
+  const badAlias = draft.aliases.find((alias) => publicIDError(alias) !== undefined);
+  if (badAlias !== undefined) {
+    errors.aliases = `"${badAlias}" can't be an alias. ${publicIDError(badAlias)}`;
   }
   [draft.primary, ...draft.fallback].forEach((target, index) => {
     const field = targetField(index);
@@ -270,10 +319,7 @@ export interface NewCatalogProblems {
 
 /** newCatalogProblems returns what keeps a new catalog from being created: no name, provider or model. */
 export function newCatalogProblems(name: string, spec: Spec): NewCatalogProblems {
-  const problems: NewCatalogProblems = {};
-  if (name.trim() === '') {
-    problems.name = 'Enter a name.';
-  }
+  const problems: NewCatalogProblems = { name: catalogNameError(name) };
   if (Object.keys(spec.providers).length === 0) {
     problems.content = 'Connect a provider and add a model.';
   } else if (Object.keys(spec.models).length === 0) {

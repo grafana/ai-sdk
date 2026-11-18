@@ -9,6 +9,7 @@ import { CatalogEditor } from '../components/Catalog/CatalogEditor';
 import { useWrite, WriteError } from '../components/Catalog/FormModal';
 import {
   CatalogChange,
+  catalogNameError,
   createSecure,
   draftKeys,
   emptySpec,
@@ -18,8 +19,6 @@ import {
 import { NoCatalogAccess } from '../components/NoCatalogAccess/NoCatalogAccess';
 import { catalogBaseURL, catalogPageURL, gatewayEndpoint, prefixRoute, ROUTES } from '../constants';
 import { catalogPermissions } from '../permissions';
-
-const NAME_PLACEHOLDER = '<name>';
 
 /**
  * NewCatalog creates a catalog in three steps: its name, its providers with
@@ -36,6 +35,7 @@ function NewCatalog() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [problems, setProblems] = useState<NewCatalogProblems>({});
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
+  const nameError = name === '' ? problems.name : catalogNameError(name);
 
   const { saving, error, submit } = useWrite(async () => {
     const found = newCatalogProblems(name, spec);
@@ -65,16 +65,27 @@ function NewCatalog() {
     }
     return (
       <Stack direction="column" gap={4}>
-        <Step number={1} title="Name the catalog" description="Applications call the catalog at its own URL.">
+        <Step
+          number={1}
+          title="Name the catalog"
+          description="The name becomes part of the catalog's URL, which applications call to use its models."
+        >
           <Field
             label="Catalog name"
-            description="Part of the URL, so it can't be changed. Lowercase letters, digits, '-' and '.'."
-            invalid={problems.name !== undefined}
-            error={problems.name}
+            description="It can't be changed later. Letters, digits and '-', '_', '.' or ':'."
+            invalid={nameError !== undefined}
+            error={nameError}
           >
             <Input id="catalog-name" value={name} onChange={(event) => setName(event.currentTarget.value)} />
           </Field>
-          <code className={s.url}>{catalogBaseURL(endpoint, name || NAME_PLACEHOLDER)}</code>
+          {name !== '' && nameError === undefined && (
+            <Stack direction="column" gap={0.5}>
+              <Text color="secondary" variant="bodySmall">
+                Applications use this URL as their base URL, with a Grafana service account token:
+              </Text>
+              <span className={s.url}>{catalogBaseURL(endpoint, name)}</span>
+            </Stack>
+          )}
         </Step>
 
         <Step
@@ -177,10 +188,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
     fontWeight: theme.typography.fontWeightMedium,
   }),
   url: css({
-    display: 'block',
     fontFamily: theme.typography.fontFamilyMonospace,
     fontSize: theme.typography.sm.fontSize,
     color: theme.colors.text.secondary,
-    overflowWrap: 'anywhere',
+    wordBreak: 'break-all',
   }),
 });

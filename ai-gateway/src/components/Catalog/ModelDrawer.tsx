@@ -112,7 +112,12 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
               onChange={(event) => setDraft({ ...draft, description: event.currentTarget.value })}
             />
           </Field>
-          <Field label="Aliases" description="Other IDs applications can request the model by.">
+          <Field
+            label="Aliases"
+            description="Other IDs applications can request the model by."
+            invalid={errors.aliases !== undefined}
+            error={errors.aliases}
+          >
             <TagsInput
               id="model-aliases"
               tags={draft.aliases}

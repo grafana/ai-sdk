@@ -81,14 +81,14 @@ function isCatalogWrite(method: string, name?: string) {
   return (request: Request) => request.method() === method && new URL(request.url()).pathname.endsWith(path);
 }
 
-async function fillNewCatalog(page: Page, name: string, key: string, providerModel = 'claude-sonnet-4-6') {
+async function fillNewCatalog(page: Page, name: string, key: string) {
   await page.getByRole('textbox', { name: /^Catalog name/ }).fill(name);
   await page.getByRole('button', { name: 'Connect a provider' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel(/^API key/).fill(key);
   await dialog.getByRole('button', { name: 'Connect' }).click();
   await expect(dialog).toHaveCount(0);
-  await addModel(page, 'anthropic', providerModel);
+  await addModel(page, 'anthropic', 'claude-sonnet-4-6');
 }
 
 async function addModel(page: Page, provider: string, providerModel: string) {
@@ -228,7 +228,13 @@ test.describe('model catalog page', () => {
     await gotoPage(`/${ROUTES.NewCatalog}`);
     await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
     const watch = keyWatch(page);
-    await fillNewCatalog(page, uniqueName(), key, 'bad id');
+    await fillNewCatalog(page, uniqueName(), key);
+    await card(page, 'anthropic').getByRole('button', { name: 'claude-sonnet-4-6', exact: true }).click();
+    const drawer = page.getByRole('dialog');
+    await drawer.getByPlaceholder('Add an alias and press Enter').fill('claude-sonnet-4-6');
+    await drawer.getByPlaceholder('Add an alias and press Enter').press('Enter');
+    await drawer.getByRole('button', { name: 'Save model' }).click();
+    await expect(drawer).toHaveCount(0);
 
     const refused = page.waitForResponse((response) => isCatalogWrite('POST')(response.request()));
     await page.getByRole('button', { name: 'Create catalog' }).click();
@@ -236,9 +242,9 @@ test.describe('model catalog page', () => {
     expect(response.status()).toBe(400);
     const { message } = await response.json();
     expect(message).toContain(ADMISSION_REFUSAL);
-    expect(message).toContain('public ID');
+    expect(message).toContain('alias "claude-sonnet-4-6" collides');
     await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
-    await expect(card(page, 'anthropic').getByRole('listitem', { name: 'bad id' })).toBeVisible();
+    await expect(card(page, 'anthropic').getByText('Also requested as claude-sonnet-4-6')).toBeVisible();
     expect(await page.locator('body').innerText()).not.toContain(key);
     await watch.notFetched(key);
     await page.getByRole('link', { name: 'Cancel' }).click();

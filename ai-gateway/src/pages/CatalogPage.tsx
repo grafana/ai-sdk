@@ -84,7 +84,10 @@ function CatalogView({ name }: Props) {
       pageNav={{ text: name }}
       subTitle={
         stored && (
-          <CatalogURL name={name} url={catalogBaseURL(gatewayEndpoint(config.appUrl, config.namespace), name)} />
+          <Stack direction="column" gap={0.5}>
+            <span>Applications call this catalog&apos;s models with its URL as their base URL.</span>
+            <CatalogURL name={name} url={catalogBaseURL(gatewayEndpoint(config.appUrl, config.namespace), name)} />
+          </Stack>
         )
       }
       actions={
