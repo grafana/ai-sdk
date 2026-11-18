@@ -111,6 +111,47 @@ func TestModel_TransportContext(t *testing.T) {
 	}
 }
 
+func TestModel_FiltersEmptyAssistantText(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
+			var captured struct {
+				Messages json.RawMessage `json:"messages"`
+			}
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+					return nil, err
+				}
+				return transportResponse(r, streaming), nil
+			})}
+			m := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+			empty := provider.TextPart("")
+			empty.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"opaque"}`)})
+			prefill := provider.NewAssistantMessage(provider.TextPart("  Answer  "), empty)
+			prefill.ProviderOptions = makeProviderOpts(`{"cacheControl":{"type":"ephemeral"}}`)
+			opts := provider.CallOptions{MaxOutputTokens: new(64), Prompt: []provider.Message{
+				provider.UserText("question"),
+				provider.NewAssistantMessage(provider.TextPart("Earlier  "), provider.TextPart("")),
+				prefill,
+			}}
+			if streaming {
+				result, err := m.DoStream(t.Context(), opts)
+				require.NoError(t, err)
+				for part := range result.Stream {
+					assert.NotEqual(t, provider.PartError, part.Type, "%+v", part)
+				}
+			} else {
+				_, err := m.DoGenerate(t.Context(), opts)
+				require.NoError(t, err)
+			}
+			assert.JSONEq(t, `[
+				{"role":"user","content":[{"type":"text","text":"question"}]},
+				{"role":"assistant","content":[{"type":"text","text":"Earlier  "},{"type":"text","text":"Answer","cache_control":{"type":"ephemeral"}}]}
+			]`, string(captured.Messages))
+			assert.Equal(t, empty, prefill.Content[1])
+		})
+	}
+}
+
 func TestModel_EmptyBetaTokens(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, feature := range []bool{false, true} {

@@ -105,8 +105,9 @@ When the last content part in a message does not have its own `cache_control` an
 - **THEN** the last block SHALL use the part-level value (`ttl: "5m"`)
 
 #### Scenario: cascade applies to assistant messages
-- **WHEN** an `AssistantMessage` has message-level cache control and the last content part has no part-level cache control
-- **THEN** the block converted from the last content part SHALL include the message-level cache control, even when client tool-use normalization changes its position
+- **WHEN** an `AssistantMessage` has message-level cache control and the last content part remaining after empty text is removed has no part-level cache control and can carry a breakpoint
+- **THEN** the block converted from that part SHALL include the message-level cache control, even when client tool-use normalization changes its position
+- **AND** removed text parts SHALL neither emit nor consume a breakpoint
 
 #### Scenario: cascade applies to tool messages
 - **WHEN** a `ToolMessage` has message-level cache control and the last `ToolResultContentPart` has no part-level cache control

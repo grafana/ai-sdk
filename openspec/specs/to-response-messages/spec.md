@@ -21,11 +21,15 @@ aisdk SHALL export `func ToResponseMessages(parts []provider.ContentPart) []prov
 - **THEN** it SHALL return one `provider.Message` with `Role == RoleAssistant`
   containing one `text` `ContentPart`
 
-#### Scenario: Empty text parts are dropped
+#### Scenario: Empty text without provider options is dropped
 
-- **WHEN** `ToResponseMessages` is called with one `text` part whose `Text`
-  is the empty string
+- **WHEN** `ToResponseMessages` receives a `text` part with empty `Text` and nil `ProviderOptions`
 - **THEN** that part SHALL be omitted from the assistant message
+
+#### Scenario: Empty text with provider options stays in history
+
+- **WHEN** `ToResponseMessages` receives a `text` part with empty `Text` and non-nil `ProviderOptions`
+- **THEN** it SHALL retain the part and its options at the same relative position in the assistant message, including when the options map is empty
 
 ### Requirement: Tool output normalization precedes response-message conversion
 
@@ -228,24 +232,23 @@ StreamTextResult.ResponseMessages() and GenerateTextResult.ResponseMessages SHAL
 
 ### Requirement: Stream-order content forwarded to ToResponseMessages
 
-Orchestration SHALL pass step.Reasoning blocks, a single step.Text part only if nonempty, each step.ToolCalls call immediately followed by matching provider-executed result if any, then remaining non-provider-executed step.ToolResults. This SHALL preserve Anthropic expectations: reasoning precedes supported text/tool-use, and provider results immediately follow originating calls within the same assistant message.
+Orchestration SHALL forward recorded provider content in stream order to `ToResponseMessages`. Where no recorded provider content exists, orchestration SHALL build content from the step's fields, including a single aggregate text part only when `step.Text` is non-empty.
 
 #### Scenario: Reasoning precedes tool calls
 
-- **WHEN** a step has `step.Reasoning` containing one block with a
+- **WHEN** a step without recorded provider content has `step.Reasoning` containing one block with a
   signature, `step.Text == ""`, and `step.ToolCalls` containing one entry
 - **THEN** the slice passed to `ToResponseMessages` SHALL be `[reasoning,
   tool-call]` in that order
 
-#### Scenario: Empty text is dropped from the input slice
+#### Scenario: Recorded empty text with provider metadata is replayed
 
-- **WHEN** a step has `step.Text == ""`
-- **THEN** the slice passed to `ToResponseMessages` SHALL NOT contain a
-  `text` part for that step
+- **WHEN** a recorded stream step contains an empty `text` part with provider metadata
+- **THEN** the step's response messages and the next model prompt, if there is another step, SHALL retain the part and its metadata in the assistant message's original relative order
 
 #### Scenario: Provider-executed tool-result follows its call
 
-- **WHEN** a step has `step.ToolCalls = [srv-1 (PE), tc-1]` and
+- **WHEN** a step without recorded provider content has `step.ToolCalls = [srv-1 (PE), tc-1]` and
   `step.ToolResults = [srv-1 (PE), tc-1]`
 - **THEN** the slice passed to `ToResponseMessages` SHALL be
   `[tool-call(srv-1, PE), tool-result(srv-1, PE), tool-call(tc-1),

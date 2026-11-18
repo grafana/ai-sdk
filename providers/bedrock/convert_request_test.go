@@ -1641,6 +1641,90 @@ func TestBuildRequest_TrimsOnlyFinalAssistantPrefillText(t *testing.T) {
 	assert.Equal(t, "final prefill", req.Messages[3].Content[2].Text)
 }
 
+func TestBuildRequest_FiltersForeignEmptyAssistantText(t *testing.T) {
+	foreign := provider.TextPart("")
+	foreign.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"opaque"}`)})
+	reasoning := provider.ReasoningPart(" signed \n")
+	reasoning.ProviderOptions = provider.BuildProviderOptions(ReasoningMetadata{Signature: "sig"})
+	result := provider.ToolResultPart("c1", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "ok"})
+	nullNative := provider.TextPart("")
+	nullNative.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "bedrock", Raw: json.RawMessage(`null`)})
+	for _, tc := range []struct {
+		name   string
+		prompt []provider.Message
+		want   string
+	}{
+		{
+			name:   "prefill",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), foreign)},
+			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+		{
+			name:   "null native namespace does not preserve empty text",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), nullNative)},
+			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+		{
+			name:   "text without options keeps its existing position",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), provider.TextPart(""))},
+			want:   `[{"role":"assistant","content":[{"text":"  Answer  "}]}]`,
+		},
+		{
+			name:   "signed reasoning does not preserve foreign text",
+			prompt: []provider.Message{provider.NewAssistantMessage(reasoning, provider.TextPart("A"), foreign, provider.TextPart("B"))},
+			want:   `[{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":" signed \n","signature":"sig"}}},{"text":"A"},{"text":"B"}]}]`,
+		},
+		{
+			name:   "tool result retains its source cache point",
+			prompt: []provider.Message{cachedMessage(provider.RoleAssistant, result, foreign)},
+			want:   `[{"role":"user","content":[{"toolResult":{"toolUseId":"c1","content":[{"text":"ok"}]}},{"cachePoint":{"type":"default","ttl":"5m"}}]}]`,
+		},
+		{
+			name: "empty source cannot borrow content from previous source",
+			prompt: []provider.Message{
+				provider.NewAssistantMessage(provider.TextPart("Answer")),
+				cachedMessage(provider.RoleAssistant, foreign),
+			},
+			want: `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, err := json.Marshal(tc.prompt)
+			require.NoError(t, err)
+			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt: tc.prompt,
+				Tools:  []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{}`)}},
+			})
+			assert.Empty(t, warnings)
+			got, err := json.Marshal(req.Messages)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(got))
+			after, err := json.Marshal(tc.prompt)
+			require.NoError(t, err)
+			assert.Equal(t, string(before), string(after))
+		})
+	}
+}
+
+func TestBuildRequest_PreservesNativeEmptyTextWithSignedReasoning(t *testing.T) {
+	for _, namespace := range []string{"amazonBedrock", "bedrock"} {
+		t.Run(namespace, func(t *testing.T) {
+			partOptions := provider.BuildProviderOptions(provider.RawProviderOption{Key: namespace, Raw: json.RawMessage(`{"signature":"sig"}`)})
+			reasoning := provider.ReasoningPart(" signed \n")
+			reasoning.ProviderOptions = partOptions
+			empty := provider.TextPart("")
+			empty.ProviderOptions = partOptions
+			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt: []provider.Message{provider.NewAssistantMessage(reasoning, empty, provider.TextPart("Answer"))},
+			})
+			assert.Empty(t, warnings)
+			got, err := json.Marshal(req.Messages)
+			require.NoError(t, err)
+			assert.JSONEq(t, `[{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":" signed \n","signature":"sig"}}},{},{"text":"Answer"}]}]`, string(got))
+		})
+	}
+}
+
 func TestBuildRequest_AssistantWhitespaceMatchesECMAScript(t *testing.T) {
 	tests := []struct {
 		name string

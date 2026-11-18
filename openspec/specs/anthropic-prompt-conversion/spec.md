@@ -60,7 +60,7 @@ The Anthropic provider SHALL skip `ContentPartTypeToolApprovalResponse` parts in
 
 ### Requirement: Cache-control cascade is keyed off source provider message, not merged Anthropic block
 
-For merged Anthropic user or assistant blocks, each source `provider.Message`'s `ProviderOptions["anthropic"].cache_control` SHALL cascade only to the last part of that source message's `Content`, not the merged block's last part. Each source SHALL independently consume the breakpoint budget, matching upstream (`packages/anthropic/src/convert-to-anthropic-prompt.ts:130-145, 326-338`).
+For merged Anthropic user or assistant blocks, each source `provider.Message`'s `ProviderOptions["anthropic"].cache_control` SHALL cascade only to the last part of that source message's `Content`, after filtering empty assistant text, not the merged block's last part. Each source SHALL independently consume the breakpoint budget, matching upstream (`packages/anthropic/src/convert-to-anthropic-prompt.ts:130-145, 326-338`).
 
 #### Scenario: Per-source-message message-level cascade survives the merge
 - **WHEN** the prompt is `[RoleTool([tool_result(call_1, "r1")] with msgOpts cache_control=ephemeral), RoleUser([text("hello")] with no opts)]`
@@ -108,7 +108,11 @@ For direct and Vertex generate and stream requests, the provider SHALL stably mo
 
 ### Requirement: Final assistant prefill text is trimmed
 
-The Anthropic provider SHALL apply ECMAScript `String.prototype.trim()` only to ordinary text that is the final content part of the final source assistant message in the final grouped prompt block. All earlier text SHALL retain its whitespace, including text before a final non-text part. Text with `ProviderOptions["anthropic"].type == "compaction"` SHALL follow the separate compaction contract instead.
+The Anthropic provider SHALL omit exactly empty assistant text before deciding each source message's last part for caching and prefill. It SHALL apply ECMAScript `String.prototype.trim()` only when ordinary text is the last retained part of the last source message in the final prompt block. All other retained text SHALL keep its whitespace. Compaction follows its separate contract.
+
+#### Scenario: Metadata-only text does not block prefill trimming
+- **WHEN** the final assistant message contains `[text("Answer  "), text("")]` and the empty part carries provider options
+- **THEN** the request SHALL emit only the `"Answer"` text block for that source message
 
 #### Scenario: Final assistant text trims spaces and newlines
 - **WHEN** the prompt ends with `RoleAssistant([text("Final prefill  \n")])`
@@ -187,7 +191,7 @@ On the `tool_result` path, the Anthropic provider SHALL convert a URL file entry
 The `provider.LanguageModel` interface, the `BuildParams` signature, and the SSE chunk types emitted by the orchestration layer SHALL remain unchanged. Apart from the prompt-conversion behaviors specified above, Anthropic request serialization SHALL remain byte-identical for unaffected prompts.
 
 #### Scenario: Unaffected prompts produce identical wire requests
-- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, assistant compaction serialization, client tool-use normalization, or tool-result file references
+- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, assistant empty-text filtering, final assistant prefill whitespace normalization, assistant compaction serialization, client tool-use normalization, or tool-result file references
 - **THEN** the resulting Anthropic API request body SHALL be byte-identical to the pre-change output for the same input
 
 ### Requirement: Tool-result file references

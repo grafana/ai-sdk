@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -370,11 +371,14 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			var content []anthropic.BetaContentBlockParamUnion
 			mcpToolUseIDs := make(map[string]bool)
 			for messageIndex, msg := range block.messages {
-				converted := convertAssistantContent(v, mapping, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)
+				parts := slices.DeleteFunc(slices.Clone(msg.Content), func(part provider.ContentPart) bool {
+					return part.Type == provider.ContentPartTypeText && part.Text == ""
+				})
+				converted := convertAssistantContent(v, mapping, parts, msg.ProviderOptions, mcpToolUseIDs, &warnings)
 				isFinalAssistantText := blockIndex == len(blocks)-1 &&
 					messageIndex == len(block.messages)-1 &&
-					len(msg.Content) > 0 &&
-					msg.Content[len(msg.Content)-1].Type == provider.ContentPartTypeText
+					len(parts) > 0 &&
+					parts[len(parts)-1].Type == provider.ContentPartTypeText
 				if isFinalAssistantText && len(converted) > 0 {
 					finalPart := &converted[len(converted)-1]
 					if finalPart.OfText != nil {
@@ -1126,9 +1130,6 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if isCompaction(p.ProviderOptions) {
-				if p.Text == "" {
-					continue
-				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfCompaction: &anthropic.BetaCompactionBlockParam{
 						Content:      anthropic.String(p.Text),

@@ -168,8 +168,16 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Final assistant prefill whitespace
 
-- **WHEN** the prompt ends with an assistant block whose final message's final content part is text containing surrounding whitespace
+- **WHEN** the final source message in the final assistant block ends with text containing surrounding whitespace after foreign empty text is filtered
 - **THEN** that final text is trimmed before it is emitted to Converse, while every other retained text part and signed reasoning text are emitted byte-for-byte unchanged
+
+#### Scenario: Foreign empty assistant text is not replayed
+
+- **WHEN** an assistant text part is exactly empty and has non-nil provider options with no non-null `amazonBedrock` or `bedrock` entry
+- **THEN** the part SHALL be removed before determining the source's last part for prefill trimming and message cache placement, even alongside signed reasoning
+- **AND** the handling of empty text with native Bedrock options or with no provider options SHALL remain unchanged
+
+Current wire limitation: Go retains the native empty text slot next to signed reasoning but encodes it as `{}` rather than the pinned upstream converter's `{"text":""}`. This filtering does not change that representation. Synthetic request tests verify signed bytes and slot placement; they do not establish service acceptance of the empty slot.
 
 #### Scenario: Assistant tool call
 
@@ -187,7 +195,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **THEN** each run of tool results is emitted as user-role `toolResult` content between the assistant content before and after it, preserving part order
 - **AND** the results use the same output conversion, tool call ID normalization, document naming and rejection rules as tool-role results
 - **AND** user content that follows a user message carrying tool results is appended to that message, while a leading tool result after plain user content still starts a separate user message, matching upstream
-- **AND** an assistant message cache point follows the tool results when the message ends with one, and otherwise follows that message's trailing assistant content when it emits any
+- **AND** after filtering foreign empty text, an assistant message cache point follows the tool results when the source message ends with one, and otherwise follows that source message's trailing assistant content when it emits any
 
 #### Scenario: Inference config mapping
 
