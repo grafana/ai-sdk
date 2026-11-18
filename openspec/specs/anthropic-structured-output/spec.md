@@ -68,14 +68,14 @@ JSON-tool fallback SHALL use `any` with parallel tool use disabled. If the model
 
 #### Scenario: Tool choice forced to required
 
-- **WHEN** the tool-based fallback is active on a model that accepts forced tool use and the caller set `ToolChoice` to `auto`
+- **WHEN** the tool-based fallback is active on a model that accepts forced tool use, the resolved thinking type is not `enabled`, and the caller set `ToolChoice` to `auto`
 - **THEN** `ToolChoice` SHALL be overridden to `OfAny` with `DisableParallelToolUse: true`
 
 #### Scenario: Tool choice override when caller set none
 
 - **WHEN** the tool-based fallback is active and the caller set `ToolChoice` to `none` with caller tools
 - **THEN** the tools list SHALL contain only the `json` tool
-- **AND** `ToolChoice` SHALL be `OfAny` for models that accept forced tool use, or `OfAuto` for models that reject it, with `DisableParallelToolUse: true` in either case
+- **AND** `ToolChoice` SHALL be `OfAuto` if the model rejects forced tool use or the resolved thinking type is `enabled`; otherwise it SHALL be `OfAny`. Parallel tool use SHALL be disabled in both cases.
 
 #### Scenario: Tool choice auto on a model that rejects forced tool use
 - **WHEN** the tool-based fallback is active for `claude-sonnet-5-5`
