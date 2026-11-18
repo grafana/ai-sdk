@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -15,57 +16,69 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildParams_GPT6ReasoningEffortCapabilities(t *testing.T) {
+func TestBuildParams_ResponsesReasoningEffort(t *testing.T) {
+	efforts := []provider.ReasoningEffort{provider.ReasoningNone, provider.ReasoningMinimal, provider.ReasoningXHigh, provider.ReasoningMax}
 	for _, tc := range []struct {
-		name     string
-		model    string
-		effort   string
-		fallback provider.ReasoningEffort
-		want     string
-		warn     bool
-		force    bool
+		model string
+		force bool
+		want  [4]string
 	}{
-		{name: "supported option", model: "gpt-6-astra", effort: "max", want: "max"},
-		{name: "unsupported option", model: "gpt-6-astra", effort: "none", warn: true},
-		{name: "unsupported fallback", model: "gpt-7", fallback: provider.ReasoningMinimal, warn: true},
-		{name: "supported fallback", model: "gpt-6", fallback: provider.ReasoningHigh, want: "high"},
-		{name: "option precedes fallback", model: "gpt-6", effort: "minimal", fallback: provider.ReasoningHigh, warn: true},
-		{name: "earlier model remains unchanged", model: "gpt-5.6", effort: "none", want: "none"},
-		{name: "unrecognized ID forced reasoning", model: "gpt-6chat", effort: "minimal", want: "minimal", force: true},
-		{name: "mantle override", model: "openai.gpt-6-astra", effort: "none", want: "none"},
+		{model: "gpt-5", want: [4]string{"minimal", "minimal", "high", "high"}},
+		{model: "gpt-5.1", want: [4]string{"none", "low", "high", "high"}},
+		{model: "gpt-5.4", want: [4]string{"none", "low", "xhigh", "xhigh"}},
+		{model: "gpt-5.6", want: [4]string{"none", "low", "xhigh", "max"}},
+		{model: "gpt-6-astra", want: [4]string{"low", "low", "xhigh", "max"}},
+		{model: "gpt-6.1-terra", want: [4]string{"none", "low", "xhigh", "max"}},
+		{model: "gpt-7", want: [4]string{"low", "low", "xhigh", "max"}},
+		{model: "openai.gpt-6-astra", want: [4]string{"none", "minimal", "xhigh", "max"}},
+		{model: "unknown-model"},
+		{model: "unknown-model", force: true, want: [4]string{"none", "minimal", "xhigh", "max"}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			options := OpenAIResponsesOptions{ReasoningEffort: tc.effort}
+		for i, effort := range efforts {
+			name := tc.model + "/" + string(effort)
 			if tc.force {
-				force := true
-				options.ForceReasoning = &force
+				name += "/forced-reasoning"
 			}
-			body, warnings := buildBody(t, tc.model, provider.CallOptions{
-				Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: tc.fallback,
-				ProviderOptions: withOpenAIOptions(options),
-			})
-			assert.Equal(t, tc.effort, options.ReasoningEffort)
-			if tc.want == "" {
-				if reasoning, ok := body["reasoning"].(map[string]any); ok {
-					assert.NotContains(t, reasoning, "effort")
+			t.Run(name, func(t *testing.T) {
+				opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: effort}
+				if tc.force {
+					opts.ProviderOptions = withOpenAIOptions(OpenAIResponsesOptions{ForceReasoning: &tc.force})
 				}
-			} else {
-				reasoning, ok := body["reasoning"].(map[string]any)
-				require.True(t, ok)
-				assert.Equal(t, tc.want, reasoning["effort"])
-			}
-			if tc.warn {
-				require.Contains(t, warningFeatures(warnings), "reasoningEffort")
-				for _, warning := range warnings {
-					if warning.Feature == "reasoningEffort" {
-						assert.Equal(t, provider.WarnUnsupported, warning.Type)
-						assert.Contains(t, warning.Details, "low, medium, high, xhigh, max")
-						break
+				body, warnings := buildBody(t, tc.model, opts)
+				want := tc.want[i]
+				if want == "" {
+					assert.NotContains(t, body, "reasoning")
+				} else {
+					block := map[string]any{"effort": want}
+					if want != "none" {
+						block["summary"] = "detailed"
 					}
+					assert.Equal(t, block, body["reasoning"])
 				}
-			} else {
-				assert.NotContains(t, warningFeatures(warnings), "reasoningEffort")
-			}
+				if want != "" && want != string(effort) {
+					assert.Equal(t, []provider.Warning{{
+						Type: provider.WarnCompatibility, Feature: "reasoning",
+						Details: fmt.Sprintf("reasoning %q is not directly supported by this model. mapped to effort %q.", effort, want),
+					}}, warnings)
+				} else {
+					assert.Empty(t, warnings)
+				}
+			})
+		}
+	}
+}
+
+func TestBuildParams_ResponsesReasoningEffortOverride(t *testing.T) {
+	for _, effort := range []string{"none", "minimal", "experimental"} {
+		t.Run(effort, func(t *testing.T) {
+			body, warnings := buildBody(t, "gpt-6-astra", provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: provider.ReasoningHigh,
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{ReasoningEffort: effort}),
+			})
+			reasoning, ok := body["reasoning"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, effort, reasoning["effort"])
+			assert.Empty(t, warnings)
 		})
 	}
 }
@@ -185,11 +198,12 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 		wantUpdate               bool
 		wantNoLogprobs           bool
 		wantPromptCacheRetention string
+		wantEffort               string
 		wantWarning              string
 	}{
 		{name: "supported", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "high", ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow, CompactionTrigger: &trigger}, wantUpdate: true},
-		{name: "unsupported effort and update", model: "gpt-5.6", options: OpenAIResponsesOptions{ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow}, wantWarning: "reasoningEffortUpdate"},
-		{name: "invalid gpt6 effort", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "none"}, wantWarning: "reasoningEffort"},
+		{name: "unsupported update", model: "gpt-5.6", options: OpenAIResponsesOptions{ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow}, wantWarning: "reasoningEffortUpdate"},
+		{name: "provider effort bypasses catalog", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "none"}, wantEffort: "none"},
 		{name: "gpt6 omits logprobs", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "low", Logprobs: &LogprobsOption{Int: &logprobs}, Include: []string{"message.output_text.logprobs"}}, wantNoLogprobs: true, wantWarning: "logprobs"},
 		{name: "gpt6 omits legacy prompt cache retention", model: "gpt-6-astra", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantWarning: "promptCacheRetention"},
 		{name: "gpt5 retains legacy prompt cache retention", model: "gpt-5.6", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantPromptCacheRetention: "24h"},
@@ -241,17 +255,15 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 					} else {
 						assert.Equal(t, tc.wantPromptCacheRetention, body["prompt_cache_retention"])
 					}
-					if tc.wantWarning == "reasoningEffort" {
-						if reasoning, ok := body["reasoning"].(map[string]any); ok {
-							assert.NotContains(t, reasoning, "effort")
-						}
+					if tc.wantEffort != "" {
+						assert.Equal(t, map[string]any{"effort": tc.wantEffort}, body["reasoning"])
 					}
 				}
 			}
 			if tc.wantWarning != "" {
 				assert.Contains(t, warningFeatures(generated.Warnings), tc.wantWarning)
 			} else {
-				assert.NotContains(t, warningFeatures(generated.Warnings), "reasoningEffortUpdate")
+				assert.Empty(t, generated.Warnings)
 			}
 		})
 	}
@@ -330,10 +342,6 @@ func TestBuildParams_NonReasoningControlsByModel(t *testing.T) {
 		{Type: provider.WarnUnsupported, Feature: "topP", Details: "topP is not supported for reasoning models"},
 	}
 	strippedWarnings := append(slices.Clone(samplingWarnings), provider.Warning{Type: provider.WarnUnsupported, Feature: "logprobs", Details: "logprobs is not supported for reasoning models"})
-	unsupportedEffortWarnings := func(model, supported string) []provider.Warning {
-		effort := provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: model + " only supports the following reasoning efforts: " + supported}
-		return append([]provider.Warning{effort}, strippedWarnings...)
-	}
 	const gpt6Efforts = "low, medium, high, xhigh, max"
 	reasoning := func(effort string) map[string]any {
 		block := map[string]any{"effort": effort}
@@ -356,25 +364,27 @@ func TestBuildParams_NonReasoningControlsByModel(t *testing.T) {
 	}{
 		{name: "sol none retains controls", model: "gpt-6-sol", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
 		{name: "luna none retains controls", model: "gpt-6-luna", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "terra none retains controls", model: "gpt-6.1-terra", fallback: provider.ReasoningNone, wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "terra positive effort strips controls", model: "gpt-6.1-terra", fallback: provider.ReasoningLow, wantFields: []map[string]any{reasoning("low")}, wantWarnings: strippedWarnings},
+		{name: "terra none update retains controls", model: "gpt-6.1-terra", effort: "low", update: OpenAIReasoningEffortUpdateNone, wantUpdate: true, wantFields: []map[string]any{sampling, logprobsFields, reasoning("low")}},
 		{name: "azure sol none retains controls", model: "gpt-6-sol", azure: true, effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
 		{name: "sol positive effort strips controls", model: "gpt-6-sol", effort: "low", wantFields: []map[string]any{reasoning("low")}, wantWarnings: strippedWarnings},
 		{name: "luna default effort strips controls", model: "gpt-6-luna", wantWarnings: strippedWarnings},
 		{name: "luna core none fallback retains controls", model: "gpt-6-luna", fallback: provider.ReasoningNone, wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
-		{name: "sol minimal is unsupported", model: "gpt-6-sol", effort: "minimal", wantWarnings: unsupportedEffortWarnings("gpt-6-sol", "none, "+gpt6Efforts)},
 		{name: "sol blocked update keeps none effort", model: "gpt-6-sol", effort: "none", update: OpenAIReasoningEffortUpdateHigh, reasoningMode: "pro", wantFields: []map[string]any{sampling, logprobsFields, {"reasoning": map[string]any{"effort": "none", "mode": "pro"}}}, wantWarnings: []provider.Warning{{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"}}},
 		{name: "sol positive update strips controls", model: "gpt-6-sol", effort: "none", update: OpenAIReasoningEffortUpdateHigh, wantUpdate: true, wantFields: []map[string]any{reasoning("none")}, wantWarnings: strippedWarnings},
 		{name: "sol none update retains controls", model: "gpt-6-sol", effort: "low", update: OpenAIReasoningEffortUpdateNone, wantUpdate: true, wantFields: []map[string]any{sampling, logprobsFields, reasoning("low")}},
 		{name: "astra none update is unsupported", model: "gpt-6-astra", effort: "medium", update: OpenAIReasoningEffortUpdateNone, wantFields: []map[string]any{reasoning("medium")}, wantWarnings: append([]provider.Warning{{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: "gpt-6-astra only supports the following reasoning efforts: " + gpt6Efforts}}, strippedWarnings...)},
-		{name: "astra none is unsupported", model: "gpt-6-astra", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-6-astra", gpt6Efforts)},
-		{name: "versioned sol none is unsupported", model: "gpt-6.1-sol", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-6.1-sol", gpt6Efforts)},
-		{name: "fast luna none is unsupported", model: "gpt-6-luna-fast", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-6-luna-fast", gpt6Efforts)},
+		{name: "astra none override does not unlock controls", model: "gpt-6-astra", effort: "none", wantFields: []map[string]any{reasoning("none")}, wantWarnings: strippedWarnings},
+		{name: "versioned sol none override does not unlock controls", model: "gpt-6.1-sol", effort: "none", wantFields: []map[string]any{reasoning("none")}, wantWarnings: strippedWarnings},
+		{name: "fast luna none override does not unlock controls", model: "gpt-6-luna-fast", effort: "none", wantFields: []map[string]any{reasoning("none")}, wantWarnings: strippedWarnings},
 		{name: "gpt-5.1 none retains controls", model: "gpt-5.1", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
 		{name: "gpt-5.1 positive effort strips sampling", model: "gpt-5.1", effort: "low", wantFields: []map[string]any{logprobsFields, reasoning("low")}, wantWarnings: samplingWarnings},
 		{name: "gpt-5.6-luna none retains controls", model: "gpt-5.6-luna", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
-		{name: "gpt-99 none is unsupported", model: "gpt-99", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-99", gpt6Efforts)},
 		{name: "gpt-5 none strips sampling", model: "gpt-5", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
 		{name: "non-reasoning model retains controls", model: "gpt-4o", wantFields: []map[string]any{sampling, logprobsFields}},
 		{name: "mantle sol keeps endpoint restrictions", model: "openai.gpt-6-sol", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
+		{name: "mantle terra keeps endpoint restrictions", model: "openai.gpt-6.1-terra", fallback: provider.ReasoningNone, wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
 		{name: "mantle astra keeps endpoint restrictions", model: "openai.gpt-6-astra", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
 		{name: "mantle gpt-5.6-luna keeps endpoint restrictions", model: "openai.gpt-5.6-luna", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
 	} {
