@@ -100,6 +100,12 @@ ToolLoopAgent SHALL apply `StepCountIs(20)` as its default stop condition when n
 
 ToolLoopAgent generate and stream methods SHALL delegate to existing `GenerateText` and `StreamText`. Calls SHALL inherit their model message conversion, system prepending, prepare-step overrides, retries, timeouts, local/concurrent/provider-executed/external tools, structured output, stop conditions, pending approval termination, approval resumption, warnings, stream errors, abort handling and result accessors.
 
+#### Scenario: Step startup is canceled
+
+- **WHEN** an Agent call is canceled during step preparation or provider startup before any part of the step is processed
+- **THEN** Agent streaming SHALL emit an abort without a step start, stream error, or stream finish for that cancellation, and SHALL call `OnAbort` once
+- **AND** Agent generation SHALL return a nil result and a cancellation error without calling `OnError`
+
 #### Scenario: Pending approval stops Agent stream
 - **WHEN** an Agent stream call produces a local tool call that requires user approval
 - **THEN** the stream SHALL emit the same tool approval request stream part and UI chunk as an equivalent `StreamText` call

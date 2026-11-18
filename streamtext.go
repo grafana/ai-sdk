@@ -557,8 +557,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Context:          currentRuntimeContext,
 			})
 			if err != nil {
-				if ctx.Err() != nil && cfg.onAbort != nil {
-					cfg.onAbort(OnAbortState{Steps: r.steps})
+				if ctx.Err() != nil {
+					r.abort(ctx, cfg)
+					return
 				}
 				r.emitError(err, cfg.onError)
 				return
@@ -707,8 +708,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			if stepTimer != nil {
 				stepTimer.Stop()
 			}
-			if ctx.Err() != nil && cfg.onAbort != nil {
-				cfg.onAbort(OnAbortState{Steps: r.steps})
+			if ctx.Err() != nil {
+				r.abort(ctx, cfg)
+				return
 			}
 			r.emitStreamError(err, cfg.onError)
 			return
@@ -742,7 +744,6 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					cfg.onStepFinish(OnStepFinishState{StepResult: step})
 				}
 			}
-			r.totalUsage = aggregateUsage(r.steps)
 			r.abort(ctx, cfg)
 			return
 		}
@@ -882,7 +883,7 @@ func (r *StreamTextResult) processStep(
 		step.StepType = StepTypeToolResult
 	}
 
-	var warnings []provider.Warning
+	var started bool
 	responseMeta := provider.ResponseMetadata{ID: generateConfigID(cfg), ModelID: stepModel.ModelID}
 	var responseHeaders map[string]string
 	// Step text joins each text block in the order it first appeared, as
@@ -922,8 +923,6 @@ func (r *StreamTextResult) processStep(
 	var outputTextChunk strings.Builder
 	var outputTextMeta provider.ProviderMetadata
 	r.lastPartialJSON = ""
-
-	r.emit(StreamStartStep{Warnings: warnings, Request: streamResult.Request})
 
 	firstChunkTimeout := cfg.timeout.FirstChunk
 	var firstChunkTimer *time.Timer
@@ -974,6 +973,15 @@ loop:
 			}
 		}
 
+		if part.Type == provider.PartStreamStart {
+			step.Warnings = part.Warnings
+			continue
+		}
+		if !started {
+			started = true
+			r.emit(StreamStartStep{Warnings: step.Warnings, Request: streamResult.Request})
+		}
+
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
 			if firstChunkTimer != nil {
@@ -1000,10 +1008,6 @@ loop:
 		}
 
 		switch part.Type {
-		case provider.PartStreamStart:
-			warnings = part.Warnings
-			step.Warnings = warnings
-
 		case provider.PartTextStart:
 			responseTextIndex[part.ID] = len(step.responseContent)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
@@ -2113,6 +2117,7 @@ func (r *StreamTextResult) emit(part TextStreamPart) {
 }
 
 func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
+	r.totalUsage = aggregateUsage(r.steps)
 	if cfg.onAbort != nil {
 		cfg.onAbort(OnAbortState{Steps: r.steps})
 	}
