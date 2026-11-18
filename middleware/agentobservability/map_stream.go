@@ -30,6 +30,7 @@ type StreamRecorder struct {
 	seed           agento11y.GenerationStart
 	params         provider.CallOptions
 	identitySource IdentitySource
+	transport      generationModelIdentity
 
 	mu sync.Mutex
 
@@ -109,6 +110,7 @@ func NewStreamRecorder(start agento11y.GenerationStart, params provider.CallOpti
 	return &StreamRecorder{
 		seed:                 start,
 		params:               params,
+		transport:            modelIdentityFromStart(start),
 		texts:                map[string]*streamTextAcc{},
 		reasonings:           map[string]*streamTextAcc{},
 		activeToolCalls:      map[string]int{},
@@ -449,7 +451,7 @@ func (r *StreamRecorder) generationFrom(state streamState) agento11y.Generation 
 	if state.responseModel != "" {
 		gen.ResponseModel = state.responseModel
 	}
-	applyModelIdentity(&gen, modelIdentityFromStart(r.seed), state.response)
+	applyModelIdentity(&gen, modelIdentityFromStart(r.seed), state.response, r.transport)
 	if r.identitySource == IdentityRequested {
 		gen.ResponseModel = ""
 	}

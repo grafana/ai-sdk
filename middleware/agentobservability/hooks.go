@@ -32,50 +32,35 @@ import (
 //  5. On deny: a *HookDenialError is returned without invoking the inner
 //     model.
 //  6. On allow (no TransformedInput): the inner model is invoked unchanged.
-//  7. On allow + TransformedInput: params.Prompt is rebuilt via
-//     applyTransformedInput. A transform that cannot be applied without
-//     losing request content fails closed; the inner model is otherwise
-//     invoked with the new params.
+//  7. On allow + TransformedInput: ErrHookTransformFailed is returned without
+//     invoking the model. All transforms are disabled because agento11y v0.19
+//     discards malformed response parts before middleware validation.
 func HooksMiddleware(opts HooksOptions) middleware.Middleware {
 	return middleware.Middleware{
 		WrapGenerate: func(ctx context.Context, p middleware.WrapGenerateParams) (*provider.GenerateResult, error) {
-			newParams, err := evaluateHook(ctx, opts, p.Model, p.Params)
-			if err != nil {
+			if err := evaluateHook(ctx, opts, p.Model, p.Params); err != nil {
 				return nil, err
-			}
-			if newParams != nil {
-				return p.Model.DoGenerate(ctx, *newParams)
 			}
 			return p.DoGenerate(ctx)
 		},
 		WrapStream: func(ctx context.Context, p middleware.WrapStreamParams) (*provider.StreamResult, error) {
-			newParams, err := evaluateHook(ctx, opts, p.Model, p.Params)
-			if err != nil {
+			if err := evaluateHook(ctx, opts, p.Model, p.Params); err != nil {
 				return nil, err
-			}
-			if newParams != nil {
-				return p.Model.DoStream(ctx, *newParams)
 			}
 			return p.DoStream(ctx)
 		},
 	}
 }
 
-// evaluateHook performs the preflight evaluation. It returns:
-//   - (nil, nil) when the inner model should be invoked with the original
-//     params (passthrough / allow without transform).
-//   - (*CallOptions, nil) when the inner model should be invoked with a
-//     transformed prompt.
-//   - (nil, error) when the request was denied or the hook call failed.
-func evaluateHook(ctx context.Context, opts HooksOptions, model provider.LanguageModel, params provider.CallOptions) (*provider.CallOptions, error) {
+func evaluateHook(ctx context.Context, opts HooksOptions, model provider.LanguageModel, params provider.CallOptions) error {
 	tracer := otel.Tracer(tracerName)
 
 	if opts.Enabled != nil && !opts.Enabled(ctx) {
-		return nil, nil
+		return nil
 	}
 	client := resolveClient(ctx, opts.ClientResolver)
 	if client == nil {
-		return nil, nil
+		return nil
 	}
 
 	ctxInfo := resolveContextInfo(ctx, opts.ContextProvider)
@@ -84,7 +69,7 @@ func evaluateHook(ctx context.Context, opts HooksOptions, model provider.Languag
 	defer span.End()
 	if model != nil {
 		span.SetAttributes(
-			attribute.String("gen_ai.provider.name", model.Provider()),
+			attribute.String("gen_ai.provider.name", otelProviderName(model.Provider())),
 			attribute.String("gen_ai.request.model", model.ModelID()),
 		)
 	}
@@ -102,10 +87,10 @@ func evaluateHook(ctx context.Context, opts HooksOptions, model provider.Languag
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return nil, err
+		return err
 	}
 	if resp == nil {
-		return nil, nil
+		return nil
 	}
 
 	span.SetAttributes(attribute.String(SpanAttrHooksAction, string(resp.Action)))
@@ -120,32 +105,18 @@ func evaluateHook(ctx context.Context, opts HooksOptions, model provider.Languag
 			span.SetAttributes(attribute.String(SpanAttrHooksRuleID, resp.RuleID))
 		}
 		span.SetStatus(codes.Error, denialErr.Error())
-		return nil, denialErr
+		return denialErr
 	}
 
 	if resp.TransformedInput != nil {
-		newPrompt, err := applyTransformedInputWithTools(params.Prompt, params.Tools, *resp.TransformedInput)
-		if err == nil {
-			var tools []provider.Tool
-			tools, err = applyTransformedTools(params.Tools, resp.TransformedInput.Tools)
-			if err == nil {
-				err = validateTransformedToolChoice(params.ToolChoice, tools)
-			}
-			if err == nil {
-				span.SetAttributes(attribute.String(SpanAttrHooksResult, "transform"))
-				newParams := params
-				newParams.Prompt = newPrompt
-				newParams.Tools = tools
-				return &newParams, nil
-			}
-		}
+		err := fmt.Errorf("%w: transforms are disabled because agento11y v0.19 discards malformed response parts", ErrHookTransformFailed)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return nil, err
+		return err
 	}
 
 	span.SetAttributes(attribute.String(SpanAttrHooksResult, "allow"))
-	return nil, nil
+	return nil
 }
 
 // buildHookEvaluateRequest assembles the preflight hook evaluation payload.
@@ -162,7 +133,7 @@ func buildHookEvaluateRequest(model provider.LanguageModel, params provider.Call
 	}
 	if model != nil {
 		hookCtx.Model = &agento11y.HookModel{
-			Provider: model.Provider(),
+			Provider: agento11yProviderName(model.Provider()),
 			Name:     model.ModelID(),
 		}
 	}
@@ -196,6 +167,26 @@ func flattenMessagesForPreview(messages []agento11y.Message) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// applyTransformedRequest applies a hook transform to the prompt, tools, and
+// tool choice. HooksMiddleware does not call it while it rejects every decoded
+// transform.
+func applyTransformedRequest(params provider.CallOptions, transformed agento11y.HookInput) (provider.CallOptions, error) {
+	prompt, err := applyTransformedInputWithTools(params.Prompt, params.Tools, transformed)
+	if err != nil {
+		return provider.CallOptions{}, err
+	}
+	tools, err := applyTransformedTools(params.Tools, transformed.Tools)
+	if err != nil {
+		return provider.CallOptions{}, err
+	}
+	if err := validateTransformedToolChoice(params.ToolChoice, tools); err != nil {
+		return provider.CallOptions{}, err
+	}
+	params.Prompt = prompt
+	params.Tools = tools
+	return params, nil
 }
 
 // applyTransformedInput rebuilds a complete replacement prompt from a hook

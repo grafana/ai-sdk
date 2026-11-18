@@ -221,6 +221,25 @@ func TestRecordingMiddleware_GenerateResponseIdentity(t *testing.T) {
 			wantProvider:     "anthropic",
 			wantModel:        "claude-sonnet-4-5-20250929",
 		},
+		{
+			name:             "Bedrock provider uses Agent Observability name",
+			modelProvider:    "amazon-bedrock",
+			modelID:          "anthropic.claude",
+			responseProvider: "amazon-bedrock",
+			responseModelID:  "anthropic.claude",
+			wantProvider:     "bedrock",
+			wantModel:        "anthropic.claude",
+		},
+		{
+			name:                  "normalized transport metadata keeps the AI SDK name",
+			modelProvider:         "amazon-bedrock",
+			modelID:               "anthropic.claude",
+			responseProvider:      "anthropic",
+			responseModelID:       "claude-sonnet",
+			wantProvider:          "anthropic",
+			wantModel:             "claude-sonnet",
+			wantTransportMetadata: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -263,6 +282,36 @@ func TestRecordingMiddleware_GenerateResponseIdentity(t *testing.T) {
 	}
 }
 
+func TestRecordingMiddleware_StreamTransportMetadataPreservesAISDKProvider(t *testing.T) {
+	env := testkit.NewEnv(t)
+	upstream := make(chan provider.StreamPart, 1)
+	upstream <- provider.StreamPart{
+		Type: provider.PartResponseMeta, Provider: "anthropic", ModelID: "claude-sonnet", ResponseID: "response-1",
+	}
+	close(upstream)
+	model := &mockLanguageModel{
+		provider_: "amazon-bedrock",
+		modelID:   "anthropic.claude",
+		doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: upstream}, nil
+		},
+	}
+
+	result, err := streamWith(t, model, RecordingOptions{
+		ClientResolver: func(context.Context) *agento11y.Client { return env.Client },
+	})
+	require.NoError(t, err)
+	for range result.Stream {
+	}
+	require.NoError(t, env.Client.Shutdown(context.Background()))
+
+	gen := env.SingleGenerationJSON(t)
+	metadata, ok := gen["metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "amazon-bedrock", metadata[transportProviderMetadataKey])
+	assert.Equal(t, "anthropic.claude", metadata[transportModelMetadataKey])
+}
+
 func TestRecordingMiddleware_GenerateError_RecordsCallError(t *testing.T) {
 	env := testkit.NewEnv(t)
 	upErr := errors.New("upstream 500")
@@ -303,7 +352,7 @@ func TestRecordingMiddleware_StreamSuccess_RecordsAccumulated(t *testing.T) {
 	}
 	assert.Equal(t, 4, receivedParts, "tee delivered every part the model emitted")
 
-	// Give the recording goroutine a moment to finalize.
+	// The client sends the finalized generation asynchronously.
 	assert.Eventually(t, func() bool {
 		return env.RequestCount() == 1
 	}, 2*time.Second, 10*time.Millisecond, "recording goroutine finalizes after upstream close")
@@ -574,7 +623,7 @@ func spanAttributes(span sdktrace.ReadOnlySpan) map[string]string {
 func TestHooksMiddleware_PreflightSpan(t *testing.T) {
 	transformed := &agento11y.HookInput{
 		Messages: []agento11y.Message{
-			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("hi (filtered)")}},
+			{Role: agento11y.RoleUser, Parts: []agento11y.Part{agento11y.TextPart("hi")}},
 		},
 	}
 
@@ -586,6 +635,8 @@ func TestHooksMiddleware_PreflightSpan(t *testing.T) {
 
 	tests := []struct {
 		name           string
+		providerName   string
+		modelID        string
 		response       agento11y.HookEvaluateResponse
 		wantErr        bool
 		wantAttrs      map[string]string
@@ -620,14 +671,43 @@ func TestHooksMiddleware_PreflightSpan(t *testing.T) {
 			wantStatusDesc: "Agent Observability hook denied by rule rule-42: policy violation",
 		},
 		{
-			name: "transform",
+			name: "transform rejected",
 			response: agento11y.HookEvaluateResponse{
 				Action:           agento11y.HookActionAllow,
 				TransformedInput: transformed,
 			},
+			wantErr: true,
 			wantAttrs: map[string]string{
-				"aisdk.hooks.result": "transform",
 				"aisdk.hooks.action": "allow",
+			},
+			absent:         []string{"aisdk.hooks.rule_id", "aisdk.hooks.result"},
+			wantStatus:     codes.Error,
+			wantStatusDesc: "agent observability: hook transform failed: transforms are disabled because agento11y v0.19 discards malformed response parts",
+		},
+		{
+			name:         "Bedrock provider",
+			providerName: "amazon-bedrock",
+			modelID:      "model",
+			response:     agento11y.HookEvaluateResponse{Action: agento11y.HookActionAllow},
+			wantAttrs: map[string]string{
+				"aisdk.hooks.result":   "allow",
+				"aisdk.hooks.action":   "allow",
+				"gen_ai.provider.name": "aws.bedrock",
+				"gen_ai.request.model": "model",
+			},
+			absent:     []string{"aisdk.hooks.rule_id"},
+			wantStatus: codes.Unset,
+		},
+		{
+			name:         "Anthropic Vertex provider",
+			providerName: "anthropic.vertex",
+			modelID:      "model",
+			response:     agento11y.HookEvaluateResponse{Action: agento11y.HookActionAllow},
+			wantAttrs: map[string]string{
+				"aisdk.hooks.result":   "allow",
+				"aisdk.hooks.action":   "allow",
+				"gen_ai.provider.name": "gcp.vertex_ai",
+				"gen_ai.request.model": "model",
 			},
 			absent:     []string{"aisdk.hooks.rule_id"},
 			wantStatus: codes.Unset,
@@ -639,7 +719,15 @@ func TestHooksMiddleware_PreflightSpan(t *testing.T) {
 			recorder := recordHooksSpans(t)
 			h := newHooksTestServer(t, tc.response)
 			client := h.clientWithHooksEnabled()
-			model := &mockLanguageModel{provider_: "anthropic", modelID: "claude"}
+			providerName := tc.providerName
+			if providerName == "" {
+				providerName = "anthropic"
+			}
+			modelID := tc.modelID
+			if modelID == "" {
+				modelID = "claude"
+			}
+			model := &mockLanguageModel{provider_: providerName, modelID: modelID}
 			wrapped := middleware.Wrap(middleware.WrapOptions{
 				Model: model,
 				Middleware: []middleware.Middleware{HooksMiddleware(HooksOptions{
@@ -659,8 +747,7 @@ func TestHooksMiddleware_PreflightSpan(t *testing.T) {
 			spans := recorder.Ended()
 			require.Len(t, spans, 1, "hooks middleware opens exactly one span")
 			assert.Equal(t, "aisdk.hooks.preflight", spans[0].Name())
-			assert.Equal(t, tc.wantStatus, spans[0].Status().Code,
-				"a hooks denial is the only way the middleware fails the span")
+			assert.Equal(t, tc.wantStatus, spans[0].Status().Code)
 			assert.Equal(t, tc.wantStatusDesc, spans[0].Status().Description)
 
 			attrs := spanAttributes(spans[0])

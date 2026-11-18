@@ -234,35 +234,42 @@ func TestContentToAgento11yOutput_Empty(t *testing.T) {
 }
 
 func TestUsageToAgento11y(t *testing.T) {
-	in := 100
-	out := 200
-	cacheRead := 50
-	cacheWrite := 25
-	reasoning := 15
-	usage := provider.Usage{
-		InputTokens: provider.InputTokenUsage{
-			Total:      &in,
-			CacheRead:  &cacheRead,
-			CacheWrite: &cacheWrite,
+	in, out, cacheRead, cacheWrite, reasoning, zero := 100, 200, 50, 25, 15, 0
+	tests := []struct {
+		name  string
+		usage provider.Usage
+		want  agento11y.TokenUsage
+	}{
+		{
+			name: "reported input with cache details",
+			usage: provider.Usage{
+				InputTokens:  provider.InputTokenUsage{Total: &in, CacheRead: &cacheRead, CacheWrite: &cacheWrite},
+				OutputTokens: provider.OutputTokenUsage{Total: &out, Reasoning: &reasoning},
+			},
+			want: agento11y.TokenUsage{InputTokens: 100, OutputTokens: 200, TotalTokens: 300, CacheReadInputTokens: 50, CacheWriteInputTokens: 25, ReasoningTokens: 15, InputSemantics: agento11y.TokenInputSemanticsInclusive},
 		},
-		OutputTokens: provider.OutputTokenUsage{
-			Total:     &out,
-			Reasoning: &reasoning,
+		{
+			name: "details without input total",
+			usage: provider.Usage{
+				InputTokens:  provider.InputTokenUsage{CacheRead: &cacheRead, CacheWrite: &cacheWrite},
+				OutputTokens: provider.OutputTokenUsage{Total: &out, Reasoning: &reasoning},
+			},
+			want: agento11y.TokenUsage{OutputTokens: 200, TotalTokens: 200, CacheReadInputTokens: 50, CacheWriteInputTokens: 25, ReasoningTokens: 15},
+		},
+		{
+			name: "unreported",
+		},
+		{
+			name:  "reported zero input",
+			usage: provider.Usage{InputTokens: provider.InputTokenUsage{Total: &zero}},
+			want:  agento11y.TokenUsage{InputSemantics: agento11y.TokenInputSemanticsInclusive},
 		},
 	}
-	got := usageToAgento11y(usage)
-	assert.Equal(t, int64(100), got.InputTokens)
-	assert.Equal(t, int64(200), got.OutputTokens)
-	assert.Equal(t, int64(300), got.TotalTokens)
-	assert.Equal(t, int64(50), got.CacheReadInputTokens)
-	assert.Equal(t, int64(25), got.CacheWriteInputTokens)
-	assert.Equal(t, int64(15), got.ReasoningTokens)
-	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, got.InputSemantics)
-}
-
-func TestUsageToAgento11y_Zero(t *testing.T) {
-	got := usageToAgento11y(provider.Usage{})
-	assert.Equal(t, agento11y.TokenUsage{}, got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, usageToAgento11y(tc.usage))
+		})
+	}
 }
 
 func TestUsageToAgento11y_InputSemanticsFollowsReportedTotal(t *testing.T) {
