@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Field, SecretInput } from '@grafana/ui';
 import { FormModal } from './FormModal';
-import { CatalogChange, keyChange, keyError } from './catalogSpec';
+import { useFieldErrors } from './useFieldErrors';
+import { CatalogChange, fieldErrors, keyChange, keyError } from './catalogSpec';
 import { Spec } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
 
 interface Props {
@@ -14,12 +15,11 @@ interface Props {
 /** ReplaceKeyModal replaces a provider's API key. Only the new key is sent. */
 export function ReplaceKeyModal({ spec, provider, onSave, onDismiss }: Props) {
   const [key, setKey] = useState('');
-  const [error, setError] = useState<string>();
+  const checks = useFieldErrors(fieldErrors({ key: keyError(key) }), { key });
+  const error = checks.errors.key;
 
   const submit = async () => {
-    const found = keyError(key);
-    setError(found);
-    if (found === undefined) {
+    if (checks.submit()) {
       await onSave({ spec, secure: keyChange(provider, key) });
     }
   };

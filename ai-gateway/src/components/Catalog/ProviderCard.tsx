@@ -3,7 +3,8 @@ import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Badge, Button, Field, IconButton, Input, Stack, Text, useStyles2 } from '@grafana/ui';
 import { errorMessage } from '../../api/modelCatalogs';
-import { providerTypeLabel, targetLabel } from './catalogSpec';
+import { fieldErrors, providerTypeLabel, targetLabel } from './catalogSpec';
+import { useFieldErrors } from './useFieldErrors';
 import { Model, Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
 
 /** KeyState is what the page knows of a provider's key: saved in Grafana, entered for a new catalog, or missing. */
@@ -122,21 +123,23 @@ interface QuickAddProps {
 function QuickAdd({ name, label, onAdd, addError }: QuickAddProps) {
   const s = useStyles2(getStyles);
   const [value, setValue] = useState('');
-  const [error, setError] = useState<string>();
+  const [refusal, setRefusal] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const checks = useFieldErrors(fieldErrors({ model: addError(value) }), { model: value });
+  const error = checks.errors.model ?? refusal;
 
   const add = async () => {
-    const found = addError(value);
-    setError(found);
-    if (found !== undefined) {
+    setRefusal(undefined);
+    if (!checks.submit()) {
       return;
     }
     setSaving(true);
     try {
       await onAdd(value);
       setValue('');
+      checks.reset();
     } catch (err) {
-      setError(errorMessage(err));
+      setRefusal(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -161,7 +164,11 @@ function QuickAdd({ name, label, onAdd, addError }: QuickAddProps) {
           aria-label={`Add a model to ${name}`}
           value={value}
           placeholder="Provider model ID"
-          onChange={(event) => setValue(event.currentTarget.value)}
+          onChange={(event) => {
+            setValue(event.currentTarget.value);
+            setRefusal(undefined);
+          }}
+          onBlur={() => checks.leave('model')}
         />
       </Field>
       <Button type="submit" variant="secondary" icon="plus" disabled={saving}>

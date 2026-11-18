@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Field, Input, RadioButtonGroup, SecretInput, Stack } from '@grafana/ui';
 import { FormModal } from './FormModal';
+import { useFieldErrors } from './useFieldErrors';
 import {
   CatalogChange,
   defaultProviderName,
+  fieldErrors,
   keyChange,
   keyError,
   PROVIDER_TYPES,
@@ -33,14 +35,16 @@ export function ConnectProviderModal({ spec, onSave, onDismiss }: Props) {
   );
   const [customName, setCustomName] = useState<string>();
   const [key, setKey] = useState('');
-  const [errors, setErrors] = useState<{ name?: string; key?: string }>({});
   const askName = taken.includes(type);
   const name = askName ? (customName ?? defaultProviderName(type, taken)) : type;
+  const checks = useFieldErrors(
+    fieldErrors({ name: askName ? providerNameError(name, taken) : undefined, key: keyError(key) }),
+    { name, key }
+  );
+  const { errors } = checks;
 
   const submit = async () => {
-    const found = { name: providerNameError(name, taken), key: keyError(key) };
-    setErrors(found);
-    if (found.name !== undefined || found.key !== undefined) {
+    if (!checks.submit()) {
       return;
     }
     await onSave({ spec: withProvider(spec, name, { type }), secure: keyChange(name, key) });
@@ -67,7 +71,12 @@ export function ConnectProviderModal({ spec, onSave, onDismiss }: Props) {
             invalid={errors.name !== undefined}
             error={errors.name}
           >
-            <Input id="provider-name" value={name} onChange={(event) => setCustomName(event.currentTarget.value)} />
+            <Input
+              id="provider-name"
+              value={name}
+              onChange={(event) => setCustomName(event.currentTarget.value)}
+              onBlur={() => checks.leave('name')}
+            />
           </Field>
         )}
         <Field
@@ -83,6 +92,7 @@ export function ConnectProviderModal({ spec, onSave, onDismiss }: Props) {
             value={key}
             onReset={() => setKey('')}
             onChange={(event) => setKey(event.currentTarget.value)}
+            onBlur={() => checks.leave('key')}
           />
         </Field>
       </Stack>

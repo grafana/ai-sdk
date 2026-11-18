@@ -169,6 +169,42 @@ describe('pages/CatalogPage', () => {
     expect(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('');
   });
 
+  test('shows a format error when the quick-add field is left and clears it as the value is fixed', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const field = card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' });
+    const formatError = /Applications request the model by this ID\./;
+
+    type(field, 'bad id');
+    expect(card('anthropic').queryByText(formatError)).not.toBeInTheDocument();
+    fireEvent.blur(field);
+    expect(card('anthropic').getByText(formatError)).toBeInTheDocument();
+    type(field, 'good-id');
+    expect(card('anthropic').queryByText(formatError)).not.toBeInTheDocument();
+
+    type(field, '');
+    fireEvent.blur(field);
+    expect(card('anthropic').queryByText("Enter the provider's model ID.")).not.toBeInTheDocument();
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
+    expect(await card('anthropic').findByText("Enter the provider's model ID.")).toBeInTheDocument();
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+  });
+
+  test('clears the quick-add field and its errors after a model is added', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const field = card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' });
+
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
+    expect(await card('anthropic').findByText("Enter the provider's model ID.")).toBeInTheDocument();
+    type(field, 'claude-haiku-4-5');
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
+
+    expect(await card('anthropic').findByRole('listitem', { name: 'claude-haiku-4-5' })).toBeInTheDocument();
+    expect(field).toHaveValue('');
+    expect(card('anthropic').queryByText("Enter the provider's model ID.")).not.toBeInTheDocument();
+  });
+
   test('refuses to add a model under an ID the catalog has, without a request', async () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
@@ -290,16 +326,33 @@ describe('pages/CatalogPage', () => {
     });
   });
 
-  test('marks a missing model ID without a request', async () => {
+  test('marks a missing model ID only on save, and clears it once filled', async () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
     fireEvent.click(card('openai').getByRole('button', { name: 'gpt-5' }));
-    type(dialog().getByRole('textbox', { name: /^Model ID/ }), '');
+    const id = dialog().getByRole('textbox', { name: /^Model ID/ });
+    type(id, '');
+    fireEvent.blur(id);
+    expect(dialog().queryByText('Enter a model ID.')).not.toBeInTheDocument();
     fireEvent.click(dialog().getByRole('button', { name: 'Save model' }));
 
     expect(await dialog().findByText('Enter a model ID.')).toBeInTheDocument();
     expect(updateModelCatalog).not.toHaveBeenCalled();
+    type(id, 'gpt-5-chat');
+    expect(dialog().queryByText('Enter a model ID.')).not.toBeInTheDocument();
+  });
+
+  test('shows a model ID format error when the field is left', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+
+    fireEvent.click(card('openai').getByRole('button', { name: 'gpt-5' }));
+    const id = dialog().getByRole('textbox', { name: /^Model ID/ });
+    type(id, 'gpt 5');
+    expect(dialog().queryByText(/Use up to 128 letters/)).not.toBeInTheDocument();
+    fireEvent.blur(id);
+    expect(dialog().getByText(/Use up to 128 letters/)).toBeInTheDocument();
   });
 
   test('removes a model after confirming, but not the last one', async () => {

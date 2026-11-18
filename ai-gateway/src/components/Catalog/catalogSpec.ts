@@ -254,9 +254,26 @@ export function modelErrors(draft: ModelDraft, otherIds: string[]): FieldErrors 
   return errors;
 }
 
+/** modelFieldValues returns a draft's text values by field, as modelErrors names them. */
+export function modelFieldValues(draft: ModelDraft): Record<string, string> {
+  const values: Record<string, string> = { id: draft.id };
+  [draft.primary, ...draft.fallback].forEach((target, index) => {
+    values[`${targetField(index)}.provider`] = target.provider;
+    values[`${targetField(index)}.model`] = target.model;
+  });
+  return values;
+}
+
 /** targetField names a model's primary, at index 0, or one of its fallbacks in field errors. */
 export function targetField(index: number): string {
   return index === 0 ? 'primary' : `fallback.${index - 1}`;
+}
+
+/** fieldErrors returns the fields that have an error, from a check per field. */
+export function fieldErrors(checks: Record<string, string | undefined>): FieldErrors {
+  return Object.fromEntries(
+    Object.entries(checks).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
 }
 
 /** hasErrors says whether any field has an error. */

@@ -3,16 +3,16 @@ import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, Drawer, Field, IconButton, Input, Stack, TagsInput, Text, useStyles2 } from '@grafana/ui';
 import { useWrite, WriteError } from './FormModal';
+import { useFieldErrors } from './useFieldErrors';
 import { TargetFields } from './TargetFields';
 import {
   CatalogChange,
   fallbackSuggestions,
-  FieldErrors,
-  hasErrors,
   MAX_FALLBACKS,
   modelDraft,
   ModelDraft,
   modelErrors,
+  modelFieldValues,
   modelFromDraft,
   targetField,
   targetLabel,
@@ -39,14 +39,16 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
   const s = useStyles2(getStyles);
   const stored = spec.models[id];
   const [draft, setDraft] = useState<ModelDraft>(() => modelDraft(id, stored));
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const { saving, error, submit } = useWrite(async () => {
-    const found = modelErrors(
+  const checks = useFieldErrors(
+    modelErrors(
       draft,
       Object.keys(spec.models).filter((other) => other !== id)
-    );
-    setErrors(found);
-    if (!hasErrors(found)) {
+    ),
+    modelFieldValues(draft)
+  );
+  const { errors } = checks;
+  const { saving, error, submit } = useWrite(async () => {
+    if (checks.submit()) {
       await onSave({ spec: withModel(spec, draft.id, modelFromDraft(draft, stored), id), secure: {} });
     }
   });
@@ -77,6 +79,7 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
             errors={errors}
             disabled={readOnly}
             onChange={(primary) => setDraft({ ...draft, primary })}
+            onLeave={checks.leave}
           />
         </Section>
 
@@ -92,6 +95,7 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
               value={draft.id}
               disabled={readOnly}
               onChange={(event) => setDraft({ ...draft, id: event.currentTarget.value })}
+              onBlur={() => checks.leave('id')}
             />
           </Field>
           <Field label="Display name" description="Shown where applications list models. Defaults to the model ID.">
@@ -125,7 +129,10 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
               maxLength={MAX_ALIAS_LENGTH}
               disabled={readOnly}
               addOnBlur
-              onChange={(aliases) => setDraft({ ...draft, aliases })}
+              onChange={(aliases) => {
+                setDraft({ ...draft, aliases });
+                checks.leave('aliases');
+              }}
             />
           </Field>
         </Section>
@@ -145,6 +152,7 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
                   errors={errors}
                   disabled={readOnly}
                   onChange={(next) => setFallback(fallback.map((current, i) => (i === index ? next : current)))}
+                  onLeave={checks.leave}
                   actions={
                     !readOnly && (
                       <>
