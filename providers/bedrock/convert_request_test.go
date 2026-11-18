@@ -171,33 +171,30 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 	cases := []struct {
 		name         string
 		toolChoice   provider.ToolChoice
-		assertChoice func(t *testing.T, c *toolChoiceUnion)
+		assertChoice func(t *testing.T, req *converseInput)
 	}{
 		{
 			name:       "auto",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceAuto},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				assert.NotNil(t, c.Auto)
-				assert.Nil(t, c.Any)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Equal(t, &toolChoiceUnion{Auto: &struct{}{}}, req.ToolConfig.ToolChoice)
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
 			},
 		},
 		{
 			name:       "required",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceRequired},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				assert.NotNil(t, c.Any)
-				assert.Nil(t, c.Auto)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Equal(t, &toolChoiceUnion{Any: &struct{}{}}, req.ToolConfig.ToolChoice)
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
 			},
 		},
 		{
 			name:       "specific tool",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				require.NotNil(t, c.Tool)
-				assert.Equal(t, "weather", c.Tool.Name)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Nil(t, req.ToolConfig.ToolChoice)
+				assert.Equal(t, map[string]any{"type": "tool", "name": "weather", "disable_parallel_tool_use": true}, req.AdditionalModelRequestFields["tool_choice"])
 			},
 		},
 	}
@@ -214,7 +211,7 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 			require.Len(t, req.ToolConfig.Tools, 1)
 			require.NotNil(t, req.ToolConfig.Tools[0].ToolSpec)
 			assert.Equal(t, "weather", req.ToolConfig.Tools[0].ToolSpec.Name)
-			tc.assertChoice(t, req.ToolConfig.ToolChoice)
+			tc.assertChoice(t, req)
 		})
 	}
 }
