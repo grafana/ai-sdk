@@ -12,7 +12,6 @@
 {"type":"reasoning-end","id":"2"}
 {"type":"tool-input-start","toolCallId":"toolu_1","toolName":"lookup","dynamic":false}
 {"type":"tool-input-delta","toolCallId":"toolu_1","inputTextDelta":"{\"q\":\"x\"}"}
-{"type":"tool-input-error","toolCallId":"toolu_1","toolName":"lookup","input":{"q":"x"},"dynamic":true,"errorText":"An error occurred."}
-{"type":"tool-output-error","toolCallId":"toolu_1","errorText":"An error occurred.","dynamic":true}
+{"type":"tool-input-error","toolCallId":"toolu_1","toolName":"lookup","input":{"q":"x"},"dynamic":true,"errorText":"AI_NoSuchToolError: Model tried to call unavailable tool 'lookup'. No tools are available."}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"tool-calls"}

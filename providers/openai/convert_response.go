@@ -29,7 +29,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 	var content []provider.GenerateContentPart
 	var logprobs [][]responseLogprob
-	hasFunctionCall := false
+	hasFunctionCall, hasRefusal := false, false
 	var hostedToolSearchCallIDs []string
 	hasWebSources, hasFileResults := false, false
 	retrievedFileIDs := make(map[string]bool)
@@ -51,6 +51,15 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		case responses.ResponseOutputMessage:
 			for _, c := range v.Content {
 				if t := c.AsAny(); t != nil {
+					if refusal, ok := t.(responses.ResponseOutputRefusal); ok {
+						hasRefusal = true
+						content = append(content, provider.GenerateContentPart{
+							Type:             provider.ContentText,
+							Text:             refusal.Refusal,
+							ProviderMetadata: textMeta(providerOptionsName, v.ID, string(v.Phase), nil),
+						})
+						continue
+					}
 					if ot, ok := t.(responses.ResponseOutputText); ok {
 						if br.logprobsRequested && ot.JSON.Logprobs.Valid() {
 							logprobs = append(logprobs, convertOutputTextLogprobs(ot.Logprobs))
@@ -360,7 +369,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 	result := &provider.GenerateResult{
 		Content:          content,
-		FinishReason:     mapFinishReason(resp.IncompleteDetails.Reason, hasFunctionCall),
+		FinishReason:     mapFinishReason(resp.IncompleteDetails.Reason, hasFunctionCall, hasRefusal),
 		Usage:            convertResponseUsage(resp.Usage),
 		ProviderMetadata: responseMeta(providerOptionsName, resp, logprobs),
 		Response: &provider.GenerateResponse{

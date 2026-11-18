@@ -1,0 +1,3 @@
+# A Chat Completions stream whose deltas carry a refusal instead of content.
+model: gpt-4o
+prompt: Hello

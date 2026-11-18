@@ -61,6 +61,16 @@ stream := result.ToUIMessageStream(
 )
 ```
 
+Setting the callback also redacts failed tool calls in `tool-output-error` and
+`tool-input-error` chunks. Without it, those chunks carry the error text the
+model received as the tool result, while stream errors are still masked. Keeping
+the model's text lets UI messages sent back with the next request reproduce the
+history the model saw; models that bind reasoning to earlier messages, such as
+Anthropic models with preserved thinking, reject a changed tool result. To keep
+details from both the model and the client, return a safe error from the tool.
+Use `WithUIMessageStreamRedactToolErrors(false)` to limit the callback to stream
+errors, or `true` to redact tool errors without one.
+
 Never expose provider response bodies, credentials, internal URLs, or policy
 details to an untrusted client. The same callback on `CreateUIMessageStream`
 also receives panics recovered from `Execute`, whose text can carry internal

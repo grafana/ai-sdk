@@ -1,6 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_01LHpEgU4KbfgXGVi3UtHQY1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":2037,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard"}}}}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_01LHpEgU4KbfgXGVi3UtHQY1","model":"claude-sonnet-4-20250514","usage":{"service_tier":"standard","input_tokens":2037,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1}}}}
 {"type":"tool-input-start","toolCallId":"srvtoolu_01Bj5uzzLcYG5hfueSLcDH8k","toolName":"web_search","providerExecuted":true}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01Bj5uzzLcYG5hfueSLcDH8k","inputTextDelta":"{\"query\": \"t"}
 {"type":"tool-input-delta","toolCallId":"srvtoolu_01Bj5uzzLcYG5hfueSLcDH8k","inputTextDelta":"ech news tod"}

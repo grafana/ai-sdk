@@ -50,7 +50,11 @@ func TestParallelToolCall_Expansion(t *testing.T) {
 					ParallelToolCall parallelToolCallMetadata `json:"parallelToolCall"`
 				}
 				require.NoError(t, json.Unmarshal(part.ProviderMetadata["azure"], &metadata))
-				assert.Equal(t, parallelToolCallMetadata{ItemID: "fc_parallel", ToolCallID: "call_parallel", ToolName: parallelToolName, Input: tc.input, Index: index, Count: 2}, metadata.ParallelToolCall)
+				want := parallelToolCallMetadata{ItemID: "fc_parallel", ToolCallID: "call_parallel", ToolName: parallelToolName, Index: index, Count: 2}
+				if index == 0 {
+					want.Input = &tc.input
+				}
+				assert.Equal(t, want, metadata.ParallelToolCall)
 			}
 		})
 	}
@@ -72,6 +76,29 @@ func parallelHistory(t *testing.T) []provider.Message {
 		results = append(results, result)
 	}
 	return []provider.Message{provider.NewAssistantMessage(calls...), provider.NewToolMessage(results[1], results[0])}
+}
+
+// setParallelInput replaces the wrapper input in a part's parallel metadata;
+// an empty input removes it.
+func setParallelInput(t *testing.T, part *provider.ContentPart, input string) {
+	t.Helper()
+	options, ok, err := provider.ResolveOption[map[string]json.RawMessage](part.ProviderOptions, "openai")
+	require.NoError(t, err)
+	require.True(t, ok)
+	var metadata map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(options["parallelToolCall"], &metadata))
+	delete(metadata, "input")
+	if input != "" {
+		encoded, err := json.Marshal(input)
+		require.NoError(t, err)
+		metadata["input"] = encoded
+	}
+	encoded, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	options["parallelToolCall"] = encoded
+	raw, err := json.Marshal(options)
+	require.NoError(t, err)
+	part.ProviderOptions = provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: raw}}
 }
 
 func TestParallelToolCall_Continuation(t *testing.T) {
@@ -98,6 +125,43 @@ func TestParallelToolCall_Continuation(t *testing.T) {
 			}
 		})
 	}
+	t.Run("legacy metadata repeating the wrapper input still groups", func(t *testing.T) {
+		prompt := parallelHistory(t)
+		for _, message := range prompt {
+			for i := range message.Content {
+				setParallelInput(t, &message.Content[i], parallelInput)
+			}
+		}
+		body, _ := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: "resp_1"})})
+		assert.Equal(t, []any{
+			map[string]any{"type": "function_call", "call_id": "call_parallel", "name": "parallel", "arguments": parallelInput},
+			map[string]any{"type": "function_call_output", "call_id": "call_parallel", "output": "weather\ncityAttractions"},
+		}, body["input"])
+	})
+	t.Run("missing or conflicting wrapper input stays ungrouped", func(t *testing.T) {
+		for _, kind := range []string{"missing", "conflicting"} {
+			t.Run(kind, func(t *testing.T) {
+				prompt := parallelHistory(t)
+				for _, message := range prompt {
+					for i := range message.Content {
+						part := &message.Content[i]
+						if kind == "missing" {
+							setParallelInput(t, part, "")
+						} else if part.ToolName == "cityAttractions" {
+							setParallelInput(t, part, "{}")
+						}
+					}
+				}
+				body, _ := buildBody(t, "gpt-5.4", provider.CallOptions{Prompt: prompt, ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{PreviousResponseID: "resp_1"})})
+				assert.Equal(t, []any{
+					map[string]any{"type": "function_call", "call_id": "call_parallel_0", "name": "weather", "arguments": `{"location":"SF"}`},
+					map[string]any{"type": "function_call", "call_id": "call_parallel_1", "name": "cityAttractions", "arguments": `{"city":"Rome"}`},
+					map[string]any{"type": "function_call_output", "call_id": "call_parallel_1", "output": "cityAttractions"},
+					map[string]any{"type": "function_call_output", "call_id": "call_parallel_0", "output": "weather"},
+				}, body["input"])
+			})
+		}
+	})
 	t.Run("incomplete and conflicting groups stay ungrouped", func(t *testing.T) {
 		for _, tc := range []struct {
 			name    string

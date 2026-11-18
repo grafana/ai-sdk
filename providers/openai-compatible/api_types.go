@@ -171,6 +171,7 @@ type chatResponseMessage struct {
 	Content          string         `json:"content"`
 	ReasoningContent string         `json:"reasoning_content"`
 	Reasoning        string         `json:"reasoning"`
+	Refusal          refusalText    `json:"refusal"`
 	ToolCalls        []chatToolCall `json:"tool_calls"`
 }
 
@@ -179,7 +180,21 @@ type chatDeltaMessage struct {
 	Content          string              `json:"content"`
 	ReasoningContent string              `json:"reasoning_content"`
 	Reasoning        string              `json:"reasoning"`
+	Refusal          refusalText         `json:"refusal"`
 	ToolCalls        []chatToolCallDelta `json:"tool_calls"`
+}
+
+// refusalText is the text a model sends instead of content when it refuses to
+// answer. Some compatible servers send non-string values, such as false, which
+// decode as no refusal rather than failing the response.
+type refusalText string
+
+func (r *refusalText) UnmarshalJSON(data []byte) error {
+	var text string
+	if json.Unmarshal(data, &text) == nil {
+		*r = refusalText(text)
+	}
+	return nil
 }
 
 type chatToolCallDelta struct {

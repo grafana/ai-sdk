@@ -4,6 +4,10 @@ placeholder-first-chunk: placeholder-first-chunk
 xai-text: xai-text
 xai-tool-call: xai-tool-call
 
+# Streaming fixtures not yet imported, with their non-streaming counterparts:
+openai-compatible-refusal: refusal
+openai-compatible-refusal.json: null
+
 # Non-streaming counterparts to imported streaming fixtures:
 xai-text.json: null
 xai-tool-call.json: null

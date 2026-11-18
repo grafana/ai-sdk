@@ -87,6 +87,7 @@ type streamAdapter struct {
 	activeReasoning           map[string]*activeReasoningState
 	activeOutputItemIDs       map[int64]string
 	hasFunctionCall           bool
+	hasRefusal                bool
 	responseID                string
 	activeMessagePhase        string
 	hostedToolSearchCallIDs   []string
@@ -148,6 +149,14 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 		if a.br.logprobsRequested && e.JSON.Logprobs.Valid() {
 			a.logprobs = append(a.logprobs, convertTextDeltaLogprobs(e.Logprobs))
 		}
+
+	case responses.ResponseRefusalDeltaEvent:
+		a.hasRefusal = true
+		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
+		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: itemID, Delta: e.Delta}
+
+	case responses.ResponseRefusalDoneEvent:
+		a.hasRefusal = true
 
 	case responses.ResponseOutputTextAnnotationAddedEvent:
 		// Accumulate the raw annotation; attached to the text-end metadata.
@@ -784,7 +793,7 @@ func jsonEscape(s string) string {
 
 func (a *streamAdapter) recordFinish(resp responses.Response) {
 	if !a.encounteredStreamError {
-		a.finishReason = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+		a.finishReason = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall, a.hasRefusal)
 	}
 	a.finishResponse = &resp
 }
@@ -792,7 +801,7 @@ func (a *streamAdapter) recordFinish(resp responses.Response) {
 func (a *streamAdapter) recordFailedFinish(resp responses.Response) {
 	a.finishReason = provider.FinishReason{Unified: provider.FinishReasonError, Raw: "error"}
 	if resp.IncompleteDetails.Reason != "" {
-		a.finishReason = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall)
+		a.finishReason = mapFinishReason(resp.IncompleteDetails.Reason, a.hasFunctionCall, a.hasRefusal)
 	}
 	a.finishResponse = &resp
 }

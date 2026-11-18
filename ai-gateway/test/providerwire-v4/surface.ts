@@ -182,6 +182,7 @@ export const streamPartTypes = {
   "response-metadata": true,
   finish: true,
   raw: true,
+  ping: true,
   error: true,
 } as const satisfies Witness<LanguageModelV4StreamPart["type"]>;
 
