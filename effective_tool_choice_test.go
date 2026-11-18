@@ -154,7 +154,7 @@ func TestStreamText_EffectiveToolChoice(t *testing.T) {
 		{name: "resolved miss", choice: named, calls: resolved, opts: []StreamOption{WithStopWhen(StepCountIs(3))}, wantError: true},
 		{name: "auto no call", choice: provider.ToolChoice{Type: provider.ToolChoiceAuto}},
 		{name: "none no call", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}},
-		{name: "none returned call", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}, calls: []provider.StreamPart{call("c1", "other")}, executions: 1},
+		{name: "none returned call", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}, calls: []provider.StreamPart{call("c1", "other")}, opts: []StreamOption{WithStopWhen(StepCountIs(2))}, wantError: true},
 		{name: "absent tools", choice: required, opts: []StreamOption{WithTools(nil)}, wantError: true},
 		{name: "empty tools", choice: named, opts: []StreamOption{WithTools(ToolSet{})}, wantError: true},
 		{name: "filtered empty tools", choice: named, opts: []StreamOption{WithActiveTools()}, wantError: true},
@@ -202,6 +202,105 @@ func TestStreamText_EffectiveToolChoice(t *testing.T) {
 	})
 }
 
+func TestStreamText_EffectiveToolChoiceNoneWithholdsToolParts(t *testing.T) {
+	none := provider.ToolChoice{Type: provider.ToolChoiceNone}
+	auto := provider.ToolChoice{Type: provider.ToolChoiceAuto}
+	local := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "local", ToolName: "lookup", Input: `{}`}
+	invalid := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "invalid", ToolName: "unknown", Input: `invalid json`}
+	hosted := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "hosted", ToolName: "remote", Input: `{}`, ProviderExecuted: true}
+	for _, tc := range []struct {
+		name     string
+		calls    []provider.StreamPart
+		finish   provider.UnifiedFinishReason
+		override bool
+	}{
+		{name: "stop", calls: []provider.StreamPart{local, hosted}, finish: provider.FinishReasonStop},
+		{name: "interrupted", calls: []provider.StreamPart{local}, finish: provider.FinishReasonInterrupted},
+		{name: "invalid unknown call", calls: []provider.StreamPart{invalid}, finish: provider.FinishReasonToolCalls},
+		{name: "step override with provider call", calls: []provider.StreamPart{hosted}, finish: provider.FinishReasonToolCalls, override: true},
+		{name: "orphan tool parts", finish: provider.FinishReasonStop},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := []provider.StreamPart{
+				{Type: provider.PartToolInputStart, ID: "local", ToolName: "lookup"},
+				{Type: provider.PartToolInputDelta, ID: "local", Delta: `{}`},
+				{Type: provider.PartToolInputEnd, ID: "local"},
+			}
+			parts = append(parts, tc.calls...)
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolApprovalRequest, ToolCallID: "hosted", ApprovalID: "approval"},
+				provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "hosted", ToolName: "remote", Result: json.RawMessage(`"hosted output"`)},
+			)
+			parts = effectiveToolChoiceParts(parts...)
+			parts[len(parts)-1].FinishReason = &provider.FinishReason{Unified: tc.finish, Raw: string(tc.finish)}
+			model := effectiveToolChoiceModel(parts)
+			assertNoToolPart := func(part TextStreamPart) {
+				switch part.(type) {
+				case StreamToolInputStart, StreamToolInputDelta, StreamToolInputEnd, StreamToolCall, StreamToolResult, StreamToolError,
+					StreamToolApprovalRequest, StreamToolApprovalResponse, StreamToolOutputDenied:
+					assert.Fail(t, "unexpected tool part", "%T", part)
+				}
+			}
+			var effects atomic.Int32
+			var callbackErrors, streamErrors []error
+			opts := []StreamOption{
+				WithModelMessages(provider.UserText("test")), WithToolChoice(none), WithStopWhen(StepCountIs(2)),
+				WithTools(ToolSet{"lookup": {
+					OnInputStart:     func(ToolExecutionOptions) { effects.Add(1) },
+					OnInputDelta:     func(string, ToolExecutionOptions) { effects.Add(1) },
+					OnInputAvailable: func(json.RawMessage, ToolExecutionOptions) { effects.Add(1) },
+					ValidateInput:    func(json.RawMessage) error { effects.Add(1); return nil },
+					NeedsApproval:    ApprovalIf(func(json.RawMessage, ToolExecutionOptions) (bool, error) { effects.Add(1); return false, nil }),
+					Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+						effects.Add(1)
+						return json.RawMessage(`"unexpected"`), nil
+					},
+				}}),
+				OnChunk(func(state OnChunkState) { assertNoToolPart(state.Chunk) }),
+				OnError(func(err error) { callbackErrors = append(callbackErrors, err) }),
+			}
+			if tc.override {
+				opts = append(opts, WithToolChoice(auto), WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+					return &PrepareStepResult{ToolChoice: &none}, nil
+				}))
+			}
+			result := StreamText(t.Context(), model, opts...)
+			for part := range result.FullStream() {
+				assertNoToolPart(part)
+				if event, ok := part.(StreamError); ok {
+					streamErrors = append(streamErrors, event.Error)
+				}
+			}
+			assert.Zero(t, effects.Load())
+			assert.Equal(t, 1, model.callCount)
+			require.Len(t, result.Steps(), 1)
+			step := result.Steps()[0]
+			assert.Empty(t, step.ToolCalls)
+			assert.Empty(t, step.ToolResults)
+			assert.Empty(t, step.ToolApprovalRequests)
+			assert.Len(t, step.Content, 2)
+			require.Len(t, step.Response.Messages, 1)
+			assert.Len(t, step.Response.Messages[0].Content, 2)
+			assert.Equal(t, "response", step.Text)
+			assert.Equal(t, "thinking", step.ReasoningText)
+			assert.Equal(t, *parts[len(parts)-1].Usage, result.TotalUsage())
+			wantFinish := tc.finish
+			if len(tc.calls) == 0 {
+				assert.NoError(t, result.Err())
+				assert.Empty(t, streamErrors)
+				assert.Empty(t, callbackErrors)
+			} else {
+				require.ErrorContains(t, result.Err(), "tool choice was none")
+				assert.Equal(t, []error{result.Err()}, streamErrors)
+				assert.Equal(t, streamErrors, callbackErrors)
+				wantFinish = provider.FinishReasonError
+			}
+			assert.Equal(t, provider.FinishReason{Unified: wantFinish, Raw: string(tc.finish)}, step.FinishReason)
+			assert.Equal(t, step.FinishReason, result.FinishReason())
+		})
+	}
+}
+
 func TestStreamText_EffectiveToolChoiceStepOverride(t *testing.T) {
 	auto := provider.ToolChoice{Type: provider.ToolChoiceAuto}
 	none := provider.ToolChoice{Type: provider.ToolChoiceNone}
@@ -218,6 +317,7 @@ func TestStreamText_EffectiveToolChoiceStepOverride(t *testing.T) {
 		{"auto to named", auto, lookup, "other", true},
 		{"required to auto", required, auto, "", false},
 		{"required to none", required, none, "", false},
+		{"none to auto", none, auto, "other", false},
 		{"named to auto", lookup, auto, "", false},
 		{"named to none", lookup, none, "", false},
 		{"changed named miss", lookup, other, "lookup", true},
@@ -433,6 +533,7 @@ func TestToolLoopAgent_EffectiveToolChoice(t *testing.T) {
 
 func testEffectiveToolChoiceEntry(t *testing.T, useAgent, streaming bool) {
 	t.Helper()
+	none := provider.ToolChoice{Type: provider.ToolChoiceNone}
 	required := provider.ToolChoice{Type: provider.ToolChoiceRequired}
 	named := provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}
 	for _, tc := range []struct {
@@ -448,6 +549,8 @@ func testEffectiveToolChoiceEntry(t *testing.T, useAgent, streaming bool) {
 		{"named valid", named, nil, "lookup", false},
 		{"step required miss", provider.ToolChoice{Type: provider.ToolChoiceAuto}, &required, "", true},
 		{"step named miss", required, &named, "other", true},
+		{"none returned call", none, nil, "other", true},
+		{"step none returned call", required, &none, "other", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls []provider.StreamPart

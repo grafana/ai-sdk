@@ -17,6 +17,7 @@ var effectiveToolChoiceScenarios = []struct {
 }{
 	{"effective-tool-choice-required-miss", provider.ToolChoice{Type: provider.ToolChoiceRequired}, ""},
 	{"effective-tool-choice-named-miss", provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}, "other"},
+	{"effective-tool-choice-none-rejects", provider.ToolChoice{Type: provider.ToolChoiceNone}, "other"},
 	{"effective-tool-choice-required-valid", provider.ToolChoice{Type: provider.ToolChoiceRequired}, "lookup"},
 	{"effective-tool-choice-named-valid", provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}, "lookup"},
 }
@@ -37,7 +38,8 @@ func init() {
 }
 
 type effectiveToolChoiceModel struct {
-	callName string
+	callName          string
+	withToolLifecycle bool
 }
 
 func (effectiveToolChoiceModel) SpecificationVersion() string               { return "v4" }
@@ -48,16 +50,28 @@ func (effectiveToolChoiceModel) DoGenerate(context.Context, provider.CallOptions
 	return nil, nil
 }
 func (m effectiveToolChoiceModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	stream := make(chan provider.StreamPart, 7)
+	stream := make(chan provider.StreamPart, 10)
 	if m.callName == "" {
 		stream <- provider.StreamPart{Type: provider.PartReasoningStart, ID: "r1"}
 		stream <- provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r1", Delta: "thinking"}
 		stream <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r1"}
+	}
+	if m.callName == "" || m.withToolLifecycle {
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
 		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "response"}
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
-	} else {
+	}
+	if m.callName != "" {
+		if m.withToolLifecycle {
+			stream <- provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-1", ToolName: m.callName}
+			stream <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-1", Delta: `{}`}
+			stream <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call-1"}
+		}
 		stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: m.callName, Input: `{}`}
+		if m.withToolLifecycle {
+			stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "hosted", ToolName: "remote", Input: `{}`, ProviderExecuted: true}
+			stream <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "hosted", ToolName: "remote", Result: json.RawMessage(`"hosted output"`)}
+		}
 	}
 	stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_calls"}}
 	close(stream)
@@ -65,7 +79,7 @@ func (m effectiveToolChoiceModel) DoStream(context.Context, provider.CallOptions
 }
 
 func streamEffectiveToolChoice(ctx context.Context, choice provider.ToolChoice, callName string, onLocalEffect func()) *aisdk.StreamTextResult {
-	return aisdk.StreamText(ctx, effectiveToolChoiceModel{callName: callName},
+	return aisdk.StreamText(ctx, effectiveToolChoiceModel{callName: callName, withToolLifecycle: choice.Type == provider.ToolChoiceNone},
 		aisdk.WithModelMessages(provider.UserText("test")), aisdk.WithToolChoice(choice),
 		aisdk.WithTools(aisdk.ToolSet{
 			"lookup": {Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {

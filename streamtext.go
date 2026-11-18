@@ -946,6 +946,8 @@ func (r *StreamTextResult) processStep(
 	var terminated bool
 	var hasOutput bool
 	var providerFailed bool
+	withholdToolParts := cfg.toolChoice.Type == provider.ToolChoiceNone
+	var sawWithheldToolCall bool
 	toolNameByID := make(map[string]string)
 	toolTitleByID := make(map[string]string)
 	responseTextIndex := make(map[string]int)
@@ -1009,6 +1011,17 @@ loop:
 			}
 		case <-ctx.Done():
 			break loop
+		}
+
+		if withholdToolParts {
+			switch part.Type {
+			case provider.PartToolCall:
+				sawWithheldToolCall = true
+				continue
+			case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd,
+				provider.PartToolResult, provider.PartToolApprovalRequest:
+				continue
+			}
 		}
 
 		if isSemanticOutputStreamPart(part) {
@@ -1430,8 +1443,13 @@ loop:
 		})
 	}
 	var choiceViolation error
-	if completed && !providerFailed && ctx.Err() == nil && step.FinishReason.Unified != provider.FinishReasonInterrupted {
-		choiceViolation = validateToolChoice(*cfg.toolChoice, step.ToolCalls)
+	if completed && !providerFailed && ctx.Err() == nil {
+		switch {
+		case sawWithheldToolCall:
+			choiceViolation = errors.New("aisdk: model response contained a tool call even though tool choice was none")
+		case !withholdToolParts && step.FinishReason.Unified != provider.FinishReasonInterrupted:
+			choiceViolation = validateToolChoice(*cfg.toolChoice, step.ToolCalls)
+		}
 		if choiceViolation != nil {
 			step.FinishReason.Unified = provider.FinishReasonError
 			r.emitStreamError(choiceViolation, nil)

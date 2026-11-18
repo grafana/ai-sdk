@@ -160,10 +160,10 @@ Shared text orchestration SHALL validate completed responses against effective p
 - **THEN** that call SHALL satisfy choice presence
 - **AND** its existing invalid-input error or provider-executed handling SHALL remain unchanged
 
-#### Scenario: PrepareStep strengthens or relaxes enforcement
-- **WHEN** configured auto is overridden by required or named choice for the current step
-- **THEN** completed-response validation SHALL enforce the override
-- **AND** when configured required or named is overridden by auto or none, the configured requirement SHALL not be enforced on that step
+#### Scenario: PrepareStep replaces enforcement for the current step
+- **WHEN** PrepareStep supplies an explicit choice
+- **THEN** completed-response validation SHALL enforce the override rather than the configured choice
+- **AND** a none override SHALL reject returned tool calls even if the configured choice would allow them
 
 #### Scenario: Choice override resets on later step
 - **WHEN** a successful step overrides choice and a subsequent step supplies nil choice
@@ -173,13 +173,21 @@ Shared text orchestration SHALL validate completed responses against effective p
 - **WHEN** a required or named choice is forwarded with absent, empty or filtered-empty tools and the model completes without a satisfying call
 - **THEN** the response SHALL still fail choice validation
 
-#### Scenario: Auto and none remain unchanged
-- **WHEN** a completed response uses auto or none choice
-- **THEN** this validation SHALL not introduce a missing-call error or a new prohibition on returned calls
+#### Scenario: Auto does not enforce choice
+- **WHEN** a completed response uses auto choice
+- **THEN** choice validation SHALL neither require nor prohibit a returned call
+
+### Requirement: None choice satisfaction
+
+An effective none choice SHALL reject a completed response containing any structured tool call, including invalid, unconfigured, inactive and provider-executed calls. Enforcement SHALL take precedence over tool lookup and input validation. Tool-call-like text, a tool-input fragment, a tool result or an approval request without a structured call SHALL NOT violate none on its own.
+
+#### Scenario: None needs no tool call
+- **WHEN** a model call completes under none without a structured tool call
+- **THEN** the response SHALL not fail choice validation
 
 ### Requirement: Required and named choice satisfaction
 
-Required choice SHALL need at least one parsed tool call; named choice SHALL need a parsed call with the selected name. Invalid and provider-executed parsed calls SHALL count while retaining validity/execution semantics. Named choice SHALL NOT prohibit additional calls if a selected call exists. Auto/none SHALL retain existing response behavior. Tool-call-like text SHALL NOT count.
+Required choice SHALL need at least one parsed tool call; named choice SHALL need a parsed call with the selected name. Invalid and provider-executed parsed calls SHALL count while retaining validity/execution semantics. Named choice SHALL NOT prohibit additional calls if a selected call exists. Tool-call-like text SHALL NOT count.
 
 #### Scenario: Required and named choice satisfaction
 - **WHEN** a completed named response has the selected parsed call and an unrelated parsed call
@@ -187,7 +195,7 @@ Required choice SHALL need at least one parsed tool call; named choice SHALL nee
 
 ### Requirement: Tool choice enforcement boundaries
 
-Enforcement SHALL NOT depend on effective tool count, local executability, provider request rewriting or continuation eligibility. Incomplete/canceled calls and existing provider errors SHALL retain their behavior rather than acquire a missing-required-call error.
+Enforcement SHALL NOT depend on effective tool count, local executability, provider request rewriting or continuation eligibility. Incomplete or canceled calls and streams with provider errors SHALL NOT acquire a tool-choice violation. Withholding under none SHALL apply even before the provider finishes.
 
 #### Scenario: Tool choice enforcement boundaries
 - **WHEN** a required-choice model call is canceled before completion
