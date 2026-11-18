@@ -374,8 +374,8 @@ test.describe('model catalog page', () => {
 
     await provider.getByRole('button', { name: 'Replace key' }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel(/^API key/).fill(rejected);
-    await dialog.getByRole('button', { name: 'Replace key' }).click();
+    await dialog.getByLabel(/^New API key/).fill(rejected);
+    await dialog.getByRole('button', { name: 'Save key' }).click();
     await expect(dialog).toHaveCount(0);
     await browse.click();
     await expect(provider.getByRole('status')).toHaveText('The provider rejected the saved key.');
