@@ -282,6 +282,43 @@ test.describe('model catalog page', () => {
     expect(Object.keys(current.spec.models)).toEqual(['other']);
   });
 
+  test('an Admin checks the stored keys and models without exposing provider errors', async ({ gotoPage, page, accounts }) => {
+    const name = uniqueName();
+    const accepted = 'e2e-health-accepted-key';
+    const rejected = 'e2e-health-rejected-key';
+    const object = catalog(name, accepted);
+    const response = await accounts.Admin.post(CATALOGS, {
+      data: {
+        ...object,
+        spec: {
+          providers: { ...object.spec.providers, other: { type: 'anthropic' } },
+          models: {
+            ...object.spec.models,
+            typo: { name: 'Typo', primary: { provider: 'claude', model: 'not-a-model' } },
+            rejected: { name: 'Rejected', primary: { provider: 'other', model: 'claude-sonnet-4-6' } },
+          },
+        },
+        secure: { ...object.secure, other: { create: rejected } },
+      },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    const check = page.getByRole('button', { name: 'Check health' });
+    await expect(check).toBeVisible();
+    const watch = keyWatch(page);
+    const finished = page.waitForResponse((result) => isCatalogWrite('POST', `${name}/health`)(result.request()));
+    await check.click();
+    expect((await finished).status()).toBe(200);
+    await expect(card(page, 'claude').getByText('Listing accepted')).toBeVisible();
+    await expect(card(page, 'claude').getByText('Model listed', { exact: true })).toBeVisible();
+    await expect(card(page, 'claude').getByText('Model not listed')).toBeVisible();
+    await expect(card(page, 'other').getByText('Key rejected')).toBeVisible();
+    await expect(card(page, 'other').getByText('Not checked')).toBeVisible();
+    await watch.nowhere(accepted);
+    await watch.nowhere(rejected);
+    await watch.nowhere('e2e-health-provider-error');
+  });
+
   for (const role of BROWSER_ROLES) {
     test(`${role} users see catalogs read-only`, async ({ pageAs, accounts }) => {
       test.slow();
@@ -298,6 +335,8 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
+      expect((await accounts[role].post(`${CATALOGS}/${name}/health`)).status()).toBe(403);
 
       await page.goto(prefixRoute(ROUTES.NewCatalog));
       await expect(page.getByText("You can't create model catalogs")).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });

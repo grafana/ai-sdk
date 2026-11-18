@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Badge, Button, Field, IconButton, Input, Stack, Text, useStyles2 } from '@grafana/ui';
-import { errorMessage } from '../../api/modelCatalogs';
+import { CatalogHealth, errorMessage } from '../../api/modelCatalogs';
+import { CatalogHealthBadge } from './CatalogHealthBadge';
 import { fieldErrors, providerTypeLabel, targetLabel } from './catalogSpec';
 import { useFieldErrors } from './useFieldErrors';
 import { Model, Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
@@ -21,6 +22,7 @@ interface Props {
   provider: Provider;
   models: Array<[string, Model]>;
   keyState: KeyState;
+  health?: CatalogHealth;
   readOnly: boolean;
   removeBlocked?: string;
   lastModel: boolean;
@@ -37,7 +39,7 @@ interface Props {
  * it serves, and lets a writer add a model by its provider model ID alone.
  */
 export function ProviderCard(props: Props) {
-  const { name, provider, models, keyState, readOnly, removeBlocked, lastModel } = props;
+  const { name, provider, models, keyState, health, readOnly, removeBlocked, lastModel } = props;
   const s = useStyles2(getStyles);
   const label = providerTypeLabel(provider.type);
   const badge = KEY_BADGES[keyState];
@@ -51,6 +53,7 @@ export function ProviderCard(props: Props) {
           </Text>
           {name !== provider.type && <code className={s.name}>{name}</code>}
           <Badge text={badge.text} icon="lock" color={badge.color} />
+          <CatalogHealthBadge status={health?.providers[name]} provider />
         </Stack>
         {!readOnly && (
           <Stack alignItems="center" gap={1}>
@@ -85,6 +88,7 @@ export function ProviderCard(props: Props) {
                     serves {model.primary.model}
                   </Text>
                 )}
+                <CatalogHealthBadge status={health?.models[id]?.primary} />
               </Stack>
               {(model.fallback ?? []).length > 0 && (
                 <Text color="secondary" variant="bodySmall">

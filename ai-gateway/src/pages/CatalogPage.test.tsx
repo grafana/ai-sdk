@@ -2,9 +2,16 @@ import React from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CatalogPage from './CatalogPage';
-import { deleteModelCatalog, getModelCatalog, SecureChanges, updateModelCatalog } from '../api/modelCatalogs';
+import {
+  CatalogHealth,
+  checkModelCatalogHealth,
+  deleteModelCatalog,
+  getModelCatalog,
+  SecureChanges,
+  updateModelCatalog,
+} from '../api/modelCatalogs';
 import { ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { Spec } from '../generated/modelcatalog/v1alpha1/types.spec.gen';
 import { CatalogActions } from '../permissions';
@@ -13,6 +20,7 @@ import { signInAs } from '../testUtils';
 jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   getModelCatalog: jest.fn(),
+  checkModelCatalogHealth: jest.fn(),
   updateModelCatalog: jest.fn(),
   deleteModelCatalog: jest.fn(),
 }));
@@ -55,6 +63,11 @@ const stored: ModelCatalog = {
     openai: { name: 'inline-openai' },
     spare: { name: 'inline-spare' },
   },
+};
+
+const listing: CatalogHealth = {
+  providers: { anthropic: 'ok', openai: 'invalidKey', spare: 'unreachable' },
+  models: { balanced: { primary: 'ok', fallback: ['notChecked'] }, 'gpt-5': { primary: 'notChecked', fallback: [] } },
 };
 
 function updated(catalog: ModelCatalog, spec: Spec, secure: SecureChanges): ModelCatalog {
@@ -105,11 +118,61 @@ function lastUpdate() {
 describe('pages/CatalogPage', () => {
   beforeEach(() => {
     jest.mocked(getModelCatalog).mockReset().mockResolvedValue(stored);
+    jest.mocked(checkModelCatalogHealth).mockReset().mockResolvedValue(listing);
     jest
       .mocked(updateModelCatalog)
       .mockReset()
       .mockImplementation((catalog, spec, secure) => Promise.resolve(updated(catalog, spec, secure)));
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
+  });
+
+  test('checks only on request and shows listing outcomes separately from stored keys', async () => {
+    signInAs(OrgRole.Viewer, [...READ_ONLY, CatalogActions.CheckHealth]);
+    await openPage();
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    expect(screen.getByRole('button', { name: 'Checking health…' })).toBeDisabled();
+    expect(await card('anthropic').findByText('Listing accepted')).toBeInTheDocument();
+    expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
+    expect(card('anthropic').getByText('Model listed')).toBeInTheDocument();
+    expect(card('openai').getByText('Key saved')).toBeInTheDocument();
+    expect(card('openai').getByText('Key rejected')).toBeInTheDocument();
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
+    expect(dialog().getByText('Not checked')).toBeInTheDocument();
+  });
+
+  test('a writer without the explicit health permission cannot check', async () => {
+    signInAs(OrgRole.Admin, ALL.filter((action) => action !== CatalogActions.CheckHealth));
+    await openPage();
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+  });
+
+  test('ignores a pending check after a successful edit', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let finish!: (result: CatalogHealth) => void;
+    const pending = new Promise<CatalogHealth>((resolve) => {
+      finish = resolve;
+    });
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(pending);
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
+    type(dialog().getByRole('textbox', { name: /^Display name/ }), 'Edited');
+    fireEvent.click(dialog().getByRole('button', { name: 'Save model' }));
+    expect(await card('anthropic').findByText('Edited')).toBeInTheDocument();
+    await act(async () => finish(listing));
+    expect(card('anthropic').queryByText('Listing accepted')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
+  });
+
+  test('uses fixed health failure text without displaying the underlying error', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    jest.mocked(checkModelCatalogHealth).mockRejectedValueOnce(new Error('untrusted-provider-message'));
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    expect(await screen.findByText('The catalog health check could not run. Try again.')).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('untrusted-provider-message');
   });
 
   test('shows each provider with its saved key and the models it serves, never secure names', async () => {

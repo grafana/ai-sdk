@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, Button, ConfirmModal, Stack, Text } from '@grafana/ui';
-import { errorMessage } from '../../api/modelCatalogs';
+import { CatalogHealth, errorMessage } from '../../api/modelCatalogs';
 import { ConnectProviderModal } from './ConnectProviderModal';
 import { ModelDrawer } from './ModelDrawer';
 import { KeyState, ProviderCard } from './ProviderCard';
@@ -30,6 +30,7 @@ interface Props {
   keys: string[];
   keyState: Exclude<KeyState, 'missing'>;
   stored: boolean;
+  health?: CatalogHealth;
   readOnly: boolean;
   onChange: (change: CatalogChange) => Promise<void>;
 }
@@ -41,7 +42,7 @@ interface Props {
  * one model, and a provider can't be removed while other providers' models
  * fall back to it.
  */
-export function CatalogEditor({ spec, keys, keyState, stored, readOnly, onChange }: Props) {
+export function CatalogEditor({ spec, keys, keyState, stored, health, readOnly, onChange }: Props) {
   const [dialog, setDialog] = useState<Dialog>();
   const [error, setError] = useState<string>();
   const providers = Object.entries(spec.providers);
@@ -120,6 +121,7 @@ export function CatalogEditor({ spec, keys, keyState, stored, readOnly, onChange
           provider={provider}
           models={modelsOf(spec, name)}
           keyState={keys.includes(name) ? keyState : 'missing'}
+          health={health}
           readOnly={readOnly}
           removeBlocked={removeBlocked(name)}
           lastModel={stored && modelCount === 1}
@@ -146,7 +148,14 @@ export function CatalogEditor({ spec, keys, keyState, stored, readOnly, onChange
         <ReplaceKeyModal spec={spec} provider={dialog.provider} onSave={save} onDismiss={close} />
       )}
       {dialog?.kind === 'model' && (
-        <ModelDrawer spec={spec} id={dialog.id} readOnly={readOnly} onSave={save} onClose={close} />
+        <ModelDrawer
+          spec={spec}
+          id={dialog.id}
+          fallbackHealth={health?.models[dialog.id]?.fallback}
+          readOnly={readOnly}
+          onSave={save}
+          onClose={close}
+        />
       )}
       <ConfirmModal
         isOpen={removal !== undefined}

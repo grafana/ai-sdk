@@ -4,6 +4,7 @@ import { API_GROUP } from './constants';
 /** CatalogActions are the Grafana RBAC actions on ModelCatalog resources. */
 export const CatalogActions = {
   Read: `${API_GROUP}/modelcatalogs:get`,
+  CheckHealth: `${API_GROUP}/modelcatalogs/health:get`,
   Create: `${API_GROUP}/modelcatalogs:create`,
   Update: `${API_GROUP}/modelcatalogs:update`,
   Delete: `${API_GROUP}/modelcatalogs:delete`,
@@ -12,6 +13,7 @@ export const CatalogActions = {
 /** CatalogPermissions says which catalog actions the signed-in user holds. */
 export interface CatalogPermissions {
   read: boolean;
+  checkHealth: boolean;
   create: boolean;
   update: boolean;
   delete: boolean;
@@ -24,6 +26,7 @@ export interface CatalogPermissions {
 export function catalogPermissions(): CatalogPermissions {
   return {
     read: hasPermission(CatalogActions.Read),
+    checkHealth: hasPermission(CatalogActions.CheckHealth),
     create: hasPermission(CatalogActions.Create),
     update: hasPermission(CatalogActions.Update),
     delete: hasPermission(CatalogActions.Delete),

@@ -34,6 +34,35 @@ export function getModelCatalog(name: string): Promise<ModelCatalog> {
   return getBackendSrv().get<ModelCatalog>(modelCatalogURL(name), undefined, undefined, REQUEST_OPTIONS);
 }
 
+/** HealthStatus is a fixed outcome from a provider model listing. */
+export type HealthStatus = 'ok' | 'invalidKey' | 'unknownModel' | 'unreachable' | 'refused' | 'notChecked';
+
+/** CatalogHealth reports provider, primary and fallback listing outcomes. */
+export interface CatalogHealth {
+  providers: Record<string, HealthStatus>;
+  models: Record<string, { primary: HealthStatus; fallback: HealthStatus[] }>;
+}
+
+/** checkModelCatalogHealth checks the saved providers and models without changing the catalog. */
+export function checkModelCatalogHealth(name: string): Promise<CatalogHealth> {
+  return getBackendSrv().post<CatalogHealth>(`${modelCatalogURL(name)}/health`, undefined, REQUEST_OPTIONS);
+}
+
+/** catalogHealthErrorMessage gives fixed feedback without displaying error details. */
+export function catalogHealthErrorMessage(error: unknown): string {
+  if (isFetchError(error)) {
+    switch (error.status) {
+      case 403:
+        return 'You do not have permission to check this catalog.';
+      case 424:
+        return 'Check the saved provider configuration and keys, then try again.';
+      case 429:
+        return 'A check is already running or the Gateway is busy. Try again shortly.';
+    }
+  }
+  return 'The catalog health check could not run. Try again.';
+}
+
 /** createModelCatalog creates a catalog with the given spec and secure values. */
 export function createModelCatalog(name: string, spec: Spec, secure: SecureChanges): Promise<ModelCatalog> {
   const body = {
