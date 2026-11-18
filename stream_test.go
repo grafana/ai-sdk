@@ -9,6 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func assembleResponseMessage(messageID string, chunks []UIMessageChunk) (UIMessage, error) {
+	return assembleResponseMessageWithInitial(messageID, chunks, nil)
+}
+
+func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
+	assembly := newUIMessageStreamAssembly(messageID, initial)
+	for _, chunk := range chunks {
+		assembly.apply(chunk)
+	}
+	return assembly.snapshot()
+}
+
 func TestUIMessageStreamWriter(t *testing.T) {
 	t.Run("write and close", func(t *testing.T) {
 		w := newUIMessageStreamWriter(16)
@@ -51,6 +63,64 @@ func TestUIMessageStreamWriter(t *testing.T) {
 		}
 		assert.Len(t, chunks, 3)
 	})
+}
+
+func TestCreateUIMessageStream_StepEndBeforeForwarding(t *testing.T) {
+	original := UIMessage{ID: "user", Role: RoleUser}
+	prefix := []UIMessageChunk{
+		{Type: ChunkStart},
+		TextDeltaChunk("orphan", "ignored"),
+		TextStartChunk("t1"),
+		TextDeltaChunk("t1", "hello"),
+		TextEndChunk("t1"),
+		{Type: ChunkMessageMetadata, MessageMetadata: json.RawMessage(`{"step":1}`)},
+	}
+	started := make(chan UIMessageStreamOnStepEndState, 1)
+	release := make(chan struct{}, 1)
+	defer close(release)
+
+	stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+		OriginalMessages: []UIMessage{original},
+		GenerateID:       func() string { return "generated" },
+		Execute: func(w *UIMessageStreamWriter) error {
+			if err := w.Write(prefix[0]); err != nil {
+				return err
+			}
+			return w.Merge(chunks(append(prefix[1:], UIMessageChunk{Type: ChunkFinishStep})...))
+		},
+		OnStepEnd: func(s UIMessageStreamOnStepEndState) {
+			started <- s
+			<-release
+		},
+	})
+
+	for _, want := range prefix {
+		if want.Type == ChunkStart {
+			want.MessageID = "generated"
+		}
+		got, ok := <-stream
+		require.True(t, ok)
+		assert.Equal(t, want, got)
+	}
+	select {
+	case state := <-started:
+		assert.False(t, state.IsContinuation)
+		assert.Equal(t, "generated", state.ResponseMessage.ID)
+		assert.Equal(t, []UIMessage{original, state.ResponseMessage}, state.Messages)
+		assert.Equal(t, []Part{TextPart{Text: "hello", State: "done"}}, state.ResponseMessage.Parts)
+		assert.JSONEq(t, `{"step":1}`, string(state.ResponseMessage.Metadata))
+		require.ErrorContains(t, state.AssemblyError, "orphan")
+	case chunk := <-stream:
+		require.FailNow(t, "stream advanced before callback started", "got %v", chunk.Type)
+	}
+	select {
+	case chunk := <-stream:
+		require.FailNow(t, "stream advanced while callback was blocked", "got %v", chunk.Type)
+	default:
+	}
+	release <- struct{}{}
+	assert.Equal(t, []UIMessageChunk{{Type: ChunkFinishStep}}, collectUIChunks(stream))
+	assert.Empty(t, started)
 }
 
 func TestCreateUIMessageStream(t *testing.T) {

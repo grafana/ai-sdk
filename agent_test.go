@@ -894,7 +894,11 @@ func TestCreateAgentUIStream_ChunksMatchExistingPath(t *testing.T) {
 	}}
 	agent := NewToolLoopAgent(agentModel)
 	messages := []UIMessage{{ID: "m1", Role: RoleUser, Parts: []Part{TextPart{Text: "hi"}}}}
-	agentStream, err := CreateAgentUIStream(context.Background(), agent, messages, WithUIMessageStreamGenerateID(func() string { return "id" }))
+	var agentSteps []UIMessageStreamOnStepEndState
+	agentStream, err := CreateAgentUIStream(context.Background(), agent, messages,
+		WithUIMessageStreamGenerateID(func() string { return "id" }),
+		OnUIMessageStreamStepEnd(func(s UIMessageStreamOnStepEndState) { agentSteps = append(agentSteps, s) }),
+	)
 	require.NoError(t, err)
 	agentChunks := collectUIChunks(agentStream)
 
@@ -902,12 +906,17 @@ func TestCreateAgentUIStream_ChunksMatchExistingPath(t *testing.T) {
 		return &provider.StreamResult{Stream: textStreamParts("same")}, nil
 	}}
 	direct := StreamText(context.Background(), directModel, WithMessages(messages...))
+	var directSteps []UIMessageStreamOnStepEndState
 	directChunks := collectUIChunks(direct.ToUIMessageStream(
 		WithUIMessageStreamOriginalMessages(messages...),
 		WithUIMessageStreamGenerateID(func() string { return "id" }),
+		OnUIMessageStreamStepEnd(func(s UIMessageStreamOnStepEndState) { directSteps = append(directSteps, s) }),
 	))
 
 	assert.Equal(t, directChunks, agentChunks)
+	require.Len(t, agentSteps, 1)
+	assert.Equal(t, directSteps, agentSteps)
+	assert.Equal(t, messages[0], agentSteps[0].Messages[0])
 }
 
 func ExampleToolLoopAgent() {

@@ -67,6 +67,13 @@ stream := result.ToUIMessageStream(
 )
 ```
 
+To persist during a multi-step run, use `OnUIMessageStreamStepEnd` with
+`ToUIMessageStream`, `WriteUIMessageStream`, or `CreateAgentUIStream`. For a
+composed stream, set `CreateUIMessageStreamParams.OnStepEnd` to observe the
+assembled output, including merged steps. The callback runs before the step
+boundary is sent to the client, so slow persistence delays the stream. Check
+`AssemblyError` before saving the snapshot.
+
 ## Write plain text
 
 `WriteTextStream` forwards text deltas without UI-message SSE framing. Use it
