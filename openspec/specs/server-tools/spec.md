@@ -358,7 +358,7 @@ Each `PartSource` (streaming) and source `GenerateContentPart` (non-streaming) e
 Anthropic SHALL accept anthropic.web_search_20260318 and anthropic.web_fetch_20260318 through the existing web-version conversion path. Every accepted web tool SHALL emit matching dated native type and fixed web_search/web_fetch name in generate and stream. Only declared camelCase args SHALL project to snake_case fields.
 
 #### Scenario: Every supported dated web variant
-- **WHEN** a request declares any of the six supported web search/fetch IDs with valid arguments
+- **WHEN** a request retains a supported web search/fetch tool with valid arguments after any JSON-tool fallback selection
 - **THEN** exactly that versioned native type and its declared fields SHALL appear in the request body, together with the specified version-specific beta if any
 
 #### Scenario: Fetch 20260318 optional fields
@@ -375,22 +375,22 @@ Anthropic SHALL accept anthropic.web_search_20260318 and anthropic.web_fetch_202
 
 ### Requirement: Validate declared web-tool arguments before a request
 
-Every supported web ID SHALL validate declared optional args before HTTP in generate/stream. Invalid present types, null or enum SHALL error without HTTP; omissions SHALL stay omitted. Unknown fields SHALL be stripped as upstream object-schema projection. Unsupported IDs SHALL retain warning-and-skip behavior.
+Every supported web ID SHALL validate declared optional args before HTTP in generate/stream. Invalid present types, null or enum SHALL error without HTTP; omissions SHALL stay omitted. Unknown fields SHALL be stripped as upstream object-schema projection. Unsupported IDs SHALL retain warning-and-skip behavior. These checks SHALL run after caller tool filtering on the JSON-tool fallback path.
 
 #### Scenario: Fractional and large finite web-tool numbers
-- **WHEN** a supported web tool supplies a finite fractional or out-of-int64 `maxUses` or `maxContentTokens` value
+- **WHEN** a retained supported web tool supplies a finite fractional or out-of-int64 `maxUses` or `maxContentTokens` value
 - **THEN** the HTTP request SHALL contain that numeric value in the corresponding wire field without truncation, including when unsupported tools precede it in the declared tools list; no override SHALL reinsert a tool removed by tool choice `none`
 
 #### Scenario: Invalid numeric and domain fields
-- **WHEN** a supported web tool supplies a non-number `maxUses` or `maxContentTokens`, `null` for a declared field, or non-string elements in a domain list
+- **WHEN** a retained supported web tool supplies a non-number `maxUses` or `maxContentTokens`, `null` for a declared field, or non-string elements in a domain list
 - **THEN** request preparation SHALL fail before any HTTP request
 
 #### Scenario: Invalid nested objects or enum
-- **WHEN** a declared web tool supplies `citations` without `enabled` or with a non-boolean `enabled`, `userLocation` without `type` or with a type other than `approximate` or non-string location fields, invalid `useCache`, or `responseInclusion` outside `full` and `excluded`
+- **WHEN** a retained web tool supplies `citations` without `enabled` or with a non-boolean `enabled`, `userLocation` without `type` or with a type other than `approximate` or non-string location fields, invalid `useCache`, or `responseInclusion` outside `full` and `excluded`
 - **THEN** request preparation SHALL fail before any HTTP request
 
 #### Scenario: Unrecognized arguments and unsupported provider tool IDs
-- **WHEN** a supported web tool has an extra unknown argument, or a separately declared provider tool ID is unsupported
+- **WHEN** a retained supported web tool has an extra unknown argument, or a separately retained provider tool ID is unsupported
 - **THEN** the unknown argument SHALL be stripped for the supported tool and the unsupported ID SHALL still be skipped with a warning; neither SHALL become a function tool
 
 ### Requirement: Web-tool requests preserve function-tool and no-tool boundaries
@@ -540,7 +540,7 @@ Valid finite numeric maxUses/maxContentTokens, including fractions, SHALL serial
 
 #### Scenario: Anthropic web numeric argument fidelity
 
-- **WHEN** web tools supply fractional or out-of-int64 finite numbers after an unsupported tool
+- **WHEN** a retained web tool supplies fractional or out-of-int64 finite numbers and follows an unsupported tool
 - **THEN** the corresponding wire numbers SHALL remain intact, without reinstating tools removed by choice none
 
 ### Requirement: Anthropic web nested argument schemas
@@ -549,5 +549,5 @@ Domain lists SHALL be string arrays. Present citations SHALL require boolean ena
 
 #### Scenario: Anthropic web nested argument schemas
 
-- **WHEN** a supported web tool has malformed citations, location, domain list, useCache or responseInclusion
+- **WHEN** a retained supported web tool has malformed citations, location, domain list, useCache or responseInclusion
 - **THEN** request preparation SHALL reject it before HTTP rather than coerce or forward invalid declared fields

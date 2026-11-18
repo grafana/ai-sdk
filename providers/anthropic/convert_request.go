@@ -46,13 +46,8 @@ func trimECMAScriptWhitespace(s string) string {
 
 type buildResult struct {
 	usesJsonResponseTool bool
-	// markCodeExecutionDynamic mirrors upstream
-	// hasWebTool20260209WithoutCodeExecution
-	// (anthropic-language-model.ts:2639): when a web_fetch_20260209 or
-	// web_search_20260209 provider tool is configured without an explicit
-	// code_execution tool, downstream code_execution server_tool_use blocks
-	// must be flagged with dynamic: true so they bypass the strict tool
-	// validation layer.
+	// markCodeExecutionDynamic flags implicit code_execution calls from
+	// dynamic web tools so they bypass strict tool validation.
 	markCodeExecutionDynamic bool
 	requestOptions           []option.RequestOption
 }
@@ -564,7 +559,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 		applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
 	}
-	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(tools)
+	br.markCodeExecutionDynamic = hasDynamicWebToolWithoutCodeExecution(tools, br.usesJsonResponseTool)
 	if len(p.Tools) > 0 {
 		br.requestOptions = append(br.requestOptions, webToolNumberOptions(tools, p.Tools)...)
 	}
@@ -3383,30 +3378,24 @@ func hasFunctionTools(tools []provider.Tool) bool {
 	return false
 }
 
-// hasWebTool20260209WithoutCodeExecution reports whether the request
-// configures a web_fetch_20260209 or web_search_20260209 provider tool
-// without also configuring any code_execution provider tool. Mirrors
-// upstream anthropic-language-model.ts:2639. When true, callers must mark
-// implicit `code_execution` server_tool_use blocks as `dynamic: true` so the
-// strict tool-validation layer accepts them — the 20260209 web tools
-// internally trigger `code_execution` server-side, and would otherwise be
-// rejected because the caller never declared a `code_execution` tool.
-func hasWebTool20260209WithoutCodeExecution(tools []provider.Tool) bool {
-	var hasWebTool20260209, hasCodeExecutionTool bool
+func hasDynamicWebToolWithoutCodeExecution(tools []provider.Tool, jsonFallback bool) bool {
+	var hasDynamicWebTool, hasCodeExecutionTool bool
 	for _, t := range tools {
 		if t.Type != provider.ToolTypeProvider {
 			continue
 		}
 		switch t.ID {
 		case "anthropic.web_fetch_20260209", "anthropic.web_search_20260209":
-			hasWebTool20260209 = true
+			hasDynamicWebTool = true
+		case "anthropic.web_fetch_20260318", "anthropic.web_search_20260318":
+			hasDynamicWebTool = hasDynamicWebTool || jsonFallback
 		case "anthropic.code_execution_20250522",
 			"anthropic.code_execution_20250825",
 			"anthropic.code_execution_20260120":
 			hasCodeExecutionTool = true
 		}
 	}
-	return hasWebTool20260209 && !hasCodeExecutionTool
+	return hasDynamicWebTool && !hasCodeExecutionTool
 }
 
 // resolveAnthropicToolStreaming reads AnthropicOptions.ToolStreaming and

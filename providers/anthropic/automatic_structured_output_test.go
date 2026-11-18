@@ -20,6 +20,8 @@ import (
 
 func TestModel_AutomaticStructuredOutput(t *testing.T) {
 	const openObject = `{"type":"object","additionalProperties":true}`
+	const closedObject = `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`
+	manualThinking := &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 1024}
 	cases := []struct {
 		name, schema, output, toolChoice string
 		mode                             StructuredOutputMode
@@ -28,9 +30,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 		textFallback                     bool
 	}{
 		{
-			name:   "closed",
-			schema: `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`,
-			output: `{"answer":"42"}`,
+			name: "closed", schema: closedObject, output: `{"answer":"42"}`,
 		},
 		{
 			name: "open", schema: openObject, output: `{"answer":42}`, toolChoice: "any",
@@ -59,9 +59,14 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 		},
 		{
 			name: "manual_thinking_text_fallback", modelID: "claude-3-haiku", textFallback: true,
-			schema: `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`,
-			output: `{"answer":"42"}`, toolChoice: "auto",
-			thinking: &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 1024},
+			schema: closedObject, output: `{"answer":"42"}`, toolChoice: "auto", thinking: manualThinking,
+		},
+		{
+			name: "manual_thinking_keeps_native", schema: closedObject, output: `{"answer":"42"}`, thinking: manualThinking,
+		},
+		{
+			name: "manual_thinking_keeps_explicit_json_tool", schema: closedObject, output: `{"answer":"42"}`,
+			mode: StructuredOutputJSONTool, toolChoice: "auto", thinking: manualThinking,
 		},
 		{
 			name: "adaptive_thinking_keeps_any", modelID: "claude-sonnet-4-6", schema: openObject,
@@ -123,7 +128,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					for part := range result.Stream {
 						switch part.Type {
 						case provider.PartStreamStart:
-							warnings = part.Warnings
+							warnings = append(warnings, part.Warnings...)
 						case provider.PartTextDelta:
 							text.WriteString(part.Delta)
 						case provider.PartFinish:
@@ -165,12 +170,16 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					assert.Equal(t, "json", tools[0].Name)
 					assert.JSONEq(t, tc.schema, string(tools[0].Schema))
 				}
-				if tc.textFallback {
-					assert.JSONEq(t, `{"type":"enabled","budget_tokens":1024}`, string(wire["thinking"]))
+				if tc.toolChoice == "auto" {
 					require.Len(t, warnings, 1)
 					assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
 					assert.Equal(t, "toolChoice", warnings[0].Feature)
 					assert.Contains(t, warnings[0].Details, "'required' is not supported with this model or thinking configuration")
+				} else {
+					assert.Empty(t, warnings)
+				}
+				if tc.thinking != nil && tc.thinking.Type == ThinkingEnabled {
+					assert.JSONEq(t, `{"type":"enabled","budget_tokens":1024}`, string(wire["thinking"]))
 				}
 				assert.Equal(t, provider.FinishReasonStop, finish)
 				assert.JSONEq(t, tc.output, output)
