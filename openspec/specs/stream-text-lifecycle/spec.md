@@ -74,7 +74,7 @@ Closure without terminal after model output SHALL retain a partial step, not Err
 
 ### Requirement: Step start follows the provider stream
 
-`StreamText` SHALL emit `StreamStartStep` once per step on the first provider part processed after any `stream-start` parts. It SHALL include the warnings from `stream-start` and the step request metadata. Tool parts withheld by the effective tool choice SHALL NOT trigger `StreamStartStep`. This boundary SHALL be independent of the first-chunk timeout, which waits for semantic model output.
+`StreamText` SHALL emit `StreamStartStep` once per step on the first provider part processed after any `stream-start` parts. It SHALL include the warnings from `stream-start` and the step request metadata. Tool parts withheld by the effective tool choice SHALL NOT trigger `StreamStartStep`. This boundary SHALL be independent of the first-chunk timeout, which waits for semantic model output. Receiving an eligible semantic part SHALL stop the first-chunk timer before emitting downstream events for that part.
 
 #### Scenario: The first part follows stream start
 
@@ -116,7 +116,7 @@ Matching upstream, which skips `onEnd` when aborted, cancellation SHALL call OnA
 - **WHEN** `PrepareStep` or provider `DoStream` returns an error and the operation context is canceled
 - **THEN** `StreamText` SHALL emit `StreamAbort` with the context cancellation cause and call `OnAbort` once
 - **AND** it SHALL NOT emit `StreamError` or `StreamFinish`, or call `OnError` or `OnFinish`
-- **AND** `GenerateText` SHALL still return a nil result and an error for the cancellation
+- **AND** `GenerateText` SHALL return a nil result and the first recorded stream error, if any; otherwise it SHALL return the error from `PrepareStep` or from the existing `DoStream` retry path, even if the abort chunk contains a different context cause
 
 #### Scenario: Cancellation after a completed step
 

@@ -19,6 +19,7 @@ describe("stream startup", () => {
     expect(chunks).toEqual([{ type: "start" }, terminal]);
 
     const errors: unknown[] = [];
+    const messages = [];
     for await (const message of readUIMessageStream({
       stream: new ReadableStream<UIMessageChunk>({
         start(controller) {
@@ -27,7 +28,8 @@ describe("stream startup", () => {
         },
       }),
       onError: error => errors.push(error),
-    })) expect(message.parts).toEqual([]);
+    })) messages.push(message);
+    expect(messages).toEqual([]);
     if (terminal.type === "error") {
       expect(errors).toMatchObject([{ message: terminal.errorText }]);
     } else {

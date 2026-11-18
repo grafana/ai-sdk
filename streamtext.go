@@ -49,7 +49,7 @@ type StreamTextResult struct {
 	provMeta                provider.ProviderMetadata
 	lastResponse            ResponseMetadata
 	firstError              error
-	abortCause              error
+	abortErr                error
 
 	outputValue any
 	outputErr   error
@@ -558,7 +558,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			})
 			if err != nil {
 				if ctx.Err() != nil {
-					r.abort(ctx, cfg)
+					r.abort(ctx, cfg, err)
 					return
 				}
 				r.emitError(err, cfg.onError)
@@ -709,7 +709,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				stepTimer.Stop()
 			}
 			if ctx.Err() != nil {
-				r.abort(ctx, cfg)
+				r.abort(ctx, cfg, err)
 				return
 			}
 			r.emitStreamError(err, cfg.onError)
@@ -744,7 +744,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					cfg.onStepFinish(OnStepFinishState{StepResult: step})
 				}
 			}
-			r.abort(ctx, cfg)
+			r.abort(ctx, cfg, nil)
 			return
 		}
 
@@ -977,11 +977,6 @@ loop:
 			step.Warnings = part.Warnings
 			continue
 		}
-		if !started {
-			started = true
-			r.emit(StreamStartStep{Warnings: step.Warnings, Request: streamResult.Request})
-		}
-
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
 			if firstChunkTimer != nil {
@@ -995,6 +990,11 @@ loop:
 					chunkTimer.Reset(chunkTimeout)
 				}
 			}
+		}
+
+		if !started {
+			started = true
+			r.emit(StreamStartStep{Warnings: step.Warnings, Request: streamResult.Request})
 		}
 
 		switch part.Type {
@@ -2116,18 +2116,22 @@ func (r *StreamTextResult) emit(part TextStreamPart) {
 	}
 }
 
-func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
+func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig, startupErr error) {
 	r.totalUsage = aggregateUsage(r.steps)
 	if cfg.onAbort != nil {
 		cfg.onAbort(OnAbortState{Steps: r.steps})
 	}
 	part := StreamAbort{}
-	if cause := context.Cause(ctx); cause != nil {
-		r.mu.Lock()
-		r.abortCause = cause
-		r.mu.Unlock()
+	cause := context.Cause(ctx)
+	if cause != nil {
 		part.Reason = cause.Error()
 	}
+	if startupErr == nil {
+		startupErr = cause
+	}
+	r.mu.Lock()
+	r.abortErr = startupErr
+	r.mu.Unlock()
 	r.emit(part)
 	r.callOnChunk(cfg, part)
 }
@@ -2859,7 +2863,7 @@ func (r *StreamTextResult) abortError() error {
 	r.Wait()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.abortCause
+	return r.abortErr
 }
 
 // Helpers

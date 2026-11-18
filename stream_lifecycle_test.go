@@ -3,7 +3,10 @@ package aisdk
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -149,6 +152,61 @@ func TestStreamText_StartupAbort(t *testing.T) {
 	}
 }
 
+func TestStreamText_StartupErrorWithLiveContext(t *testing.T) {
+	for _, phase := range []string{"DoStream", "PrepareStep"} {
+		t.Run(phase, func(t *testing.T) {
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return nil, context.Canceled
+			}}
+			var callbackErrors []error
+			aborts := 0
+			options := []StreamOption{
+				WithModelMessages(provider.UserText("hi")),
+				OnError(func(err error) { callbackErrors = append(callbackErrors, err) }),
+				OnAbort(func(OnAbortState) { aborts++ }),
+			}
+			want := []TextStreamPart{StreamStart{}, StreamError{Error: context.Canceled}}
+			if phase == "PrepareStep" {
+				options = append(options, WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+					return nil, context.Canceled
+				}))
+				want = append(want, StreamFinish{})
+			}
+			result := StreamText(t.Context(), model, options...)
+			assert.Equal(t, want, collectLifecycleParts(result))
+			assert.ErrorIs(t, result.Err(), context.Canceled)
+			assert.Equal(t, []error{context.Canceled}, callbackErrors)
+			assert.Zero(t, aborts)
+		})
+	}
+}
+
+func TestStreamText_FirstChunkTimeoutStopsBeforeStartStepSend(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		model := effectiveToolChoiceModel([]provider.StreamPart{
+			{Type: provider.PartStreamStart},
+			{Type: provider.PartTextDelta, ID: "t1", Delta: "hi"},
+			{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		})
+		result := &StreamTextResult{fullStream: make(chan TextStreamPart, 1), done: make(chan struct{})}
+		cfg := buildStreamConfig([]StreamOption{
+			WithModelMessages(provider.UserText("hi")),
+			WithTimeout(TimeoutConfig{FirstChunk: time.Second}),
+		})
+		go result.run(t.Context(), model, cfg)
+		synctest.Wait()
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+
+		parts := collectLifecycleParts(result)
+		require.Len(t, parts, 5)
+		assert.IsType(t, StreamStartStep{}, parts[1])
+		assert.IsType(t, StreamTextDelta{}, parts[2])
+		assert.Equal(t, "hi", result.Text())
+		assert.NoError(t, result.abortError())
+	})
+}
+
 func TestGenerateText_StartupAbort(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -160,32 +218,50 @@ func TestGenerateText_StartupAbort(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, surface := range []string{"GenerateText", "Agent Generate"} {
 				t.Run(surface, func(t *testing.T) {
-					ctx, cancel := context.WithCancel(t.Context())
-					defer cancel()
-					model := &mockModel{streamFunc: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-						cancel()
-						return nil, ctx.Err()
-					}}
-					var callbackErrors []error
-					onError := OnError(func(err error) { callbackErrors = append(callbackErrors, err) })
-					prepare := WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+					synctest.Test(t, func(t *testing.T) {
+						cause := errors.New("shutdown")
+						prepareErr := fmt.Errorf("prepare interrupted: %w", context.DeadlineExceeded)
+						var ctx context.Context
+						var cancel func()
+						var wantErr error
 						if tc.inPrepare {
-							cancel()
-							return nil, ctx.Err()
+							var stop context.CancelFunc
+							ctx, stop = context.WithTimeoutCause(t.Context(), time.Second, cause)
+							defer stop()
+							cancel = func() { <-ctx.Done() }
+							wantErr = prepareErr
+						} else {
+							var cancelCause context.CancelCauseFunc
+							ctx, cancelCause = context.WithCancelCause(t.Context())
+							defer cancelCause(nil)
+							cancel = func() { cancelCause(cause) }
+							wantErr = context.Canceled
 						}
-						return nil, nil
+						model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+							cancel()
+							return nil, errors.New("provider interrupted")
+						}}
+						var callbackErrors []error
+						onError := OnError(func(err error) { callbackErrors = append(callbackErrors, err) })
+						prepare := WithPrepareStep(func(PrepareStepState) (*PrepareStepResult, error) {
+							if tc.inPrepare {
+								cancel()
+								return nil, prepareErr
+							}
+							return nil, nil
+						})
+						var result *GenerateTextResult
+						var err error
+						if surface == "Agent Generate" {
+							agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(onError, prepare, WithMaxRetries(0)))
+							result, err = agent.Generate(ctx, WithAgentPrompt("hi"))
+						} else {
+							result, err = GenerateText(ctx, model, WithModelMessages(provider.UserText("hi")), onError, prepare, WithMaxRetries(0))
+						}
+						assert.Nil(t, result)
+						assert.Same(t, wantErr, err)
+						assert.Empty(t, callbackErrors)
 					})
-					var result *GenerateTextResult
-					var err error
-					if surface == "Agent Generate" {
-						agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(onError, prepare, WithMaxRetries(0)))
-						result, err = agent.Generate(ctx, WithAgentPrompt("hi"))
-					} else {
-						result, err = GenerateText(ctx, model, WithModelMessages(provider.UserText("hi")), onError, prepare, WithMaxRetries(0))
-					}
-					assert.Nil(t, result)
-					assert.ErrorIs(t, err, context.Canceled)
-					assert.Empty(t, callbackErrors)
 				})
 			}
 		})

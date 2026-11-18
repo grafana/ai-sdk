@@ -102,9 +102,9 @@ ToolLoopAgent generate and stream methods SHALL delegate to existing `GenerateTe
 
 #### Scenario: Step startup is canceled
 
-- **WHEN** an Agent call is canceled during step preparation or provider startup before any part of the step is processed
-- **THEN** Agent streaming SHALL emit an abort without a step start, stream error, or stream finish for that cancellation, and SHALL call `OnAbort` once
-- **AND** Agent generation SHALL return a nil result and a cancellation error without calling `OnError`
+- **WHEN** `PrepareStep` or provider `DoStream` returns an error and the Agent call's operation context is canceled
+- **THEN** Agent streaming SHALL emit `StreamAbort` without `StreamStartStep`, `StreamError` or `StreamFinish` for that cancellation, and SHALL call `OnAbort` once
+- **AND** Agent generation SHALL return a nil result and the error selected by the `GenerateText` startup cancellation rules, without calling `OnError` for the cancellation
 
 #### Scenario: Pending approval stops Agent stream
 - **WHEN** an Agent stream call produces a local tool call that requires user approval
