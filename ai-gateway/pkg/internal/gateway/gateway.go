@@ -75,6 +75,7 @@ type Gateway struct {
 	sinks         sinks
 	definitions   []extension.Definition
 	logger        *slog.Logger
+	endpoints     outbound.CustomEndpoints
 	// access is decided once, when the first app is built.
 	access     sync.Once
 	apiAccess  bool
@@ -142,7 +143,7 @@ func New(options Options) (*Gateway, error) {
 		sinks.close()
 		return nil, err
 	}
-	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, definitions: options.Extensions, logger: options.Logger}, nil
+	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, definitions: options.Extensions, logger: options.Logger, endpoints: settings.Endpoints}, nil
 }
 
 // operatorCatalog parses and validates the operator catalog and resolves its
@@ -253,9 +254,9 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	}
 	var byokOptions *service.BYOKOptions
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
+		byokOptions = &service.BYOKOptions{Client: nativeClient, Endpoints: settings.Endpoints, Factory: service.BYOKIdentity}
 	}
-	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Client: nativeClient}), Compose: composeModel(sinks.extensions, observers), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Client: nativeClient, Endpoints: settings.Endpoints}), Compose: composeModel(sinks.extensions, observers), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
@@ -271,8 +272,8 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	listings := service.NewCatalogHealthChecker(outbound.NewProbeTransport(config.ProviderResponseHeaderTimeout))
+	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{Endpoints: settings.Endpoints}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	listings := service.NewCatalogHealthChecker(outbound.NewProbeTransport(config.ProviderResponseHeaderTimeout), settings.Endpoints)
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat, messages, catalogHealth(listings), catalogAvailableModels(listings)))
 }
 
@@ -327,7 +328,7 @@ func (g *Gateway) Provider() app.Provider {
 		if g.connectErr != nil {
 			return nil, g.connectErr
 		}
-		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds(g.definitions, g.apiAccess)})
+		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds(g.definitions, g.apiAccess, g.endpoints)})
 	})
 }
 
@@ -352,17 +353,18 @@ func (g *Gateway) connectTenants(kubeConfig rest.Config, apiAccess bool) error {
 }
 
 // managedKinds lists every manifest kind with its admission validator. The
+// ModelCatalog validator checks custom endpoints against endpoints. The
 // Middleware kind keeps specs raw for its validator, which accepts the tenant
 // extensions among definitions; without API access, a validator that refuses
 // every write replaces it. No kind has a reconciler or watcher, so the app
 // starts no informers.
-func managedKinds(definitions []extension.Definition, apiAccess bool) []simple.AppManagedKind {
+func managedKinds(definitions []extension.Definition, apiAccess bool, endpoints outbound.CustomEndpoints) []simple.AppManagedKind {
 	var middleware simple.KindValidator = tenantconfig.NewValidator(definitions)
 	if !apiAccess {
 		middleware = tenantconfig.WithoutAPIAccess{}
 	}
 	return []simple.AppManagedKind{
-		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}},
+		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{Endpoints: endpoints}},
 		{Kind: tenantconfig.Kind(), Validator: middleware},
 	}
 }

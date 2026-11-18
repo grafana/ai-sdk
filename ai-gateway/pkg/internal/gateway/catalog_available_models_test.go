@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
@@ -88,7 +89,7 @@ func TestCatalogAvailableModels_ThroughPlatformHost(t *testing.T) {
 }
 
 func TestCatalogAvailableModels_ParentAndConfiguration(t *testing.T) {
-	listings := service.NewCatalogHealthChecker(nil)
+	listings := service.NewCatalogHealthChecker(nil, outbound.CustomEndpoints{})
 	notFound := http.NotFoundHandler()
 	handler, err := newHandler(gatewayauth.AccessPolicy{}, newTestTelemetry(t), productionRoutes(
 		notFound, notFound, notFound, notFound, catalogHealth(listings), catalogAvailableModels(listings),

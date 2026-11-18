@@ -17,25 +17,18 @@ The Gateway's API group SHALL serve a namespaced `ModelCatalog` kind in version 
 - **THEN** the platform SHALL refuse it
 
 #### Scenario: Operator catalog document as a spec
-- **WHEN** a valid operator catalog document without `apiKeyEnv`, with only `anthropic` and `openai` providers, is used as a `spec` together with one secure value per provider
+- **WHEN** a valid operator catalog document without `apiKeyEnv`, whose custom endpoints are listed, is used as a `spec` together with one secure value per provider
 - **THEN** the catalog SHALL be accepted
 
-### Requirement: Unsupported fields are refused, not pruned
-The kind schema SHALL keep the operator provider fields `baseURL`, `providerName` and `supportsStructuredOutputs`, so schema pruning cannot remove them before admission. Admission SHALL refuse any catalog that sets one of them, with any value.
-
-#### Scenario: Endpoint override
-- **WHEN** a catalog provider sets `baseURL`
-- **THEN** the write SHALL be refused, and no key SHALL be sent anywhere
-
-#### Scenario: Compatibility field set to its default
-- **WHEN** a catalog provider sets `supportsStructuredOutputs: false` or an empty `providerName`
-- **THEN** the write SHALL be refused
-
 ### Requirement: Stack catalog provider policy
-Admission SHALL accept only provider types `anthropic` and `openai`, and provider names that are DNS labels: 1 to 63 lowercase ASCII letters, digits or `-`, starting and ending with a letter or digit.
+Admission SHALL accept only provider types `anthropic`, `openai` and `openai-compatible`, and provider names that are DNS labels: 1 to 63 lowercase ASCII letters, digits or `-`, starting and ending with a letter or digit.
 
 #### Scenario: Compatible provider type
-- **WHEN** a catalog provider has type `openai-compatible` or an unknown type
+- **WHEN** a catalog provider has type `openai-compatible` with a listed `baseURL`
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Unknown provider type
+- **WHEN** a catalog provider has an unknown type
 - **THEN** the write SHALL be refused
 
 #### Scenario: Provider name outside the pattern
@@ -186,3 +179,30 @@ Operator documentation SHALL explain managing catalogs from the app, which roles
 #### Scenario: Developer reads the catalog package guide
 - **WHEN** a developer reads the catalog package guide
 - **THEN** it SHALL say that stack catalogs are stored `ModelCatalog` resources the Gateway serves, and link to their documentation
+
+### Requirement: Endpoint and compatibility fields
+The kind schema SHALL keep `baseURL`, `providerName` and `supportsStructuredOutputs`, so pruning cannot drop them before admission. Admission SHALL apply the operator catalog's rules to them: `openai-compatible` requires `baseURL`, and only it may set the other two. A `baseURL` SHALL pass the operator endpoint form checks, and a custom one, other than its type's native default, SHALL be listed in `custom_endpoints`.
+
+#### Scenario: Listed Anthropic endpoint
+- **WHEN** an `anthropic` provider sets a `baseURL` the list holds
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Compatible provider with its fields
+- **WHEN** an `openai-compatible` provider sets a listed `baseURL`, `providerName: acme` and `supportsStructuredOutputs: true`
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Compatible provider without an endpoint
+- **WHEN** an `openai-compatible` provider has no `baseURL`
+- **THEN** the write SHALL be refused
+
+#### Scenario: Compatibility field on a native type
+- **WHEN** an `openai` provider sets `providerName` or `supportsStructuredOutputs`
+- **THEN** the write SHALL be refused
+
+#### Scenario: Endpoint with credentials or a query
+- **WHEN** a `baseURL` carries userinfo, a query or a fragment
+- **THEN** the write SHALL be refused, and the reason SHALL NOT echo the URL
+
+#### Scenario: Native default endpoint
+- **WHEN** an `openai` provider sets `baseURL: https://api.openai.com/v1` and the list is empty
+- **THEN** the write SHALL be accepted, and the provider SHALL count as having no `baseURL`
