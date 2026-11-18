@@ -16,7 +16,7 @@ code.
 
 ## Find your Gateway URL
 
-Open **Grafana AI Gateway** in your Grafana instance. The overview page shows
+Open **AI Gateway** in your Grafana instance. The overview page shows
 the Gateway URL for your stack and a quick start you can copy. The URL has this
 form:
 

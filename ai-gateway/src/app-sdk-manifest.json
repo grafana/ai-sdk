@@ -264,6 +264,119 @@
                                 }
                             }
                         }
+                    },
+                    {
+                        "kind": "Middleware",
+                        "plural": "Middlewares",
+                        "scope": "Namespaced",
+                        "userReadable": false,
+                        "folderScoped": false,
+                        "admission": {
+                            "validation": {
+                                "operations": [
+                                    "CREATE",
+                                    "UPDATE"
+                                ]
+                            }
+                        },
+                        "schemas": {
+                            "Middleware": {
+                                "properties": {
+                                    "spec": {
+                                        "$ref": "#/components/schemas/spec"
+                                    }
+                                },
+                                "required": [
+                                    "spec"
+                                ]
+                            },
+                            "spec": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "defaultInstructions": {
+                                        "additionalProperties": false,
+                                        "description": "Default system messages for calls that have none.",
+                                        "properties": {
+                                            "messages": {
+                                                "description": "System messages prepended, in order, to calls whose prompt has no system message.",
+                                                "items": {
+                                                    "additionalProperties": false,
+                                                    "properties": {
+                                                        "content": {
+                                                            "description": "The system message text.",
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "content"
+                                                    ],
+                                                    "type": "object"
+                                                },
+                                                "type": "array"
+                                            }
+                                        },
+                                        "required": [
+                                            "messages"
+                                        ],
+                                        "type": "object"
+                                    },
+                                    "defaultSettings": {
+                                        "additionalProperties": false,
+                                        "description": "Default sampling and limit settings for calls that leave them unset.",
+                                        "properties": {
+                                            "frequencyPenalty": {
+                                                "description": "The frequency penalty.",
+                                                "type": "number"
+                                            },
+                                            "maxOutputTokens": {
+                                                "description": "The maximum number of tokens to generate.",
+                                                "type": "integer"
+                                            },
+                                            "presencePenalty": {
+                                                "description": "The presence penalty.",
+                                                "type": "number"
+                                            },
+                                            "seed": {
+                                                "description": "The seed for deterministic sampling, where the model supports it.",
+                                                "type": "integer"
+                                            },
+                                            "stopSequences": {
+                                                "description": "Sequences that stop generation.",
+                                                "items": {
+                                                    "type": "string"
+                                                },
+                                                "type": "array"
+                                            },
+                                            "temperature": {
+                                                "description": "The sampling temperature.",
+                                                "type": "number"
+                                            },
+                                            "topK": {
+                                                "description": "The number of most likely tokens to sample from.",
+                                                "type": "integer"
+                                            },
+                                            "topP": {
+                                                "description": "The nucleus sampling probability mass.",
+                                                "type": "number"
+                                            }
+                                        },
+                                        "type": "object"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "type",
+                                    "enabled"
+                                ],
+                                "type": "object"
+                            }
+                        },
+                        "conversion": false
                     }
                 ],
                 "routes": {
@@ -546,6 +659,26 @@
                     }
                 ]
             },
+            "aigateway:middlewarereader": {
+                "title": "Middleware reader",
+                "description": "Read AI Gateway tenant extension configuration",
+                "kinds": [
+                    {
+                        "kind": "Middleware",
+                        "permissionSet": "viewer"
+                    }
+                ]
+            },
+            "aigateway:middlewarewriter": {
+                "title": "Middleware writer",
+                "description": "Create, update and delete AI Gateway tenant extension configuration",
+                "kinds": [
+                    {
+                        "kind": "Middleware",
+                        "permissionSet": "editor"
+                    }
+                ]
+            },
             "aigateway:modelinvoker": {
                 "title": "Model invoker",
                 "description": "Discover and invoke models from AI Gateway model catalogs",
@@ -573,13 +706,15 @@
         },
         "roleBindings": {
             "viewer": [
-                "aigateway:catalogreader"
+                "aigateway:catalogreader",
+                "aigateway:middlewarereader"
             ],
             "editor": [
                 "aigateway:modelinvoker"
             ],
             "admin": [
-                "aigateway:catalogwriter"
+                "aigateway:catalogwriter",
+                "aigateway:middlewarewriter"
             ]
         }
     }

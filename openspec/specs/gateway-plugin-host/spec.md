@@ -6,11 +6,11 @@ Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWir
 ## Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be distributed as one Grafana app plugin whose app manifest serves one API version with exactly five namespaced custom routes: `GET config`, `POST language-model` and `POST v1/chat/completions` under `namespaces/{namespace}/`, and `GET config` and `POST language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus one kind, `ModelCatalog`, with validation admission and no mutation or conversion hooks. The manifest SHALL declare no other routes, kinds or hooks.
+The Gateway SHALL be one Grafana app plugin whose manifest serves one API version with exactly five namespaced custom routes: `GET config`, `POST language-model` and `POST v1/chat/completions` under `namespaces/{namespace}/`, and `GET config` and `POST language-model` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus two kinds, `ModelCatalog` and `Middleware`, with validation admission and no mutation or conversion hooks. It SHALL declare no other routes, kinds or hooks.
 
 #### Scenario: Committed manifest declares only the three routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the three namespace routes and the two `ModelCatalog` subresource routes, and the `ModelCatalog` kind as its only kind
+- **THEN** it SHALL declare one version with only the three namespace routes and the two `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
 - **AND** each catalog route SHALL declare a `get` access check on its own `modelcatalogs/<route>` subresource, and the namespace routes SHALL declare none
 
 #### Scenario: Plugin identity is fixed
@@ -107,7 +107,7 @@ The plugin health check SHALL be served only after configuration, the catalog, t
 - **THEN** the result SHALL be healthy with a fixed message
 
 ### Requirement: Host-owned lifecycle and bounded final flush
-Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depend on receiving a termination signal and SHALL NOT cancel requests on its own when shutdown begins. After the plugin protocol server stops, the Gateway SHALL flush Agent Observability and attempt records concurrently under one shared deadline of 1 second, then exit. Records emitted after the flush starts SHALL be dropped and counted, not block or fail.
+Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depend on receiving a termination signal and SHALL NOT cancel requests on its own when shutdown begins. After the plugin protocol server stops, the Gateway SHALL flush Agent Observability records, attempt records and extension observations, and close extension instances, concurrently under one shared deadline of 1 second, then exit. Records emitted after the flush starts SHALL be dropped and counted, not block or fail.
 
 #### Scenario: Host stops the plugin
 - **WHEN** the host stops the plugin process through the plugin protocol, with host tracing unconfigured or its shutdown completing promptly
@@ -120,6 +120,10 @@ Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depe
 #### Scenario: Deployment guidance matches request bounds
 - **WHEN** operator documentation describes deployment
 - **THEN** it SHALL state that the host's termination grace period must exceed the platform request deadline plus drain time, and that host tracer shutdown shares the final-flush window
+
+#### Scenario: Extension close shares the budget
+- **WHEN** an extension instance's close blocks, fails or panics during the final flush
+- **THEN** the Gateway SHALL stop waiting for a blocked close at the shared deadline, count a close that fails or panics, and still flush the other sinks and exit before the budget ends
 
 ### Requirement: Protocol test host
 Deterministic tests SHALL serve the Gateway through the real plugin protocol, from HTTP through the plugin route and admission RPCs to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only, SHALL NOT be shipped or documented as a supported server or as evidence of the platform's deadline value or draining, and MAY apply a route deadline.
@@ -291,11 +295,11 @@ A public Go package in the Gateway module SHALL expose one entrypoint that runs 
 
 #### Scenario: Shipped main is a thin caller
 - **WHEN** the shipped plugin backend starts
-- **THEN** its `main` SHALL only call the entrypoint with zero options and exit non-zero when the entrypoint reports failure
+- **THEN** its `main` SHALL only call the entrypoint with the shipped extension definitions and no mandatory extension, and exit non-zero when the entrypoint reports failure
 - **AND** startup, idle, health, lifecycle events, final flush and exit behavior SHALL be unchanged
 
 #### Scenario: Distribution compiled from another module
-- **WHEN** a Go module outside the Gateway module imports the package and calls the entrypoint with zero options
+- **WHEN** a Go module outside the Gateway module imports the package and calls the entrypoint with zero options, or with an extension it defines
 - **THEN** it SHALL compile without importing any Gateway internal package
 
 #### Scenario: Distribution keeps the plugin identity
@@ -314,7 +318,7 @@ The public composition package SHALL be documented as v0 and experimental: its A
 - **THEN** it SHALL state that the API is v0, experimental and may break in minor releases
 
 ### Requirement: Kinds served by the plugin app
-The plugin app SHALL manage each manifest kind with exactly the admission handlers the manifest declares, next to the route handler, and SHALL start no informers, watchers or reconcilers for them. An idle Gateway SHALL refuse every admission review, so writes fail closed on a host that delegates no requests to it.
+The plugin app SHALL manage each manifest kind with exactly the admission handlers the manifest declares, next to the route handler, and SHALL start no informers, watchers or reconcilers for them. The `Middleware` validator SHALL decide with the public tenant types, the distribution's extension definitions and whether the plugin has API access. An idle Gateway SHALL refuse every admission review, so writes fail closed on a host that delegates no requests to it.
 
 #### Scenario: App and manifest agree
 - **WHEN** the app is built from the committed manifest
@@ -324,6 +328,10 @@ The plugin app SHALL manage each manifest kind with exactly the admission handle
 - **WHEN** the host sends an admission review for a `ModelCatalog` with a delegated token
 - **THEN** the plugin SHALL authenticate it like a route call and answer with the catalog validator's decision
 
+#### Scenario: Middleware admission through the plugin protocol
+- **WHEN** the host sends an admission review for a `Middleware` with a delegated token
+- **THEN** the plugin SHALL authenticate it like a route call and answer with the decision for the public tenant types, the extension definitions the distribution passed and the plugin's API access
+
 #### Scenario: Idle Gateway
 - **WHEN** an idle Gateway receives an admission review
 - **THEN** it SHALL refuse it without validating the object
@@ -332,8 +340,53 @@ The plugin app SHALL manage each manifest kind with exactly the admission handle
 Declaring a kind SHALL NOT change the namespace `config` and `language-model` routes: their methods, access decisions, statuses, headers, bodies, streaming and Gateway error documents SHALL stay as they were with a routes-only manifest.
 
 #### Scenario: Routes against Grafana with the kind declared
-- **WHEN** the end-to-end suite calls the namespace routes on Grafana with the manifest that declares `ModelCatalog`
+- **WHEN** the end-to-end suite calls the namespace routes on Grafana with the manifest that declares the Gateway's kinds
 - **THEN** discovery, language-model error documents and undeclared-method responses SHALL match what the same tests observe with the routes-only manifest
+
+### Requirement: Extension options on the entrypoint
+The entrypoint options SHALL select only the distribution's extension definitions and which of them are mandatory. Definitions and the mandatory list SHALL be validated before the Gateway reads any setting, including when it would start idle, so an invalid build fails startup on every host.
+
+#### Scenario: Invalid definitions on an idle host
+- **WHEN** a distribution passes two definitions with the same name and the host supplies no platform signing keys
+- **THEN** startup SHALL fail naming the duplicate instead of starting idle
+
+#### Scenario: Idle host with valid definitions
+- **WHEN** a distribution passes valid definitions and the host supplies no platform signing keys
+- **THEN** the Gateway SHALL start idle without reading the extension setting or constructing any extension
+
+### Requirement: Operator extension setting
+The Gateway SHALL read operator extension configuration from the `extensions` setting (`GF_PLUGIN_EXTENSIONS`): one strict YAML mapping from extension name to an entry with optional `enabled`, optional `config` and an optional `secrets` mapping from each declared secret's name to the environment variable holding it. An unset or blank setting SHALL mean no entries. The setting SHALL be at most 64 KiB, and aliases, merge keys, unknown or repeated keys and trailing documents SHALL be refused.
+
+#### Scenario: Entry with a secret
+- **WHEN** the setting is `quota: {config: {limit: 100}, secrets: {apiKey: GF_PLUGIN_QUOTA_KEY}}` and `quota` declares secret `apiKey`
+- **THEN** the `quota` factory SHALL receive the configuration `{"limit": 100}` and the secret `apiKey` read from `GF_PLUGIN_QUOTA_KEY`
+
+#### Scenario: Unknown extension or secret
+- **WHEN** the setting names an extension the distribution does not register, or an entry names a secret its extension does not declare
+- **THEN** startup SHALL fail naming the setting, the extension and the secret, without their values
+
+#### Scenario: Unsupported entry key
+- **WHEN** an entry has a key other than `enabled`, `config` and `secrets`
+- **THEN** startup SHALL fail naming the setting, without the entry's values
+
+#### Scenario: Oversized or malformed setting
+- **WHEN** the setting is larger than 64 KiB, is not a mapping, or uses an alias
+- **THEN** startup SHALL fail with a reason that names the setting without its value
+
+### Requirement: Extension secret handling
+Extension secrets SHALL be read from the environment only after every setting, the model catalog and the extension configuration are validated. An unset or empty secret variable of an enabled extension SHALL fail startup naming the variable, not its value. Resolved secret values SHALL be redacted from Gateway-produced failure summaries like configured provider keys.
+
+#### Scenario: Missing secret
+- **WHEN** an enabled extension's entry maps secret `apiKey` to `GF_PLUGIN_QUOTA_KEY` and the variable is unset
+- **THEN** startup SHALL fail naming `GF_PLUGIN_QUOTA_KEY`
+
+#### Scenario: Provider echoes an extension secret
+- **WHEN** a provider failure message contains a resolved extension secret
+- **THEN** the published failure summary SHALL redact it
+
+#### Scenario: Disabled extension
+- **WHEN** an entry sets `enabled: false` and names an unset secret variable
+- **THEN** startup SHALL succeed without reading that variable
 
 ### Requirement: Catalog route parent check
 Before using a catalog route's decrypted values, the Gateway SHALL check that the route carries a parent object whose group, version, kind, namespace and name match the route's group, version, `ModelCatalog`, namespace and `{name}`. A missing or mismatched parent SHALL fail with the internal host error before the body is read, with no access decision, listing, selection or provider work.
@@ -353,3 +406,18 @@ Before using a catalog route's decrypted values, the Gateway SHALL check that th
 #### Scenario: Parent whose identity does not decode
 - **WHEN** the parent is not JSON, or its API version, kind, namespace or name cannot be read
 - **THEN** the response SHALL be the internal host error
+
+### Requirement: Tenant configuration API access from the host
+The app provider callback SHALL hand the API access configuration the host supplies to the Gateway's tenant configuration reader before any request is served. The reader SHALL use only that configuration and SHALL start no informer or watch. When the host supplies none, the Gateway SHALL treat the plugin as having no API access.
+
+#### Scenario: Host supplies API access
+- **WHEN** the plugin runtime builds the app with API access for the Gateway's group
+- **THEN** the Gateway SHALL read `Middleware` resources through that configuration, as the plugin
+
+#### Scenario: Host supplies no API access
+- **WHEN** the plugin runtime builds the app without API access configuration
+- **THEN** the Gateway SHALL make no reads and apply "Tenant configuration without API access"
+
+#### Scenario: Idle Gateway
+- **WHEN** a Gateway that started idle builds its app
+- **THEN** it SHALL construct no reader

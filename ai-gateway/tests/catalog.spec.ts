@@ -1,5 +1,5 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { test, expect, ROLES, type Role } from './fixtures';
+import { accountsTest as test, expect, ROLES, type Role } from './fixtures';
 import { API_GROUP, API_VERSION } from '../src/constants';
 
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;

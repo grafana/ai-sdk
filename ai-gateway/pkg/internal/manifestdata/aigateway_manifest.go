@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kube-openapi/pkg/spec3"
 
+	middlewarev1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/middleware/v1alpha1"
 	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 )
 
@@ -22,6 +23,9 @@ var (
 	rawSchemaModelCatalogv1alpha1     = []byte(`{"Model":{"additionalProperties":false,"properties":{"aliases":{"items":{"type":"string"},"type":"array"},"description":{"type":"string"},"fallback":{"items":{"$ref":"#/components/schemas/Target"},"type":"array"},"name":{"type":"string"},"primary":{"$ref":"#/components/schemas/Target"}},"required":["name","primary"],"type":"object"},"ModelCatalog":{"properties":{"secure":{"type":"object","additionalProperties":{"description":"Provider API key, keyed by the provider name","allOf":[{"$ref":"#/components/schemas/com.github.grafana.grafana-app-sdk.resource.InlineSecureValue"}]}},"spec":{"$ref":"#/components/schemas/spec"}},"required":["spec"]},"Provider":{"additionalProperties":false,"properties":{"baseURL":{"type":"string"},"providerName":{"type":"string"},"supportsStructuredOutputs":{"type":"boolean"},"type":{"type":"string"}},"required":["type"],"type":"object"},"Target":{"additionalProperties":false,"properties":{"model":{"type":"string"},"provider":{"type":"string"}},"required":["provider","model"],"type":"object"},"com.github.grafana.grafana-app-sdk.resource.InlineSecureValue":{"type":"object","oneOf":[{"required":["create"]},{"required":["name"]},{"required":["remove"]}],"not":{"required":["description"],"not":{"required":["create"]}},"properties":{"create":{"description":"Plaintext value to create in the secret service. Used only in create or update requests.","type":"string","maxLength":24576,"minLength":1},"description":{"description":"Optional description for a newly created secret. Only valid when create is set.","type":"string"},"name":{"description":"Reference to an existing value in the secret service.","type":"string","maxLength":253,"minLength":1},"remove":{"description":"Remove this entry from the secure value map, deleting the secret if it is owned by this resource.","type":"boolean"}},"additionalProperties":false},"spec":{"additionalProperties":false,"properties":{"models":{"additionalProperties":{"$ref":"#/components/schemas/Model"},"type":"object"},"providers":{"additionalProperties":{"$ref":"#/components/schemas/Provider"},"type":"object"}},"required":["providers","models"],"type":"object"}}`)
 	versionSchemaModelCatalogv1alpha1 app.VersionSchema
 	_                                 = json.Unmarshal(rawSchemaModelCatalogv1alpha1, &versionSchemaModelCatalogv1alpha1)
+	rawSchemaMiddlewarev1alpha1       = []byte(`{"Middleware":{"properties":{"spec":{"$ref":"#/components/schemas/spec"}},"required":["spec"]},"spec":{"additionalProperties":false,"properties":{"defaultInstructions":{"additionalProperties":false,"description":"Default system messages for calls that have none.","properties":{"messages":{"description":"System messages prepended, in order, to calls whose prompt has no system message.","items":{"additionalProperties":false,"properties":{"content":{"description":"The system message text.","type":"string"}},"required":["content"],"type":"object"},"type":"array"}},"required":["messages"],"type":"object"},"defaultSettings":{"additionalProperties":false,"description":"Default sampling and limit settings for calls that leave them unset.","properties":{"frequencyPenalty":{"description":"The frequency penalty.","type":"number"},"maxOutputTokens":{"description":"The maximum number of tokens to generate.","type":"integer"},"presencePenalty":{"description":"The presence penalty.","type":"number"},"seed":{"description":"The seed for deterministic sampling, where the model supports it.","type":"integer"},"stopSequences":{"description":"Sequences that stop generation.","items":{"type":"string"},"type":"array"},"temperature":{"description":"The sampling temperature.","type":"number"},"topK":{"description":"The number of most likely tokens to sample from.","type":"integer"},"topP":{"description":"The nucleus sampling probability mass.","type":"number"}},"type":"object"},"enabled":{"type":"boolean"},"type":{"type":"string"}},"required":["type","enabled"],"type":"object"}}`)
+	versionSchemaMiddlewarev1alpha1   app.VersionSchema
+	_                                 = json.Unmarshal(rawSchemaMiddlewarev1alpha1, &versionSchemaMiddlewarev1alpha1)
 )
 
 var appManifestData = app.ManifestData{
@@ -59,6 +63,23 @@ var appManifestData = app.ManifestData{
 						}
 						return routes
 					}(),
+				},
+
+				{
+					Kind:         "Middleware",
+					Plural:       "Middlewares",
+					Scope:        "Namespaced",
+					Conversion:   false,
+					FolderScoped: func(b bool) *bool { return &b }(false),
+					Admission: &app.AdmissionCapabilities{
+						Validation: &app.ValidationCapability{
+							Operations: []app.AdmissionOperation{
+								app.AdmissionOperationCreate,
+								app.AdmissionOperationUpdate,
+							},
+						},
+					},
+					Schema: &versionSchemaMiddlewarev1alpha1,
 				},
 			},
 			// nolint:staticcheck
@@ -101,6 +122,28 @@ var appManifestData = app.ManifestData{
 			},
 			Routes: []string{},
 		},
+		"aigateway:middlewarereader": {
+			Title:       "Middleware reader",
+			Description: "Read AI Gateway tenant extension configuration",
+			Kinds: []app.ManifestRoleKind{
+				{
+					Kind:          "Middleware",
+					PermissionSet: new("viewer"),
+				},
+			},
+			Routes: []string{},
+		},
+		"aigateway:middlewarewriter": {
+			Title:       "Middleware writer",
+			Description: "Create, update and delete AI Gateway tenant extension configuration",
+			Kinds: []app.ManifestRoleKind{
+				{
+					Kind:          "Middleware",
+					PermissionSet: new("editor"),
+				},
+			},
+			Routes: []string{},
+		},
 		"aigateway:modelinvoker": {
 			Title:       "Model invoker",
 			Description: "Discover and invoke models from AI Gateway model catalogs",
@@ -130,12 +173,14 @@ var appManifestData = app.ManifestData{
 	RoleBindings: &app.ManifestRoleBindings{
 		Viewer: []string{
 			"aigateway:catalogreader",
+			"aigateway:middlewarereader",
 		},
 		Editor: []string{
 			"aigateway:modelinvoker",
 		},
 		Admin: []string{
 			"aigateway:catalogwriter",
+			"aigateway:middlewarewriter",
 		},
 	},
 }
@@ -150,6 +195,7 @@ func RemoteManifest() app.Manifest {
 
 var kindVersionToGoType = map[string]resource.Kind{
 	"ModelCatalog/v1alpha1": modelcatalogv1alpha1.Kind(),
+	"Middleware/v1alpha1":   middlewarev1alpha1.Kind(),
 }
 
 // ManifestGoTypeAssociator returns the associated resource.Kind instance for a given Kind and Version, if one exists.

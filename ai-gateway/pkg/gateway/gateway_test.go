@@ -11,6 +11,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 )
 
 const (
@@ -19,13 +23,28 @@ const (
 	distributionMain   = `package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/gateway"
 )
 
+type audit struct{}
+
+func (audit) Observe(context.Context, *extension.Call, extension.Record) error { return nil }
+
 func main() {
-	if gateway.Run(gateway.Options{}) != nil {
+	definition := extension.Definition{
+		Name:          "audit",
+		Scope:         extension.ScopeOperator,
+		FailurePolicy: extension.FailSkip,
+		New: func(json.RawMessage, extension.Dependencies) (any, error) {
+			return audit{}, nil
+		},
+	}
+	if gateway.Run(gateway.Options{Extensions: append(gateway.DefaultExtensions(), definition)}) != nil {
 		os.Exit(1)
 	}
 }
@@ -88,4 +107,16 @@ func TestRun_CompilesFromAnExternalModule(t *testing.T) {
 	build.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local")
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))
+}
+
+func TestDefaultExtensions_ShippedTenantExtensions(t *testing.T) {
+	definitions := DefaultExtensions()
+	names := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		names = append(names, definition.Name)
+		require.Equal(t, extension.ScopeTenant, definition.Scope)
+		require.False(t, definition.EnabledByDefault)
+	}
+	require.Equal(t, []string{"default-instructions", "default-settings"}, names)
+	require.NoError(t, extensionhost.ValidateDefinitions(definitions, nil, tenanttype.All()), "each binds to its public type")
 }

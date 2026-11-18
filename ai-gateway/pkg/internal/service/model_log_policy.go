@@ -103,9 +103,9 @@ func allowModelLogAttr(attr slog.Attr, source execution.Source) bool {
 		}
 		return stringIn(attr, "grafana")
 	case "ai_sdk.outcome":
-		return stringIn(attr, "success", "error", "cancelled", "timeout")
+		return stringIn(attr, "success", "error", "cancelled", "timeout", "denied")
 	case "ai_sdk.error.type":
-		return stringIn(attr, "api_call_error", "context_canceled", "context_deadline_exceeded", "stream_part_error", "unknown")
+		return stringIn(attr, "api_call_error", "context_canceled", "context_deadline_exceeded", "stream_part_error", "unknown", "denied")
 	case "ai_sdk.finish_reason":
 		return stringIn(attr,
 			string(provider.FinishReasonStop),
@@ -133,7 +133,7 @@ func allowModelLogAttr(attr slog.Attr, source execution.Source) bool {
 			return true
 		}
 		return attr.Value.Kind() == slog.KindString && boundedObservationValue(attr.Value.String()) != ""
-	case "ai_sdk.call.id", "correlation_id", "caller_service", "namespace", "catalog":
+	case "ai_sdk.call.id", "correlation_id", "caller_service", "namespace", "catalog", "caller_identity":
 		return attr.Value.Kind() == slog.KindString && boundedObservationValue(attr.Value.String()) != ""
 	case "ai_sdk.warnings.types":
 		values, ok := attr.Value.Any().([]string)

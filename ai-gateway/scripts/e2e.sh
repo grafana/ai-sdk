@@ -10,6 +10,7 @@ gateway=$(git rev-parse --show-toplevel)/ai-gateway
 grafana_url=http://localhost:3000
 startup_attempts=90
 catalog_key_sentinel=e2e-catalog-sentinel-key
+middleware_config_sentinel=e2e-middleware-sentinel-value
 dump_lines=200
 
 fail() { echo "$*" >&2; exit 1; }
@@ -67,6 +68,17 @@ curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become h
 
 pnpm exec playwright install chromium
 pnpm e2e
-if "${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' | grep -F -- "$catalog_key_sentinel" >/dev/null; then
+plugin_logs=$("${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' || true)
+# The sentinel checks below inspect these lines, so they must not be empty:
+# the Gateway logs once whether Grafana gave the plugin API access, which it
+# needs to read Middleware resources.
+api_access=$(grep 'gateway plugin API access' <<<"$plugin_logs" || true)
+[[ -n "$api_access" ]] || fail "the plugin log has no API access record"
+echo "plugin API access: $api_access"
+grep -q 'available=true' <<<"$api_access" || fail "Grafana gave the plugin no API access: $api_access"
+if grep -F -- "$catalog_key_sentinel" >/dev/null <<<"$plugin_logs"; then
   fail "the plugin logged a catalog key"
+fi
+if grep -F -- "$middleware_config_sentinel" >/dev/null <<<"$plugin_logs"; then
+  fail "the plugin logged a Middleware config value"
 fi

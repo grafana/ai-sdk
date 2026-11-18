@@ -29,16 +29,26 @@ manifest: {
 				{kind: "ModelCatalog/config", verbs: ["get"]},
 			]
 		}
+		"aigateway:middlewarereader": {
+			title:       "Middleware reader"
+			description: "Read AI Gateway tenant extension configuration"
+			kinds: [{kind: "Middleware", permissionSet: "viewer"}]
+		}
+		"aigateway:middlewarewriter": {
+			title:       "Middleware writer"
+			description: "Create, update and delete AI Gateway tenant extension configuration"
+			kinds: [{kind: "Middleware", permissionSet: "editor"}]
+		}
 	}
 	roleBindings: {
-		viewer: ["aigateway:catalogreader"]
+		viewer: ["aigateway:catalogreader", "aigateway:middlewarereader"]
 		editor: ["aigateway:modelinvoker"]
-		admin: ["aigateway:catalogwriter"]
+		admin: ["aigateway:catalogwriter", "aigateway:middlewarewriter"]
 	}
 }
 
 v1alpha1: {
-	kinds: [modelCatalogKind]
+	kinds: [modelCatalogKind, middlewareKind]
 	served: true
 	openapi: paths: {
 		"/namespaces/{namespace}/config": get: {

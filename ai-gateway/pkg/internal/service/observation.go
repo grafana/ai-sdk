@@ -23,10 +23,11 @@ var correlationFallback atomic.Uint64
 // logical observers. Values are copied into a new snapshot after successful
 // authentication; a published snapshot is never mutated.
 type requestObservation struct {
-	correlationID string
-	callerService string
-	namespace     string
-	catalog       string
+	correlationID  string
+	callerService  string
+	namespace      string
+	catalog        string
+	callerIdentity string
 }
 
 type modelObservationKey struct{}
@@ -108,7 +109,7 @@ func contextMiddleware(with func(context.Context) context.Context) middleware.Mi
 
 func observationLogAttrs(ctx context.Context) []slog.Attr {
 	observation := observationFromContext(ctx)
-	attrs := make([]slog.Attr, 0, 4)
+	attrs := make([]slog.Attr, 0, 5)
 	for _, field := range []struct {
 		key   string
 		value string
@@ -117,6 +118,7 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 		{key: "caller_service", value: observation.callerService},
 		{key: "namespace", value: observation.namespace},
 		{key: "catalog", value: observation.catalog},
+		{key: "caller_identity", value: observation.callerIdentity},
 	} {
 		if field.value != "" {
 			attrs = append(attrs, slog.String(field.key, field.value))
@@ -129,12 +131,13 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 // observation bridge. Callers may mutate the result without changing context.
 func observationMetadata(ctx context.Context) map[string]any {
 	observation := observationFromContext(ctx)
-	metadata := make(map[string]any, 4)
+	metadata := make(map[string]any, 5)
 	for key, value := range map[string]string{
-		"gateway.correlation_id": observation.correlationID,
-		"gateway.caller_service": observation.callerService,
-		"gateway.namespace":      observation.namespace,
-		"gateway.catalog":        observation.catalog,
+		"gateway.correlation_id":  observation.correlationID,
+		"gateway.caller_service":  observation.callerService,
+		"gateway.namespace":       observation.namespace,
+		"gateway.catalog":         observation.catalog,
+		"gateway.caller_identity": observation.callerIdentity,
 	} {
 		if value != "" {
 			metadata[key] = value

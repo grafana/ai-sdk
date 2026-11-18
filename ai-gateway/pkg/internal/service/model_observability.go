@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/middleware"
 	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
@@ -252,6 +253,7 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 		IdentitySource:            metricsmiddleware.IdentityRequested,
 		StreamDrainTimeout:        drainTimeout,
 		DisableStreamChunkMetrics: false,
+		IsDenied:                  isExtensionDenial,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
@@ -284,6 +286,7 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 			Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), source),
 			IdentitySource:     logmiddleware.IdentityRequested,
 			StreamDrainTimeout: drainTimeout,
+			IsDenied:           isExtensionDenial,
 		})
 		chain.metricModel = metricModel
 		chains[source] = chain
@@ -306,6 +309,10 @@ func (o *ModelObservers) Compose(selected execution.Selection) (provider.Languag
 	}
 	return middleware.Wrap(middleware.WrapOptions{Model: observed, Middleware: []middleware.Middleware{catalogBindingMiddleware(selected.Catalog)}}), nil
 }
+
+// isExtensionDenial reports an extension denial, which logical logs and
+// metrics record as denied rather than as an error.
+func isExtensionDenial(err error) bool { return errors.Is(err, extension.ErrDenied) }
 
 type modelObservationChain struct {
 	contextBridge    middleware.Middleware
@@ -335,10 +342,11 @@ func (chain modelObservationChain) observe(identity provider.LanguageModel) prov
 }
 
 var allowedAgentMetadataKeys = map[string]struct{}{
-	"gateway.correlation_id": {},
-	"gateway.caller_service": {},
-	"gateway.namespace":      {},
-	"gateway.catalog":        {},
+	"gateway.correlation_id":  {},
+	"gateway.caller_service":  {},
+	"gateway.namespace":       {},
+	"gateway.catalog":         {},
+	"gateway.caller_identity": {},
 }
 
 // filterAgentGeneration removes every metadata/tag/identity field not owned by

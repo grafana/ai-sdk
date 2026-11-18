@@ -10,21 +10,45 @@ import (
 
 	"github.com/grafana/grafana-app-sdk/plugin"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/calldefaults"
 	composition "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/gateway"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/pluginlog"
 )
 
-// Options configures a Gateway distribution. The zero value runs the shipped
-// Gateway.
-type Options struct{}
+// Options configures a Gateway distribution. The zero value runs the Gateway
+// without extensions.
+type Options struct {
+	// Extensions are the distribution's extension definitions, typically
+	// append(DefaultExtensions(), private...). Invalid definitions and
+	// duplicate names fail startup, and so does a tenant-scope definition
+	// that isn't bound to a type in [tenanttype.All].
+	Extensions []extension.Definition
+	// Mandatory names the operator-scope extensions that the operator must
+	// configure and enable; startup fails otherwise.
+	Mandatory []string
+}
+
+// DefaultExtensions returns the extension definitions the shipped Gateway
+// registers: the default-instructions and default-settings tenant
+// extensions, both off until a stack's Middleware resource enables them.
+func DefaultExtensions() []extension.Definition { return calldefaults.Definitions() }
 
 // Run constructs the Gateway from the plugin host environment and serves it
 // through the plugin protocol until the host stops the plugin, then flushes
 // telemetry. It logs startup and plugin failures itself, with their reasons,
 // and returns them; the caller only needs to exit non-zero.
-func Run(Options) error {
+func Run(options Options) error {
 	logger := slog.New(pluginlog.NewHandler(backendlog.DefaultLogger, slog.LevelInfo))
-	gw, err := composition.New(composition.Options{LookupEnv: os.LookupEnv, Logger: logger, Registerer: prometheus.DefaultRegisterer})
+	gw, err := composition.New(composition.Options{
+		LookupEnv:   os.LookupEnv,
+		Logger:      logger,
+		Registerer:  prometheus.DefaultRegisterer,
+		Extensions:  options.Extensions,
+		Mandatory:   options.Mandatory,
+		TenantTypes: tenanttype.All(),
+	})
 	if err != nil {
 		logger.Error("gateway plugin failed to start", "class", "startup_failure", "reason", err.Error())
 		return err

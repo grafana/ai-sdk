@@ -54,3 +54,53 @@ Request handling SHALL continue the trace context that the plugin host's instrum
 #### Scenario: Tracing not configured
 - **WHEN** the host supplies no tracing configuration
 - **THEN** the Gateway SHALL serve requests without creating a trace exporter
+
+### Requirement: Denied model-call outcome
+Logical logs and model metrics SHALL record a call that an extension denied with the distinct outcome `denied`, not as an error, so denials are excluded from error rates. A failure under `fail-closed` SHALL remain an error. Agent Observability SHALL record denied calls like other failed calls.
+
+#### Scenario: Denial before the model
+- **WHEN** an admitter denies a configured call
+- **THEN** the terminal log record SHALL carry outcome `denied`, and the model request counter SHALL increase under status `denied` with no `error` series added
+
+#### Scenario: In-band stream denial
+- **WHEN** a response inspector aborts a stream
+- **THEN** logs and metrics SHALL record that stream with outcome `denied`
+
+### Requirement: Extension event metrics
+The Gateway SHALL count extension denials and failures by extension name, phase and a fixed event, `denied` or `failed`, whatever the failure policy. Labels SHALL take only registered extension names and fixed phase and event values, and SHALL NOT carry namespace, caller, model or error text.
+
+#### Scenario: Mixed extension outcomes
+- **WHEN** one extension denies at admit, another fails under `skip` in response inspection, and a third observer panics
+- **THEN** the counter SHALL increase once for each, under that extension's name and phase, with event `denied` for the first and `failed` for the others
+
+### Requirement: Extension failure logs
+Every extension failure SHALL emit one warning log record with the extension name, phase, failure policy and a fixed class (error, panic or policy refusal), plus the call's correlation ID when one exists. Records SHALL NOT carry the error's text, request or response content, or configuration values.
+
+#### Scenario: Failing transform with secret-bearing error
+- **WHEN** a transform fails with an error whose text contains a credential
+- **THEN** the log record SHALL carry only the approved fields, and no part of the error's text
+
+### Requirement: Tenant configuration read telemetry
+The Gateway SHALL count tenant configuration reads by a fixed result, `success` or `failed`, and enabled resources of types the build does not implement, with no namespace, type, caller or error label. Each failed read SHALL emit one warning with the namespace and a fixed class: timeout, refused, not found, unexpected status, invalid response or error. It SHALL NOT carry a response body, error text or configuration value.
+
+#### Scenario: Refused read
+- **WHEN** the platform refuses a namespace's list with `403` and a body containing a sentinel
+- **THEN** the read counter SHALL increase under `failed`, and the warning SHALL carry the namespace and class `refused`, and no part of the body
+
+#### Scenario: Type not implemented
+- **WHEN** a namespace stores an enabled resource of a type the build does not implement
+- **THEN** the counter SHALL increase once, with no label naming the namespace or type
+
+### Requirement: Plugin API access log
+When a running Gateway builds its app, it SHALL emit one informational log record stating whether the host gave the plugin API access, whatever extensions the build registers. The record SHALL carry no URL, token or other credential.
+
+#### Scenario: Host with API access
+- **WHEN** the end-to-end suite starts Grafana with the built plugin
+- **THEN** the plugin log SHALL contain one record stating that the plugin has API access, and no credential
+
+### Requirement: Tenant configuration failure events
+A stored configuration that fails its schema, and a decoder that fails or panics for a namespace, SHALL be counted as an extension event with the extension's name, phase `configure` and event `failed`. The Gateway SHALL log one warning with the extension, namespace, failure policy and a fixed class, and no configuration value or error text.
+
+#### Scenario: Invalid stored configuration
+- **WHEN** a namespace's stored configuration for an extension fails its schema, and the stored values contain a sentinel
+- **THEN** the extension event counter SHALL increase under phase `configure` and event `failed`, and no log record SHALL contain the sentinel

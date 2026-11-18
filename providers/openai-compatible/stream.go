@@ -20,6 +20,7 @@ type streamState struct {
 	providerName    string
 	metadataKey     string
 	includeRaw      bool
+	chatMetadata    ChatCompletionMetadata
 
 	textActive      bool
 	reasoningActive bool
@@ -48,7 +49,7 @@ type streamToolCall struct {
 	providerMetadata provider.ProviderMetadata
 }
 
-func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart) {
+func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart, preserveChat bool) {
 	state := &streamState{
 		ctx:              ctx,
 		out:              out,
@@ -137,6 +138,16 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 				ResponseHeaders: flattenHeaders(headers),
 			}) {
 				return
+			}
+		}
+		if preserveChat {
+			chat, err := decodeChatCompletionMetadata(data, true)
+			if err != nil {
+				if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(endpoint, err)}) {
+					return
+				}
+			} else {
+				state.chatMetadata.append(chat)
 			}
 		}
 		if chunk.Usage != nil {
@@ -422,6 +433,12 @@ func (s *streamState) flush() {
 			URL:     s.endpoint,
 		}))
 	}
+	metadata, err := withChatCompletionMetadata(responseProviderMetadata(s.metadataKey, s.rawUsage), s.metadataKey, s.chatMetadata)
+	if err != nil {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(s.endpoint, err)}) {
+			return
+		}
+	}
 	if s.errorEmitted {
 		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	}
@@ -433,7 +450,7 @@ func (s *streamState) flush() {
 		Type:             provider.PartFinish,
 		FinishReason:     &s.finishReason,
 		Usage:            usage,
-		ProviderMetadata: responseProviderMetadata(s.metadataKey, s.rawUsage),
+		ProviderMetadata: metadata,
 	})
 }
 

@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,12 +19,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
 	"github.com/grafana/grafana-app-sdk/app"
+	"github.com/grafana/grafana-app-sdk/k8s"
 	"github.com/grafana/grafana-app-sdk/plugin/appadapter"
 	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,6 +35,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -57,15 +63,19 @@ func (b *syncBuffer) String() string {
 }
 
 type fakeAnthropic struct {
-	server   *httptest.Server
-	requests atomic.Int32
-	block    atomic.Bool
-	blocked  chan error
-	release  chan struct{}
-	canceled chan struct{}
-	mu       sync.Mutex
-	bodies   []string
-	headers  []http.Header
+	server *httptest.Server
+	// failModel names a backend model that answers with a retryable error
+	// whose message is failMessage.
+	failModel   atomic.Value
+	failMessage atomic.Value
+	requests    atomic.Int32
+	block       atomic.Bool
+	blocked     chan error
+	release     chan struct{}
+	canceled    chan struct{}
+	mu          sync.Mutex
+	bodies      []string
+	headers     []http.Header
 }
 
 func newFakeAnthropic(t *testing.T) *fakeAnthropic {
@@ -79,6 +89,13 @@ func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 		fake.headers = append(fake.headers, r.Header.Clone())
 		release := fake.release
 		fake.mu.Unlock()
+		if failing, _ := fake.failModel.Load().(string); failing != "" && strings.Contains(string(body), `"model":"`+failing+`"`) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			message, _ := fake.failMessage.Load().(string)
+			_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"overloaded_error","message":%q}}`, "overloaded "+message)
+			return
+		}
 		if fake.block.Load() {
 			<-r.Context().Done()
 			fake.blocked <- r.Context().Err()
@@ -163,6 +180,36 @@ type harness struct {
 	registry  *prometheus.Registry
 	logs      *syncBuffer
 	anthropic *fakeAnthropic
+	exchanges *exchangeLog
+}
+
+// exchangeLog records the platform token exchanges the plugin makes for its
+// own API access.
+type exchangeLog struct {
+	mu       sync.Mutex
+	subjects []string
+}
+
+func (e *exchangeLog) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err == nil {
+			var request authn.TokenExchangeRequest
+			if json.Unmarshal(body, &request) == nil {
+				e.mu.Lock()
+				e.subjects = append(e.subjects, request.SubjectToken)
+				e.mu.Unlock()
+			}
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (e *exchangeLog) recorded() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.subjects...)
 }
 
 func lookup(values map[string]string) func(string) (string, bool) {
@@ -176,6 +223,13 @@ type harnessOptions struct {
 	routeDeadline  time.Duration
 	fallback       bool
 	withoutCatalog bool
+	extensions     []extension.Definition
+	tenantTypes    []tenanttype.Type
+	env            map[string]string
+	host           *platformhost.Host
+	// noAPIAccess builds the app without the host's API access
+	// configuration, as a self-hosted Grafana that gives the plugin none.
+	noAPIAccess bool
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -185,9 +239,13 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 
 func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options harnessOptions) *harness {
 	t.Helper()
-	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
-	require.NoError(t, err)
+	host := options.host
+	if host == nil {
+		data := manifestdata.LocalManifest().ManifestData
+		created, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
+		require.NoError(t, err)
+		host = created
+	}
 	keys, err := host.JWKS()
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
@@ -205,24 +263,38 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	} else {
 		env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
 	}
+	maps.Copy(env, options.env)
 	logs := &syncBuffer{}
 	registry := prometheus.NewRegistry()
-	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry})
+	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions, TenantTypes: options.tenantTypes})
 	require.NoError(t, err)
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	exchanges := &exchangeLog{}
+	var kubeConfig rest.Config
+	if !options.noAPIAccess {
+		configured, err := k8s.NewTokenExchangeRestConfig(
+			k8s.TokenExchangeCredentials{Token: host.AddAccessPolicy(PluginID), TokenExchangeURL: server.URL + "/platformhost/exchange"},
+			k8s.RemoteServiceTarget{Host: server.URL, Audiences: []string{manifestdata.LocalManifest().ManifestData.Group}},
+		)
+		require.NoError(t, err)
+		kubeConfig = *configured
+	}
 	provider := gw.Provider()
-	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
+	built, err := provider.NewApp(app.Config{KubeConfig: kubeConfig, ManifestData: *provider.Manifest().ManifestData})
 	require.NoError(t, err)
 	opts := appadapter.ServeOpts(built)
 	opts.Authenticator, opts.PluginID = gw.Authenticator(), PluginID
 	served, err := host.ServeInProcess(opts)
 	require.NoError(t, err)
-	server := httptest.NewServer(served.Handler())
+	mux.Handle("POST /platformhost/exchange", exchanges.wrap(host.TokenExchangeHandler()))
+	mux.Handle("/", served.Handler())
 	t.Cleanup(func() {
 		server.Close()
 		served.Close()
 		gw.Close()
 	})
-	return &harness{host: host, served: served, server: server, gateway: gw, registry: registry, logs: logs, anthropic: anthropic}
+	return &harness{host: host, served: served, server: server, gateway: gw, registry: registry, logs: logs, anthropic: anthropic, exchanges: exchanges}
 }
 
 func (h *harness) url(route string) string {
@@ -356,11 +428,16 @@ func TestGateway_CloudAccess(t *testing.T) {
 		for _, private := range []string{testNamespace, testInternalService, "svc-b", "private-user-uid", "private-account-uid", "front-door", providerSecret} {
 			assert.NotContains(t, metrics, private)
 		}
-		sinks := strings.Join(append(h.anthropic.recorded(), h.logs.String()), "\n")
+		providerRequests := strings.Join(h.anthropic.recorded(), "\n")
 		for _, private := range []string{"private-user-uid", "private-account-uid", "front-door", "svc-b"} {
-			assert.NotContains(t, sinks, private)
+			assert.NotContains(t, providerRequests, private)
+		}
+		for _, private := range []string{"front-door", "svc-b"} {
+			assert.NotContains(t, h.logs.String(), private)
 		}
 		assert.Contains(t, h.logs.String(), `"caller_service":"`+testInternalService+`"`)
+		assert.Contains(t, h.logs.String(), `"caller_identity":"user:private-user-uid"`)
+		assert.Contains(t, h.logs.String(), `"caller_identity":"service-account:private-account-uid"`)
 	})
 }
 

@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	if gateway.Run(gateway.Options{}) != nil {
+	if gateway.Run(gateway.Options{Extensions: gateway.DefaultExtensions()}) != nil {
 		os.Exit(1)
 	}
 }

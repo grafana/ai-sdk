@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 	"github.com/grafana/grafana-app-sdk/plugin"
@@ -56,7 +57,7 @@ func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment
 }
 
 func (e *startupEnvironment) lookup(name string) (string, bool) {
-	if name == "ANTHROPIC_SECRET" || name == "GF_PLUGIN_AGENTO11Y_TOKEN" {
+	if name == "ANTHROPIC_SECRET" || name == "GF_PLUGIN_AGENTO11Y_TOKEN" || name == extensionSecretVariable {
 		e.secrets[name]++
 	}
 	value, ok := e.values[name]
@@ -65,8 +66,13 @@ func (e *startupEnvironment) lookup(name string) (string, bool) {
 
 func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 	t.Helper()
+	return e.startWith(t, nil, nil)
+}
+
+func (e *startupEnvironment) startWith(t *testing.T, extensions []extension.Definition, mandatory []string) (*Gateway, string, error) {
+	t.Helper()
 	var logs bytes.Buffer
-	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry()})
+	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory, TenantTypes: typesOf(extensions)})
 	if gw != nil {
 		t.Cleanup(gw.Close)
 	}
@@ -421,17 +427,21 @@ func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
 	assert.Contains(t, body, "plugin has no authenticator configured")
 
 	catalog := catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})
-	code, body = sendCatalog(t, ctx, http.MethodPost, catalogURL(server.URL, ""), token, catalog)
+	code, body = sendObject(t, ctx, http.MethodPost, catalogURL(server.URL, ""), token, catalog)
 	assert.Equal(t, http.StatusInternalServerError, code, body)
 	assert.Contains(t, body, "admission hook for ModelCatalog failed")
-	code, body = sendCatalog(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
+	code, body = sendObject(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
 	assert.Equal(t, http.StatusNotFound, code, body)
+	code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(server.URL, ""), token, middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+middlewareSentinel+`"}`))
+	assert.Equal(t, http.StatusInternalServerError, code, body)
+	assert.Contains(t, body, "admission hook for Middleware failed")
 
 	process.Stop()
 	assert.Contains(t, logs.String(), `"event":"plugin_idle"`)
 	assert.Contains(t, logs.String(), "no authenticator configured")
 	assert.NotContains(t, logs.String(), "startup_failure")
 	assert.NotContains(t, logs.String(), catalogKey)
+	assert.NotContains(t, logs.String(), middlewareSentinel)
 }
 
 func TestPluginProcess_LogsThroughTheHostProtocol(t *testing.T) {

@@ -4,7 +4,9 @@
 // native endpoint, which arrives through the native proxy, answers with the
 // first characters of the SHA-256 of the API key it received and the backend
 // model, so tests can check which key and model reached the provider without
-// the key appearing anywhere.
+// the key appearing anywhere. A unary call whose last user text is the echo
+// marker returns the JSON of the request fields that Middleware call defaults
+// change.
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
@@ -13,6 +15,24 @@ const model = 'fake-model';
 const fixedText = ['fake ', 'stream'];
 const nativeHost = 'api.anthropic.com';
 const keyDigestLength = 12;
+const echoMarker = 'e2e-echo-request';
+
+function lastUserText(body) {
+  const last = body.messages?.at(-1);
+  if (last?.role !== 'user') {
+    return undefined;
+  }
+  return typeof last.content === 'string' ? last.content : last.content?.at(-1)?.text;
+}
+
+function echoed(body) {
+  return JSON.stringify({
+    system: body.system ?? null,
+    temperature: body.temperature ?? null,
+    max_tokens: body.max_tokens ?? null,
+    stop_sequences: body.stop_sequences ?? null,
+  });
+}
 
 function replyText(request, body) {
   if (request.headers.host !== nativeHost) {
@@ -86,6 +106,8 @@ createServer((request, response) => {
     const text = replyText(request, body);
     if (body.stream === true) {
       stream(response, text);
+    } else if (lastUserText(body) === echoMarker) {
+      unary(response, [echoed(body)]);
     } else {
       unary(response, text);
     }

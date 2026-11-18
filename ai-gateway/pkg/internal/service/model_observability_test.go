@@ -531,11 +531,12 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 		ParentGenerationIDs: []string{"parent-private"},
 		Tags:                map[string]string{"private": "tag-private"},
 		Metadata: map[string]any{
-			"gateway.correlation_id": "correlation",
-			"gateway.namespace":      "verified-namespace",
-			"gateway.catalog":        "team-catalog",
-			"provider.private":       "provider-option-private",
-			"gateway.caller_service": strings.Repeat("x", maxObservationValueLen+1),
+			"gateway.correlation_id":  "correlation",
+			"gateway.namespace":       "verified-namespace",
+			"gateway.catalog":         "team-catalog",
+			"provider.private":        "provider-option-private",
+			"gateway.caller_service":  strings.Repeat("x", maxObservationValueLen+1),
+			"gateway.caller_identity": "user:u1",
 		},
 		SystemPrompt: "content preserved for metadata-only stripping",
 		Usage:        agento11y.TokenUsage{InputTokens: 2, OutputTokens: 3},
@@ -550,9 +551,10 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 	assert.Equal(t, agento11y.TokenUsage{InputSemantics: agento11y.TokenInputSemanticsInclusive, InputTokens: 2, OutputTokens: 3}, filtered.Usage)
 	assert.Equal(t, generation.SystemPrompt, filtered.SystemPrompt)
 	assert.Equal(t, map[string]any{
-		"gateway.correlation_id": "correlation",
-		"gateway.namespace":      "verified-namespace",
-		"gateway.catalog":        "team-catalog",
+		"gateway.correlation_id":  "correlation",
+		"gateway.namespace":       "verified-namespace",
+		"gateway.catalog":         "team-catalog",
+		"gateway.caller_identity": "user:u1",
 	}, filtered.Metadata)
 	assert.Empty(t, filtered.ResponseID)
 	assert.Empty(t, filtered.ResponseModel)
@@ -717,7 +719,7 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	model, err := factory("grafana/assistant", lower)
 	require.NoError(t, err)
 	state := &telemetryState{}
-	state.observation.Store(&requestObservation{correlationID: "correlation", callerService: "caller", namespace: "namespace"})
+	state.observation.Store(&requestObservation{correlationID: "correlation", callerService: "caller", namespace: "namespace", callerIdentity: "user:u1"})
 	ctx := context.WithValue(context.Background(), telemetryStateKey{}, state)
 	maxTokens := 64
 	got, err := model.DoGenerate(ctx, provider.CallOptions{
@@ -749,6 +751,7 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	assert.Equal(t, "correlation", metadata["gateway.correlation_id"])
 	assert.Equal(t, "caller", metadata["gateway.caller_service"])
 	assert.Equal(t, "namespace", metadata["gateway.namespace"])
+	assert.Equal(t, "user:u1", metadata["gateway.caller_identity"])
 	assert.Equal(t, "stop", generation["stop_reason"])
 	assert.Equal(t, "TOKEN_INPUT_SEMANTICS_INCLUSIVE", testkit.StringValue(t, generation, "usage", "input_semantics"))
 	assert.Equal(t, "60", testkit.StringValue(t, generation, "usage", "input_tokens"))

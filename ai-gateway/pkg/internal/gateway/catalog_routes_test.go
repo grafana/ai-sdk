@@ -47,7 +47,7 @@ func (h *harness) catalogURL(route string) string {
 
 func (h *harness) createTeamCatalog(t *testing.T) {
 	t.Helper()
-	code, body := sendCatalog(t, context.Background(), http.MethodPost, catalogURL(h.server.URL, ""), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-sonnet", map[string]any{"claude": map[string]any{"create": routeCatalogKey}}))
+	code, body := sendObject(t, context.Background(), http.MethodPost, catalogURL(h.server.URL, ""), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-sonnet", map[string]any{"claude": map[string]any{"create": routeCatalogKey}}))
 	require.Equal(t, http.StatusCreated, code, body)
 }
 
@@ -98,7 +98,7 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 		assert.Zero(t, h.anthropic.requests.Load(), "the operator catalog's provider is not used")
 	})
 	t.Run("an edit applies on the next call", func(t *testing.T) {
-		code, body := sendCatalog(t, context.Background(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-opus", map[string]any{"claude": map[string]any{"create": editedCatalogKey}}))
+		code, body := sendObject(t, context.Background(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), h.serviceToken(t, testInternalService), teamCatalog(t, "claude-opus", map[string]any{"claude": map[string]any{"create": editedCatalogKey}}))
 		require.Equal(t, http.StatusOK, code, body)
 		status, body := do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "team", unaryBody, false, user))
 		require.Equal(t, http.StatusOK, status, body)
@@ -139,9 +139,10 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 		assert.Contains(t, logs, `"route":"catalog_config"`)
 		assert.Contains(t, logs, `"route":"catalog_language_model"`)
 		assert.Contains(t, logs, `"catalog":"team"`)
-		for _, private := range []string{routeCatalogKey, editedCatalogKey, "private-user-uid"} {
+		for _, private := range []string{routeCatalogKey, editedCatalogKey} {
 			assert.NotContains(t, logs, private)
 		}
+		assert.Contains(t, logs, `"caller_identity":"user:private-user-uid"`)
 	})
 }
 
@@ -188,6 +189,8 @@ func TestCatalogRoutes_AttributeTheDirectCaller(t *testing.T) {
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		assert.Contains(collect, h.logs.String(), `"caller_service":"svc-b"`)
 	}, time.Second, time.Millisecond)
-	assert.NotContains(t, h.logs.String(), "private-user-uid")
-	assert.False(t, strings.Contains(h.metrics(t), "svc-b"))
+	assert.Contains(t, h.logs.String(), `"caller_identity":"user:private-user-uid"`)
+	metrics := h.metrics(t)
+	assert.False(t, strings.Contains(metrics, "svc-b"))
+	assert.False(t, strings.Contains(metrics, "private-user-uid"))
 }
