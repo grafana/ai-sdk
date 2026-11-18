@@ -176,14 +176,11 @@ knownGaps:
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation
-    description: Go sends thinking type between_tools for reasoning none on
-      claude-sonnet-5-5, the model's lowest setting, matching the Anthropic
-      provider. Historical @ai-sdk/amazon-bedrock 5.0.99 omitted the thinking
-      field instead; the registered reference now also substitutes
-      between_tools, so the remaining deviation is that Go also accepts
-      reasoningConfig.type between_tools, which the registered option schema
-      rejects, and lowers xhigh or max effort to high for it, as the Anthropic
-      provider does.
+    description: Like the registered reference, Go substitutes between_tools
+      for portable none on claude-sonnet-5-5 and warns compatibility. Go also
+      accepts explicit reasoningConfig.type between_tools, which the registered
+      option schema rejects, and lowers explicit xhigh or max effort to high
+      for that extension.
   - id: bedrock-tool-result-file-urls
     surface: provider-bedrock
     status: intentional-deviation

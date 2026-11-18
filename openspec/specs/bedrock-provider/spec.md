@@ -438,9 +438,8 @@ For custom `provider.CallOptions.Reasoning` other than `none`, Anthropic Bedrock
 
 #### Scenario: Reasoning none disables Anthropic thinking
 
-- **WHEN** root reasoning is `none` for an Anthropic Bedrock model that does not support `between_tools` thinking
-- **THEN** the derived reasoning configuration SHALL disable thinking
-- **AND** the request SHALL NOT include a derived reasoning budget or effort
+- **WHEN** root reasoning is `none` for an Anthropic Bedrock model that accepts disabled thinking, such as Claude Sonnet 4.5
+- **THEN** the request SHALL send `additionalModelRequestFields.thinking = {type: "disabled"}` without a derived reasoning budget or effort
 
 #### Scenario: Partial provider config preserves adaptive derivation
 
@@ -461,14 +460,15 @@ For custom `provider.CallOptions.Reasoning` other than `none`, Anthropic Bedrock
 
 #### Scenario: Reasoning none overrides partial provider config
 
-- **WHEN** root reasoning is `none` for an Anthropic model and provider reasoning config only sets display
-- **THEN** the request SHALL omit thinking and effort fields
+- **WHEN** root reasoning is `none` for Claude Sonnet 4.5 and provider reasoning config only sets display
+- **THEN** the request SHALL send `thinking = {type: "disabled"}` without display or effort
 
 #### Scenario: Reasoning none on Sonnet 5.5 uses between_tools thinking
 
 - **WHEN** root reasoning is `none` for `global.anthropic.claude-sonnet-5-5`, with or without a partial provider reasoning config
 - **THEN** `additionalModelRequestFields.thinking` SHALL equal `{type: "between_tools"}`
 - **AND** the request SHALL NOT include a derived reasoning budget or effort
+- **AND** the provider SHALL warn `compatibility` for `reasoning`
 
 ### Requirement: Native structured output for supported Anthropic models
 
@@ -823,9 +823,9 @@ The provider's `Provider()` method SHALL return `"amazon-bedrock"`. Its `ModelID
 - **WHEN** a consumer constructs `bedrock.New("amazon.nova-lite-v1:0")`
 - **THEN** `ModelID()` returns `"amazon.nova-lite-v1:0"` verbatim
 
-### Requirement: Converse Claude models that reject disabled thinking and forced tool use
+### Requirement: Converse Claude models that reject forced tool use
 
-For Anthropic Bedrock IDs containing `claude-sonnet-5-5`, the adapter SHALL follow `@ai-sdk/amazon-bedrock` 5.0.99 unless noted: required choice SHALL become auto; named choice SHALL become auto with only the named tool; each SHALL warn unsupported `toolChoice`. JSON schema responses SHALL use native output in `auto` when the schema is representable, and otherwise the system JSON instruction instead of the forced JSON tool, including in `jsonTool` mode.
+For Anthropic Bedrock IDs containing `claude-sonnet-5-5`, required choice SHALL become auto; named choice SHALL become auto with only the named tool; each SHALL warn unsupported `toolChoice`. JSON schema responses SHALL use native output in `auto` when the schema is representable, and otherwise the system JSON instruction instead of the forced JSON tool, including in `jsonTool` mode.
 
 #### Scenario: Required tool choice on Sonnet 5.5
 
@@ -892,12 +892,17 @@ For Bedrock models identified as Anthropic with custom root reasoning other than
 
 ### Requirement: Converse adaptive effort mapping
 
-When deriving adaptive effort without an explicit effort override, reasoning SHALL map `minimal`/`low` to `low`, `medium` to `medium`, `high` to `high`, and `xhigh` to `max` in `additionalModelRequestFields.output_config.effort`. Changed level names SHALL emit a compatibility warning only when that mapping supplies the effective effort.
+When deriving adaptive effort without an explicit effort override, the provider SHALL send `low`, `medium`, `high`, and `max` as requested in `additionalModelRequestFields.output_config.effort`. It SHALL round `minimal` to `low` and `xhigh` to `high` unless the model supports `xhigh`. A level change SHALL emit a compatibility warning only when the mapped value supplies the effective effort.
 
-#### Scenario: Converse adaptive effort mapping
+#### Scenario: Converse adaptive extra-high effort mapping
 
-- **WHEN** custom root reasoning is `minimal`, `low`, `medium`, `high`, or `xhigh` on an adaptive model without explicit effort
-- **THEN** effort SHALL be `low`, `low`, `medium`, `high`, or `max` respectively; only changed names SHALL warn
+- **WHEN** portable reasoning is `xhigh` without explicit effort on Claude Opus 4.7 or Claude Sonnet 4.6
+- **THEN** Opus 4.7 SHALL receive `xhigh` without a warning, and Sonnet 4.6 SHALL receive `high` with a compatibility warning
+
+#### Scenario: Fable 5.1, Fable 5.2 and Opus 5.5 retain the existing mapping
+
+- **WHEN** portable reasoning is `xhigh` on Claude Fable 5.1, Fable 5.2 or Opus 5.5 without explicit effort
+- **THEN** Converse SHALL retain the existing mapping to `max` with a compatibility warning
 
 ### Requirement: Converse explicit reasoning configuration merge
 
@@ -911,7 +916,8 @@ Explicit disabled config SHALL suppress custom reasoning before derivation. Othe
 #### Scenario: Disabled thinking suppresses unused diagnostics
 
 - **WHEN** custom root reasoning including `none`, `minimal`, `xhigh` or `max` is combined with explicit type `disabled`, budget and effort on models that accept disabled thinking
-- **THEN** the request SHALL omit thinking, budget and effort without warnings from the suppressed reasoning settings, and caller config SHALL remain unchanged
+- **THEN** the request SHALL send only the disabled thinking type, with no budget or effort from that config and no warning from the suppressed reasoning settings
+- **AND** the caller config SHALL remain unchanged
 
 #### Scenario: Explicit effort prevents portable mapping diagnostics
 
@@ -932,21 +938,39 @@ Explicit disabled config SHALL suppress custom reasoning before derivation. Othe
 
 - **WHEN** caller options are reused by sequential or concurrent calls, including omitted/provider-default reasoning and between-tools effort capping
 - **THEN** native requests and warnings SHALL remain deterministic and caller options SHALL remain unchanged
-- **AND** provider-default reasoning SHALL retain explicit controls without portable derivation or disabled-field cleanup
+- **AND** provider-default reasoning SHALL skip portable derivation and retain explicit effort subject to model limits
 
-### Requirement: Converse none thinking and pinned deviation
+### Requirement: Converse disabled Anthropic thinking
 
-Anthropic root reasoning `none` SHALL replace partial config with disabled thinking. Sonnet 5.5 SHALL normalize disabled thinking to `between_tools`, with an unsupported warning for explicit disabled config. Provider-default calls SHALL preserve effort capped at high; custom reasoning SHALL clear budget and effort. Accepting explicit `between_tools` remains a Go extension recorded in `knownGaps`.
+Portable `none` and explicit disabled config SHALL send `thinking: {type: "disabled"}` when supported and omit the generated field on Claude 3.5 and earlier. Other models rejecting disabled thinking SHALL use `between_tools` if supported, otherwise `adaptive`. A substitution SHALL warn `unsupported` for explicit `providerOptions.amazonBedrock.reasoningConfig`, or `compatibility` for portable `reasoning`.
 
-#### Scenario: Converse none thinking and pinned deviation
+#### Scenario: Legacy Claude omits disabled thinking
 
-- **WHEN** root reasoning `none` accompanies partial provider config on Sonnet 5.5 and on another Anthropic model
-- **THEN** Sonnet 5.5 SHALL send between-tools thinking; the other model SHALL use disabled thinking with no derived budget or effort
+- **WHEN** Claude 3.5 Sonnet is called with portable `none` or explicit `reasoningConfig.type = disabled`
+- **THEN** the request SHALL omit the generated thinking field without a reasoning warning
 
 #### Scenario: Explicit disabled normalizes to the Sonnet 5.5 minimum
 
 - **WHEN** root reasoning `none` accompanies explicit type `disabled` on Sonnet 5.5
-- **THEN** the request SHALL send between-tools thinking with an unsupported warning, omit the budget and effort removed by custom portable reasoning
+- **THEN** the request SHALL send between-tools thinking with an unsupported warning and omit the budget and effort removed by custom portable reasoning
+
+#### Scenario: Adaptive fallback from disabled thinking
+
+- **WHEN** base Claude Fable 5, including regional or versioned Bedrock IDs, is called with portable `none` or explicit `reasoningConfig.type = disabled`
+- **THEN** the request SHALL use adaptive thinking
+- **AND** for portable `none`, it SHALL preserve explicit provider effort or pass-through `output_config.effort` if present, preferring provider effort; otherwise it SHALL default to `low`
+- **AND** for explicit disabled thinking, it SHALL NOT invent a default effort
+
+#### Scenario: Fable 5.1, Fable 5.2 and Opus 5.5 retain disabled-field omission
+
+- **WHEN** Claude Fable 5.1, Fable 5.2 or Opus 5.5 is called with portable `none` or explicit `reasoningConfig.type = disabled`
+- **THEN** Converse SHALL omit the generated thinking object without applying a new warning or effort cap
+
+#### Scenario: Incompatible effort is capped at high
+
+- **WHEN** the effective effort is `xhigh` or `max` and thinking either becomes `between_tools` or remains disabled on a model that rejects disabled thinking above high effort
+- **THEN** the provider SHALL lower the effort to `high` without dropping unrelated fields from `output_config`
+- **AND** it SHALL warn `unsupported` with the feature path for the effective effort, either `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort` or `providerOptions.amazonBedrock.additionalModelRequestFields.output_config.effort`
 
 ### Requirement: Converse auto native-output exclusions
 
@@ -966,9 +990,19 @@ With `anthropic.disableParallelToolUse` enabled and active Anthropic function/pr
 - **WHEN** active Anthropic tools use required choice and parallel disabling
 - **THEN** exactly the additional-fields choice SHALL be sent with type `any` and `disable_parallel_tool_use:true`
 
+### Requirement: Converse reasoning on OpenAI models
+
+For gpt-oss, derived portable reasoning SHALL use `reasoning_effort` with `none` and `minimal` rounded to `low`, and `xhigh` and `max` rounded to `high`. Rounding SHALL warn `compatibility`. Other OpenAI Converse models SHALL receive the portable level unchanged in `reasoning.effort`.
+
+#### Scenario: Portable none on OpenAI models
+
+- **WHEN** portable reasoning is `none` without an override on gpt-oss or another OpenAI Converse model
+- **THEN** gpt-oss SHALL receive `reasoning_effort: "low"` with a compatibility warning
+- **AND** the other model SHALL receive `reasoning: {effort: "none"}` without a reasoning warning
+
 ### Requirement: Converse reasoning on other model families
 
-For non-OpenAI, non-Anthropic models other than Nova 2 Lite, portable reasoning without explicit provider `reasoningConfig` SHALL warn unsupported and SHALL NOT add a reasoning field. Explicit provider `reasoningConfig` SHALL still be forwarded and merged with portable reasoning.
+On Nova 2 Lite, portable `none` SHALL not derive effort or warn. On non-OpenAI, non-Anthropic models other than Nova 2 Lite, portable reasoning, including `none`, without explicit provider `reasoningConfig` SHALL warn unsupported and SHALL NOT add a reasoning field. Explicit provider `reasoningConfig` SHALL still be forwarded and merged with portable reasoning.
 
 #### Scenario: Converse reasoning on other model families
 
@@ -977,7 +1011,7 @@ For non-OpenAI, non-Anthropic models other than Nova 2 Lite, portable reasoning 
 
 ### Requirement: Converse between-tools thinking extension
 
-As a Go extension, `reasoningConfig.type` SHALL accept `between_tools`, sent as `thinking:{type:"between_tools"}` without `display` or `budget_tokens`, and treated as active thinking for sampling removal. It SHALL lower `maxReasoningEffort` `xhigh`/`max` to `high` with unsupported warning feature `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort`. Upstream 5.0.99 has no such type.
+As a Go extension, `reasoningConfig.type` SHALL accept `between_tools`, sent as `thinking:{type:"between_tools"}` without `display` or `budget_tokens`, and treated as active thinking for sampling removal. It SHALL lower `maxReasoningEffort` `xhigh`/`max` to `high` with unsupported warning feature `providerOptions.amazonBedrock.reasoningConfig.maxReasoningEffort`. The registered upstream provider option does not accept this explicit type.
 
 #### Scenario: Converse between-tools thinking extension
 

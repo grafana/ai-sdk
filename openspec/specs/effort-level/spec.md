@@ -284,7 +284,7 @@ Before sending, `taskBudget` SHALL meet upstream Zod constraints: non-empty type
 
 ### Requirement: Portable maximum reasoning
 
-The portable reasoning contract and Gateway SHALL accept maximum reasoning. Anthropic and Anthropic Converse adaptive thinking SHALL map it to native maximum effort; budget-based models SHALL map it to a 95 percent reasoning budget under existing bounds. OpenAI and compatible adapters SHALL retain their existing provider-specific capability gates. Nova 2 Lite SHALL map maximum and extra-high portable effort to high with a compatibility warning.
+The portable reasoning contract and Gateway SHALL accept maximum reasoning. Anthropic and Anthropic Converse adaptive thinking SHALL map it to native maximum effort; budget-based models SHALL map it to a 95 percent reasoning budget under existing bounds. OpenAI and compatible adapters SHALL retain their existing provider-specific capability gates. Bedrock Converse SHALL map maximum and extra-high portable effort to high with a compatibility warning on Nova 2 Lite and OpenAI gpt-oss.
 
 #### Scenario: Adaptive and budget maximum
 - **WHEN** maximum reasoning is supplied to an adaptive Anthropic model or a budget-based Anthropic model
