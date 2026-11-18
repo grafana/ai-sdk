@@ -1,7 +1,7 @@
-// Package customertelemetry defines the Gateway's customer telemetry contracts
-// and bounded discovery cache. It has no live discovery adapter, secret resolver,
-// exporter, or recording activation. Production request handling does not yet
-// consume this package.
+// Package customertelemetry defines the Gateway's customer telemetry contracts,
+// bounded discovery cache and exporter lifecycle. It has no live discovery or
+// secret-service adapter, production exporter wiring, or recording activation.
+// Production request handling does not yet consume this package.
 //
 // Stack attribution comes from an authorized auth.Caller. Destination discovery,
 // product eligibility and recording preferences, and ingestion credentials have
@@ -30,4 +30,23 @@
 // The owner must Close the cache with a finite shutdown context. Resolvers must
 // honor cancellation and bound transport calls; a non-cooperative call remains
 // charged to capacity until it actually returns, even after lookup timeout.
+//
+// Pool owns typed exporter resources through immutable bindings and recording
+// leases. An ordered configuration owner calls Update; arbitrary request snapshots
+// must not reconcile out of order. Acquire shares construction without retaining
+// caller context values. Matching transport settings reuse a client across policy
+// revisions; endpoint, signal identity, or credential-version changes replace it.
+// Old leases may drain only while their original authority remains valid.
+//
+// Factories must install ExportGate at their real transport seam, use the exact
+// credential reference/version, and bound their SDK queues/retries. The gate checks
+// validity on every export and cancels in-flight operations after revocation. It
+// cannot retract bytes already sent. HTTPClient refuses other targets and redirects.
+// Shutdown errors quarantine capacity while the pool is open because teardown is
+// unproven. The pool adds no queue or retry layer around an exporter.
+//
+// Local tests exercise supported HTTP client injection in the pinned OTLP exporter.
+// The pinned AgentO11y generation HTTP client has no injectable transport and drains
+// queues on Shutdown. Its direct adapter requires a supported gating seam before
+// integration; this package does not claim to revoke that SDK's internal queue.
 package customertelemetry
