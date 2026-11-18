@@ -277,6 +277,11 @@ The provider package SHALL define `PartReasoningFile StreamPartType = "reasoning
 - **AND** HTTP(S) downloads SHALL have a 2 GiB maximum, reject unsafe endpoints and redirect targets, validate and pin DNS results at connection time, send no provider credentials, and respect context cancellation
 - **AND** a rejected URL, HTTP failure, or oversized body SHALL fail the operation rather than emitting a malformed file URL
 
+#### Scenario: Generated-file redirects cannot downgrade HTTPS
+- **WHEN** an HTTPS download hop redirects to an HTTP URL, even if the download originally started on HTTP
+- **THEN** the download SHALL report a redirect downgrade error without requesting the HTTP target
+- **AND** initial HTTP URLs, redirects that keep the same scheme, and HTTP-to-HTTPS redirects SHALL remain allowed subject to the existing download checks
+
 #### Scenario: Validated generated-file DNS fallback
 
 - **WHEN** a generated-file host resolves to multiple public addresses and the first connection fails
