@@ -118,7 +118,7 @@ On a stored catalog, each change is saved when the writer confirms it, rather th
 | Any model change | nothing |
 
 - **Key fields** are empty `SecretInput`s, in the connect and Replace key dialogs only. A saved key is never in a field; the card shows that it's saved. The typed value is written nowhere except the request body, and closing the dialog drops it.
-- **Local checks**, shown on their fields: a missing value, and a provider name or model ID the catalog already has, which the map-shaped body can't express. Name, ID and alias formats, alias collisions and policy limits go to admission; the field descriptions state the formats.
+- **Local checks**, shown on their fields: a missing value; a provider name or model ID the catalog already has, which the map-shaped body can't express; and formats, so a writer learns of a bad value as they type rather than from admission: the catalog name follows Grafana's resource name rules (letters, digits and `-_.:`, at most 253 characters, not a reserved name such as `trash`), provider names are DNS labels because they key the secure values, and model IDs and aliases follow the Gateway's public ID format. The new catalog page checks the name as it is typed, and shows the catalog's URL, with a line on what applications use it for, only once the name is valid. Alias and ID collisions and policy limits go to admission.
 - **Alternatives considered:**
   - providers and models in separate panels, cross-referenced by name. Every model then asks which provider it calls, and a writer keeps translating between the panels;
   - a models table with providers as a strip of key cards. It scales to many models with cross-provider fallbacks, but keeps the provider choice on every model and has no place for provider-level settings;
@@ -187,7 +187,7 @@ What's added:
 | Admin edit, keys kept | Edit a model's display name in its drawer: the `PUT` has no `secure` entry and the loaded resource version, and the API keeps the secure name. Add a model, then replace the key, without reloading: each `PUT` carries the resource version the previous update returned, and the key's carries only that provider's `create`. After a reload the key still shows as saved, and the sentinels appear nowhere. |
 | Admin provider connect and remove | Connect an OpenAI provider with a sentinel key: the `PUT` carries its `create`. Remove it: the `PUT` carries its `remove`, and the API keeps only the other key. |
 | Admin delete | Delete from the list and confirm. The API returns `404` and the list drops it. |
-| Admission errors | Create a catalog with a model whose ID has a space. Admission refuses it (`public ID`), the page shows the returned message verbatim and keeps its input, and the visible page, console and fetched responses have no sentinel. A provider name policy refusal was avoided because the name is also the secure key, which Grafana might check before admission. |
+| Admission errors | Create a catalog with a model whose alias is its own ID. Admission refuses it (`alias collides`), the page shows the returned message verbatim and keeps its input, and the visible page, console and fetched responses have no sentinel. A provider name policy refusal was avoided because the name is also the secure key, which Grafana might check before admission. |
 | Concurrent edit | Open the catalog, update it through the API, then save a model in its drawer. The drawer shows the `409` message, and the other change stays. |
 | Viewer read-only | `pageAs('Viewer')`: the list shows the catalog, with no New or Delete. The catalog page shows the saved key and a read-only notice, with no connect, key, or delete controls. `catalogs/new` says they can't create catalogs. |
 | Editor read-only | The same as `pageAs('Editor')`. |
@@ -221,7 +221,7 @@ Additive frontend change. Rolling back removes the page and the overview section
 
   The connect dialog writes the whole `Provider` object, so the spec updates and the secure values don't change.
 - **Provider-level settings,** such as serving every model of a provider without listing each one, belong on the provider card, next to its list of models.
-- **Model suggestions:** the provider model is free text, because keys are write-only and the Gateway has no endpoint that lists a provider's models. Such an endpoint would let the quick add suggest them.
+- **Key and model checks:** the page can't tell whether a key works or a provider model exists, because keys are write-only and the Gateway has no endpoint that calls the provider with a stored key. Such an endpoint would let the page show a key's state, list the provider's models for the quick add, and refuse unknown ones.
 
 ## Decisions recorded at review
 
