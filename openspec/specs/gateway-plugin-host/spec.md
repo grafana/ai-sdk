@@ -1,7 +1,7 @@
 # gateway-plugin-host Specification
 
 ## Purpose
-Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWire and Chat Completions as namespaced routes, with configuration, access, health and transport lifecycle owned by the host.
+Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWire, Chat Completions and Anthropic Messages as namespaced routes, with configuration, access, health and transport lifecycle owned by the host.
 
 ## Requirements
 
