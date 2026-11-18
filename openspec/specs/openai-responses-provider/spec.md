@@ -285,7 +285,7 @@ The catalog SHALL declare portable effort levels by model family. Mantle SHALL r
 - **AND** exact IDs `gpt-6-sol`, `gpt-6-luna`, and `gpt-6.1-terra` also declare `none` and appear in `ModelIDs()`
 
 #### Scenario: Only exact GPT-6 catalog exceptions support portable none
-- **WHEN** a suffixed or otherwise non-exception ID such as `gpt-6.1-sol` or `gpt-6-luna-fast` requests portable `none`
+- **WHEN** a direct GPT-6 or later reasoning model outside the exact catalog exceptions, such as `gpt-6.1-sol` or `gpt-6-luna-fast`, receives portable `none`
 - **THEN** it sends `low` and emits the compatibility warning
 - **AND** a Mantle-prefixed ID such as `openai.gpt-6.1-terra` sends `none` without rounding but still omits `temperature` and `top_p` with unsupported warnings
 

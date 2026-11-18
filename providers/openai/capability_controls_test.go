@@ -195,6 +195,7 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 	for _, tc := range []struct {
 		name, model              string
 		options                  OpenAIResponsesOptions
+		reasoning                provider.ReasoningEffort
 		wantUpdate               bool
 		wantNoLogprobs           bool
 		wantPromptCacheRetention string
@@ -203,7 +204,7 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 	}{
 		{name: "supported", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "high", ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow, CompactionTrigger: &trigger}, wantUpdate: true},
 		{name: "unsupported update", model: "gpt-5.6", options: OpenAIResponsesOptions{ReasoningEffortUpdate: OpenAIReasoningEffortUpdateLow}, wantWarning: "reasoningEffortUpdate"},
-		{name: "provider effort bypasses catalog", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "none"}, wantEffort: "none"},
+		{name: "provider effort bypasses portable rounding", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "none"}, reasoning: provider.ReasoningMinimal, wantEffort: "none"},
 		{name: "gpt6 omits logprobs", model: "gpt-6-astra", options: OpenAIResponsesOptions{ReasoningEffort: "low", Logprobs: &LogprobsOption{Int: &logprobs}, Include: []string{"message.output_text.logprobs"}}, wantNoLogprobs: true, wantWarning: "logprobs"},
 		{name: "gpt6 omits legacy prompt cache retention", model: "gpt-6-astra", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantWarning: "promptCacheRetention"},
 		{name: "gpt5 retains legacy prompt cache retention", model: "gpt-5.6", options: OpenAIResponsesOptions{PromptCacheRetention: "24h"}, wantPromptCacheRetention: "24h"},
@@ -225,7 +226,7 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(payload)), Request: req}, nil
 			})}
 			model := NewResponses("test-key", tc.model, WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
-			options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, ProviderOptions: withOpenAIOptions(tc.options)}
+			options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, ProviderOptions: withOpenAIOptions(tc.options), Reasoning: tc.reasoning}
 			generated, err := model.DoGenerate(t.Context(), options)
 			require.NoError(t, err)
 			streamed, err := model.DoStream(t.Context(), options)
