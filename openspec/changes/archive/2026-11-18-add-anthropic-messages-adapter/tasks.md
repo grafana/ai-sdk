@@ -1,10 +1,9 @@
 # Tasks
 
-This change lands in two stages. Stage A (sections 1 to 3 and 5 to 6.1) is the
-route, the text and client-tool subset, and honest documentation. Stage B
-(section 4 and the follow-ups below) applies the accepted-but-ignored fields and
-adds the client evidence that supports a compatibility claim. Archive the change
-after stage B.
+This change is the route, the text and client-tool subset, and honest
+documentation. Applying the accepted-but-ignored fields and the client evidence
+that would support a compatibility claim are follow-ups, listed at the end and
+tracked under #427.
 
 ## 1. Route and manifest
 
@@ -57,38 +56,32 @@ after stage B.
   works and that tests need none. Verified by the README diff.
 - [x] 4.4 Record the verification notes for this change in `verification.md`.
 
-## 5. Spec integration, stage A
+## 5. Spec integration
 
-- [ ] 5.1 Run `openspec validate add-anthropic-messages-adapter --strict` and fix
+- [x] 5.1 Run `openspec validate add-anthropic-messages-adapter --strict` and fix
   findings. Verified by a clean validation.
 
-## 6. Stage B: capabilities and evidence
+- [x] 5.2 Sync the deltas into `openspec/specs` and archive the change. Verified
+  by `openspec list` and the synced specs.
 
-Not started. Order and sizes come from the provider-mapping research (smallest
-first).
+## Follow-ups (not part of this change; tracked under #427)
 
-- [ ] 6.1 Report the matched `stop_sequence` from provider metadata, unary and
-  SSE.
-- [ ] 6.2 Map `output_config.effort` and ordinary thinking settings, and report
-  top-level usage details.
-- [ ] 6.3 Preserve cache markers on system blocks, content, tool results and tools.
-- [ ] 6.4 Preserve signed and redacted thinking in history, emit thinking blocks
-  and signatures in unary and SSE responses. Needs a decision on how `max_tokens`
-  relates to a thinking budget first.
-- [ ] 6.5 Provider options for request `cache_control`, `context_management`,
+Order and sizes come from the provider-mapping research, smallest first.
+
+- Report the matched `stop_sequence` from provider metadata, unary and SSE.
+- Map `output_config.effort` and ordinary thinking settings; report top-level
+  usage details.
+- Preserve cache markers on system blocks, content, tool results and tools.
+- Preserve signed and redacted thinking in history and emit thinking blocks and
+  signatures in responses. Needs a decision on how `max_tokens` relates to a
+  thinking budget first.
+- Provider options for request `cache_control`, `context_management`,
   `metadata.user_id` and `service_tier`, then the adapter mapping.
-- [ ] 6.6 Decide how unsupported controls warn on non-Anthropic targets, and
-  where a Messages client sees warnings.
-- [ ] 6.7 Compaction (#296) and a `count_tokens` decision from a longer recorded
-  Claude Code session.
-- [ ] 6.8 Command-level suite with the official Go client against the built
-  plugin, wired into CI.
-- [ ] 6.9 Scripted Claude Code end-to-end scenario against the stand-in backend
-  with a pinned client, passing in CI without a key.
-- [ ] 6.10 Sync the deltas into `openspec/specs` and archive the change.
-
-## Workflow follow-up
-
-- Update the #427 checklist: tick the resource-policy item, replace the stale
-  adapter session note with this change and PR, and add the stage B items.
-- Close #488 with a pointer to the replacement PR once it is out of draft.
+- Decide how unsupported controls warn on non-Anthropic targets and where a
+  Messages client sees warnings.
+- Compaction (#296) and a `count_tokens` decision from a longer recorded Claude
+  Code session.
+- Command-level suite with the official Go client against the built plugin, wired
+  into CI.
+- Scripted Claude Code end-to-end scenario with a pinned client, passing in CI
+  without a key.
