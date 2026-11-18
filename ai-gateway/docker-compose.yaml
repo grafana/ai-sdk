@@ -6,7 +6,7 @@ services:
     build:
       args:
         grafana_image: ${GRAFANA_IMAGE:-grafana}
-        grafana_version: ${GRAFANA_VERSION:-nightly}
+        grafana_version: ${GRAFANA_VERSION:-nightly@sha256:5d4bd69f298a7d45b3e14e93d65cd4636cc77619eea120bc1d065662c1b1ceb3}
     environment:
       GF_PATHS_CONFIG: /etc/grafana/provisioning/grafana.ini
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-unset-local-key}
