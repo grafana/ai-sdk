@@ -66,7 +66,7 @@ export function providerFixtureReleases(conformanceRoot: string) {
 }
 
 function git(root: string, args: string[]): Buffer {
-  return execFileSync("git", ["-C", root, ...args], {
+  return execFileSync("git", ["--no-replace-objects", "-C", root, ...args], {
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   });

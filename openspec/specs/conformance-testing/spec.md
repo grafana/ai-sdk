@@ -762,6 +762,7 @@ The repository SHALL provide a parity coverage inventory command that validates 
 - **WHEN** the registered provider releases point to different commits
 - **THEN** each provider `INDEX.yaml` covers the fixtures at its own release commit
 - **AND** each index entry refers to a source at that commit, and each imported input is byte-identical to its source
+- **AND** local Git replacement refs do not affect the source lookup
 
 #### Scenario: Provider release source cannot be verified
 

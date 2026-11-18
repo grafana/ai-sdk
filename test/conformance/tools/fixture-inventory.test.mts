@@ -94,6 +94,15 @@ test("checks the inventory and bytes at each registered provider release", async
     assert.deepEqual(checkProviderInventories(conformance, upstream), []);
   });
 
+  await t.test("checks the tagged tree even when the checkout has a local replacement", () => {
+    git("replace", compatibleCommit, sharedCommit);
+    try {
+      assert.deepEqual(checkProviderInventories(conformance, upstream), []);
+    } finally {
+      git("replace", "-d", compatibleCommit);
+    }
+  });
+
   await t.test("rejects bytes and index entries that only match the shared commit", () => {
     put(conformance, compatibleIndex, "sample: sample\nshared-only: null\n");
     put(conformance, importedInput, sharedBytes);
