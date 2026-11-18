@@ -996,19 +996,6 @@ loop:
 			if ctx.Err() != nil {
 				break loop
 			}
-			if isSemanticOutputStreamPart(part) {
-				if firstChunkTimer != nil {
-					firstChunkTimer.Stop()
-					firstChunkTimer = nil
-				}
-				if chunkTimeout > 0 {
-					if chunkTimer == nil {
-						chunkTimer = time.AfterFunc(chunkTimeout, opCancel)
-					} else {
-						chunkTimer.Reset(chunkTimeout)
-					}
-				}
-			}
 		case <-ctx.Done():
 			break loop
 		}
@@ -1026,6 +1013,17 @@ loop:
 
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
+			if firstChunkTimer != nil {
+				firstChunkTimer.Stop()
+				firstChunkTimer = nil
+			}
+			if chunkTimeout > 0 {
+				if chunkTimer == nil {
+					chunkTimer = time.AfterFunc(chunkTimeout, opCancel)
+				} else {
+					chunkTimer.Reset(chunkTimeout)
+				}
+			}
 		}
 
 		switch part.Type {

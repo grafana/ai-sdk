@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -154,7 +155,6 @@ func TestStreamText_EffectiveToolChoice(t *testing.T) {
 		{name: "resolved miss", choice: named, calls: resolved, opts: []StreamOption{WithStopWhen(StepCountIs(3))}, wantError: true},
 		{name: "auto no call", choice: provider.ToolChoice{Type: provider.ToolChoiceAuto}},
 		{name: "none no call", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}},
-		{name: "none returned call", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}, calls: []provider.StreamPart{call("c1", "other")}, opts: []StreamOption{WithStopWhen(StepCountIs(2))}, wantError: true},
 		{name: "absent tools", choice: required, opts: []StreamOption{WithTools(nil)}, wantError: true},
 		{name: "empty tools", choice: named, opts: []StreamOption{WithTools(ToolSet{})}, wantError: true},
 		{name: "filtered empty tools", choice: named, opts: []StreamOption{WithActiveTools()}, wantError: true},
@@ -344,6 +344,7 @@ func TestStreamText_EffectiveToolChoiceStepOverride(t *testing.T) {
 				require.ErrorContains(t, result.Err(), "tool choice")
 			} else {
 				require.NoError(t, result.Err())
+				assert.Len(t, result.ToolCalls(), len(calls))
 			}
 		})
 	}
@@ -640,9 +641,48 @@ func testEffectiveToolChoiceEntry(t *testing.T, useAgent, streaming bool) {
 	}
 }
 
+func TestStreamText_EffectiveToolChoiceNoneContentTimeouts(t *testing.T) {
+	const deadline = time.Second
+	for _, tc := range []struct {
+		name        string
+		timeout     TimeoutConfig
+		visibleText bool
+	}{
+		{name: "first chunk", timeout: TimeoutConfig{FirstChunk: deadline}},
+		{name: "chunk gap", timeout: TimeoutConfig{Chunk: deadline}, visibleText: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				parts := make(chan provider.StreamPart)
+				model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: parts}, nil
+				}}
+				result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("test")),
+					WithToolChoice(provider.ToolChoice{Type: provider.ToolChoiceNone}), WithTimeout(tc.timeout))
+				if tc.visibleText {
+					parts <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+					parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "text"}
+				}
+				synctest.Wait()
+				time.Sleep(deadline / 2)
+				parts <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "c1", Delta: `{}`}
+				parts <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`}
+				time.Sleep(deadline / 2)
+				synctest.Wait()
+				close(parts)
+				for range result.FullStream() {
+				}
+				require.ErrorIs(t, result.abortError(), context.Canceled)
+				assert.NoError(t, result.Err())
+				assert.Empty(t, result.Steps())
+			})
+		})
+	}
+}
+
 func TestStreamText_EffectiveToolChoiceLifecycle(t *testing.T) {
 	providerErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "provider failed"})
-	for _, choice := range []provider.ToolChoice{{Type: provider.ToolChoiceRequired}, {Type: provider.ToolChoiceTool, ToolName: "lookup"}} {
+	for _, choice := range []provider.ToolChoice{{Type: provider.ToolChoiceRequired}, {Type: provider.ToolChoiceTool, ToolName: "lookup"}, {Type: provider.ToolChoiceNone}} {
 		for _, tc := range []struct {
 			name      string
 			parts     []provider.StreamPart
@@ -659,7 +699,11 @@ func TestStreamText_EffectiveToolChoiceLifecycle(t *testing.T) {
 			t.Run(string(choice.Type)+"/"+tc.name, func(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
-				model := effectiveToolChoiceModel(tc.parts)
+				parts := tc.parts
+				if choice.Type == provider.ToolChoiceNone {
+					parts = append([]provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`}}, parts...)
+				}
+				model := effectiveToolChoiceModel(parts)
 				errors, aborts, streamErrors := 0, 0, 0
 				result := StreamText(ctx, model, WithModelMessages(provider.UserText("test")), WithToolChoice(choice),
 					OnError(func(error) { errors++ }), OnAbort(func(OnAbortState) { aborts++ }),
@@ -680,6 +724,10 @@ func TestStreamText_EffectiveToolChoiceLifecycle(t *testing.T) {
 				} else {
 					require.NoError(t, result.Err())
 					assert.Zero(t, errors)
+					assert.Zero(t, streamErrors)
+				}
+				if choice.Type == provider.ToolChoiceNone {
+					assert.Empty(t, result.ToolCalls())
 				}
 				assert.Len(t, result.Steps(), tc.steps)
 				assert.Equal(t, 1, model.callCount)
