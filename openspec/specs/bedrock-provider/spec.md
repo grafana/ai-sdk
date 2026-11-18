@@ -612,12 +612,12 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: None choice with function-only tools
 
-- **WHEN** choice is `none` with only function tools
+- **WHEN** choice is `none` with only function tools, outside the JSON-tool fallback
 - **THEN** no parallel-disabling choice, Converse tool choice, or tool definitions are sent
 
 #### Scenario: None choice with Anthropic provider tools
 
-- **WHEN** choice is `none` and supported Anthropic provider tools are present, with or without function tools
+- **WHEN** choice is `none` outside the JSON-tool fallback and supported Anthropic provider tools are present, with or without function tools
 - **THEN** the supported provider-tool definitions and any accompanying function-tool definitions remain in `toolConfig.tools` with their required betas, but neither `additionalModelRequestFields.tool_choice` nor `toolConfig.toolChoice` is sent
 
 #### Scenario: All tools filtered out
