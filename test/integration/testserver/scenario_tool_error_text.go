@@ -63,16 +63,25 @@ func (m *toolErrorTextModel) DoStream(_ context.Context, opts provider.CallOptio
 }
 
 func handleToolErrorText(w http.ResponseWriter, r *http.Request) {
-	result := aisdk.StreamText(r.Context(), &toolErrorTextModel{},
+	mode := r.URL.Query().Get("mode")
+	tools := aisdk.ToolSet{"weather": {Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+		return nil, errors.New(toolErrorTextFailure)
+	}}}
+	streamOpts := []aisdk.StreamOption{
 		aisdk.WithModelMessages(provider.UserText("weather")),
-		aisdk.WithTools(aisdk.ToolSet{"weather": {Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {
-			return nil, errors.New(toolErrorTextFailure)
-		}}}),
+		aisdk.WithTools(tools),
 		aisdk.WithStopWhen(aisdk.StepCountIs(2)),
-	)
+	}
+	if mode == "inactive" {
+		tools["missing"] = aisdk.Tool{Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+			return json.RawMessage(`"inactive tool ran"`), nil
+		}}
+		streamOpts = append(streamOpts, aisdk.WithActiveTools("weather"))
+	}
+	result := aisdk.StreamText(r.Context(), &toolErrorTextModel{}, streamOpts...)
 	var opts []aisdk.UIMessageStreamOption
 	onError := aisdk.OnUIMessageStreamError(func(error) string { return toolErrorTextRedacted })
-	switch r.URL.Query().Get("mode") {
+	switch mode {
 	case "callback":
 		opts = append(opts, onError)
 	case "callback-unredacted":

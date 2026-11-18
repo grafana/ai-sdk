@@ -127,7 +127,7 @@ func TestToolSearch_Descriptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, resolveToolDescription(tc.tool, "current"))
 			original := ToolSet{"tool": tc.tool}
-			resolved := resolveToolDescriptions(original, "current", nil, false)
+			resolved := resolveToolDescriptions(original, "current")
 			if tc.want != nil {
 				assert.Equal(t, *tc.want, resolved["tool"].Description)
 			}
@@ -153,7 +153,7 @@ func TestToolSearch_Descriptions(t *testing.T) {
 		require.Len(t, matches, 2)
 		assert.Equal(t, new(""), matches[0].Description)
 		assert.Nil(t, matches[1].Description)
-		second := resolveToolDescriptions(state.prepare(registry, nil, false, "Atmosphere"), "Atmosphere", nil, false)
+		second := resolveToolDescriptions(state.prepare(registry, nil, false, "Atmosphere"), "Atmosphere")
 		assert.Equal(t, "Atmosphere", second["capability"].Description)
 		assert.NotNil(t, registry["capability"].DescriptionFunc)
 	})
@@ -1084,11 +1084,7 @@ func TestToolSearch_InactiveDescriptions(t *testing.T) {
 				require.NoError(t, result.Err())
 				assert.Equal(t, len(active), activeCalls)
 				assert.Zero(t, inactiveCalls)
-				if routes == nil {
-					assert.Equal(t, 1, executions)
-				} else {
-					assert.Zero(t, executions)
-				}
+				assert.Zero(t, executions)
 			})
 		}
 	}

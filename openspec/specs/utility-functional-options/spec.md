@@ -83,7 +83,7 @@ UI message streams SHALL send the error text of a failed application tool call a
 An invalid application tool call SHALL produce one `tool-input-error` chunk; the tool error StreamText records for the model SHALL NOT add a `tool-output-error` chunk.
 
 #### Scenario: Invalid tool calls are reported once
-- **WHEN** the model calls an unavailable application tool
+- **WHEN** a new application tool call is reported as invalid, including when the tool is excluded by effective active tools
 - **THEN** the UI stream carries one `tool-input-error` chunk for the call and no `tool-output-error` chunk
 - **AND** the error callback, when redacting, is called once for that call
 
