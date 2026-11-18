@@ -219,6 +219,13 @@ func resolveProviderOptionsForName(opts provider.CallOptions, name string) (Open
 }
 
 func validateOpenAIResponsesOptions(options OpenAIResponsesOptions) error {
+	if cache := options.PromptCacheOptions; cache != nil {
+		switch cache.TTL {
+		case "", PromptCacheTTL30m, PromptCacheTTL12h:
+		default:
+			return fmt.Errorf("openai: invalid promptCacheOptions.ttl %q", cache.TTL)
+		}
+	}
 	if len(options.ReasoningSummary) > 0 {
 		var summary *string
 		if err := json.Unmarshal(options.ReasoningSummary, &summary); err != nil {

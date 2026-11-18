@@ -65,7 +65,7 @@ func TestOpenAIResponsesOptions_MarshalRoundTrip(t *testing.T) {
 	opts := OpenAIResponsesOptions{
 		PreviousResponseID:      "resp_prev",
 		Instructions:            "be terse",
-		PromptCacheOptions:      &PromptCacheOptions{Mode: "explicit", TTL: "30m"},
+		PromptCacheOptions:      &PromptCacheOptions{Mode: "explicit", TTL: PromptCacheTTL30m, Prewarm: &parallel},
 		ReasoningEffort:         "high",
 		ReasoningMode:           "pro",
 		ReasoningContext:        "all_turns",
@@ -94,7 +94,7 @@ func TestOpenAIResponsesOptions_MarshalRoundTrip(t *testing.T) {
 func TestOpenAIPartOptions_MarshalRoundTrip(t *testing.T) {
 	opts := OpenAIPartOptions{
 		ItemID:                "item_1",
-		PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit"},
+		PromptCacheBreakpoint: &PromptCacheBreakpoint{Mode: "explicit", TTL: PromptCacheTTL12h},
 		ImageDetail:           "high",
 	}
 
