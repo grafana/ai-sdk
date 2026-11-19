@@ -291,7 +291,13 @@ With Go token exchange, keep the Gateway API root and select the catalog with
 
 Grafana rejects some requests before they reach the Gateway, such as those with
 an invalid token or a body that is too large. Those errors use Grafana's error
-format, not the Gateway's.
+format, not the Gateway's. A body over 16 MiB gets `429 Too Many Requests` from
+Grafana. Clients treat a 429 as retryable, but the same body fails every time,
+so reduce it instead of retrying.
+
+When Grafana has anonymous sign-in enabled, as the development setup does, a
+request with a missing or invalid token reaches the Gateway as the anonymous
+user and gets the Gateway's `403 forbidden` error instead of Grafana's `401`.
 
 | Limit | Set by |
 |---|---|
