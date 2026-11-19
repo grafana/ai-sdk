@@ -17,5 +17,5 @@ export function CatalogHealthBadge({ status, provider }: { status?: HealthStatus
     return null;
   }
   const { text, color } = labels[status];
-  return <Badge text={provider && status === 'ok' ? 'Listing accepted' : text} color={color} />;
+  return <Badge text={provider && status === 'ok' ? 'Key accepted' : text} color={color} />;
 }

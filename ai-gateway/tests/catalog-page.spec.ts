@@ -309,7 +309,7 @@ test.describe('model catalog page', () => {
     const finished = page.waitForResponse((result) => isCatalogWrite('POST', `${name}/health`)(result.request()));
     await check.click();
     expect((await finished).status()).toBe(200);
-    await expect(card(page, 'claude').getByText('Listing accepted')).toBeVisible();
+    await expect(card(page, 'claude').getByText('Key accepted')).toBeVisible();
     await expect(card(page, 'claude').getByText('Model listed', { exact: true })).toBeVisible();
     await expect(card(page, 'claude').getByText('Model not listed')).toBeVisible();
     await expect(card(page, 'other').getByText('Key rejected')).toBeVisible();

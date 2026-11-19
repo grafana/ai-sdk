@@ -138,7 +138,7 @@ describe('pages/CatalogPage', () => {
     expect(checkModelCatalogHealth).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
     expect(screen.getByRole('button', { name: 'Checking health…' })).toBeDisabled();
-    expect(await card('anthropic').findByText('Listing accepted')).toBeInTheDocument();
+    expect(await card('anthropic').findByText('Key accepted')).toBeInTheDocument();
     expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
     expect(card('anthropic').getByText('Model listed')).toBeInTheDocument();
     expect(card('openai').getByText('Key saved')).toBeInTheDocument();
@@ -168,7 +168,7 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(dialog().getByRole('button', { name: 'Save model' }));
     expect(await card('anthropic').findByText('Edited')).toBeInTheDocument();
     await act(async () => finish(listing));
-    expect(card('anthropic').queryByText('Listing accepted')).not.toBeInTheDocument();
+    expect(card('anthropic').queryByText('Key accepted')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
   });
 
@@ -186,7 +186,7 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Team catalog' }));
     await act(async () => finish(listing));
     expect(await screen.findByRole('button', { name: 'Check health' })).toBeEnabled();
-    expect(card('anthropic').queryByText('Listing accepted')).not.toBeInTheDocument();
+    expect(card('anthropic').queryByText('Key accepted')).not.toBeInTheDocument();
     expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
   });
 
