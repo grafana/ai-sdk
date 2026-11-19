@@ -241,11 +241,18 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 
 ### Call a stored catalog
 
-With a service account or caller-managed access token, use the catalog's URL
-as the client's base URL, for example
+With a service account or caller-managed access token, use the catalog URL,
+for example
 `https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/default`.
-With Go token exchange, keep the Gateway API root and select the catalog with
-`WithCatalog`. See the [authentication guide](../docs/guides/gateway-authentication.md#call-a-stored-stack-catalog).
+
+- ProviderWire clients use the catalog URL as the base URL and append
+  `/config` or `/language-model`.
+- With Go ProviderWire token exchange, keep the Gateway API root and select the
+  catalog with `WithCatalog`. See the
+  [authentication guide](../docs/guides/gateway-authentication.md#call-a-stored-stack-catalog).
+- For an [OpenAI client](../docs/guides/openai-chat-completions.md), append
+  `/v1` to the catalog base URL so the SDK calls
+  `POST .../modelcatalogs/{name}/v1/chat/completions`.
 
 - Editors and Admins can list and call catalog models (`aigateway:modelinvoker`).
   Viewers can read catalogs but not call them, and anonymous access can't
