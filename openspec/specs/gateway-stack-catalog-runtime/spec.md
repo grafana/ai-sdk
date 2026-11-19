@@ -63,7 +63,7 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 
 #### Scenario: Primary fails and the fallback succeeds
 - **WHEN** the primary candidate fails with a fallback-eligible error and the fallback succeeds
-- **THEN** the call SHALL succeed with two provider requests and an overview listing both attempts
+- **THEN** the call SHALL succeed with two provider requests; for ProviderWire the overview SHALL list both attempts
 
 #### Scenario: Composed chain above the bound
 - **WHEN** routing controls compose more than 8 candidates
@@ -81,18 +81,18 @@ A stack-catalog selection SHALL refuse `gateway.byok` and any other unsupported 
 - **THEN** the call SHALL fail with the catalog configuration category, and the operator key SHALL NOT be used
 
 ### Requirement: Stack-catalog execution overview
-A stack-catalog call SHALL publish the same execution overview as an operator-catalog call: the requested ID, the canonical model ID, and each attempt's provider name, provider type and backend model ID.
+A stack-catalog ProviderWire call SHALL publish the same execution overview as an operator-catalog call: the requested ID, the canonical model ID, and each attempt's provider name, provider type and backend model ID. Chat calls SHALL NOT publish that overview.
 
 #### Scenario: Direct success
-- **WHEN** a stack-catalog call succeeds on its primary candidate
+- **WHEN** a stack-catalog ProviderWire call succeeds on its primary candidate
 - **THEN** the overview SHALL list one selected attempt with the catalog's provider name as provider instance
 
 ### Requirement: No private attempt records for stack catalogs
-Stack-catalog calls use customer-owned keys, and like BYOK calls they SHALL write no private physical attempt records. Their per-attempt evidence SHALL be the execution overview returned to the caller.
+Stack-catalog calls use customer-owned keys, and like BYOK calls they SHALL write no private physical attempt records. For ProviderWire the execution overview returned to the caller SHALL provide per-attempt evidence.
 
 #### Scenario: Fallback on a stack catalog
 - **WHEN** a stack-catalog call's primary fails and its fallback succeeds
-- **THEN** no physical attempt record SHALL be written, and the overview SHALL list both attempts
+- **THEN** no physical attempt record SHALL be written, and a ProviderWire response's overview SHALL list both attempts
 
 ### Requirement: Catalog language-model route
 A catalog route's `language-model` call SHALL select from its parent catalog as a stack-catalog selection: the parent's spec, the decrypted values the platform passed with the request, keyed by provider name, and the parent's name. The Gateway SHALL keep no catalog, key or built model between requests, so the next request after a catalog edit uses the edited catalog and keys.

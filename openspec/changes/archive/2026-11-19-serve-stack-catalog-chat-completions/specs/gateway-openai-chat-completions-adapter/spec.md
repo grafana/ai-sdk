@@ -2,9 +2,9 @@
 
 ### Requirement: Candidate-local Chat defaults
 
-The adapter SHALL supply an execution.Translator per call, copying options after request transforms and
-mapping Chat storage, strictness and explicit parallel-tool settings for the
-host-provided native target. Responses and compatible attempts SHALL receive
+The adapter SHALL supply an execution.Translator per call, copying options
+after request transforms and mapping Chat storage, strictness and explicit
+parallel-tool settings for the host-provided native target. Responses and compatible attempts SHALL receive
 storage false; omitted/null Chat strict SHALL mean false. The host SHALL
 apply translation separately to physical attempts, re-check policy and native
 options, and preserve calls without a translator.
@@ -28,14 +28,12 @@ options, and preserve calls without a translator.
 
 ### Requirement: Chat registration through the host contract
 
-The host SHALL construct Chat on its shared execution.Runtime and register
-POST `/v1/chat/completions` and POST
-`/modelcatalogs/{name}/v1/chat/completions` under the namespaced API prefix.
-Both entries SHALL use the same handler and Chat host.ErrorWriter, with
-distinct telemetry labels `chat_completions` and `catalog_chat_completions`.
-Generic registration SHALL supply access, telemetry and the catalog parent
-check for the catalog entry. Chat SHALL NOT install a private selector,
-catalog wrapper, access dispatcher, execution worker or drain loop.
+The host SHALL use one Chat handler on its shared runtime and a Chat error
+writer on both namespaced POST routes: `/v1/chat/completions` and
+`/modelcatalogs/{name}/v1/chat/completions`. Their labels SHALL be
+`chat_completions` and `catalog_chat_completions`, respectively. Chat SHALL
+reuse host access, telemetry, catalog parent checks, selection, execution
+and drain.
 
 #### Scenario: Official SDK addresses the namespaced route
 - **WHEN** an official OpenAI client uses the namespaced API prefix ending in
@@ -51,14 +49,12 @@ catalog wrapper, access dispatcher, execution worker or drain loop.
 
 ### Requirement: Shared access and error boundaries
 
-Namespace Chat SHALL preserve the host's configured/BYOK/refused access
-decisions. Configured callers SHALL use the operator catalog. The catalog
-Chat route SHALL use the same declared authorization role, parent check and
-catalog access decision as the catalog language-model route, selecting only
-from the named catalog with its supplied decrypted keys. Chat SHALL expose no BYOK controls;
-BYOK-only callers without those controls SHALL receive the shared invalid-BYOK
-outcome with zero native I/O. Host failures SHALL use the adapter's host-error
-writer; pre-plugin failures MAY use the platform format.
+Namespace Chat SHALL preserve the host's configured/BYOK/refused decisions.
+It SHALL use the operator catalog for configured callers and expose no BYOK
+controls. Catalog Chat SHALL use the catalog language-model route's role,
+parent check and access decision and use only the named catalog and its
+decrypted keys. Plugin host errors SHALL use Chat envelopes; pre-plugin
+failures MAY use the platform format.
 
 #### Scenario: Configured callers
 - **WHEN** a self-hosted user/service account or a cloud allowlisted internal
