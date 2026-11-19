@@ -24,7 +24,12 @@ if err != nil {
 }
 
 fmt.Println(result.Text)
-fmt.Println(result.TotalUsage)
+
+usage, err := json.Marshal(result.TotalUsage)
+if err != nil {
+	return err
+}
+fmt.Println(string(usage))
 ```
 
 Use this path for background jobs, API endpoints that return one JSON response,
@@ -45,14 +50,16 @@ for part := range result.FullStream() {
 	switch part := part.(type) {
 	case aisdk.StreamTextDelta:
 		fmt.Print(part.Text)
-	case aisdk.StreamError:
-		log.Printf("model stream: %v", part.Error)
 	}
 }
 if err := result.Err(); err != nil {
 	return err
 }
 ```
+
+A failure arrives in the stream as an `aisdk.StreamError` part, and `Err`
+returns the same error after the stream ends, so the loop handles it once, after
+the stream.
 
 Reading `FullStream`, converting with `ToUIMessageStream`, or passing the result
 to an HTTP writer all consume the same underlying stream. Choose one consumer.
