@@ -35,10 +35,14 @@ func TestOfficialSDK_StackCatalog(t *testing.T) {
 			operator := &upstream{}
 			operatorServer := httptest.NewServer(http.HandlerFunc(operator.handle))
 			t.Cleanup(operatorServer.Close)
-			base := startCommandWithEnv(t, operatorServer.URL, string(mode), []string{
-				"SSL_CERT_FILE=" + ca,
-				"HTTPS_PROXY=" + proxy.URL,
-				"NO_PROXY=localhost,127.0.0.1",
+			base := startCommandWithOptions(t, operatorServer.URL, string(mode), commandOptions{
+				pluginBuildTag: "gatewaytest",
+				environment: []string{
+					"GATEWAY_TEST_CA_FILE=" + ca,
+					"GODEBUG=x509usefallbackroots=1",
+					"HTTPS_PROXY=" + proxy.URL,
+					"NO_PROXY=localhost,127.0.0.1",
+				},
 			})
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

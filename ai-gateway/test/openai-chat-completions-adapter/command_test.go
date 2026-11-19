@@ -136,16 +136,25 @@ const commandShutdownTimeout = 10 * time.Second
 
 func startCommand(t *testing.T, backend, topology string, customConfig ...string) string {
 	t.Helper()
-	return startCommandWithEnv(t, backend, topology, nil, customConfig...)
+	return startCommandWithOptions(t, backend, topology, commandOptions{}, customConfig...)
 }
 
-func startCommandWithEnv(t *testing.T, backend, topology string, environment []string, customConfig ...string) string {
+type commandOptions struct {
+	pluginBuildTag string
+	environment    []string
+}
+
+func startCommandWithOptions(t *testing.T, backend, topology string, options commandOptions, customConfig ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "gateway")
 	hostBinary := filepath.Join(dir, "plugin-host")
 	for _, target := range []struct{ binary, source string }{{binary, "../../pkg"}, {hostBinary, "../platformhost/cmd/plugin-host"}} {
-		build := exec.Command("go", "build", "-race", "-mod=readonly", "-o", target.binary, target.source)
+		args := []string{"build", "-race", "-mod=readonly", "-o", target.binary}
+		if target.binary == binary && options.pluginBuildTag != "" {
+			args = append(args, "-tags="+options.pluginBuildTag)
+		}
+		build := exec.Command("go", append(args, target.source)...)
 		build.Env = append(os.Environ(), "GOWORK=off")
 		output, err := build.CombinedOutput()
 		require.NoError(t, err, string(output))
@@ -165,7 +174,7 @@ func startCommandWithEnv(t *testing.T, backend, topology string, environment []s
 	if topology == "cloud" {
 		cmd.Env = append(cmd.Env, "GF_PLUGIN_ACCESS_INTERNAL_SERVICES=integration")
 	}
-	cmd.Env = append(cmd.Env, environment...)
+	cmd.Env = append(cmd.Env, options.environment...)
 	stdout, err := cmd.StdoutPipe()
 	require.NoError(t, err)
 	var stderr bytes.Buffer

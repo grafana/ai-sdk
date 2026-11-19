@@ -102,8 +102,9 @@ flowchart LR
 The plugin backend composes its routes from one route table. Each entry names a
 method, a path under the prefix `/apis/{group}/{version}/namespaces/{namespace}`,
 a telemetry label, the adapter's handler and the adapter's host-error writer.
-Every entry gets the same access decision and request telemetry, and a refused
-caller gets that adapter's permission document without its body being read. The
+Every entry uses the shared access middleware and request telemetry, with
+separate namespace and catalog access decisions. A refused caller gets that
+adapter's permission document without its body being read. The
 production table matches the committed manifest: `GET {prefix}/config` and
 `POST {prefix}/language-model`, `POST {prefix}/v1/chat/completions` and
 `POST {prefix}/v1/messages`. A request that matches no entry does no access,
