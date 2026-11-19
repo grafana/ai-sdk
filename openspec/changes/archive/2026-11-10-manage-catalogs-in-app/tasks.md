@@ -9,7 +9,7 @@
 ## 2. Catalog pages and routing
 
 - [x] 2.1 Add `ROUTES.Catalogs`, the `catalogs`, `catalogs/new` and `catalogs/edit/:name` routes in `App.tsx`, and the "Model catalogs" include in `plugin.json` with the `modelcatalogs:get` action; verify with the `App` Jest test rendering each path.
-- [x] 2.2 Build the catalog list: a card per catalog with its URL, counts and provider types, "New catalog", delete confirmation, empty state and error alert; verify with Jest tests for cards, permission-gated controls, confirm-before-delete and a refused delete's message.
+- [x] 2.2 Build the catalog list: a card per catalog with its URL, counts and provider types, "New catalog", empty state and error alert; verify with Jest tests for cards, permission-gated controls and a failed list's message. Catalogs are deleted from their page (2.3).
 - [x] 2.3 Build the catalog page: a card per provider with its key state, models and quick add, the connect, Replace key and model drawer flows saved one change at a time, removal rules, read-only mode and returned-error display; verify with Jest tests for each update body, the defaults, typed keys never in the DOM, the read-only matrix and refusals shown where they happen.
 - [x] 2.4 Build the new catalog page: name, providers and models in the same cards, and one create with the entered keys; verify with Jest tests for the create body, a removed provider's key, missing parts and a refused create.
 

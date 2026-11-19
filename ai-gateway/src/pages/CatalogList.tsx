@@ -7,16 +7,14 @@ import {
   Badge,
   Card,
   ClipboardButton,
-  ConfirmModal,
   EmptyState,
-  IconButton,
   LinkButton,
   LoadingPlaceholder,
   Stack,
   TextLink,
   useStyles2,
 } from '@grafana/ui';
-import { deleteModelCatalog, errorMessage, listModelCatalogs } from '../api/modelCatalogs';
+import { errorMessage, listModelCatalogs } from '../api/modelCatalogs';
 import { providerTypeLabel } from '../components/Catalog/catalogSpec';
 import { NoCatalogAccess } from '../components/NoCatalogAccess/NoCatalogAccess';
 import { catalogBaseURL, catalogPageURL, gatewayEndpoint, prefixRoute, ROUTES } from '../constants';
@@ -34,8 +32,6 @@ function CatalogList() {
   const permissions = catalogPermissions();
   const [catalogs, setCatalogs] = useState<ModelCatalog[]>();
   const [error, setError] = useState<string>();
-  const [pendingDelete, setPendingDelete] = useState<string>();
-  const [loads, setLoads] = useState(0);
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
 
   useEffect(() => {
@@ -50,22 +46,7 @@ function CatalogList() {
     return () => {
       current = false;
     };
-  }, [permissions.read, loads]);
-
-  const confirmDelete = async () => {
-    const name = pendingDelete;
-    setPendingDelete(undefined);
-    if (name === undefined) {
-      return;
-    }
-    try {
-      await deleteModelCatalog(name);
-      setError(undefined);
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-    setLoads((n) => n + 1);
-  };
+  }, [permissions.read]);
 
   const newCatalog = permissions.create ? (
     <LinkButton icon="plus" href={prefixRoute(ROUTES.NewCatalog)}>
@@ -121,11 +102,6 @@ function CatalogList() {
                     Copy URL
                   </ClipboardButton>
                 </Card.Actions>
-                {permissions.delete && (
-                  <Card.SecondaryActions>
-                    <IconButton name="trash-alt" tooltip={`Delete ${name}`} onClick={() => setPendingDelete(name)} />
-                  </Card.SecondaryActions>
-                )}
               </Card>
             </li>
           );
@@ -149,14 +125,6 @@ function CatalogList() {
           {content()}
         </Stack>
       </div>
-      <ConfirmModal
-        isOpen={pendingDelete !== undefined}
-        title="Delete model catalog"
-        body={`Delete the catalog "${pendingDelete}"? Applications that call its URL stop working, and its saved keys are deleted.`}
-        confirmText="Delete"
-        onConfirm={confirmDelete}
-        onDismiss={() => setPendingDelete(undefined)}
-      />
     </PluginPage>
   );
 }

@@ -22,7 +22,7 @@ The app SHALL have a model catalogs page that lists the request namespace's `Mod
 - **THEN** the page SHALL say so, and SHALL offer to create one only to a user who may create catalogs
 
 ### Requirement: Catalog writes from the page
-A user who may write catalogs SHALL be able to create a catalog by naming it, connecting providers of type `anthropic` or `openai` with their keys and adding models, sent as one create; then connect and remove providers, replace keys, add, edit and remove models, and delete the catalog after confirming. On a stored catalog each change SHALL be saved when the writer confirms it, as one update that keeps the loaded object's metadata, including its resource version, and the page SHALL continue from the object the update returns. Removing a provider SHALL remove the models whose primary it is, after the writer confirms both. The page SHALL NOT offer to remove a provider that another provider's model falls back to, or a stored catalog's last model.
+A user who may write catalogs SHALL be able to create a catalog by naming it, connecting providers of type `anthropic` or `openai` with their keys and adding models, sent as one create; then connect and remove providers, replace keys, add, edit and remove models, and delete the catalog from its page after confirming. On a stored catalog each change SHALL be saved when the writer confirms it, as one update that keeps the loaded object's metadata, including its resource version, and the page SHALL continue from the object the update returns. Removing a provider SHALL remove the models whose primary it is, after the writer confirms both. The page SHALL NOT offer to remove a provider that another provider's model falls back to, or a stored catalog's last model.
 
 #### Scenario: Admin creates a catalog
 - **WHEN** an Admin names a catalog, connects a provider with a key, adds a model and creates the catalog
@@ -37,8 +37,8 @@ A user who may write catalogs SHALL be able to create a catalog by naming it, co
 - **THEN** the page SHALL NOT offer to remove that provider, and SHALL say why
 
 #### Scenario: Admin deletes a catalog
-- **WHEN** an Admin deletes a catalog and confirms
-- **THEN** the catalog SHALL be deleted and leave the list
+- **WHEN** an Admin deletes a catalog from its page and confirms
+- **THEN** the catalog SHALL be deleted, and the page SHALL return to the list, which no longer shows it
 
 #### Scenario: Concurrent edit
 - **WHEN** a change is saved after another writer changed the same catalog

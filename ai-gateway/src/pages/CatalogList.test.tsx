@@ -2,9 +2,9 @@ import React from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import CatalogList from './CatalogList';
-import { deleteModelCatalog, listModelCatalogs } from '../api/modelCatalogs';
+import { listModelCatalogs } from '../api/modelCatalogs';
 import { ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { CatalogActions } from '../permissions';
 import { signInAs } from '../testUtils';
@@ -12,7 +12,6 @@ import { signInAs } from '../testUtils';
 jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   listModelCatalogs: jest.fn(),
-  deleteModelCatalog: jest.fn(),
 }));
 
 jest.mock('@grafana/runtime', () => ({
@@ -62,7 +61,6 @@ describe('pages/CatalogList', () => {
       .mocked(listModelCatalogs)
       .mockReset()
       .mockResolvedValue([catalog('team')]);
-    jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
   });
 
   test('shows each catalog with its URL, counts and provider types, never secure names', async () => {
@@ -84,13 +82,13 @@ describe('pages/CatalogList', () => {
     ['an Editor without the writer role', OrgRole.Editor, READ_ONLY, false],
     ['an Admin without write actions', OrgRole.Admin, READ_ONLY, false],
     ['an Editor holding the writer actions', OrgRole.Editor, ALL, true],
-  ])('offers create and delete to %s only with the actions', async (_, role, actions, writes) => {
+  ])('offers create to %s only with the action, and delete to nobody', async (_, role, actions, writes) => {
     signInAs(role, actions);
     renderList();
 
     await screen.findByRole('link', { name: 'team' });
     expect(screen.queryByRole('link', { name: 'New catalog' }) !== null).toBe(writes);
-    expect(screen.queryByRole('button', { name: 'Delete team' }) !== null).toBe(writes);
+    expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
   });
 
   test('links New catalog to the create page', async () => {
@@ -123,39 +121,6 @@ describe('pages/CatalogList', () => {
     },
     EMPTY_STATE_TIMEOUT_MS
   );
-
-  test(
-    'deletes a catalog only after confirmation',
-    async () => {
-      signInAs(OrgRole.Admin, ALL);
-      renderList();
-
-      fireEvent.click(await screen.findByRole('button', { name: 'Delete team' }));
-      expect(deleteModelCatalog).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(deleteModelCatalog).not.toHaveBeenCalled();
-
-      jest.mocked(listModelCatalogs).mockResolvedValue([]);
-      fireEvent.click(screen.getByRole('button', { name: 'Delete team' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-      await waitFor(() => expect(deleteModelCatalog).toHaveBeenCalledWith('team'));
-      expect(await screen.findByText('No model catalogs yet')).toBeInTheDocument();
-    },
-    EMPTY_STATE_TIMEOUT_MS
-  );
-
-  test('shows the message of a refused delete as returned', async () => {
-    jest.mocked(deleteModelCatalog).mockRejectedValue({ status: 403, data: { message: 'forbidden: catalogwriter' } });
-    signInAs(OrgRole.Admin, ALL);
-    renderList();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete team' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-    expect(await screen.findByText('forbidden: catalogwriter')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'team' })).toBeInTheDocument();
-  });
 
   test('shows the message of a failed list as returned', async () => {
     jest.mocked(listModelCatalogs).mockRejectedValue({ status: 500, data: { message: 'storage unavailable' } });

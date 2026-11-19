@@ -216,9 +216,12 @@ test.describe('model catalog page', () => {
   test('an Admin deletes a catalog after confirming', async ({ gotoPage, page, accounts }) => {
     const { name } = await createStored(accounts.Admin);
     await gotoPage(`/${ROUTES.Catalogs}`);
+    await expect(page.getByRole('button', { name: /Delete/ })).toHaveCount(0);
 
-    await page.getByRole('button', { name: `Delete ${name}` }).click();
+    await page.getByRole('link', { name }).click();
+    await page.getByRole('button', { name: 'Delete catalog' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+    await expect(page).toHaveURL(new RegExp(`${prefixRoute(ROUTES.Catalogs)}$`));
     await expect(page.getByRole('link', { name })).toHaveCount(0);
     expect((await accounts.Admin.get(`${CATALOGS}/${name}`)).status()).toBe(404);
   });
@@ -288,7 +291,6 @@ test.describe('model catalog page', () => {
       await page.goto(prefixRoute(ROUTES.Catalogs));
       await expect(page.getByRole('link', { name })).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });
       await expect(page.getByRole('link', { name: 'New catalog' })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: `Delete ${name}` })).toHaveCount(0);
 
       await page.getByRole('link', { name }).click();
       await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
