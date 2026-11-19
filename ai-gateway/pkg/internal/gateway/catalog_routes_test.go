@@ -149,6 +149,41 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 	})
 }
 
+func TestCatalogRoutes_UnlistedModels(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	native := newFakeAnthropic(t)
+	useNativeAnthropic(t, native)
+	writer := h.serviceToken(t, testInternalService)
+	user := session(h.host.AddSession(types.TypeUser, "catalog-user", testNamespace))
+	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"}}}`)
+	require.Equal(t, http.StatusCreated, status, body)
+	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.JSONEq(t, `{"models":[]}`, body)
+	for _, tc := range []struct{ id, body string }{
+		{"claude/org/blocked", unaryBody},
+		{"claude/org/new", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"providerOptions":{"gateway":{"models":["claude/org/blocked"]}}}`},
+	} {
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), tc.id, tc.body, false, user))
+		assert.Equal(t, http.StatusNotFound, status, body)
+		assert.Contains(t, body, `"code":"model_not_found"`)
+	}
+	assert.Zero(t, native.requests.Load())
+	for _, streaming := range []bool{false, true} {
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "claude/org/new", streamedCatalogBody, streaming, user))
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Contains(t, body, `"canonicalModelId":"claude/org/new"`)
+		assert.Contains(t, body, `"modelId":"org/new"`)
+		assert.Contains(t, body, `"providerInstance":"claude"`)
+	}
+	keys, bodies := native.nativeCalls()
+	assert.Equal(t, []string{routeCatalogKey, routeCatalogKey}, keys)
+	for _, body := range bodies {
+		assert.Contains(t, body, `"model":"org/new"`)
+	}
+}
+
 func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
 	var probes atomic.Int32
