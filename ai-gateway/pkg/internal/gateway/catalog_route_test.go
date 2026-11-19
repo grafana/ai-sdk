@@ -53,22 +53,26 @@ func TestCatalogRoutes_MalformedSpec(t *testing.T) {
 	native := newFakeAnthropic(t)
 	useNativeAnthropic(t, native)
 	for _, tc := range []struct {
-		name   string
-		mutate func(map[string]any)
+		name    string
+		mutate  func(map[string]any)
+		withKey bool
 	}{
-		{"undecodable spec", func(parent map[string]any) { parent["spec"] = "sentinel-spec" }},
-		{"missing spec", func(parent map[string]any) { delete(parent, "spec") }},
-		{"null spec", func(parent map[string]any) { parent["spec"] = nil }},
-		{"missing providers", func(parent map[string]any) { parent["spec"] = map[string]any{"models": map[string]any{}} }},
-		{"null models", func(parent map[string]any) {
-			parent["spec"] = map[string]any{"providers": map[string]any{}, "models": nil}
-		}},
+		{"undecodable spec", func(parent map[string]any) { parent["spec"] = "sentinel-spec" }, true},
+		{"missing spec", func(parent map[string]any) { delete(parent, "spec") }, false},
+		{"null spec", func(parent map[string]any) { parent["spec"] = nil }, false},
+		{"missing providers", func(parent map[string]any) { parent["spec"] = map[string]any{"models": map[string]any{}} }, false},
+		{"null models with a connected provider", func(parent map[string]any) {
+			parent["spec"].(map[string]any)["models"] = nil
+		}, true},
 		{"undecodable models", func(parent map[string]any) {
-			parent["spec"] = map[string]any{"providers": map[string]any{}, "models": []any{}}
-		}},
+			parent["spec"].(map[string]any)["models"] = []any{}
+		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			info := testCatalogInfo(testCatalogParent(t, tc.mutate))
+			if !tc.withKey {
+				info.DecryptedSecureValues = nil
+			}
 			for _, route := range []string{"config", "language-model", "health", "available-models?provider=claude"} {
 				t.Run(route, func(t *testing.T) {
 					path := "/modelcatalogs/" + testCatalogName + "/" + route
@@ -85,10 +89,19 @@ func TestCatalogRoutes_MalformedSpec(t *testing.T) {
 					response := httptest.NewRecorder()
 					h.gateway.Handler().ServeHTTP(response, request)
 					assert.Equal(t, http.StatusFailedDependency, response.Code, response.Body.String())
-					assert.NotContains(t, response.Body.String(), "sentinel-spec")
-					assert.NotContains(t, response.Body.String(), "catalog-key")
+					switch route {
+					case "config", "language-model":
+						assert.JSONEq(t, `{"error":{"message":"model catalog is invalid or missing a provider key","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
+					default:
+						assert.JSONEq(t, `{"message":"invalid stored catalog configuration"}`, response.Body.String())
+					}
 				})
 			}
+			request := callerRequest(bodyBYOKCaller, "/modelcatalogs/"+testCatalogName+"/health?unexpected=true", nil)
+			request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), info))
+			response := httptest.NewRecorder()
+			h.gateway.Handler().ServeHTTP(response, request)
+			assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
 		})
 	}
 	assert.Zero(t, native.requests.Load())

@@ -25,6 +25,12 @@ const (
 // equal to its type's native endpoint counts as unset; any other must match
 // one of endpoints, without a DNS lookup.
 func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints) (config.File, error) {
+	if spec.Providers == nil {
+		return config.File{}, fmt.Errorf("modelcatalog: spec.providers must be a map")
+	}
+	if spec.Models == nil {
+		return config.File{}, fmt.Errorf("modelcatalog: spec.models must be a map")
+	}
 	if err := checkPolicy(spec); err != nil {
 		return config.File{}, err
 	}

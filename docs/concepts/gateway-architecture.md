@@ -124,8 +124,9 @@ selector builds that catalog's models for the call with `SelectStackCatalog`,
 and discovery lists it without building models. Health and the provider model
 ID field's suggestions share the same catalog checks, saved keys, bounded
 provider listing and admission, outside the model execution pipeline. Health
-reports only statuses for configured targets; suggestions use IDs from one
-saved provider without caching them.
+reports provider statuses even before models are configured, and target
+statuses only for configured primaries and fallbacks. Suggestions use IDs
+from one saved provider without caching them.
 Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
@@ -443,9 +444,9 @@ and the verified token, not from a caller choosing a different model name:
   whatever the `access_mode`; Grafana's declared checks decide who may invoke.
   A catalog with no models lists none and returns the unknown-model error
   on invocation. The selector uses only that catalog and the keys Grafana
-  decrypted for the call, checks the catalog again on every call, builds only the candidates the
-  call's chain attempts, and refuses `gateway.byok`. It never reaches the
-  configured catalog, server-held keys or request accounts.
+  decrypted for the call. It checks the catalog again on every call, builds
+  only the candidates the call's chain attempts, and refuses `gateway.byok`.
+  It never reaches the configured catalog, server-held keys or request accounts.
 
 See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).
