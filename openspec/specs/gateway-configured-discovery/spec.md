@@ -239,3 +239,7 @@ A catalog route's `config` SHALL list the parent catalog's models with the confi
 #### Scenario: Registered clients discover a catalog
 - **WHEN** the pinned TypeScript client and the Go client use the catalog route as their base URL
 - **THEN** each SHALL list the catalog's models without client changes
+
+#### Scenario: No configured models
+- **WHEN** a caller with catalog access requests `config` for a valid catalog with no models, with or without connected providers
+- **THEN** the response SHALL be `200` with `{"models":[]}`, with no provider requests
