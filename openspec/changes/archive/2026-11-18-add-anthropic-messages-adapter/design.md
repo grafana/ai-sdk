@@ -130,3 +130,34 @@ provider-fixture provenance rules do not apply to them.
   scope. #427 says to decide separately and not to block inference on them.
 - Where the internal instructions for obtaining an Anthropic API key live. They
   are not repository content.
+
+## Follow-up: output effort (#860)
+
+Apply inbound `output_config.effort` only to Anthropic candidates. OpenAI
+Responses and OpenAI-compatible candidates ignore it, preserving any existing
+provider effort options and the existing parallel-tool mapping. Apply this
+policy independently on every fallback attempt. This is a Gateway support
+boundary; provider implementations remain unchanged.
+
+Claude Code sends effort on routine requests, while catalog aliases hide the
+backing model. Forwarding effort to every backend can turn a working request
+into HTTP 400, which stops fallback. Restricting the mapping avoids introducing
+that cross-provider failure. Mapping or clamping per model was considered and
+deferred to #427 because it needs a separate capability and warning policy.
+Continuing to forward effort across providers with documentation alone was
+rejected for this increment.
+
+Anthropic effort remains a native passthrough. Unsupported models or levels can
+still return a non-retryable HTTP 400 and stop fallback; this change does not
+promise model-level validation or retry such errors. Effort alone does not
+enable thinking or change the requested output-token limit.
+
+The registered reference is commit
+`0e8e0543aeda7d4dd4ce6eade0d5b7d5a43644c1`: `@ai-sdk/anthropic@4.0.105`,
+`@ai-sdk/openai@4.0.118`, and `@ai-sdk/openai-compatible@3.0.92`. The Anthropic
+and compatible providers forward explicit provider effort unchanged upstream.
+The inbound adapter has no upstream equivalent; its narrower support boundary
+is an intentional Gateway policy, not a provider parity change. Regression
+coverage uses focused handler tests and synthetic local HTTP backends, including
+a compatible backend that rejects `reasoning_effort`. No provider recordings
+are created or modified.

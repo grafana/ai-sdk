@@ -44,14 +44,13 @@ func TestHandler_Settings(t *testing.T) {
 		name      string
 		target    execution.Target
 		namespace string
-		effortKey string
 		parallel  string
 		inverse   bool
 	}{
-		{"anthropic", execution.Target{Type: execution.TargetAnthropic}, "anthropic", "effort", "disableParallelToolUse", false},
-		{"openai", execution.Target{Type: execution.TargetOpenAI}, "openai", "reasoningEffort", "parallelToolCalls", true},
-		{"compatible", execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: " vendor.chat "}, "vendor", "reasoningEffort", "parallel_tool_calls", true},
-		{"compatible default", execution.Target{Type: execution.TargetOpenAICompatible}, "openai-compatible", "reasoningEffort", "parallel_tool_calls", true},
+		{"anthropic", execution.Target{Type: execution.TargetAnthropic}, "anthropic", "disableParallelToolUse", false},
+		{"openai", execution.Target{Type: execution.TargetOpenAI}, "openai", "parallelToolCalls", true},
+		{"compatible", execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: " vendor.chat "}, "vendor", "parallel_tool_calls", true},
+		{"compatible default", execution.Target{Type: execution.TargetOpenAICompatible}, "openai-compatible", "parallel_tool_calls", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, streaming := range []bool{false, true} {
@@ -72,7 +71,11 @@ func TestHandler_Settings(t *testing.T) {
 						settingsRequest(t, h, fmt.Sprintf(`,"output_config":{"effort":"high"},"tool_choice":{"type":"auto","disable_parallel_tool_use":%t}`, disabled), streaming)
 						encoded, err := json.Marshal(seen.ProviderOptions)
 						require.NoError(t, err)
-						assert.JSONEq(t, fmt.Sprintf(`{"%s":{"%s":"high","%s":%t}}`, tc.namespace, tc.effortKey, tc.parallel, disabled != tc.inverse), string(encoded))
+						want := fmt.Sprintf(`{"%s":{"%s":%t}}`, tc.namespace, tc.parallel, disabled != tc.inverse)
+						if tc.target.Type == execution.TargetAnthropic {
+							want = fmt.Sprintf(`{"anthropic":{"effort":"high","disableParallelToolUse":%t}}`, disabled)
+						}
+						assert.JSONEq(t, want, string(encoded))
 						assert.Equal(t, ptr(8192), seen.MaxOutputTokens)
 						assert.Equal(t, provider.ReasoningProviderDefault, seen.Reasoning)
 					})
@@ -92,38 +95,47 @@ func TestHandler_Settings(t *testing.T) {
 }
 
 func TestHandler_SettingsFallback(t *testing.T) {
-	for _, streaming := range []bool{false, true} {
-		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
-			var attempts []provider.ProviderOptions
-			unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, IsRetryable: ptr(true)})
-			primary := execution.Translate(&fakeModel{
-				generate: func(_ context.Context, o provider.CallOptions) (*provider.GenerateResult, error) {
-					attempts = append(attempts, o.ProviderOptions)
-					return nil, unavailable
-				},
-				stream: func(_ context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
-					attempts = append(attempts, o.ProviderOptions)
-					return nil, unavailable
-				},
-			}, execution.Target{Type: execution.TargetAnthropic})
-			secondary := execution.Translate(&fakeModel{
-				generate: func(_ context.Context, o provider.CallOptions) (*provider.GenerateResult, error) {
-					attempts = append(attempts, o.ProviderOptions)
-					return textResult(), nil
-				},
-				stream: func(_ context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
-					attempts = append(attempts, o.ProviderOptions)
-					return streamOf(finish(provider.FinishReasonStop)), nil
-				},
-			}, execution.Target{Type: execution.TargetOpenAI})
-			chain, err := fallback.New(primary, secondary)
-			require.NoError(t, err)
-			settingsRequest(t, settingsHandler(t, chain.WithDecider(execution.FallbackDecider)), `,"output_config":{"effort":"low"},"tool_choice":{"type":"auto","disable_parallel_tool_use":false}`, streaming)
-			require.Len(t, attempts, 2)
-			encoded, err := json.Marshal(attempts)
-			require.NoError(t, err)
-			assert.JSONEq(t, `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"openai":{"reasoningEffort":"low","parallelToolCalls":true}}]`, string(encoded))
-		})
+	for _, target := range []execution.Target{
+		{Type: execution.TargetOpenAI},
+		{Type: execution.TargetOpenAICompatible, ProviderName: "vendor.chat"},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", target.Type, streaming), func(t *testing.T) {
+				var attempts []provider.ProviderOptions
+				unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, IsRetryable: ptr(true)})
+				primary := execution.Translate(&fakeModel{
+					generate: func(_ context.Context, o provider.CallOptions) (*provider.GenerateResult, error) {
+						attempts = append(attempts, o.ProviderOptions)
+						return nil, unavailable
+					},
+					stream: func(_ context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
+						attempts = append(attempts, o.ProviderOptions)
+						return nil, unavailable
+					},
+				}, execution.Target{Type: execution.TargetAnthropic})
+				secondary := execution.Translate(&fakeModel{
+					generate: func(_ context.Context, o provider.CallOptions) (*provider.GenerateResult, error) {
+						attempts = append(attempts, o.ProviderOptions)
+						return textResult(), nil
+					},
+					stream: func(_ context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
+						attempts = append(attempts, o.ProviderOptions)
+						return streamOf(finish(provider.FinishReasonStop)), nil
+					},
+				}, target)
+				chain, err := fallback.New(primary, secondary)
+				require.NoError(t, err)
+				settingsRequest(t, settingsHandler(t, chain.WithDecider(execution.FallbackDecider)), `,"output_config":{"effort":"low"},"tool_choice":{"type":"auto","disable_parallel_tool_use":false}`, streaming)
+				require.Len(t, attempts, 2)
+				encoded, err := json.Marshal(attempts)
+				require.NoError(t, err)
+				want := `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"openai":{"parallelToolCalls":true}}]`
+				if target.Type == execution.TargetOpenAICompatible {
+					want = `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"vendor":{"parallel_tool_calls":true}}]`
+				}
+				assert.JSONEq(t, want, string(encoded))
+			})
+		}
 	}
 }
 
@@ -148,6 +160,57 @@ func TestMapRequest_Effort(t *testing.T) {
 			encoded, err := json.Marshal(translated.ProviderOptions)
 			require.NoError(t, err)
 			assert.JSONEq(t, `{"anthropic":{"effort":`+tc.value+`}}`, string(encoded))
+		})
+	}
+}
+
+func TestMessagesTranslator_NonAnthropicEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		target    execution.Target
+		namespace string
+		parallel  string
+	}{
+		{"openai", execution.Target{Type: execution.TargetOpenAI}, "openai", "parallelToolCalls"},
+		{"compatible", execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "vendor.chat"}, "vendor", "parallel_tool_calls"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, withExisting := range []bool{false, true} {
+				for _, withParallel := range []bool{false, true} {
+					t.Run(fmt.Sprintf("existing=%t/parallel=%t", withExisting, withParallel), func(t *testing.T) {
+						in := request{OutputConfig: &outputConfig{Effort: ptr(provider.ReasoningMax)}}
+						options := provider.CallOptions{}
+						if withExisting {
+							options.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: tc.namespace, Raw: json.RawMessage(`{"reasoningEffort":"low","opaque":9007199254740993}`)})
+						}
+						before, err := json.Marshal(options)
+						require.NoError(t, err)
+						if withParallel {
+							in.ToolChoice = &toolChoice{DisableParallelToolUse: ptr(false)}
+						}
+						got, err := messagesTranslator(in)(tc.target, options)
+						require.NoError(t, err)
+						after, err := json.Marshal(options)
+						require.NoError(t, err)
+						assert.JSONEq(t, string(before), string(after))
+						if !withParallel {
+							assert.Equal(t, options, got)
+						}
+						values, _, err := provider.ResolveOption[map[string]json.RawMessage](got.ProviderOptions, tc.namespace)
+						require.NoError(t, err)
+						assert.NotContains(t, values, "effort")
+						if withExisting {
+							assert.JSONEq(t, `"low"`, string(values["reasoningEffort"]))
+							assert.Equal(t, "9007199254740993", string(values["opaque"]))
+						} else {
+							assert.NotContains(t, values, "reasoningEffort")
+						}
+						if withParallel {
+							assert.Equal(t, "true", string(values[tc.parallel]))
+						}
+					})
+				}
+			}
 		})
 	}
 }

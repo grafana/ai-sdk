@@ -93,13 +93,22 @@ with a fixed invalid-request error before model resolution.
 ### Requirement: Output effort
 
 The adapter SHALL accept `output_config.effort` values `low`, `medium`, `high`,
-`xhigh` and `max` and translate them for each native candidate, including fallback.
-Anthropic SHALL receive its `effort` provider option; OpenAI Responses and
-OpenAI-compatible targets SHALL receive their `reasoningEffort` provider option.
-The target provider retains responsibility for model-specific support.
+`xhigh` and `max`. Only Anthropic candidates SHALL receive the value unchanged
+as the `effort` provider option, including fallback attempts. OpenAI Responses
+and OpenAI-compatible candidates SHALL ignore inbound effort and preserve their
+existing provider effort options. A non-retryable provider HTTP 400 SHALL stop fallback.
+
 #### Scenario: Effort on a mixed fallback chain
-- **WHEN** a request sets `output_config.effort` to `high` and falls back from Anthropic to OpenAI
-- **THEN** each candidate receives `high` under its own provider option key without inheriting the previous candidate's translated options
+- **WHEN** a request sets `output_config.effort` to `high` and falls back from Anthropic to OpenAI Responses or OpenAI-compatible
+- **THEN** the Anthropic attempt receives `effort: high`, while the next candidate receives no effort derived from the request and does not inherit the previous attempt's translated options
+
+#### Scenario: Effort on a non-Anthropic target
+- **WHEN** a valid request supplies effort to an OpenAI Responses or OpenAI-compatible target
+- **THEN** the adapter ignores inbound effort, preserves any existing provider effort option, and still translates explicit parallel-tool settings
+
+#### Scenario: Anthropic rejects effort
+- **WHEN** an Anthropic target rejects an effort level, which the adapter does not validate per model or clamp, with a non-retryable HTTP 400
+- **THEN** the Gateway reports the failure without trying the next candidate
 
 #### Scenario: Effort preserves other settings
 - **WHEN** a request supplies effort alongside existing provider options and explicit parallel-tool settings
@@ -125,7 +134,7 @@ or thinking round trips on the strength of this requirement.
 
 #### Scenario: Claude Code request shape
 - **WHEN** a request carries cache-control markers, metadata, a thinking configuration, context management, a supported output effort and beta headers
-- **THEN** the adapter serves it and translates effort for the target, while the other listed fields remain unapplied
+- **THEN** the adapter serves it and applies effort only for an Anthropic target, while the other listed fields remain unapplied
 
 #### Scenario: Limitations are documented
 - **WHEN** a reader consults the client guide

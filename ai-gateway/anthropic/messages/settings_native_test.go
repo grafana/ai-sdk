@@ -39,7 +39,7 @@ func TestHandler_SettingsNativeRequests(t *testing.T) {
 				return openai.NewResponses("test", "gpt-5", openai.WithRequestOptions(openaioption.WithBaseURL(url), openaioption.WithMaxRetries(0)))
 			},
 			response: `{"id":"resp_1","model":"gpt-5","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
-			want:     `{"reasoning":{"effort":"high","summary":"detailed"},"parallel_tool_calls":false,"max_output_tokens":8192}`,
+			want:     `{"parallel_tool_calls":false,"max_output_tokens":8192}`,
 		},
 		{
 			name: "compatible", target: execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "vendor.chat"},
@@ -47,7 +47,7 @@ func TestHandler_SettingsNativeRequests(t *testing.T) {
 				return openaicompatible.New("model", openaicompatible.WithAPIKey("test"), openaicompatible.WithBaseURL(url), openaicompatible.WithProviderName("vendor.chat"))
 			},
 			response: `{"id":"chat_1","model":"model","choices":[{"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
-			want:     `{"reasoning_effort":"high","parallel_tool_calls":false,"max_tokens":8192}`,
+			want:     `{"parallel_tool_calls":false,"max_tokens":8192}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -59,6 +59,12 @@ func TestHandler_SettingsNativeRequests(t *testing.T) {
 					return
 				}
 				requests <- body
+				if tc.target.Type == execution.TargetOpenAICompatible && body["reasoning_effort"] != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":{"message":"reasoning_effort is not supported","type":"invalid_request_error"}}`))
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(tc.response))
 			}))
@@ -74,6 +80,15 @@ func TestHandler_SettingsNativeRequests(t *testing.T) {
 				assert.JSONEq(t, string(value), string(got[key]), key)
 			}
 			assert.NotContains(t, got, "thinking")
+			if tc.target.Type != execution.TargetAnthropic {
+				assert.NotContains(t, got, "output_config")
+				assert.NotContains(t, got, "reasoning_effort")
+				if reasoning := got["reasoning"]; reasoning != nil {
+					var values map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(reasoning, &values))
+					assert.NotContains(t, values, "effort")
+				}
+			}
 		})
 	}
 }

@@ -12,7 +12,7 @@ import (
 func messagesTranslator(in request) execution.Translator {
 	return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
 		var effort *provider.ReasoningEffort
-		if in.OutputConfig != nil {
+		if target.Type == execution.TargetAnthropic && in.OutputConfig != nil {
 			effort = in.OutputConfig.Effort
 		}
 		var disabled *bool
@@ -23,12 +23,12 @@ func messagesTranslator(in request) execution.Translator {
 			return options, nil
 		}
 
-		namespace, effortKey, parallelKey := "anthropic", "effort", "disableParallelToolUse"
+		namespace, parallelKey := "anthropic", "disableParallelToolUse"
 		invertParallel := false
 		switch target.Type {
 		case execution.TargetAnthropic:
 		case execution.TargetOpenAI:
-			namespace, effortKey, parallelKey = "openai", "reasoningEffort", "parallelToolCalls"
+			namespace, parallelKey = "openai", "parallelToolCalls"
 			invertParallel = true
 		case execution.TargetOpenAICompatible:
 			namespace, _, _ = strings.Cut(target.ProviderName, ".")
@@ -36,7 +36,7 @@ func messagesTranslator(in request) execution.Translator {
 			if namespace == "" {
 				namespace = "openai-compatible"
 			}
-			effortKey, parallelKey = "reasoningEffort", "parallel_tool_calls"
+			parallelKey = "parallel_tool_calls"
 			invertParallel = true
 		default:
 			return options, execution.ErrTranslation
@@ -69,7 +69,7 @@ func messagesTranslator(in request) execution.Translator {
 			if err != nil {
 				return options, err
 			}
-			values[effortKey] = encoded
+			values["effort"] = encoded
 		}
 		if disabled != nil {
 			encoded, err := json.Marshal(*disabled != invertParallel)
