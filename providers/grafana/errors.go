@@ -61,6 +61,21 @@ func readGatewayError(ctx context.Context, resp *http.Response, limit int64) err
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return protocolError("grafana: invalid Gateway error envelope", resp.StatusCode, err)
 	}
+	var grafana struct {
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
+	}
+	// body already decoded into envelope, so an error here only means a non-string message, left empty.
+	_ = json.Unmarshal(body, &grafana)
+	if grafana.Error == nil {
+		message := "grafana: error from Grafana, not the Gateway"
+		if validPublicText(grafana.Message) {
+			message += ": " + grafana.Message
+		}
+		apiErr := protocolError(message, resp.StatusCode, nil)
+		apiErr.ResponseBody = string(body)
+		return apiErr
+	}
 	return mapGatewayError(&envelope.Error, resp.StatusCode, string(body), body)
 }
 

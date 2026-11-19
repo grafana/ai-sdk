@@ -202,6 +202,35 @@ func TestGatewayError_InvalidEnvelopes(t *testing.T) {
 	}
 }
 
+func TestGatewayError_GrafanaResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, message string
+		status              int
+	}{
+		{"wrong base URL", `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"the server could not find the requested resource","reason":"NotFound","details":{},"code":404}`, "grafana: error from Grafana, not the Gateway: the server could not find the requested resource", 404},
+		{"wrong namespace", `{"extra":null,"message":"invalid namespace","messageId":"authn.invalid-namespace","statusCode":403,"traceID":""}`, "grafana: error from Grafana, not the Gateway: invalid namespace", 403},
+		{"oversized body", `{"metadata":{},"status":"Failure","message":"grpc: received message larger than max (17826190 vs. 16777216)","reason":"TooManyRequests","code":429}`, "grafana: error from Grafana, not the Gateway: grpc: received message larger than max (17826190 vs. 16777216)", 429},
+		{"no message", `{"status":"Failure"}`, "grafana: error from Grafana, not the Gateway", 502},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			})
+			_, err := p.ListModels(context.Background())
+			var gateway *GatewayError
+			assert.NotErrorAs(t, err, &gateway)
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.Equal(t, tc.status, api.StatusCode)
+			assert.Equal(t, tc.message, api.Message)
+			assert.Equal(t, tc.body, api.ResponseBody)
+			assert.False(t, api.IsRetryable)
+		})
+	}
+}
+
 func TestStreamError_ExtensionOutcomes(t *testing.T) {
 	for _, tc := range []struct {
 		name, event string
