@@ -29,6 +29,7 @@ sources = [
   "ai-gateway/package.json",
   "ai-gateway/test/providerwire-v4/package.json",
   "ai-gateway/test/openai-chat-completions-adapter/package.json",
+  "ai-gateway/test/openai-responses-codec/package.json",
 ]
 outputs = ["node_modules/.modules.yaml"]
 run = "pnpm install --frozen-lockfile"
@@ -500,4 +501,13 @@ mise deps install --only test
 (cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race ./test/openai-chat-completions-adapter)
 pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract typecheck
 pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract test
+"""
+
+[tasks.test-openai-responses-codec]
+description = "Compare recorded OpenAI Responses inputs directly and through the codec with official OpenAI Go and TypeScript clients"
+run = """
+mise deps install --only test
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race ./test/openai-responses-codec/...)
+pnpm --filter @ai-sdk/openai-responses-codec-contract typecheck
+pnpm --filter @ai-sdk/openai-responses-codec-contract test
 """

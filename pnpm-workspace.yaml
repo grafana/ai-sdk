@@ -5,6 +5,7 @@ packages:
   - ai-gateway
   - ai-gateway/test/providerwire-v4
   - ai-gateway/test/openai-chat-completions-adapter
+  - ai-gateway/test/openai-responses-codec
 
 # Supply-chain hardening
 blockExoticSubdeps: true
