@@ -41,11 +41,11 @@ A user who may create catalogs SHALL be able to create one by name alone. The ap
 - **THEN** the page SHALL show the platform's conflict error and SHALL NOT overwrite the other change
 
 ### Requirement: Write-only provider keys
-A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. A provider with a stored key SHALL show that its key is saved, with a control to replace the key for a writer.
+A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. The page SHALL NOT show a saved-key badge. A writer SHALL have a control to replace a provider's key.
 
 #### Scenario: Key after saving
 - **WHEN** a provider is saved with a key, the catalog is reopened, or the list is shown
-- **THEN** the page SHALL NOT contain the key, and the provider SHALL show that its key is saved
+- **THEN** the page SHALL NOT contain the key or a saved-key badge
 - **AND** no response the page fetches and no browser console message SHALL contain the key
 
 #### Scenario: Key on create
@@ -72,7 +72,7 @@ The saved catalog page SHALL offer an explicit **Check health** action only when
 - **THEN** the page SHALL show its empty state without offering **Check health**
 
 ### Requirement: Browse models when adding to a saved provider
-A writer with read, update, and `modelcatalogs/available-models:get` access SHALL be able to search a saved provider's listing and type a custom ID in the same model ID field. Opening the list SHALL fetch once; focusing the field alone and filtering an open list SHALL NOT request a listing. Selecting a result SHALL fill the field without saving.
+A writer with read, update, and `modelcatalogs/available-models:get` access SHALL be able to search a saved provider's listing and type a custom ID in the same model ID field. Opening the list SHALL fetch once or reuse a pending request for the same saved provider. Focusing alone and filtering an open list SHALL NOT request a listing. Selecting a result SHALL fill the field without saving.
 
 #### Scenario: Writer adds a listed model
 - **WHEN** the writer opens the model ID field and searches the returned IDs
