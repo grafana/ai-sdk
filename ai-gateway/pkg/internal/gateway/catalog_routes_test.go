@@ -156,7 +156,7 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	writer := h.serviceToken(t, testInternalService)
 	user := session(h.host.AddSession(types.TypeUser, "catalog-user", testNamespace))
 	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
-		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"}}}`)
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"second":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"},"second":{"create":"`+editedCatalogKey+`"}}}`)
 	require.Equal(t, http.StatusCreated, status, body)
 	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
 	require.Equal(t, http.StatusOK, status, body)
@@ -177,11 +177,15 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 		assert.Contains(t, body, `"modelId":"org/new"`)
 		assert.Contains(t, body, `"providerInstance":"claude"`)
 	}
+	status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "second/org/blocked", unaryBody, false, user))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"providerInstance":"second"`)
 	keys, bodies := native.nativeCalls()
-	assert.Equal(t, []string{routeCatalogKey, routeCatalogKey}, keys)
-	for _, body := range bodies {
-		assert.Contains(t, body, `"model":"org/new"`)
-	}
+	assert.Equal(t, []string{routeCatalogKey, routeCatalogKey, editedCatalogKey}, keys)
+	require.Len(t, bodies, 3)
+	assert.Contains(t, bodies[0], `"model":"org/new"`)
+	assert.Contains(t, bodies[1], `"model":"org/new"`)
+	assert.Contains(t, bodies[2], `"model":"org/blocked"`)
 }
 
 func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {

@@ -262,8 +262,10 @@ Providers serve only listed models by default. On a saved provider card,
 turn on **Serve every model**, enter any **Blocked model IDs**, and save the
 settings together. With the API, set `serveAllModels: true` and optionally
 `modelBlocklist: ["model-to-block"]` on that provider in `spec.providers`.
-The blocklist matches exact, case-sensitive backend IDs on that provider
-instance, not prefixes or other accounts. It stays saved when you turn
+The blocklist applies to language-model routing and matches exact,
+case-sensitive backend IDs on that provider instance, not prefixes or other
+accounts. It does not cover provider-hosted tool options that name their own
+model. It stays saved when you turn
 unlisted serving off. A listed model's primary or fallback cannot use a
 blocked target. Removing a listed model does not block its backend ID;
 add it to the blocklist if it must not be served.
