@@ -259,16 +259,18 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 ### Serve every model of a provider
 
 Providers serve only listed models by default. On a saved provider card,
-turn on **Serve every model**, enter any **Blocked model IDs**, and save the
-settings together. With the API, set `serveAllModels: true` and optionally
-`modelBlocklist: ["model-to-block"]` on that provider in `spec.providers`.
+turn on **Serve every model**, choose or type any **Blocked model IDs**, and
+save the settings together. The picker switches to blocked IDs; existing
+listed models stay visible and editable. With the API, set
+`serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
+on that provider in `spec.providers`.
 The blocklist applies to language-model routing and matches exact,
 case-sensitive backend IDs on that provider instance, not prefixes or other
 accounts. It does not cover provider-hosted tool options that name their own
-model. It stays saved when you turn
-unlisted serving off. A listed model's primary or fallback cannot use a
-blocked target. Removing a listed model does not block its backend ID;
-add it to the blocklist if it must not be served.
+model. The blocklist stays saved when you turn unlisted serving off. A listed
+model's primary or fallback cannot use a blocked target. Removing a listed
+model does not block its backend ID; add the ID to the blocklist to stop
+serving it through that instance.
 
 Call an unlisted model as `<provider-instance>/<model-id>`, for example
 `team-openai/gpt-5` for the instance named `team-openai`. A listed ID or alias
@@ -277,7 +279,7 @@ blocked selector returns `404 model_not_found`. Unlisted models have no
 implicit fallback, but can use or be named in explicit `gateway.models`
 fallbacks. `/config` still discovers only listed models. The provider still
 decides which requests and models its account supports. The provider model ID
-field on the catalog page fetches suggestions separately, on demand.
+picker in either mode fetches suggestions separately, on demand.
 
 ### Custom endpoints
 

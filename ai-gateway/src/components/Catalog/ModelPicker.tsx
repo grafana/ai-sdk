@@ -20,12 +20,13 @@ interface Props {
   label: string;
   value: string;
   onChange: (id: string) => void;
-  onBlur: () => void;
+  onBlur?: () => void;
+  disabled?: boolean;
   listModels: () => Promise<ProviderModelListing>;
 }
 
 /** ModelPicker accepts an exact provider model ID and suggests matches from the saved account. */
-export function ModelPicker({ label, value, onChange, onBlur, listModels }: Props) {
+export function ModelPicker({ label, value, onChange, onBlur, disabled, listModels }: Props) {
   const s = useStyles2(getStyles);
   const listId = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -129,6 +130,7 @@ export function ModelPicker({ label, value, onChange, onBlur, listModels }: Prop
         placeholder="Search or enter a model ID"
         autoComplete="off"
         value={value}
+        disabled={disabled}
         onClick={() => void show()}
         onChange={(event) => {
           onChange(event.currentTarget.value);
@@ -137,7 +139,7 @@ export function ModelPicker({ label, value, onChange, onBlur, listModels }: Prop
         }}
         onBlur={() => {
           close();
-          onBlur();
+          onBlur?.();
         }}
         onKeyDown={keyDown}
         suffix={
@@ -146,6 +148,7 @@ export function ModelPicker({ label, value, onChange, onBlur, listModels }: Prop
             name={open ? 'angle-up' : 'angle-down'}
             aria-label={open ? 'Hide model suggestions' : 'Show model suggestions'}
             tabIndex={-1}
+            disabled={disabled}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               input.current?.focus();
