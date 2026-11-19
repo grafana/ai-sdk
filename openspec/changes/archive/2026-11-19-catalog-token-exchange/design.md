@@ -20,11 +20,9 @@ Preserve `NewWithTokenExchange`'s API-root validation, including refusal of a pa
 
 For example, selecting catalog `team.eu` and stack `stacks-123` for a user exchanges for `stacks-123` with that subject, then sends the result to `.../namespaces/stacks-123/modelcatalogs/team.eu/config` for `ListModels`, or `.../language-model` for generation or streaming.
 
-### Match the stored resource name, not the namespace or provider key
+### Validate the path segment; leave resource names to Grafana
 
-The kind schema and `stackcatalog.Validator` do not impose a catalog resource-name rule. The DNS-label check in `stackcatalog/parse.go` is for the catalog's **provider keys**, not its `metadata.name`. Grafana's manifest-kind store uses the namespaced storage key check (rejects empty, `.`, `..`, `/`, and `%`), and unified resource storage validates resource keys with `IsValidGrafanaName` (1–253 bytes; ASCII letters, digits, `-`, `_`, `:`, and `.`). This lookup syntax preserves case and punctuation. Additional reservations for new writes remain on Grafana; they do not make an existing resource name unroutable.
-
-Mirror the combined rule in a private predicate with no Grafana server or Kubernetes dependency. Reject invalid values without normalizing, escaping an invalid name, or echoing it in the error. A valid name can be appended as one path segment. The platform rule was traced in Grafana source; verify a discriminating valid name against the pinned Grafana image in CI.
+Reject an empty name, `.` or `..`, and names containing `/`, without echoing the value. Encode all other names with `url.PathEscape` before appending the segment, preserving the input without trimming or case folding. The option accepts a raw name, not an already escaped path. The DNS-label check in the Gateway is for provider keys, not catalog names, and mirroring Grafana's storage validation would let the client drift from the server. Grafana decides whether the resulting resource name is valid and exists.
 
 ### Upstream alignment and evidence
 
@@ -40,8 +38,8 @@ This is a Go extension, not a missing upstream parity feature. `test/conformance
 | Can an explicit empty selection clear an inherited catalog? | No. Mirror namespace validation: reject empty locally; use a context without a selection for namespace routes. |
 | Should direct credential flows also accept the option? | No. Keep their explicit catalog-prefixed URLs; fail before I/O if they receive a catalog selection. |
 | Does selecting a catalog require a concrete exchange even for services? | Keep the existing wildcard routing behavior for services acting as themselves. Never allow wildcard exchange on behalf of a user. |
-| Which name validation and error contract should be public? | Match Grafana resource lookup names, not DNS labels. Document local rejection without echoing input; do not add a public error type or sentinel. |
-| How much new cross-boundary evidence is needed? | Add focused Go exchange/transport coverage and snapshot, exercise a non-DNS catalog name in existing platform CI, and run the existing ProviderWire suite. Do not expand the TypeScript goldens or add a live exchange environment for this change. |
+| Which name validation and error contract should be public? | Validate only path-segment safety and encode the raw name. Let Grafana validate the resource name; do not add a public error type or sentinel. |
+| How much new cross-boundary evidence is needed? | Add focused Go exchange/transport coverage and snapshot, and run the existing ProviderWire suite. Do not expand the platform cases, TypeScript goldens, or live exchange environments for this change. |
 
 ## Compatibility
 

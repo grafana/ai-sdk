@@ -5,7 +5,7 @@ A Grafana app backend can exchange a credential on behalf of a signed-in user, b
 ## What Changes
 
 - Add `grafana.WithCatalog(ctx, name)` to select a stored `ModelCatalog` on a token-exchange call. It composes with `WithNamespace` and `WithOnBehalfOf` and applies to discovery, unary generation, and streaming.
-- Build catalog URLs under the same resolved stack namespace used for a concrete token exchange. Validate the name before exchange or Gateway I/O. Keep the API-root requirement, namespace rules, and credential handling.
+- Build catalog URLs under the same resolved stack namespace used for a concrete token exchange. Validate path-segment safety before exchange or Gateway I/O; Grafana validates resource names. Keep the API-root requirement, namespace rules, and credential handling.
 - Document catalog selection alongside the existing service-account and caller-managed access token paths.
 
 ## Capabilities

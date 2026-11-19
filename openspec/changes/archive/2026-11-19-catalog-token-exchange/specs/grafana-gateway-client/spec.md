@@ -29,16 +29,16 @@
 - **WHEN** a call on a service-account or caller-managed access-token provider uses `WithCatalog`
 - **THEN** it SHALL fail before I/O rather than ignore the selection or replace the configured prefix
 
-### Requirement: Catalog name validation
+### Requirement: Safe catalog path segment
 
-The catalog name SHALL match the stored resource's `metadata.name` lookup syntax: 1 to 253 ASCII letters, digits, hyphens, underscores, colons or dots, excluding the path segments `.` and `..`. The client SHALL preserve the selected name as given and reject an invalid selection before token exchange or Gateway I/O, without echoing the name.
+The client SHALL reject an empty name, `.` or `..`, and any name containing `/` before token exchange or Gateway I/O, without echoing the name. It SHALL escape any other name as one path segment and leave resource-name validity to Grafana.
 
-#### Scenario: Catalog name outside namespace grammar
-- **WHEN** a call selects the valid catalog name `Team_EU:v2.main`
-- **THEN** the client SHALL preserve it as the single path segment after `/modelcatalogs/`
+#### Scenario: Catalog name contains URL syntax
+- **WHEN** a selected name contains characters such as `?`, `#` or `%` but no slash
+- **THEN** the client SHALL send the literal name encoded as one path segment, not as URL syntax or an existing escape
 
-#### Scenario: Catalog name is explicitly empty or otherwise invalid
-- **WHEN** a selected name is empty, too long, a dot-segment, or contains a character outside the lookup syntax
+#### Scenario: Catalog name is explicitly empty or could alter path structure
+- **WHEN** the selected name is empty, `.` or `..`, or contains a slash
 - **THEN** the call SHALL fail locally, not select a namespace route
 
 ## MODIFIED Requirements
@@ -89,7 +89,7 @@ The shared guide SHALL cover URL and credential selection, least-privilege servi
 
 ### Requirement: Base URL shape per credential flow
 
-For a platform-hosted Gateway, the service-account and access-token base URL SHALL be the complete ProviderWire prefix on the platform origin: `/apis/<group>/<version>/namespaces/<namespace>` for namespace routes or that prefix followed by `/modelcatalogs/<name>` for catalog routes. The token-exchange base URL SHALL be the Gateway API root, `/apis/<group>/<version>`, and construction SHALL refuse a base URL with a `namespaces` path segment. The client SHALL append `/namespaces/<namespace>` for each resolved route namespace and then the optional selected catalog prefix.
+For a platform-hosted Gateway, direct credential clients SHALL take the full ProviderWire prefix: `/apis/<group>/<version>/namespaces/<namespace>` with `/modelcatalogs/<name>` for catalog routes. Token-exchange clients SHALL take the Gateway API root (`/apis/<group>/<version>`), refuse a base URL with a `namespaces` path segment, and append the resolved namespace and any selected catalog.
 
 #### Scenario: Token-exchange request is emitted
 - **WHEN** a token-exchange provider with base URL `https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1` invokes `DoGenerate` for resolved namespace `stacks-1` without a selected catalog
@@ -98,3 +98,15 @@ For a platform-hosted Gateway, the service-account and access-token base URL SHA
 #### Scenario: Catalog-prefixed base URL
 - **WHEN** construction receives a valid Grafana base URL ending in `/namespaces/stacks-1/modelcatalogs/team`
 - **THEN** the token-exchange constructor SHALL refuse it before I/O, and the two direct credential constructors SHALL continue to use the prefix as configured
+
+### Requirement: Grafana models and customer catalogs guidance
+
+The client guide SHALL explain how to offer Grafana's configured models and let a customer opt in to a stored catalog. It SHALL cover route selection for both credential flows, storing the customer's choice in the consuming plugin's settings, the Cloud allowlist for operator models, catalog calls on behalf of a user, and why a failed customer model call should not fall back to Grafana's models.
+
+#### Scenario: Plugin developer adds customer catalogs
+- **WHEN** a plugin developer follows the guide to let customers choose their own catalog
+- **THEN** the guide SHALL show where to store the catalog and model choice, how a shared token-exchange client selects the catalog in the call context, and how direct credential clients use fixed Gateway and catalog base URLs
+
+#### Scenario: Customer model fails
+- **WHEN** the guide describes a failing call to the customer's catalog
+- **THEN** it SHALL recommend surfacing the error rather than retrying on Grafana models, and say why
