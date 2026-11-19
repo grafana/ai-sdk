@@ -87,6 +87,7 @@ describe("Anthropic Messages adapter", () => {
             if (!refusal) assert.deepEqual(message.content.map((block: any) => block.input), [{ city: "Oslo" }, { city: "Rome" }]);
             continue;
           }
+          assert.equal(response.headers.get("x-accel-buffering"), "no");
           type Event = { type: string; index: number; content_block?: { type: string; id: string }; delta?: { partial_json?: string; stop_reason?: string } };
           const events: Event[] = [];
           const blocks = new Map<number, { id: string; json: string; closed: boolean }>();

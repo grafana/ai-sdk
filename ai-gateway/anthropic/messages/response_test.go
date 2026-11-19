@@ -165,3 +165,30 @@ func TestMapRequest_TextBlockBoundaries(t *testing.T) {
 	}
 	assert.Equal(t, provider.NewToolMessage(provider.ToolResultPart("a", "read", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "line one\nline two"})), options.Prompt[6])
 }
+
+func TestHandler_TruncatedStream(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		parts []provider.StreamPart
+	}{
+		{name: "empty"},
+		{name: "after text", parts: []provider.StreamPart{
+			{Type: provider.PartTextStart, ID: "text"},
+			{Type: provider.PartTextDelta, ID: "text", Delta: "partial"},
+			{Type: provider.PartTextEnd, ID: "text"},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testHandler(t, &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return streamOf(tc.parts...), nil
+			}})
+			req := httptest.NewRequest("POST", Path, strings.NewReader(`{"model":"alias","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			assert.Equal(t, "no", w.Header().Get("X-Accel-Buffering"))
+			assert.Contains(t, w.Body.String(), "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"upstream failure\"}}\n\n")
+			assert.NotContains(t, w.Body.String(), "event: message_stop")
+		})
+	}
+}
