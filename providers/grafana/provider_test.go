@@ -257,6 +257,9 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 		{"namespaced base URL", func(c *TokenExchangeConfig) {
 			c.BaseURL = "https://gateway.test/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1"
 		}},
+		{"catalog base URL", func(c *TokenExchangeConfig) {
+			c.BaseURL = "https://gateway.test/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/modelcatalogs/team"
+		}},
 		{"namespaces segment", func(c *TokenExchangeConfig) { c.BaseURL = "https://gateway.test/namespaces" }},
 		{"audience", func(c *TokenExchangeConfig) { c.Audience = " " }},
 		{"omitted audience", func(c *TokenExchangeConfig) { c.Audience = "" }},
