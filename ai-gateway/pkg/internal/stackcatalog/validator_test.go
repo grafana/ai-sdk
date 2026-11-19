@@ -60,6 +60,8 @@ func TestValidator_Validate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "create empty", action: resource.AdmissionActionCreate, object: catalog(empty, nil)},
+		{name: "create without provider map", action: resource.AdmissionActionCreate, object: catalog(v1alpha1.Spec{Models: empty.Models}, nil), wantErr: "modelcatalog: spec.providers must be a map"},
+		{name: "update without model map", action: resource.AdmissionActionUpdate, object: catalog(v1alpha1.Spec{Providers: spec.Providers}, nil), old: storedCatalog(), wantErr: "modelcatalog: spec.models must be a map"},
 		{name: "create with providers only", action: resource.AdmissionActionCreate, object: catalog(providerOnly, keys)},
 		{name: "create provider without key or models", action: resource.AdmissionActionCreate, object: catalog(providerOnly, nil), wantErr: "modelcatalog: providers.anthropic requires the secure value secure.anthropic"},
 		{name: "update removing the last model", action: resource.AdmissionActionUpdate, object: catalog(providerOnly, nil), old: storedCatalog()},

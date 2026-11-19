@@ -16,7 +16,7 @@ Use the existing wire schema: it requires `spec.providers` and `spec.models` to 
 
 ### Route preflight still fails closed
 
-`parentCatalog` currently represents a typed decode failure by passing a zero spec and no keys. That would now be valid. Carry an explicit invalid-spec state to the shared runtime preflight, with no decoded keys on failure. Treat a missing or null required map in the stored wire parent as malformed, not as an explicit empty map. Keep the existing identity check, caller authorization, request validation and error precedence. Authorized, otherwise valid requests against a malformed spec receive the existing fixed configuration error (`424`); missing or mismatched parents keep the internal host error.
+`parentCatalog` currently represents a typed decode failure by passing a zero spec and no keys. That would now be valid. Carry an explicit invalid-spec state to the shared runtime preflight, with no decoded keys on failure. Reject a missing or null required map in the shared stack parser, both on write and at runtime; it is not an explicit empty map. Keep the existing identity check, caller authorization, request validation and error precedence. Authorized, otherwise valid requests against a malformed spec receive the existing fixed configuration error (`424`); missing or mismatched parents keep the internal host error.
 
 After successful preflight, use the existing lister, index, and projection. `GET config` returns `200 {"models":[]}` for zero configured models, and a valid `POST language-model` returns the existing `404 model_not_found` document for any requested ID. Neither path constructs a candidate or contacts a provider; neither consults the operator catalog or provider inventory.
 

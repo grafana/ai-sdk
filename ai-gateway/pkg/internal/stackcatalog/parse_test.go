@@ -78,7 +78,7 @@ func TestParse_Refuses(t *testing.T) {
 		{name: "base URL", mutate: withProvider("openai", v1alpha1.Provider{Type: "openai", BaseURL: &empty}), wantErr: "modelcatalog: providers.openai.baseURL is not supported in a model catalog"},
 		{name: "provider name field", mutate: withProvider("openai", v1alpha1.Provider{Type: "openai", ProviderName: &empty}), wantErr: "modelcatalog: providers.openai.providerName is not supported in a model catalog"},
 		{name: "structured outputs set to false", mutate: withProvider("openai", v1alpha1.Provider{Type: "openai", SupportsStructuredOutputs: &unset}), wantErr: "modelcatalog: providers.openai.supportsStructuredOutputs is not supported in a model catalog"},
-		{name: "no providers for a configured model", mutate: func(spec *v1alpha1.Spec) { spec.Providers = nil }, keys: []string{}, wantErr: `config: models.balanced.primary.provider references unknown provider "anthropic"`},
+		{name: "no providers for a configured model", mutate: func(spec *v1alpha1.Spec) { clear(spec.Providers) }, keys: []string{}, wantErr: `config: models.balanced.primary.provider references unknown provider "anthropic"`},
 		{name: "unknown fallback provider", mutate: withModel(func(model *v1alpha1.Model) { model.Fallback[0].Provider = "missing" }), wantErr: "config: models.balanced.fallback[0] references unknown provider"},
 		{name: "unknown provider reference", mutate: withModel(func(model *v1alpha1.Model) { model.Primary.Provider = "missing" }), wantErr: `config: models.balanced.primary.provider references unknown provider "missing"`},
 		{name: "alias collision", mutate: withModel(func(model *v1alpha1.Model) { model.Aliases = []string{"balanced"} }), wantErr: `config: alias "balanced" collides with canonical model`},

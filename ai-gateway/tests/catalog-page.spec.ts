@@ -168,11 +168,18 @@ test.describe('model catalog page', () => {
     expect(Object.keys((await stored()).secure.anthropic)).toEqual(['name']);
     await expect(provider.getByText(SUCCESS_BADGES)).toHaveCount(0);
 
+    await addModel(page, 'anthropic', model);
+    const beforeRemoval = await stored();
     const removedProvider = page.waitForRequest(isCatalogWrite('PUT', name));
     await provider.getByRole('button', { name: 'Remove anthropic' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+    const removal = page.getByRole('dialog');
+    await expect(removal.getByText(`its models are removed: ${model}`, { exact: false })).toBeVisible();
+    await removal.getByRole('button', { name: 'Remove' }).click();
     await expect(provider).toHaveCount(0);
-    expect((await removedProvider).postDataJSON().secure).toEqual({ anthropic: { remove: true } });
+    const removeBody = (await removedProvider).postDataJSON();
+    expect(removeBody.metadata.resourceVersion).toBe(beforeRemoval.metadata.resourceVersion);
+    expect(removeBody.spec).toEqual({ providers: {}, models: {} });
+    expect(removeBody.secure).toEqual({ anthropic: { remove: true } });
     const cleared = await stored();
     expect(cleared.spec).toEqual({ providers: {}, models: {} });
     expect(Object.keys(cleared.secure ?? {})).toEqual([]);
