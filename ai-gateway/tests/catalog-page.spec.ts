@@ -115,6 +115,94 @@ test.describe('model catalog page', () => {
     }
   });
 
+  test('an Admin saves an atomic serving policy and can disable unlisted calls', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
+    const name = uniqueName();
+    const seed = catalog(name, sentinelKey('serving'));
+    const created = await accounts.Admin.post(CATALOGS, { data: { ...seed, spec: { ...seed.spec, models: {} } } });
+    expect(created.status(), await created.text()).toBe(201);
+    const stored = async () => {
+      const response = await accounts.Admin.get(`${CATALOGS}/${name}`);
+      expect(response.ok(), await response.text()).toBe(true);
+      return response.json();
+    };
+    const invoke = (id: string) =>
+      accounts.Editor.post(`${CATALOGS}/${name}/language-model`, {
+        headers: {
+          'ai-language-model-id': id,
+          'ai-language-model-specification-version': '4',
+          'ai-language-model-streaming': 'false',
+        },
+        data: { prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }], maxOutputTokens: 16 },
+      });
+
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    const provider = card(page, 'claude');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    const blocklist = provider.getByRole('textbox', { name: 'Blocked model IDs' });
+    const save = provider.getByRole('button', { name: 'Save serving settings' });
+    await expect(toggle).not.toBeChecked();
+    await toggle.press('Space');
+    await expect(toggle).toBeChecked();
+    await blocklist.fill('org/blocked');
+    const before = await stored();
+    expect(before.spec.providers.claude.serveAllModels).toBeUndefined();
+
+    const enable = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await save.click();
+    const saved = await enable;
+    expect(saved.status(), await saved.text()).toBe(200);
+    const request = saved.request().postDataJSON();
+    expect(request.metadata.resourceVersion).toBe(before.metadata.resourceVersion);
+    expect(request).not.toHaveProperty('secure');
+    const enabled = await stored();
+    expect(enabled.spec.providers.claude).toEqual({
+      type: 'anthropic',
+      serveAllModels: true,
+      modelBlocklist: ['org/blocked'],
+    });
+    await expect(provider.getByText('No listed models yet.')).toBeVisible();
+
+    const discovery = await accounts.Editor.get(`${CATALOGS}/${name}/config`);
+    expect(discovery.status(), await discovery.text()).toBe(200);
+    expect(await discovery.json()).toEqual({ models: [] });
+    const unlisted = await invoke('claude/org/new');
+    expect(unlisted.status(), await unlisted.text()).toBe(200);
+    expect(await unlisted.text()).toContain('org/new');
+    const blocked = await invoke('claude/org/blocked');
+    expect(blocked.status(), await blocked.text()).toBe(404);
+    expect((await blocked.json()).error.code).toBe('model_not_found');
+
+    const refused = await accounts.Admin.put(`${CATALOGS}/${name}`, {
+      data: {
+        apiVersion: seed.apiVersion,
+        kind: seed.kind,
+        metadata: enabled.metadata,
+        spec: {
+          ...enabled.spec,
+          models: { blocked: { name: 'Blocked', primary: { provider: 'claude', model: 'org/blocked' } } },
+        },
+      },
+    });
+    expect(refused.ok()).toBe(false);
+    expect(await refused.text()).toContain(ADMISSION_REFUSAL);
+
+    await toggle.press('Space');
+    await save.click();
+    await expect(provider.getByText('No models yet.')).toBeVisible();
+    expect((await stored()).spec.providers.claude).toEqual({
+      type: 'anthropic',
+      serveAllModels: false,
+      modelBlocklist: ['org/blocked'],
+    });
+    const disabled = await invoke('claude/org/new');
+    expect(disabled.status(), await disabled.text()).toBe(404);
+    expect((await disabled.json()).error.code).toBe('model_not_found');
+  });
+
   test('an Admin creates with a provider and can remove the last model but not that provider', async ({
     gotoPage,
     page,
@@ -433,6 +521,8 @@ test.describe('model catalog page', () => {
       await page.getByRole('link', { name }).click();
       await expect(card(page, 'claude')).toBeVisible();
       await expect(page.getByText('Read-only')).toBeVisible();
+      await expect(card(page, 'claude').getByText('Serves listed models only')).toBeVisible();
+      await expect(card(page, 'claude').getByRole('switch', { name: 'Serve every model' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);

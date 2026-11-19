@@ -162,6 +162,81 @@ describe('pages/CatalogPage', () => {
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
   });
 
+  test('saves both serving settings in one versioned update, then keeps the blocklist when disabled', async () => {
+    signInAs(OrgRole.Viewer, ALL);
+    await openPage();
+    const provider = card('spare');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    const field = provider.getByRole('textbox', { name: 'Blocked model IDs' });
+    const save = provider.getByRole('button', { name: 'Save serving settings' });
+    expect(toggle).not.toBeChecked();
+    expect(save).toBeDisabled();
+
+    fireEvent.click(toggle);
+    type(field, 'org/blocked\nBlocked-2');
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+    fireEvent.click(save);
+    expect(await provider.findByText('No listed models yet.')).toBeInTheDocument();
+    const enabled = {
+      ...stored.spec,
+      providers: {
+        ...stored.spec.providers,
+        spare: { type: 'openai', serveAllModels: true, modelBlocklist: ['org/blocked', 'Blocked-2'] },
+      },
+    };
+    expect(updateModelCatalog).toHaveBeenCalledTimes(1);
+    expect(lastUpdate()).toEqual([stored, enabled, {}]);
+
+    fireEvent.click(toggle);
+    fireEvent.click(save);
+    expect(await provider.findByText('No models yet.')).toBeInTheDocument();
+    expect(updateModelCatalog).toHaveBeenCalledTimes(2);
+    expect(lastUpdate()).toEqual([
+      updated(stored, enabled, {}),
+      { ...enabled, providers: { ...enabled.providers, spare: { ...enabled.providers.spare, serveAllModels: false } } },
+      {},
+    ]);
+    expect(field).toHaveValue('org/blocked\nBlocked-2');
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(listProviderModels).not.toHaveBeenCalled();
+  });
+
+  test.each([400, 409])('keeps the serving settings draft after a %s refusal', async (status) => {
+    jest.mocked(updateModelCatalog).mockRejectedValue({ status, data: { message: 'Serving settings refused' } });
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    const field = provider.getByRole('textbox', { name: 'Blocked model IDs' });
+    fireEvent.click(toggle);
+    type(field, 'claude-sonnet-4-6');
+    fireEvent.click(provider.getByRole('button', { name: 'Save serving settings' }));
+    expect(await provider.findByText('Serving settings refused')).toBeInTheDocument();
+    expect(toggle).toBeChecked();
+    expect(field).toHaveValue('claude-sonnet-4-6');
+  });
+
+  test('shows saved settings without editing controls to a reader', async () => {
+    jest.mocked(getModelCatalog).mockResolvedValue({
+      ...stored,
+      spec: {
+        ...stored.spec,
+        providers: {
+          ...stored.spec.providers,
+          spare: { type: 'openai', serveAllModels: true, modelBlocklist: ['org/blocked'] },
+        },
+      },
+    });
+    signInAs(OrgRole.Admin, READ_ONLY);
+    await openPage();
+    const provider = card('spare');
+    expect(provider.getByText('Serves unlisted models')).toBeInTheDocument();
+    expect(provider.getByText('Blocked model IDs: org/blocked')).toBeInTheDocument();
+    expect(provider.queryByRole('switch')).not.toBeInTheDocument();
+    expect(provider.queryByRole('textbox', { name: 'Blocked model IDs' })).not.toBeInTheDocument();
+    expect(provider.queryByRole('button', { name: 'Save serving settings' })).not.toBeInTheDocument();
+  });
+
   test('uses the model ID field to fetch, search and choose, with Add model as the only write', async () => {
     signInAs(OrgRole.Viewer, ALL);
     await openPage();
