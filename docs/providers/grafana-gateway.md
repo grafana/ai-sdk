@@ -156,9 +156,10 @@ A Grafana service can send its exchanged token in `X-Access-Token` instead of
 ### Handle large catalogs
 
 Listing returns the whole catalog or an error, never part of it. The Go client
-does not limit the catalog size. The TypeScript helper's `maxBytes` can only
-lower its limit, so if a catalog is too large for it, ask your Gateway
-administrator to publish fewer models.
+reads the catalog through a fixed limit far above the Gateway's own catalog
+limits, so it accepts any catalog the Gateway serves. The TypeScript helper's
+`maxBytes` can only lower its limit, so if a catalog is too large for it, ask
+your Gateway administrator to publish fewer models.
 
 To combine the Gateway with other providers, see
 [Fallback and registry](../guides/fallback-and-registry.md).
