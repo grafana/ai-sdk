@@ -19,6 +19,8 @@ modelCatalogKind: {
 			baseURL?:                   string
 			providerName?:              string
 			supportsStructuredOutputs?: bool
+			serveAllModels?:             bool
+			modelBlocklist?:             [...string]
 		}
 		#Model: {
 			name:         string

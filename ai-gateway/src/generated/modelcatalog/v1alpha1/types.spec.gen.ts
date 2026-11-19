@@ -5,6 +5,8 @@ export interface Provider {
 	baseURL?: string;
 	providerName?: string;
 	supportsStructuredOutputs?: boolean;
+	serveAllModels?: boolean;
+	modelBlocklist?: string[];
 }
 
 export const defaultProvider = (): Provider => ({
