@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Catalog route discovery
-A catalog route's `config` SHALL list only the parent catalog's explicitly listed models with the configured route projection: canonical rows, aliases, primary and fallbacks, with each provider name as the provider instance and its provider type as the provider. It SHALL construct no model, make no provider request, and contain no key, secure value name or object metadata.
+A catalog route's `config` SHALL list only the parent catalog's explicitly listed models with the configured route projection: canonical rows, aliases, primary and fallbacks, with each provider name as the provider instance and its provider slug as the provider: an `openai-compatible` provider's `providerName` when set, otherwise its type. It SHALL construct no model, make no provider request, and contain no key, secure value name or object metadata.
 
 #### Scenario: Catalog with two models
 - **WHEN** a caller with catalog access requests the catalog's `config`

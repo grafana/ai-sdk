@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Stack-catalog routing and fallback
-Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog first, then try an eligible unlisted selector. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be the provider types.
+Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog first, then try an eligible unlisted selector. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be derived as for operator providers: an `openai-compatible` provider's `providerName` when set, otherwise the provider type.
 
 #### Scenario: Alias call
 - **WHEN** a call requests an alias of a catalog model, even if it has the form of an unlisted selector
