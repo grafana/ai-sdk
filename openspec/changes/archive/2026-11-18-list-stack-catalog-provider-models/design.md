@@ -41,13 +41,13 @@ Deduplicate exact IDs, keep at most 512 distinct IDs of at most 256 bytes each, 
 
 ### 5. Do not cache listings
 
-Each time the suggestion list opens, it checks the current saved key. The shared admission gate bounds concurrent work without needing cache invalidation after key rotation or policy changes. Keep only the visible picker result in memory; never persist it. Gateway responses use `Cache-Control: no-store`.
+Reuse a provider's pending request inside the editor if the list opens again before that request settles. Closing the list hides its result but does not abort the request. Forget pending requests after a successful save, including key replacement, and remove each request from the editor once it settles. The shared admission gate still bounds work across providers and health checks. Do not cache completed results. Gateway responses use `Cache-Control: no-store`.
 
 ### 6. Keep manual entry available throughout
 
 Make the provider model ID field an editable combobox only on provider cards with a saved key and parent read, update and listing permissions. `CatalogPage` supplies the listing callback through `CatalogEditor`; `NewCatalog` uses the same form with a plain input and no callback. Opening the field with a click, text edit or arrow key fetches one listing while focus alone does not. Filter the results locally as the writer types. Click or Enter on a highlighted suggestion copies the exact ID into the field without saving; Tab and Escape close the list without changing the field. Only the existing **Add model** form submits the ID, whether typed or selected. No filtering on provider type as a substitute for backend policy.
 
-Show fixed messages for empty inventory, no search matches, partial results and listing or route failure. Reopening the list can retry; keep the typed ID intact and usable while loading or on any outcome. Render IDs as text, not markup or links. Drop result state on picker close, provider removal, any successful catalog write, navigation or loss of access; ignore responses from superseded requests. No persistence in the browser and no automatic refresh.
+Show fixed messages for empty inventory, no search matches, partial results and listing or route failure. Both listing and health explain how to retry when the catalog is busy (`429`). Reopening the list can retry; keep the typed ID intact and usable while loading or on any outcome. Render IDs as text, not markup or links. Drop result state on picker close, provider removal, any successful catalog write, navigation or loss of access; ignore responses from superseded requests. No persistence in the browser and no automatic refresh.
 
 ## Risks / Trade-offs
 

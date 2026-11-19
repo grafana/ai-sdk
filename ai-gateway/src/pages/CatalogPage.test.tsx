@@ -224,6 +224,70 @@ describe('pages/CatalogPage', () => {
     }
   );
 
+  test('reopens a pending listing without another request and fetches again after it settles', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.click(field);
+    fireEvent.keyDown(field, { key: 'Escape' });
+    fireEvent.click(field);
+    expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
+    await act(() => resolve({ status: 'ok', modelIds: ['reused-model'] }));
+    expect(provider.getByRole('option', { name: 'reused-model' })).toBeInTheDocument();
+
+    fireEvent.keyDown(field, { key: 'Escape' });
+    fireEvent.click(field);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not reuse a pending listing after replacing the key', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    const pending = new Promise<ProviderModelListing>((finish) => {
+      resolve = finish;
+    });
+    jest.mocked(listProviderModels).mockReturnValueOnce(pending);
+    await openPage();
+    const provider = card('anthropic');
+    const fieldName = { name: 'Add a model to anthropic' };
+    fireEvent.click(provider.getByRole('combobox', fieldName));
+    fireEvent.click(provider.getByRole('button', { name: 'Replace key' }));
+    type(dialog().getByLabelText(/^New API key/), TYPED_KEY);
+    fireEvent.click(dialog().getByRole('button', { name: 'Save key' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    fireEvent.click(provider.getByRole('combobox', fieldName));
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+    await act(() => resolve({ status: 'ok', modelIds: ['old-key-model'] }));
+    expect(provider.queryByRole('option', { name: 'old-key-model' })).not.toBeInTheDocument();
+  });
+
+  test('shows the busy message for both listing and health 429s', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    const busy = { status: 429, data: { message: 'untrusted-busy-detail' } };
+    jest.mocked(listProviderModels).mockRejectedValueOnce(busy);
+    jest.mocked(checkModelCatalogHealth).mockRejectedValueOnce(busy);
+    await openPage();
+    const provider = card('anthropic');
+    fireEvent.click(provider.getByRole('combobox', { name: 'Add a model to anthropic' }));
+    const message = 'Another check is running for this catalog. Try again in a moment.';
+    expect(await provider.findByText(message)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    const alert = await screen.findByText('Catalog health check failed');
+    expect(alert.closest('[role="alert"]')).toHaveTextContent(message);
+    expect(document.body).not.toHaveTextContent('untrusted-busy-detail');
+  });
+
   test.each(['escape', 'save', 'navigate'])('ignores a listing that finishes after %s', async (action) => {
     signInAs(OrgRole.Admin, ALL);
     let resolve!: (value: ProviderModelListing) => void;

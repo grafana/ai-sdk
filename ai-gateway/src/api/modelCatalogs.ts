@@ -13,6 +13,7 @@ interface ModelCatalogList {
 }
 
 const REQUEST_OPTIONS = { showErrorAlert: false };
+const CATALOG_BUSY_MESSAGE = 'Another check is running for this catalog. Try again in a moment.';
 
 /** modelCatalogsURL returns the ModelCatalog collection path of this Grafana's namespace. */
 export function modelCatalogsURL(): string {
@@ -60,6 +61,13 @@ export function listProviderModels(name: string, provider: string): Promise<Prov
   return getBackendSrv().post<ProviderModelListing>(url, undefined, REQUEST_OPTIONS);
 }
 
+/** providerListingErrorMessage gives fixed feedback without displaying error details. */
+export function providerListingErrorMessage(error: unknown): string {
+  return isFetchError(error) && error.status === 429
+    ? CATALOG_BUSY_MESSAGE
+    : 'Could not list models. You can still enter a model ID.';
+}
+
 /** catalogHealthErrorMessage gives fixed feedback without displaying error details. */
 export function catalogHealthErrorMessage(error: unknown): string {
   if (isFetchError(error)) {
@@ -69,7 +77,7 @@ export function catalogHealthErrorMessage(error: unknown): string {
       case 424:
         return 'Check the saved provider configuration and keys, then try again.';
       case 429:
-        return 'A check is already running or the Gateway is busy. Try again shortly.';
+        return CATALOG_BUSY_MESSAGE;
     }
   }
   return 'The catalog health check could not run. Try again.';

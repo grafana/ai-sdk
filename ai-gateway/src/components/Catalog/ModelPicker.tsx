@@ -2,9 +2,10 @@ import React, { KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, Input, useStyles2 } from '@grafana/ui';
-import { ProviderModelListing } from '../../api/modelCatalogs';
+import { providerListingErrorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 
-type Listing = { kind: 'loading' } | { kind: 'ready'; result: ProviderModelListing } | { kind: 'failed' };
+type Listing =
+  { kind: 'loading' } | { kind: 'ready'; result: ProviderModelListing } | { kind: 'failed'; message: string };
 
 const MESSAGES: Record<ProviderModelListing['status'], string> = {
   ok: 'The provider returned no models.',
@@ -43,7 +44,7 @@ export function ModelPicker({ label, value, onChange, onBlur, listModels }: Prop
     listing?.kind === 'loading'
       ? 'Loading provider models…'
       : listing?.kind === 'failed'
-        ? 'Could not list models. You can still enter a model ID.'
+        ? listing.message
         : result && (result.status !== 'ok' || ids.length === 0)
           ? MESSAGES[result.status]
           : undefined;
@@ -65,9 +66,9 @@ export function ModelPicker({ label, value, onChange, onBlur, listModels }: Prop
       if (current === generation.current) {
         setListing({ kind: 'ready', result });
       }
-    } catch {
+    } catch (error) {
       if (current === generation.current) {
-        setListing({ kind: 'failed' });
+        setListing({ kind: 'failed', message: providerListingErrorMessage(error) });
       }
     }
   };
