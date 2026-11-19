@@ -33,6 +33,7 @@ mux.HandleFunc("POST /api/chat", func(w http.ResponseWriter, r *http.Request) {
 	result := aisdk.StreamText(r.Context(), model,
 		aisdk.WithSystem("You are a helpful assistant."),
 		aisdk.WithMessages(body.Messages...),
+		aisdk.OnError(func(err error) { log.Printf("chat stream: %v", err) }),
 	)
 	if err := aisdk.WriteUIMessageStream(
 		w,
@@ -44,8 +45,11 @@ mux.HandleFunc("POST /api/chat", func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
-`WithMessages` converts the frontend history into provider messages. The HTTP
-helper sets the streaming headers, flushes chunks, and writes the terminating
+`WithMessages` converts the frontend history into provider messages. A failed
+model call does not make `WriteUIMessageStream` return an error: the browser
+gets an `error` chunk with a generic message, and `OnError` is where the server
+sees the cause. `WriteUIMessageStream` returns only errors writing the response.
+The HTTP helper sets the streaming headers, flushes chunks, and writes the terminating
 `[DONE]` event. The example keeps model reasoning on the server; expose it only
 when the application intends to show or process it in the browser.
 
