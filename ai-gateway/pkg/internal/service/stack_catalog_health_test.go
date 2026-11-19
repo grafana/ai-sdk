@@ -81,7 +81,7 @@ func TestCatalogHealthChecker_Preflight(t *testing.T) {
 		mutate func(StackCatalog)
 	}{
 		{"missing key", func(stack StackCatalog) { delete(stack.Keys, "claude") }},
-		{"invalid shape", func(stack StackCatalog) { clear(stack.Spec.Models) }},
+		{"invalid shape", func(stack StackCatalog) { clear(stack.Spec.Providers) }},
 		{"unlisted endpoint", func(stack StackCatalog) {
 			stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", BaseURL: new("https://example.invalid")}
 		}},

@@ -164,6 +164,8 @@ func TestSelectStackCatalog_Refusals(t *testing.T) {
 		{name: "byok before an invalid catalog", catalog: withKeys(nil), gateway: `{"byok":{}}`, err: execution.ErrUnsupportedGatewayControl},
 		{name: "malformed controls", gateway: `{"models":"balanced"}`, err: execution.ErrRoutingControls},
 		{name: "unknown model", modelID: "missing", err: catalog.ErrUnknownModel},
+		{name: "empty catalog", catalog: StackCatalog{Name: "empty", Spec: *v1alpha1.NewSpec()}, err: catalog.ErrUnknownModel},
+		{name: "providers without models", catalog: withSpec(func(spec *v1alpha1.Spec) { clear(spec.Models) }), err: catalog.ErrUnknownModel},
 		{name: "unknown models entry", gateway: `{"models":["missing"]}`, err: execution.ErrUnknownFallbackModel},
 		{name: "only excludes every candidate", gateway: `{"only":["other"]}`, err: execution.ErrNoRoutingCandidates},
 		{name: "composed chain above the bound", catalog: nineCandidates, modelID: "single-0", gateway: `{"models":["single-1","single-2","single-3","single-4","single-5","single-6","single-7","single-8"]}`, err: execution.ErrRoutingAttemptBound},
@@ -338,7 +340,7 @@ func TestStackCatalogLister(t *testing.T) {
 		assert.Equal(t, execution.ErrCatalogConfiguration.Error(), err.Error())
 	})
 	t.Run("undecoded parent", func(t *testing.T) {
-		_, err := StackCatalogLister{}.ListModels(WithStackCatalog(t.Context(), StackCatalog{Name: "team"}))
+		_, err := StackCatalogLister{}.ListModels(WithStackCatalog(t.Context(), StackCatalog{Name: "team", InvalidSpec: true}))
 		require.ErrorIs(t, err, execution.ErrCatalogConfiguration)
 	})
 	t.Run("no carried catalog", func(t *testing.T) {

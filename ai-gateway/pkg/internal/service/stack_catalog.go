@@ -29,6 +29,8 @@ type StackCatalog struct {
 	Name string
 	// Spec is the stored spec, checked again on every selection.
 	Spec v1alpha1.Spec
+	// InvalidSpec reports that the stored spec could not be decoded as a catalog.
+	InvalidSpec bool
 	// Keys are the catalog's decrypted secure values. Each key is a provider
 	// name.
 	Keys resource.DecryptedSecureValues
@@ -108,6 +110,9 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 // returns it with those values. Any failure is [execution.ErrCatalogConfiguration],
 // without the reason, which names spec identifiers.
 func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (config.File, []string, error) {
+	if stack.InvalidSpec {
+		return config.File{}, nil, execution.ErrCatalogConfiguration
+	}
 	secureKeys := make([]string, 0, len(stack.Keys))
 	keys := make([]string, 0, len(stack.Keys))
 	for name, value := range stack.Keys {
