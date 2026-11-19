@@ -94,15 +94,14 @@ them.
 The adapter accepts these and does nothing with them. The request succeeds; the
 provider call does not carry them:
 
-| Field | Behavior today |
-| --- | --- |
-| `cache_control` on the request, system blocks, content blocks and tools | Ignored. No cache breakpoints reach the provider. |
-| `thinking` | Ignored. The model is not asked to think. |
-| `thinking` and `redacted_thinking` blocks in history | Dropped. |
-| `context_management` | Ignored. |
-| `output_config` (including `effort`) | Ignored. |
-| `metadata` (including `user_id`) and `service_tier` | Ignored. |
-| `anthropic-beta`, `anthropic-version`, `?beta=true` | Accepted, no effect. |
+- `cache_control` on the request, system blocks, content blocks and tools:
+  ignored. No cache breakpoints reach the provider.
+- `thinking`: ignored. The model is not asked to think.
+- `thinking` and `redacted_thinking` blocks in history: dropped.
+- `context_management`: ignored.
+- `output_config`, including `effort`: ignored.
+- `metadata`, including `user_id`, and `service_tier`: ignored.
+- `anthropic-beta`, `anthropic-version` and `?beta=true`: accepted, no effect.
 
 Responses never contain thinking blocks. `stop_sequence` is reported as `null`
 even when a stop sequence ended the turn.
@@ -121,3 +120,7 @@ fixed message and no provider text. A failure after a stream has started ends th
 stream with an `error` event and no `message_stop`. Failures the platform
 produces before the plugin runs, such as a rejected `x-api-key`, use the
 platform's own format.
+
+---
+
+[Prev: Use official OpenAI clients](openai-chat-completions.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)
