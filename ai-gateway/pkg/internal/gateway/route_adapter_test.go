@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	anthropicmessages "github.com/grafana/ai-sdk/ai-gateway/anthropic/messages"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/testadapter"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
@@ -160,4 +161,18 @@ func TestTestAdapter_IsNotLinkedIntoThePlugin(t *testing.T) {
 	require.NoError(t, command.Run(), stderr.String())
 	assert.Contains(t, stdout.String(), "github.com/grafana/ai-sdk/ai-gateway/internal/execution\n")
 	assert.NotContains(t, stdout.String(), "github.com/grafana/ai-sdk/ai-gateway/internal/testadapter")
+}
+
+func TestMessagesRoute_RefusalUsesTheAdapterFormat(t *testing.T) {
+	h := newAdapterHarness(t)
+	body := &countingBody{}
+	request := callerRequest(bodyRefusedCaller, http.MethodPost, anthropicmessages.Path, body)
+	response := httptest.NewRecorder()
+	h.handler.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+	assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+	assert.JSONEq(t, `{"type":"error","error":{"type":"permission_error","message":"permission denied"}}`, response.Body.String())
+	assert.Zero(t, body.reads.Load())
+	assert.Empty(t, h.nativeRequests())
+	assert.Contains(t, h.logs.String(), `"route":"`+routeAnthropicMessages+`"`)
 }

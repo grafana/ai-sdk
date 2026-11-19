@@ -9,51 +9,51 @@ import (
 )
 
 type apiError struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
+	Type    apiErrorType `json:"type"`
+	Message string       `json:"message"`
 }
 
 type errorEnvelope struct {
-	Type  string   `json:"type"`
-	Error apiError `json:"error"`
+	Type  envelopeType `json:"type"`
+	Error apiError     `json:"error"`
 }
 
-func errorType(status int) (typ, message string) {
+func errorType(status int) (typ apiErrorType, message string) {
 	switch status {
 	case 400:
-		return "invalid_request_error", "invalid or unsupported request"
+		return apiErrorInvalidRequest, "invalid or unsupported request"
 	case 401:
-		return "authentication_error", "authentication failed"
+		return apiErrorAuthentication, "authentication failed"
 	case 403:
-		return "permission_error", "permission denied"
+		return apiErrorPermission, "permission denied"
 	case 404:
-		return "not_found_error", "model or route not found"
+		return apiErrorNotFound, "model or route not found"
 	case 405:
-		return "invalid_request_error", "method not allowed"
+		return apiErrorInvalidRequest, "method not allowed"
 	case 413:
-		return "request_too_large", "request too large"
+		return apiErrorRequestTooLarge, "request too large"
 	case 415:
-		return "invalid_request_error", "JSON content type required"
+		return apiErrorInvalidRequest, "JSON content type required"
 	case 424:
-		return "api_error", "upstream dependency failed"
+		return apiErrorAPI, "upstream dependency failed"
 	case 429:
-		return "rate_limit_error", "rate limit exceeded"
+		return apiErrorRateLimit, "rate limit exceeded"
 	case 499:
-		return "api_error", "request canceled"
+		return apiErrorAPI, "request canceled"
 	case 502:
-		return "api_error", "upstream failure"
+		return apiErrorAPI, "upstream failure"
 	case 503:
-		return "overloaded_error", "service unavailable"
+		return apiErrorOverloaded, "service unavailable"
 	case 504:
-		return "timeout_error", "request timed out"
+		return apiErrorTimeout, "request timed out"
 	default:
-		return "api_error", "internal error"
+		return apiErrorAPI, "internal error"
 	}
 }
 
 func errorBody(status int) []byte {
 	typ, message := errorType(status)
-	body, _ := json.Marshal(errorEnvelope{Type: "error", Error: apiError{Type: typ, Message: message}})
+	body, _ := json.Marshal(errorEnvelope{Type: envelopeError, Error: apiError{Type: typ, Message: message}})
 	return body
 }
 

@@ -16,7 +16,7 @@ type eventWriter struct {
 	flush func()
 }
 
-func (e eventWriter) event(name string, value any) {
+func (e eventWriter) event(name eventType, value any) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return
@@ -27,7 +27,7 @@ func (e eventWriter) event(name string, value any) {
 
 func (e eventWriter) errorEvent(status int) {
 	typ, message := errorType(status)
-	e.event("error", errorEnvelope{Type: "error", Error: apiError{Type: typ, Message: message}})
+	e.event(eventError, errorEnvelope{Type: envelopeError, Error: apiError{Type: typ, Message: message}})
 }
 
 type blockKind uint8
@@ -56,8 +56,8 @@ func (s *streamState) start() {
 		return
 	}
 	s.started = true
-	s.events.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{
-		ID: s.id, Type: "message", Role: "assistant", Model: s.model, Content: []map[string]any{}, Usage: s.usage,
+	s.events.event(eventMessageStart, map[string]any{"type": eventMessageStart, "message": messageResponse{
+		ID: s.id, Type: envelopeMessage, Role: provider.RoleAssistant, Model: s.model, Content: []map[string]any{}, Usage: s.usage,
 	}})
 }
 
@@ -65,7 +65,7 @@ func (s *streamState) closeBlock() {
 	if s.kind == blockNone {
 		return
 	}
-	s.events.event("content_block_stop", map[string]any{"type": "content_block_stop", "index": s.index})
+	s.events.event(eventContentBlockStop, map[string]any{"type": eventContentBlockStop, "index": s.index})
 	s.kind, s.toolID = blockNone, ""
 }
 
@@ -74,21 +74,21 @@ func (s *streamState) open(kind blockKind, content map[string]any) {
 	s.closeBlock()
 	s.index, s.kind = s.next, kind
 	s.next++
-	s.events.event("content_block_start", map[string]any{"type": "content_block_start", "index": s.index, "content_block": content})
+	s.events.event(eventContentBlockStart, map[string]any{"type": eventContentBlockStart, "index": s.index, "content_block": content})
 }
 
 func (s *streamState) openText() {
-	s.open(blockText, map[string]any{"type": "text", "text": ""})
+	s.open(blockText, map[string]any{"type": contentBlockText, "text": ""})
 }
 
 func (s *streamState) openTool(id, name string) {
-	s.open(blockTool, map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}})
+	s.open(blockTool, map[string]any{"type": contentBlockToolUse, "id": id, "name": name, "input": map[string]any{}})
 	s.toolID = id
 	s.tools[id] = true
 }
 
-func (s *streamState) delta(kind string, key, value string) {
-	s.events.event("content_block_delta", map[string]any{"type": "content_block_delta", "index": s.index, "delta": map[string]string{"type": kind, key: value}})
+func (s *streamState) delta(kind deltaType, key, value string) {
+	s.events.event(eventContentBlockDelta, map[string]any{"type": eventContentBlockDelta, "index": s.index, "delta": map[string]any{"type": kind, key: value}})
 }
 
 // consume applies one provider part and reports whether it broke the
@@ -111,7 +111,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 		if s.kind != blockText {
 			s.openText()
 		}
-		s.delta("text_delta", "text", part.Delta)
+		s.delta(deltaText, "text", part.Delta)
 	case provider.PartTextEnd:
 		if s.kind == blockText {
 			s.closeBlock()
@@ -125,7 +125,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 		if s.kind != blockTool || (part.ID != "" && part.ID != s.toolID) {
 			return false
 		}
-		s.delta("input_json_delta", "partial_json", part.Delta)
+		s.delta(deltaInputJSON, "partial_json", part.Delta)
 	case provider.PartToolInputEnd:
 		if s.kind != blockTool {
 			return false
@@ -137,7 +137,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 				return false
 			}
 			s.openTool(part.ToolCallID, part.ToolName)
-			s.delta("input_json_delta", "partial_json", part.Input)
+			s.delta(deltaInputJSON, "partial_json", part.Input)
 			s.closeBlock()
 		}
 	case provider.PartFinish:
@@ -204,6 +204,6 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	}
 	state.start()
 	state.closeBlock()
-	state.events.event("message_delta", map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": state.usage})
-	state.events.event("message_stop", map[string]string{"type": "message_stop"})
+	state.events.event(eventMessageDelta, map[string]any{"type": eventMessageDelta, "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": state.usage})
+	state.events.event(eventMessageStop, map[string]any{"type": eventMessageStop})
 }
