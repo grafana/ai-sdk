@@ -188,9 +188,12 @@ test.describe('model catalog page', () => {
     expect(blocked.status(), await blocked.text()).toBe(404);
     expect((await blocked.json()).error.code).toBe('model_not_found');
 
+    const disable = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
     await toggle.press('Space');
-    await expect(toggle).not.toBeChecked();
+    const disabledUpdate = await disable;
+    expect(disabledUpdate.status(), await disabledUpdate.text()).toBe(200);
     await expect(provider.getByText('No models yet.')).toBeVisible();
+    await expect(toggle).toBeChecked({ checked: false });
     expect((await stored()).spec.providers.claude).toEqual({
       type: 'anthropic',
       serveAllModels: false,
