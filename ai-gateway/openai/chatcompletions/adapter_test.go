@@ -76,7 +76,7 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-	for _, body := range []string{`null`, basic + basic, `{"model":"x","messages":[{"role":"developer","content":"no"}]}`, `{"model":"x","messages":[{"role":"tool","tool_call_id":"orphan","content":"no"}]}`} {
+	for _, body := range []string{`null`, basic + basic, `{"model":"x","messages":[{"role":"developer","content":"no"}]}`, `{"model":"x","messages":[{"role":"tool","tool_call_id":"orphan","content":"no"}]}`, `{"model":"x","messages":[{"role":"user","content":""}]}`, `{"model":"x","messages":[{"role":"system","content":""},{"role":"user","content":[]}]}`, `{"model":"x","messages":[{"role":"user","content":[{"type":"text","text":""}]}]}`} {
 		_, err := mapRequest([]byte(body))
 		require.Error(t, err)
 	}

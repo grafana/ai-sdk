@@ -14,9 +14,9 @@ not silently truncated according to a different protocol's semantics.
 The adapter SHALL validate a closed schema before typed mapping. It SHALL
 represent text, client-owned functions and continuations, structured response
 formats, reasoning effort and supported sampling settings. Unsupported fields,
-multiple choices, storage true and invalid settings SHALL fail before model
-resolution. Duplicate keys SHALL use their last value; incorrectly cased keys
-SHALL fail.
+multiple choices, storage true, invalid settings and a prompt without content
+SHALL fail before model resolution. Duplicate keys SHALL use their last value;
+incorrectly cased keys SHALL fail.
 
 #### Scenario: Duplicate and incorrectly cased fields
 - **WHEN** a request repeats the model key or includes `Model` instead
@@ -38,6 +38,12 @@ SHALL fail.
 #### Scenario: Function with no parameters
 - **WHEN** a function declaration omits parameters
 - **THEN** the adapter supplies an empty object parameter schema.
+
+#### Scenario: Prompt without content
+- **WHEN** no message has non-empty text or a function call, such as a single
+  user message with empty content
+- **THEN** the request fails with `400 invalid_request_error` before model
+  resolution; a prompt with any non-empty text or function call is mapped.
 
 ### Requirement: Candidate-local Chat defaults
 
