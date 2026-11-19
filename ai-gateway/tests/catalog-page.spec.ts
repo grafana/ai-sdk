@@ -115,11 +115,7 @@ test.describe('model catalog page', () => {
     }
   });
 
-  test('an Admin saves an atomic serving policy and can disable unlisted calls', async ({
-    gotoPage,
-    page,
-    accounts,
-  }) => {
+  test('an Admin saves blocked IDs before enabling unlisted calls', async ({ gotoPage, page, accounts }) => {
     const name = uniqueName();
     const seed = catalog(name, 'e2e-health-accepted-key');
     const created = await accounts.Admin.post(CATALOGS, { data: { ...seed, spec: { ...seed.spec, models: {} } } });
@@ -146,25 +142,27 @@ test.describe('model catalog page', () => {
     const blocklist = provider.getByRole('list', { name: 'Blocked model IDs' });
     const addBlockedID = provider.getByRole('button', { name: 'Add blocked ID' });
     const addModelID = provider.getByRole('combobox', { name: 'Add a model to claude' });
-    const save = provider.getByRole('button', { name: 'Save serving settings' });
+    const editBlocked = provider.getByRole('button', { name: 'Edit blocked IDs' });
     await expect(toggle).not.toBeChecked();
     await expect(addModelID).toBeVisible();
     await expect(blockedID).toHaveCount(0);
-    await toggle.press('Space');
-    await expect(toggle).toBeChecked();
+    await editBlocked.click();
     await expect(addModelID).toHaveCount(0);
     await blockedID.fill('org/blocked');
     await addBlockedID.click();
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
     const before = await stored();
-    expect(before.spec.providers.claude.serveAllModels).toBeUndefined();
+    expect(before.spec.providers.claude).toEqual({ type: 'anthropic', modelBlocklist: ['org/blocked'] });
 
     const enable = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
-    await save.click();
+    await toggle.press('Space');
     const saved = await enable;
     expect(saved.status(), await saved.text()).toBe(200);
     const request = saved.request().postDataJSON();
     expect(request.metadata.resourceVersion).toBe(before.metadata.resourceVersion);
     expect(request).not.toHaveProperty('secure');
+    await expect(toggle).toBeChecked();
+    await expect(provider.getByRole('button', { name: 'Save serving settings' })).toHaveCount(0);
     const enabled = await stored();
     expect(enabled.spec.providers.claude).toEqual({
       type: 'anthropic',
@@ -184,7 +182,7 @@ test.describe('model catalog page', () => {
     expect((await blocked.json()).error.code).toBe('model_not_found');
 
     await toggle.press('Space');
-    await save.click();
+    await expect(toggle).not.toBeChecked();
     await expect(provider.getByText('No models yet.')).toBeVisible();
     expect((await stored()).spec.providers.claude).toEqual({
       type: 'anthropic',
@@ -198,19 +196,19 @@ test.describe('model catalog page', () => {
     const listed = 'claude-sonnet-4-6';
     await addModel(page, 'claude', listed);
     const beforeRefusal = await stored();
-    await toggle.press('Space');
+    await editBlocked.click();
     await expect(addModelID).toHaveCount(0);
     await blockedID.click();
     await provider.getByRole('option', { name: listed }).click();
     await expect(blockedID).toHaveValue(listed);
     await addBlockedID.click();
-    await save.click();
     await expect(
       provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)
     ).toBeVisible();
-    await expect(toggle).toBeChecked();
+    await expect(toggle).not.toBeChecked();
+    await expect(blockedID).toHaveValue(listed);
     await expect(blocklist.getByText('org/blocked')).toBeVisible();
-    await expect(blocklist.getByText(listed)).toBeVisible();
+    await expect(blocklist.getByText(listed)).toHaveCount(0);
     const afterRefusal = await stored();
     expect(afterRefusal.metadata.resourceVersion).toBe(beforeRefusal.metadata.resourceVersion);
     expect(afterRefusal.spec).toEqual(beforeRefusal.spec);

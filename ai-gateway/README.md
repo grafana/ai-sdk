@@ -259,10 +259,11 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 ### Serve every model of a provider
 
 Providers serve only listed models by default. On a saved provider card,
-turn on **Serve every model**, choose or type any **Blocked model IDs**, and
-save the settings together. The picker switches to blocked IDs; existing
-listed models stay visible and editable. With the API, set
-`serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
+turn on **Serve every model** to allow unlisted models immediately. The picker
+switches to **Blocked model IDs**; adding or removing an ID saves immediately.
+To set exclusions before enabling, select **Edit blocked IDs** while the
+switch is off. Existing listed models stay visible and editable. With the API,
+set `serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
 on that provider in `spec.providers`.
 The blocklist applies to language-model routing and matches exact,
 case-sensitive backend IDs on that provider instance, not prefixes or other

@@ -19,7 +19,7 @@ After shared preflight, a qualified lookup must name an enabled instance and a v
 
 ### Discovery: list configured models only
 
-Keep `/config` local and deterministic, even if a provider serves unlisted IDs and the catalog advertises none. Calling `available-models` from discovery would run provider traffic on the user's stored key, add latency and partial results, and make account inventory visible to catalog invokers. Do not call it from inference, saves, or rendering the new settings either. Reuse the on-demand model ID picker for writers with listing permission. It adds listed models in listed-only mode and edits the draft blocklist in serve-every mode. Suggestions reflect account inventory, not what the Gateway serves. Writers may still enter an exact ID by hand.
+Keep `/config` local and deterministic, even if a provider serves unlisted IDs and the catalog advertises none. Calling `available-models` from discovery would run provider traffic on the user's stored key, add latency and partial results, and make account inventory visible to catalog invokers. Do not call it from inference, saves, or rendering the new settings either. Reuse the on-demand model ID picker for writers with listing permission. It adds listed models or edits blocked IDs, with only one picker shown at a time. Suggestions reflect account inventory, not what the Gateway serves. Writers may still enter an exact ID by hand.
 
 ### Blocklist: exact IDs scoped to the instance
 
@@ -35,9 +35,9 @@ An unlisted selector supplies one candidate, with no inherited or inferred fallb
 
 Do not define provider-wide policy defaults or copy policy from a listed candidate for the same backend. An unlisted Anthropic candidate has no opt-in to container skills or server-side fallback. Writers who need per-candidate grants would list a model and configure it explicitly once those fields are supported. #781 remains separate.
 
-### Provider settings: save the switch and blocklist together
+### Provider settings: save each deliberate action
 
-On a saved provider card, stage edits until the writer explicitly saves both fields in one versioned catalog update. This avoids briefly enabling every model before the blocklist is saved. Omit unchanged secure values, show platform errors in place, and keep the draft if the save fails. Readers without update permission see saved settings but no editing controls. Name-only creation and key management do not change.
+On a saved provider card, toggling the switch or adding or removing an ID writes once through the versioned catalog update. Writing a switch change preserves saved blocked IDs. A writer who needs exclusions before enabling can edit the blocklist while the switch is off. This keeps one-click enable for empty blocklists without requiring other writers to expose models they intend to block. Reflect only successful writes, omit secure values, and retain an ID if its add is refused. Readers see saved settings without editing controls.
 
 ## Risks / Trade-offs
 
