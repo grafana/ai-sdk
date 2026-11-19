@@ -31,14 +31,15 @@ func TestOfficialSDK_StackCatalog(t *testing.T) {
 			t.Cleanup(proxy.Close)
 			ca := filepath.Join(t.TempDir(), "native-ca.pem")
 			require.NoError(t, os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: proxy.Certificate.Raw}), 0600))
-			t.Setenv("SSL_CERT_FILE", ca)
-			t.Setenv("HTTPS_PROXY", proxy.URL)
-			t.Setenv("NO_PROXY", "localhost,127.0.0.1")
 
 			operator := &upstream{}
 			operatorServer := httptest.NewServer(http.HandlerFunc(operator.handle))
 			t.Cleanup(operatorServer.Close)
-			base := startCommand(t, operatorServer.URL, string(mode))
+			base := startCommandWithEnv(t, operatorServer.URL, string(mode), []string{
+				"SSL_CERT_FILE=" + ca,
+				"HTTPS_PROXY=" + proxy.URL,
+				"NO_PROXY=localhost,127.0.0.1",
+			})
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			saveSDKCatalog(t, ctx, base)

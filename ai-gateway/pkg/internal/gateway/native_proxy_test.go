@@ -5,7 +5,6 @@ package gateway
 import (
 	"crypto/x509"
 	"fmt"
-	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"

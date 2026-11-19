@@ -136,6 +136,11 @@ const commandShutdownTimeout = 10 * time.Second
 
 func startCommand(t *testing.T, backend, topology string, customConfig ...string) string {
 	t.Helper()
+	return startCommandWithEnv(t, backend, topology, nil, customConfig...)
+}
+
+func startCommandWithEnv(t *testing.T, backend, topology string, environment []string, customConfig ...string) string {
+	t.Helper()
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "gateway")
 	hostBinary := filepath.Join(dir, "plugin-host")
@@ -160,6 +165,7 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	if topology == "cloud" {
 		cmd.Env = append(cmd.Env, "GF_PLUGIN_ACCESS_INTERNAL_SERVICES=integration")
 	}
+	cmd.Env = append(cmd.Env, environment...)
 	stdout, err := cmd.StdoutPipe()
 	require.NoError(t, err)
 	var stderr bytes.Buffer

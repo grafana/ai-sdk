@@ -76,7 +76,7 @@ func assertChatExtension(t *testing.T, scope extension.Scope, guard gatewayExten
 	h := newHarnessWithOptions(t, platformhost.TopologySelfHosted, options)
 	native := newFakeAnthropic(t)
 	useNativeAnthropic(t, native)
-	h.createTeamCatalog(t)
+	storeChatFallbackCatalog(t, h)
 	if scope == extension.ScopeTenant {
 		storeChatMiddleware(t, h, privateExtension, "")
 	}
@@ -121,12 +121,28 @@ func assertChatExtension(t *testing.T, scope extension.Scope, guard gatewayExten
 				if !route.applies || responsePhase {
 					wantCalls++
 				}
-				assert.Equal(t, wantCalls, route.provider.requests.Load(), "streaming=%t", streaming)
+				require.Equal(t, wantCalls, route.provider.requests.Load(), "streaming=%t", streaming)
+				if wantCalls > before {
+					_, bodies := route.provider.nativeCalls()
+					assert.NotContains(t, bodies[before], "chat-fallback")
+				}
 				assert.NotContains(t, body, privateExtension)
 				assert.NotContains(t, body, routeCatalogKey)
 			}
 		})
 	}
+}
+
+func storeChatFallbackCatalog(t *testing.T, h *harness) {
+	t.Helper()
+	document := `{"metadata":{"name":"` + testCatalogName + `"},"spec":{
+		"providers":{"claude":{"type":"anthropic"}},
+		"models":{"team-model":{"name":"Team model","aliases":["team"],
+			"primary":{"provider":"claude","model":"claude-sonnet-4-6"},
+			"fallback":[{"provider":"claude","model":"chat-fallback"}]}}
+	},"secure":{"claude":{"create":"` + routeCatalogKey + `"}}}`
+	status, response := sendObject(t, context.Background(), http.MethodPost, catalogURL(h.server.URL, ""), h.serviceToken(t, testInternalService), document)
+	require.Equal(t, http.StatusCreated, status, response)
 }
 
 func storeChatMiddleware(t *testing.T, h *harness, name, member string) {
