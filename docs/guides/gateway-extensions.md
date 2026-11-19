@@ -351,6 +351,8 @@ Logs and model metrics record a denial as the outcome `denied`, not as an
 error, so error rates exclude it. `grafana_ai_gateway_extension_events_total`
 counts denials and failures by extension, phase and event, including phase
 `configure` for a namespace configuration its extension refuses.
+`grafana_ai_gateway_extension_observations_dropped_total` counts observations
+dropped because the Gateway had begun shutting down.
 `grafana_ai_gateway_tenant_config_reads_total` counts namespace reads by
 `result` (`success` or `failed`), and
 `grafana_ai_gateway_tenant_config_unimplemented_types_total` counts enabled
