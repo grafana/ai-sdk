@@ -16,26 +16,35 @@ const (
 	providerOpenAI    = "openai"
 )
 
-// Parse validates a stack catalog spec whose providers have the secure keys
-// in keys, and returns it as a config.File without provider keys.
-func Parse(spec v1alpha1.Spec, keys []string) (config.File, error) {
+// Catalog is a checked stack catalog without provider keys.
+type Catalog struct {
+	config.File
+	serving map[string]servingPolicy
+}
+
+// Parse validates a stack catalog spec whose providers have the secure keys in keys.
+func Parse(spec v1alpha1.Spec, keys []string) (Catalog, error) {
 	if spec.Providers == nil {
-		return config.File{}, fmt.Errorf("modelcatalog: spec.providers must be a map")
+		return Catalog{}, fmt.Errorf("modelcatalog: spec.providers must be a map")
 	}
 	if spec.Models == nil {
-		return config.File{}, fmt.Errorf("modelcatalog: spec.models must be a map")
+		return Catalog{}, fmt.Errorf("modelcatalog: spec.models must be a map")
 	}
 	if err := checkPolicy(spec); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
 	}
 	file := convert(spec)
 	if err := file.ValidateShape(); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
+	}
+	serving, err := parseServingPolicies(spec, file)
+	if err != nil {
+		return Catalog{}, err
 	}
 	if err := checkKeys(file, keys); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
 	}
-	return file, nil
+	return Catalog{File: file, serving: serving}, nil
 }
 
 func checkPolicy(spec v1alpha1.Spec) error {
