@@ -195,8 +195,11 @@ A stack can also store its own model catalogs in Grafana as `ModelCatalog`
 resources, with each provider's API key held as a Grafana secure value, and
 call their models through the catalog's own routes.
 
-Admins manage catalogs on the app's **Model catalogs** page. A catalog's page
-shows each connected provider with the models it serves. Connecting a provider
+Admins manage catalogs on the app's **Model catalogs** page. Create a catalog
+by name, then connect providers and add models from its page. You can save a
+provider with a key before adding its first model, or remove the last model
+without deleting the catalog. A catalog's page shows each connected provider
+with the models it serves. Connecting a provider
 takes its type and API key, and adding a model takes only the provider's model
 ID, which applications then request it by; a model's details, such as another
 ID, a display name, aliases and fallbacks, are edited from the model. Each
@@ -231,6 +234,10 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 - `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
   `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
   can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
+- Both `spec.providers` and `spec.models` can be empty maps. A catalog with no
+  models is valid: discovery returns `{"models":[]}` and calls return the
+  unknown-model error. The operator `model_catalog` setting still requires at
+  least one provider and one model when set.
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.

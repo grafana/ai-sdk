@@ -438,8 +438,9 @@ and the verified token, not from a caller choosing a different model name:
 - **Catalog:** on a `ModelCatalog`'s routes, any verified user, service account
   or service acting alone whose token covers the namespace gets catalog access,
   whatever the `access_mode`; Grafana's declared checks decide who may invoke.
-  The selector uses only that catalog and the keys Grafana decrypted for the
-  call, checks the catalog again on every call, builds only the candidates the
+  A catalog with no models lists none and returns the unknown-model error
+  on invocation. The selector uses only that catalog and the keys Grafana
+  decrypted for the call, checks the catalog again on every call, builds only the candidates the
   call's chain attempts, and refuses `gateway.byok`. It never reaches the
   configured catalog, server-held keys or request accounts.
 
