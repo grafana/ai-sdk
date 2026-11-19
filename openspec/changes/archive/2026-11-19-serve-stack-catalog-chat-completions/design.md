@@ -98,8 +98,8 @@ serialized. Keep existing classification, framing and cancellation ownership.
 
 ### Parity boundary
 
-Checked [the registered baseline](../../../test/conformance/upstream.yaml)
-and [PARITY.md](../../../test/conformance/PARITY.md): Vercel AI commit
+Checked [the registered baseline](../../../../test/conformance/upstream.yaml)
+and [PARITY.md](../../../../test/conformance/PARITY.md): Vercel AI commit
 `0e8e0543aeda7d4dd4ce6eade0d5b7d5a43644c1` (ai 7.0.173,
 `@ai-sdk/openai` 4.0.118, `@ai-sdk/openai-compatible` 3.0.92,
 `@ai-sdk/gateway` 4.0.146). The pinned OpenAI and compatible Chat
@@ -146,4 +146,4 @@ change is needed for this route. Synthetic providers are not live recordings.
 | Which declared permission should the nested route use? | `get` on the single-segment `chat-completions` subresource in the existing model invoker role, not parent-only `get`, the slash-separated route tail, or a new role. |
 | Expand supported Chat fields or clear defaults via empty `stop`? | No. Keep the existing subset and presence semantics; make any new wire behavior a separate compatibility change. |
 | How much deployed and SDK evidence should gate the change? | One official Go SDK matrix through the plugin for both modes, plus focused Grafana Playwright API coverage in the existing suite. Do not add a second SDK matrix or browser UI work. Mark deployed Cloud verification blocked on platform support. |
-| Which catalog page should document the URL? | Use [Call a stored catalog](../../../ai-gateway/README.md#call-a-stored-catalog) now and link it from the Chat guide. Do not depend on the in-app catalog page; showing the URL there can follow once that page lands. |
+| Which catalog page should document the URL? | Use [Call a stored catalog](../../../../ai-gateway/README.md#call-a-stored-catalog) now and link it from the Chat guide. Do not depend on the in-app catalog page; showing the URL there can follow once that page lands. |
