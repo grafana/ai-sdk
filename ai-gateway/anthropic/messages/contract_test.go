@@ -88,7 +88,7 @@ func TestHandler_StopReasons(t *testing.T) {
 				var message anthropicsdk.Message
 				if streaming {
 					stream := client.Messages.NewStreaming(context.Background(), params)
-					defer stream.Close()
+					defer func() { assert.NoError(t, stream.Close()) }()
 					var stopSequence json.RawMessage
 					for stream.Next() {
 						current := stream.Current()
