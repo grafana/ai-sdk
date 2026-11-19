@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Catalog writes from the page
-A user who may create catalogs SHALL be able to create one by name alone. The app SHALL send one create with empty provider and model maps and no secure values, then open the saved catalog's page on success. On a stored catalog, a writer SHALL be able to connect and remove providers of type `anthropic` or `openai`, replace keys, add, edit and remove models, and delete the catalog after confirming. Each change to the stored catalog SHALL be saved when the writer confirms it, as one update that keeps the loaded object's metadata, including its resource version, and the page SHALL continue from the object the update returns. Removing a provider SHALL remove its key and the models whose primary it is after confirmation, but SHALL NOT be offered while any model that would remain falls back to it.
+A user who may create catalogs SHALL be able to create one by name alone. The app SHALL send one create with empty provider and model maps and no secure values, then open the saved catalog's page on success. On a stored catalog, a writer SHALL be able to connect and remove providers of type `anthropic` or `openai`, replace keys, add, edit and remove models, and delete the catalog from its page after confirming. Each change to the stored catalog SHALL be saved when the writer confirms it, as one update that keeps the loaded object's metadata, including its resource version, and the page SHALL continue from the object the update returns. Removing a provider SHALL remove its key and the models whose primary it is after confirmation, but SHALL NOT be offered while any model that would remain falls back to it.
 
 #### Scenario: Admin creates a catalog
 - **WHEN** an Admin enters a valid name and creates a catalog
@@ -33,8 +33,8 @@ A user who may create catalogs SHALL be able to create one by name alone. The ap
 - **THEN** the page SHALL NOT offer to remove that provider, and SHALL say why
 
 #### Scenario: Admin deletes a catalog
-- **WHEN** an Admin deletes a catalog and confirms
-- **THEN** the catalog SHALL be deleted and leave the list
+- **WHEN** an Admin deletes a catalog from its page and confirms
+- **THEN** the catalog SHALL be deleted, and the page SHALL return to the list, which no longer shows it
 
 #### Scenario: Concurrent edit
 - **WHEN** a change is saved after another writer changed the same catalog
@@ -72,15 +72,16 @@ The saved catalog page SHALL offer an explicit **Check health** action only when
 - **THEN** the page SHALL show its empty state without offering **Check health**
 
 ### Requirement: Browse models when adding to a saved provider
-A writer who can read and update a saved catalog and has `get` on `modelcatalogs/available-models` SHALL be able to browse and search a named saved provider's listing from **Add model**. Explicitly confirming a listed ID SHALL fill the provider model ID field without saving. The listing SHALL be fetched only on explicit request and search SHALL NOT trigger further provider requests.
+A writer with read, update, and `modelcatalogs/available-models:get` access SHALL be able to search a saved provider's listing and type a custom ID in the same model ID field. Opening the list SHALL fetch once; focusing the field alone and filtering an open list SHALL NOT request a listing. Selecting a result SHALL fill the field without saving.
 
 #### Scenario: Writer adds a listed model
-- **WHEN** the writer opens the picker and searches the returned IDs
-- **THEN** the writer SHALL be able to confirm a match and add it with the existing model defaults, validation and save behavior
+- **WHEN** the writer opens the model ID field and searches the returned IDs
+- **THEN** clicking a match or pressing Enter on a highlighted match SHALL fill the same field
+- **AND** **Add model** SHALL keep the existing validation, defaults and save behavior
 
 #### Scenario: Writer browses before adding the first model
 - **WHEN** a writer with listing permission connects a provider and its key is saved
-- **THEN** the provider card SHALL offer browsing even if the provider has no configured models
+- **THEN** the model ID field SHALL offer suggestions even if the provider has no configured models
 
 #### Scenario: Create flow or listing permission absent
 - **WHEN** a writer opens the name-only create form or adds a model to a saved provider without listing permission
