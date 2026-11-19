@@ -282,7 +282,11 @@ test.describe('model catalog page', () => {
     expect(Object.keys(current.spec.models)).toEqual(['other']);
   });
 
-  test('an Admin checks the stored keys and models without exposing provider errors', async ({ gotoPage, page, accounts }) => {
+  test('an Admin checks the stored keys and models without exposing provider errors', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
     const name = uniqueName();
     const accepted = 'e2e-health-accepted-key';
     const rejected = 'e2e-health-rejected-key';

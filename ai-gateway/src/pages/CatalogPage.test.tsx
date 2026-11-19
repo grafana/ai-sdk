@@ -148,7 +148,10 @@ describe('pages/CatalogPage', () => {
   });
 
   test('a writer without the explicit health permission cannot check', async () => {
-    signInAs(OrgRole.Admin, ALL.filter((action) => action !== CatalogActions.CheckHealth));
+    signInAs(
+      OrgRole.Admin,
+      ALL.filter((action) => action !== CatalogActions.CheckHealth)
+    );
     await openPage();
     expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
     expect(checkModelCatalogHealth).not.toHaveBeenCalled();
@@ -177,9 +180,11 @@ describe('pages/CatalogPage', () => {
     renderPage(true);
     const first = await screen.findByRole('button', { name: 'Check health' });
     let finish!: (result: CatalogHealth) => void;
-    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(new Promise((resolve) => {
-      finish = resolve;
-    }));
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
     fireEvent.click(first);
     fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
     expect(screen.queryByRole('button', { name: 'Checking health…' })).not.toBeInTheDocument();
