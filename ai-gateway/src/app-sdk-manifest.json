@@ -335,6 +335,37 @@
                                     "x-grafana-declared-authz-verb": "get"
                                 }
                             },
+                            "/v1/chat/completions": {
+                                "post": {
+                                    "operationId": "createModelCatalogChatCompletion",
+                                    "parameters": [
+                                        {
+                                            "name": "namespace",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "name": "name",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    ],
+                                    "responses": {
+                                        "default": {
+                                            "description": "OpenAI Chat Completions response for the catalog"
+                                        }
+                                    },
+                                    "x-grafana-declared-authz-resource": "modelcatalogs",
+                                    "x-grafana-declared-authz-subresource": "chat-completions",
+                                    "x-grafana-declared-authz-verb": "get"
+                                }
+                            },
                             "/v1/messages": {
                                 "post": {
                                     "operationId": "createModelCatalogAnthropicMessage",
@@ -834,6 +865,55 @@
                                 "x-grafana-declared-authz-verb": "get"
                             }
                         },
+                        "/namespaces/{namespace}/modelcatalogs/{name}/v1/chat/completions": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "in": "path",
+                                    "name": "name",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "createModelCatalogChatCompletion",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "name",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI Chat Completions response for the catalog"
+                                    }
+                                },
+                                "x-grafana-declared-authz-resource": "modelcatalogs",
+                                "x-grafana-declared-authz-subresource": "chat-completions",
+                                "x-grafana-declared-authz-verb": "get"
+                            }
+                        },
                         "/namespaces/{namespace}/modelcatalogs/{name}/v1/messages": {
                             "parameters": [
                                 {
@@ -1025,6 +1105,12 @@
                     },
                     {
                         "kind": "ModelCatalog/config",
+                        "verbs": [
+                            "get"
+                        ]
+                    },
+                    {
+                        "kind": "ModelCatalog/chat-completions",
                         "verbs": [
                             "get"
                         ]
