@@ -31,6 +31,7 @@ type upstream struct {
 	hold        bool
 	invalidJSON bool
 	cancelled   chan struct{}
+	key         string
 }
 
 func (u *upstream) handle(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +44,11 @@ func (u *upstream) handle(w http.ResponseWriter, r *http.Request) {
 	u.requests = append(u.requests, body)
 	fail, hold, invalidJSON := u.fail, u.hold, u.invalidJSON
 	u.mu.Unlock()
-	if r.URL.Path != "/v1/responses" || r.Header.Get("Authorization") != "Bearer fake-backend-key" {
+	key := u.key
+	if key == "" {
+		key = "fake-backend-key"
+	}
+	if r.URL.Path != "/v1/responses" || r.Header.Get("Authorization") != "Bearer "+key {
 		w.WriteHeader(401)
 		return
 	}
@@ -144,7 +149,7 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	if len(customConfig) > 0 {
 		config = customConfig[0]
 	}
-	cmd := exec.Command(hostBinary, "--plugin", binary, "--topology", topology, "--namespace", "stacks-1", "--service-account-token", testToken, "--route-deadline", "10s")
+	cmd := exec.Command(hostBinary, "--plugin", binary, "--topology", topology, "--namespace", "stacks-1", "--service-account-token", testToken, "--route-deadline", "10s", "--manifest", "../../src/app-sdk-manifest.json")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if !strings.HasPrefix(name, "GF_PLUGIN_") && !strings.HasPrefix(name, "GRAFANA_") && !strings.HasPrefix(name, "SIGIL_") && !strings.HasPrefix(name, "AGENTO11Y_") {
