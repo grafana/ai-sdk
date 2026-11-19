@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -69,15 +70,11 @@ func mapRequest(body []byte) (request, provider.CallOptions, error) {
 		return in, provider.CallOptions{}, errInvalidRequest
 	}
 	options := provider.CallOptions{MaxOutputTokens: &in.MaxTokens, Temperature: in.Temperature, TopP: in.TopP, TopK: in.TopK, StopSequences: in.Stop}
-	if isPresent(in.System) {
-		text, err := textContent(in.System)
-		if err != nil {
-			return in, options, err
-		}
-		if text != "" {
-			options.Prompt = append(options.Prompt, provider.NewSystemMessage(text))
-		}
+	system, err := systemMessages(in.System)
+	if err != nil {
+		return in, options, err
 	}
+	options.Prompt = append(options.Prompt, system...)
 	toolNames := make(map[string]string)
 	for _, msg := range in.Messages {
 		messages, err := mapMessage(msg, toolNames)
@@ -122,14 +119,7 @@ func mapRequest(body []byte) (request, provider.CallOptions, error) {
 
 func mapMessage(msg message, toolNames map[string]string) ([]provider.Message, error) {
 	if msg.Role == "system" {
-		text, err := textContent(msg.Content)
-		if err != nil {
-			return nil, err
-		}
-		if text == "" {
-			return nil, nil
-		}
-		return []provider.Message{provider.NewSystemMessage(text)}, nil
+		return systemMessages(msg.Content)
 	}
 	var role provider.Role
 	switch msg.Role {
@@ -174,7 +164,7 @@ func mapMessage(msg message, toolNames map[string]string) ([]provider.Message, e
 			if role != provider.RoleUser || item.ToolUseID == "" || !known {
 				return nil, errInvalidRequest
 			}
-			text, err := textContent(item.Content)
+			texts, err := textBlocks(item.Content)
 			if err != nil {
 				return nil, err
 			}
@@ -183,7 +173,7 @@ func mapMessage(msg message, toolNames map[string]string) ([]provider.Message, e
 				outputType = provider.ToolOutputErrorText
 			}
 			flush()
-			out = append(out, provider.NewToolMessage(provider.ToolResultPart(item.ToolUseID, name, &provider.ToolResultOutput{Type: outputType, Text: text})))
+			out = append(out, provider.NewToolMessage(provider.ToolResultPart(item.ToolUseID, name, &provider.ToolResultOutput{Type: outputType, Text: strings.Join(texts, "\n")})))
 		default:
 			return nil, errUnsupportedRequest
 		}
@@ -202,24 +192,38 @@ func isObject(raw json.RawMessage) bool {
 	return json.Unmarshal(raw, &object) == nil && object != nil
 }
 
-func textContent(raw json.RawMessage) (string, error) {
+func systemMessages(raw json.RawMessage) ([]provider.Message, error) {
+	texts, err := textBlocks(raw)
+	if err != nil {
+		return nil, err
+	}
+	var messages []provider.Message
+	for _, text := range texts {
+		if text != "" {
+			messages = append(messages, provider.NewSystemMessage(text))
+		}
+	}
+	return messages, nil
+}
+
+func textBlocks(raw json.RawMessage) ([]string, error) {
 	if !isPresent(raw) {
-		return "", nil
+		return nil, nil
 	}
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
-		return text, nil
+		return []string{text}, nil
 	}
 	var items []block
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return "", errInvalidRequest
+		return nil, errInvalidRequest
 	}
-	var out bytes.Buffer
+	texts := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.Type != "text" {
-			return "", errUnsupportedRequest
+			return nil, errUnsupportedRequest
 		}
-		out.WriteString(item.Text)
+		texts = append(texts, item.Text)
 	}
-	return out.String(), nil
+	return texts, nil
 }

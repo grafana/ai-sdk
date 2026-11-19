@@ -57,8 +57,8 @@ func TestHandler_DisableParallelToolUse(t *testing.T) {
 		want      map[string]any
 	}{
 		{"anthropic", execution.Target{Type: execution.TargetAnthropic}, "anthropic", map[string]any{"disableParallelToolUse": true}},
-		{"openai", execution.Target{Type: execution.TargetOpenAI}, "openai", map[string]any{"parallelToolCalls": false}},
-		{"compatible", execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "vendor.chat"}, "vendor", map[string]any{"parallel_tool_calls": false}},
+		{"openai", execution.Target{Type: execution.TargetOpenAI}, "openai", map[string]any{"parallelToolCalls": false, "store": false}},
+		{"compatible", execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "vendor.chat"}, "vendor", map[string]any{"parallel_tool_calls": false, "store": false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			seen := serveForTarget(t, tc.target, body(`,"tool_choice":{"type":"auto","disable_parallel_tool_use":true}`))
@@ -70,7 +70,7 @@ func TestHandler_DisableParallelToolUse(t *testing.T) {
 
 	t.Run("explicit false keeps parallel calls on", func(t *testing.T) {
 		seen := serveForTarget(t, execution.Target{Type: execution.TargetOpenAI}, body(`,"tool_choice":{"type":"auto","disable_parallel_tool_use":false}`))
-		assert.Equal(t, map[string]any{"parallelToolCalls": true}, rawOption(t, seen, "openai"))
+		assert.Equal(t, map[string]any{"parallelToolCalls": true, "store": false}, rawOption(t, seen, "openai"))
 	})
 
 	t.Run("unset sets no provider option", func(t *testing.T) {
@@ -108,10 +108,10 @@ func TestHandler_ClaudeCodeRequestFixture(t *testing.T) {
 	require.Equal(t, 200, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "event: message_stop")
 
-	// Two system blocks join into one system message, the reminder stays a
-	// system message in place, and thinking history is dropped.
-	require.Len(t, seen.Prompt, 5)
-	assert.Equal(t, []provider.Role{provider.RoleSystem, provider.RoleUser, provider.RoleSystem, provider.RoleAssistant, provider.RoleTool}, roles(seen.Prompt))
+	// Each of the three system blocks and the in-conversation reminder keeps
+	// its own message; thinking history is dropped.
+	require.Len(t, seen.Prompt, 7)
+	assert.Equal(t, []provider.Role{provider.RoleSystem, provider.RoleSystem, provider.RoleSystem, provider.RoleUser, provider.RoleSystem, provider.RoleAssistant, provider.RoleTool}, roles(seen.Prompt))
 	require.Len(t, seen.Tools, 2)
 	assert.Empty(t, seen.ProviderOptions)
 }
@@ -122,4 +122,21 @@ func roles(messages []provider.Message) []provider.Role {
 		out[i] = m.Role
 	}
 	return out
+}
+
+func TestHandler_StorageDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		target    execution.Target
+		namespace string
+	}{
+		{"openai", execution.Target{Type: execution.TargetOpenAI}, "openai"},
+		{"compatible", execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "vendor.chat"}, "vendor"},
+		{"compatible default", execution.Target{Type: execution.TargetOpenAICompatible}, "openai-compatible"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seen := serveForTarget(t, tc.target, `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}`)
+			assert.Equal(t, map[string]any{"store": false}, rawOption(t, seen, tc.namespace))
+		})
+	}
 }

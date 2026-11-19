@@ -10,11 +10,11 @@ and a compatibility pass is recorded.
 
 ## Base URL and credentials
 
-Use the namespace's API prefix as the Anthropic base URL. The client appends
+Use a stored catalog's API prefix as the Anthropic base URL. The client appends
 `/v1/messages`:
 
 ```text
-https://<grafana-host>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>
+https://<grafana-host>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>/modelcatalogs/<catalog>
 ```
 
 Send a Grafana service-account token as a **bearer token**. The Grafana platform
@@ -22,9 +22,14 @@ authenticates the request before the plugin runs and rejects `x-api-key` with
 HTTP 403, so an Anthropic client's default API-key option does not work. Use the
 client's bearer or auth-token option instead. The token is never used as, or
 forwarded as, a provider credential; provider keys come from the Gateway's
-configuration. Access rules, including the Cloud restrictions on user and
-service-account callers, are the same as for the
-[Chat Completions adapter](openai-chat-completions.md#access-and-supported-behavior).
+configuration. Catalog callers need `get` access to the catalog and its
+`messages` subresource. The `aigateway:modelinvoker` role, bound to Editor,
+grants both. Calls use only the named catalog's models and keys.
+
+For the operator-configured catalog, omit `/modelcatalogs/<catalog>` from the
+base URL. That namespace route keeps the Cloud restrictions on user and
+service-account callers described in the
+[Chat Completions guide](openai-chat-completions.md#access-and-supported-behavior).
 See [Gateway authentication](gateway-authentication.md) for the credential
 contract.
 
@@ -34,7 +39,7 @@ canonical ID.
 ## Claude Code
 
 ```bash
-export ANTHROPIC_BASE_URL="https://<grafana-host>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>"
+export ANTHROPIC_BASE_URL="https://<grafana-host>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>/modelcatalogs/<catalog>"
 export ANTHROPIC_AUTH_TOKEN="<grafana service-account token>"
 export ANTHROPIC_MODEL="<catalog alias>"
 claude
@@ -75,16 +80,24 @@ configured fallback attempts.
 
 - `model`, `max_tokens` (required, positive) and `messages`.
 - System text as a string or text blocks. A `system`-role message after the first
-  message stays a system message at its position, as Claude Code sends.
+  message stays at its position. Each nonempty system text block becomes a
+  separate system message.
 - User and assistant turns as a string or content blocks: `text`, `tool_use` and
-  `tool_result`.
+  `tool_result`. Multiple text blocks within a tool result are joined with
+  newlines.
 - Client function tools, `tool_choice` (`auto`, `any`, `tool`, `none`),
   `stop_sequences`, `temperature`, `top_p`, `top_k` and `stream`.
 - `disable_parallel_tool_use`, applied per target: Anthropic's own option, and the
   inverse of `parallelToolCalls` or `parallel_tool_calls` for OpenAI and
   OpenAI-compatible targets.
 - Unary messages and SSE with text and tool-use blocks, stop reasons and
-  provider-reported usage, including cache read and creation tokens.
+  provider-reported usage, including cache read and creation tokens. Parallel
+  tool inputs keep separate block indexes, including interleaved arguments.
+- Stop reasons: `end_turn`, `tool_use`, `max_tokens`, `pause_turn`,
+  `stop_sequence` and `refusal`. Provider content-filter finishes map to
+  `refusal` and complete normally, without an upstream error.
+- OpenAI and OpenAI-compatible targets receive `store: false`, including on
+  fallback attempts.
 
 The Gateway runs no tools. It returns `tool_use` blocks and the client executes
 them.
@@ -116,7 +129,8 @@ neither are model listing or batch endpoints.
 ## Errors
 
 Failures return `{"type":"error","error":{"type":...,"message":...}}` with a
-fixed message and no provider text. A failure after a stream has started ends the
+fixed message and no provider text. A deadline during stream setup returns
+HTTP 504 with `timeout_error`. A failure after a stream has started ends the
 stream with an `error` event and no `message_stop`. Failures the platform
 produces before the plugin runs, such as a rejected `x-api-key`, use the
 platform's own format.

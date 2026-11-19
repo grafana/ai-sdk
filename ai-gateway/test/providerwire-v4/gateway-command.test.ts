@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
+import { parseJsonEventStream } from "@ai-sdk/provider-utils";
+import { messagesReply } from "./native-messages";
 import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { generateText, isStepCount, jsonSchema, Output, streamText, tool } from "ai";
@@ -61,6 +63,57 @@ before(() => {
 
 after(() => {
   rmSync(buildDirectory, { recursive: true, force: true });
+});
+
+describe("Anthropic Messages adapter", () => {
+  it("preserves interleaved tools and refusals through a compatible backend", async () => {
+    const fake = await FakeCompatible.start();
+    fake.messages = true;
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", compatibleConfig(fake.url));
+      for (const refusal of [false, true]) {
+        for (const streaming of [false, true]) {
+          const response: Response = await fetch(`${gateway.baseURL}/v1/messages`, {
+            method: "POST", headers: { Authorization: `Bearer ${TEST_TOKEN}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "compatible", max_tokens: 64, stream: streaming, messages: [{ role: "user", content: refusal ? "refuse" : "weather" }] }),
+            signal: AbortSignal.timeout(15_000),
+          });
+          assert.equal(response.status, 200);
+          assert.equal(fake.requests.at(-1)?.body.store, false);
+          if (!streaming) {
+            const message = await response.json();
+            assert.equal(message.stop_reason, refusal ? "refusal" : "tool_use");
+            if (!refusal) assert.deepEqual(message.content.map((block: any) => block.input), [{ city: "Oslo" }, { city: "Rome" }]);
+            continue;
+          }
+          type Event = { type: string; index: number; content_block?: { type: string; id: string }; delta?: { partial_json?: string; stop_reason?: string } };
+          const events: Event[] = [];
+          const blocks = new Map<number, { id: string; json: string; closed: boolean }>();
+          for await (const parsed of parseJsonEventStream({ stream: response.body!, schema: jsonSchema<Event>({ type: "object", required: ["type"], properties: { type: { type: "string" } } }) })) {
+            assert.ok(parsed.success);
+            const event = parsed.value;
+            events.push(event);
+            assert.notEqual(event.type, "error");
+            if (event.content_block?.type === "tool_use") blocks.set(event.index, { id: event.content_block.id, json: "", closed: false });
+            const block = blocks.get(event.index);
+            if (event.delta?.partial_json != null) {
+              assert.ok(block && !block.closed);
+              block.json += event.delta.partial_json;
+            }
+            if (event.type === "content_block_stop" && block) block.closed = true;
+          }
+          assert.equal(events.at(-1)?.type, "message_stop");
+          assert.equal(events.find(event => event.type === "message_delta")?.delta?.stop_reason, refusal ? "refusal" : "tool_use");
+          if (!refusal) assert.deepEqual([...blocks.values()].map(block => ({ id: block.id, input: JSON.parse(block.json), closed: block.closed })), [
+            { id: "a", input: { city: "Oslo" }, closed: true },
+            { id: "b", input: { city: "Rome" }, closed: true },
+          ]);
+        }
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), () => fake.stop()); }
+  });
 });
 
 describe("structured output candidate attribution", () => {
@@ -4443,6 +4496,7 @@ class FakeAnthropic {
 }
 
 class FakeCompatible {
+  messages = false;
   metadata = false;
   structuredOutput = false;
   readonly url: string;
@@ -4510,6 +4564,7 @@ class FakeCompatible {
       response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
       return;
     }
+    if (this.messages) { messagesReply(body, response); return; }
     if (this.metadata) { nativeMetadataReply("compatible", body, response); return; }
     if (body.stream !== true) {
       response.writeHead(200, { "Content-Type": "application/json" });

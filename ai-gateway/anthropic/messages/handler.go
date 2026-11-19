@@ -170,6 +170,8 @@ func stopReason(reason provider.FinishReason) (string, bool) {
 	switch reason.Unified {
 	case provider.FinishReasonToolCalls:
 		return "tool_use", true
+	case provider.FinishReasonContentFilter:
+		return "refusal", true
 	case provider.FinishReasonLength:
 		return "max_tokens", true
 	case provider.FinishReasonStop:

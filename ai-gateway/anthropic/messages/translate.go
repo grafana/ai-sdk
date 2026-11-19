@@ -9,32 +9,39 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// messagesTranslator applies disable_parallel_tool_use in each target's own
-// option namespace, the way the Chat adapter applies parallel_tool_calls. A
-// request that does not set the flag passes through unchanged for every target.
+// messagesTranslator applies the Gateway storage policy and parallel tool
+// choice in each target's option namespace.
 func messagesTranslator(disableParallel *bool) execution.Translator {
 	return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
-		if disableParallel == nil {
-			return options, nil
-		}
 		namespace := target.ProviderName
 		values := map[string]any{}
 		switch target.Type {
 		case execution.TargetAnthropic:
 			namespace = "anthropic"
-			values["disableParallelToolUse"] = *disableParallel
+			if disableParallel != nil {
+				values["disableParallelToolUse"] = *disableParallel
+			}
 		case execution.TargetOpenAI:
 			namespace = "openai"
-			values["parallelToolCalls"] = !*disableParallel
+			values["store"] = false
+			if disableParallel != nil {
+				values["parallelToolCalls"] = !*disableParallel
+			}
 		case execution.TargetOpenAICompatible:
 			namespace, _, _ = strings.Cut(namespace, ".")
 			namespace = strings.TrimSpace(namespace)
 			if namespace == "" {
 				namespace = "openai-compatible"
 			}
-			values["parallel_tool_calls"] = !*disableParallel
+			values["store"] = false
+			if disableParallel != nil {
+				values["parallel_tool_calls"] = !*disableParallel
+			}
 		default:
 			return provider.CallOptions{}, execution.ErrTranslation
+		}
+		if len(values) == 0 {
+			return options, nil
 		}
 		raw, err := json.Marshal(values)
 		if err != nil {
