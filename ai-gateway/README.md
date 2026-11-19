@@ -262,11 +262,12 @@ add it to the blocklist if it must not be served.
 
 Call an unlisted model as `<provider-instance>/<model-id>`, for example
 `team-openai/gpt-5` for the instance named `team-openai`. A listed ID or alias
-wins if it matches the full selector. A blocked selector returns
-`404 model_not_found`. Unlisted models have no implicit fallback, but can use
-or be named in explicit `gateway.models` fallbacks. `/config` still discovers
-only listed models, and the provider still decides which requests and models
-its account supports. **Browse models** remains a separate on-demand lookup.
+wins if it matches the full selector. If no listed ID or alias matches, a
+blocked selector returns `404 model_not_found`. Unlisted models have no
+implicit fallback, but can use or be named in explicit `gateway.models`
+fallbacks. `/config` still discovers only listed models. The provider still
+decides which requests and models its account supports. The provider model ID
+field on the catalog page fetches suggestions separately, on demand.
 
 ### Call a stored catalog
 
