@@ -147,13 +147,29 @@ describe('pages/CatalogPage', () => {
     await openPage();
     const provider = card('spare');
     const toggle = provider.getByRole('switch', { name: 'Serve every model' });
-    const field = provider.getByRole('textbox', { name: 'Blocked model IDs' });
     const save = provider.getByRole('button', { name: 'Save serving settings' });
     expect(toggle).not.toBeChecked();
     expect(save).toBeDisabled();
+    expect(provider.getByRole('combobox', { name: 'Add a model to spare' })).toBeInTheDocument();
+    expect(provider.queryByRole('combobox', { name: 'Add a blocked model ID' })).not.toBeInTheDocument();
 
     fireEvent.click(toggle);
-    type(field, 'org/blocked\nBlocked-2');
+    expect(provider.queryByRole('combobox', { name: 'Add a model to spare' })).not.toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
+    const field = provider.getByRole('combobox', { name: 'Add a blocked model ID' });
+    const add = provider.getByRole('button', { name: 'Add blocked ID' });
+    fireEvent.click(field);
+    fireEvent.click(await provider.findByRole('option', { name: 'claude-listed' }));
+    expect(listProviderModels).toHaveBeenCalledWith('team', 'spare');
+    expect(save).toBeDisabled();
+    fireEvent.click(add);
+    type(field, 'org/blocked');
+    fireEvent.click(add);
+    fireEvent.click(provider.getByRole('button', { name: 'Remove blocked ID claude-listed' }));
+    type(field, 'Blocked-2');
+    fireEvent.click(add);
+    fireEvent.blur(field);
+    const listingCalls = jest.mocked(listProviderModels).mock.calls.length;
     expect(updateModelCatalog).not.toHaveBeenCalled();
     fireEvent.click(save);
     expect(await provider.findByText('No listed models yet.')).toBeInTheDocument();
@@ -176,24 +192,40 @@ describe('pages/CatalogPage', () => {
       { ...enabled, providers: { ...enabled.providers, spare: { ...enabled.providers.spare, serveAllModels: false } } },
       {},
     ]);
-    expect(field).toHaveValue('org/blocked\nBlocked-2');
+    expect(provider.queryByRole('combobox', { name: 'Add a blocked model ID' })).not.toBeInTheDocument();
+    expect(provider.getByRole('combobox', { name: 'Add a model to spare' })).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(
+      within(provider.getByRole('list', { name: 'Blocked model IDs' })).getByText('org/blocked')
+    ).toBeInTheDocument();
+    expect(
+      within(provider.getByRole('list', { name: 'Blocked model IDs' })).getByText('Blocked-2')
+    ).toBeInTheDocument();
     expect(checkModelCatalogHealth).not.toHaveBeenCalled();
-    expect(listProviderModels).not.toHaveBeenCalled();
+    expect(listProviderModels).toHaveBeenCalledTimes(listingCalls);
   });
 
   test.each([400, 409])('keeps the serving settings draft after a %s refusal', async (status) => {
     jest.mocked(updateModelCatalog).mockRejectedValue({ status, data: { message: 'Serving settings refused' } });
-    signInAs(OrgRole.Admin, ALL);
+    signInAs(
+      OrgRole.Admin,
+      ALL.filter((action) => action !== CatalogActions.ListProviderModels)
+    );
     await openPage();
     const provider = card('anthropic');
     const toggle = provider.getByRole('switch', { name: 'Serve every model' });
-    const field = provider.getByRole('textbox', { name: 'Blocked model IDs' });
     fireEvent.click(toggle);
-    type(field, 'claude-sonnet-4-6');
+    expect(provider.getByRole('button', { name: 'balanced' })).toBeInTheDocument();
+    expect(provider.queryByRole('button', { name: 'Add model' })).not.toBeInTheDocument();
+    type(provider.getByRole('textbox', { name: 'Add a blocked model ID' }), 'claude-sonnet-4-6');
+    fireEvent.click(provider.getByRole('button', { name: 'Add blocked ID' }));
     fireEvent.click(provider.getByRole('button', { name: 'Save serving settings' }));
     expect(await provider.findByText('Serving settings refused')).toBeInTheDocument();
     expect(toggle).toBeChecked();
-    expect(field).toHaveValue('claude-sonnet-4-6');
+    expect(
+      within(provider.getByRole('list', { name: 'Blocked model IDs' })).getByText('claude-sonnet-4-6')
+    ).toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
   });
 
   test('shows saved settings without editing controls to a reader', async () => {
@@ -213,7 +245,8 @@ describe('pages/CatalogPage', () => {
     expect(provider.getByText('Serves unlisted models')).toBeInTheDocument();
     expect(provider.getByText('Blocked model IDs: org/blocked')).toBeInTheDocument();
     expect(provider.queryByRole('switch')).not.toBeInTheDocument();
-    expect(provider.queryByRole('textbox', { name: 'Blocked model IDs' })).not.toBeInTheDocument();
+    expect(provider.queryByRole('combobox', { name: 'Add a blocked model ID' })).not.toBeInTheDocument();
+    expect(provider.queryByRole('textbox', { name: 'Add a blocked model ID' })).not.toBeInTheDocument();
     expect(provider.queryByRole('button', { name: 'Save serving settings' })).not.toBeInTheDocument();
   });
 

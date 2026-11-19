@@ -37,6 +37,8 @@ export function ProviderCard(props: Props) {
   const { name, provider, models, hasKey, health, readOnly, removeBlocked } = props;
   const s = useStyles2(getStyles);
   const label = providerTypeLabel(provider.type);
+  const [draftServeAll, setDraftServeAll] = useState<boolean>();
+  const serveAllModels = draftServeAll ?? provider.serveAllModels === true;
 
   return (
     <section className={s.card} aria-label={name}>
@@ -64,7 +66,19 @@ export function ProviderCard(props: Props) {
         )}
       </div>
       <div className={s.serving}>
-        <ProviderServingSettings name={name} provider={provider} readOnly={readOnly} onSave={props.onSaveServing} />
+        <ProviderServingSettings
+          name={name}
+          provider={provider}
+          readOnly={readOnly}
+          serveAllModels={serveAllModels}
+          onModeChange={setDraftServeAll}
+          listModels={props.listModels}
+          listingRevision={props.listingRevision}
+          onSave={async (updated) => {
+            await props.onSaveServing(updated);
+            setDraftServeAll(undefined);
+          }}
+        />
       </div>
       <ul className={s.models}>
         {models.length === 0 && (
@@ -102,7 +116,7 @@ export function ProviderCard(props: Props) {
           </li>
         ))}
       </ul>
-      {!readOnly && (
+      {!readOnly && !serveAllModels && (
         <QuickAdd
           name={name}
           label={label}

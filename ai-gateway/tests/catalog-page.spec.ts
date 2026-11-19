@@ -128,7 +128,7 @@ test.describe('model catalog page', () => {
     accounts,
   }) => {
     const name = uniqueName();
-    const seed = catalog(name, sentinelKey('serving'));
+    const seed = catalog(name, 'e2e-health-accepted-key');
     const created = await accounts.Admin.post(CATALOGS, { data: { ...seed, spec: { ...seed.spec, models: {} } } });
     expect(created.status(), await created.text()).toBe(201);
     const stored = async () => {
@@ -149,12 +149,19 @@ test.describe('model catalog page', () => {
     await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
     const provider = card(page, 'claude');
     const toggle = provider.getByRole('switch', { name: 'Serve every model' });
-    const blocklist = provider.getByRole('textbox', { name: 'Blocked model IDs' });
+    const blockedID = provider.getByRole('combobox', { name: 'Add a blocked model ID' });
+    const blocklist = provider.getByRole('list', { name: 'Blocked model IDs' });
+    const addBlockedID = provider.getByRole('button', { name: 'Add blocked ID' });
+    const addModelID = provider.getByRole('combobox', { name: 'Add a model to claude' });
     const save = provider.getByRole('button', { name: 'Save serving settings' });
     await expect(toggle).not.toBeChecked();
+    await expect(addModelID).toBeVisible();
+    await expect(blockedID).toHaveCount(0);
     await toggle.press('Space');
     await expect(toggle).toBeChecked();
-    await blocklist.fill('org/blocked');
+    await expect(addModelID).toHaveCount(0);
+    await blockedID.fill('org/blocked');
+    await addBlockedID.click();
     const before = await stored();
     expect(before.spec.providers.claude.serveAllModels).toBeUndefined();
 
@@ -199,14 +206,18 @@ test.describe('model catalog page', () => {
     await addModel(page, 'claude', listed);
     const beforeRefusal = await stored();
     await toggle.press('Space');
-    const draft = `org/blocked\n${listed}`;
-    await blocklist.fill(draft);
+    await expect(addModelID).toHaveCount(0);
+    await blockedID.click();
+    await provider.getByRole('option', { name: listed }).click();
+    await expect(blockedID).toHaveValue(listed);
+    await addBlockedID.click();
     await save.click();
     await expect(
       provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)
     ).toBeVisible();
     await expect(toggle).toBeChecked();
-    await expect(blocklist).toHaveValue(draft);
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
+    await expect(blocklist.getByText(listed)).toBeVisible();
     const afterRefusal = await stored();
     expect(afterRefusal.metadata.resourceVersion).toBe(beforeRefusal.metadata.resourceVersion);
     expect(afterRefusal.spec).toEqual(beforeRefusal.spec);

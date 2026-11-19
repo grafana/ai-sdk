@@ -19,7 +19,7 @@ After shared preflight, a qualified lookup must name an enabled instance and a v
 
 ### Discovery: list configured models only
 
-Keep `/config` local and deterministic, even if a provider serves unlisted IDs and the catalog advertises none. Calling `available-models` from discovery would run provider traffic on the user's stored key, add latency and partial results, and make account inventory visible to catalog invokers. Do not call it from inference, saves, or rendering the new settings either. Keep the existing on-demand suggestions in the provider model ID field for writers with listing permission; these reflect account inventory, not what the Gateway serves. Enter blocked IDs manually on the provider card.
+Keep `/config` local and deterministic, even if a provider serves unlisted IDs and the catalog advertises none. Calling `available-models` from discovery would run provider traffic on the user's stored key, add latency and partial results, and make account inventory visible to catalog invokers. Do not call it from inference, saves, or rendering the new settings either. Reuse the on-demand model ID picker for writers with listing permission. It adds listed models in listed-only mode and edits the draft blocklist in serve-every mode. Suggestions reflect account inventory, not what the Gateway serves. Writers may still enter an exact ID by hand.
 
 ### Blocklist: exact IDs scoped to the instance
 
