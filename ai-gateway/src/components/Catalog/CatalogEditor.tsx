@@ -3,7 +3,7 @@ import { Alert, Button, ConfirmModal, Stack, Text } from '@grafana/ui';
 import { CatalogHealth, errorMessage } from '../../api/modelCatalogs';
 import { ConnectProviderModal } from './ConnectProviderModal';
 import { ModelDrawer } from './ModelDrawer';
-import { KeyState, ProviderCard } from './ProviderCard';
+import { ProviderCard } from './ProviderCard';
 import { ReplaceKeyModal } from './ReplaceKeyModal';
 import {
   CatalogChange,
@@ -28,7 +28,6 @@ type Dialog =
 interface Props {
   spec: Spec;
   keys: string[];
-  keyState: Exclude<KeyState, 'missing'>;
   stored: boolean;
   health?: CatalogHealth;
   readOnly: boolean;
@@ -42,7 +41,7 @@ interface Props {
  * one model, and a provider can't be removed while other providers' models
  * fall back to it.
  */
-export function CatalogEditor({ spec, keys, keyState, stored, health, readOnly, onChange }: Props) {
+export function CatalogEditor({ spec, keys, stored, health, readOnly, onChange }: Props) {
   const [dialog, setDialog] = useState<Dialog>();
   const [error, setError] = useState<string>();
   const providers = Object.entries(spec.providers);
@@ -81,7 +80,7 @@ export function CatalogEditor({ spec, keys, keyState, stored, health, readOnly, 
 
   const removalText = (provider: string) => {
     const own = modelsOf(spec, provider).map(([id]) => id);
-    const key = keyState === 'saved' ? 'Its saved API key is deleted' : 'Its API key is discarded';
+    const key = stored ? 'Its saved API key is deleted' : 'Its API key is discarded';
     return `Remove ${provider}? ${key}${own.length > 0 ? `, and its models are removed: ${own.join(', ')}` : ''}.`;
   };
 
@@ -120,7 +119,7 @@ export function CatalogEditor({ spec, keys, keyState, stored, health, readOnly, 
           name={name}
           provider={provider}
           models={modelsOf(spec, name)}
-          keyState={keys.includes(name) ? keyState : 'missing'}
+          keyState={!keys.includes(name) ? 'missing' : stored ? undefined : 'entered'}
           health={health}
           readOnly={readOnly}
           removeBlocked={removeBlocked(name)}

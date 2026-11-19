@@ -14,7 +14,7 @@ The saved catalog page SHALL offer an explicit **Check health** action only to a
 - **THEN** the page SHALL neither show the control nor request health results
 
 ### Requirement: Show results until the catalog is edited or left
-The saved catalog page SHALL show provider status next to, but distinct from, key storage state, primary target status in the model row, and fallback statuses in model details. It SHALL explain that results reflect model listings, not an inference test, and SHALL use fixed UI labels. It SHALL clear results on a successful save or navigation and disregard results from checks started before either event.
+The saved catalog page SHALL show only non-`ok` outcomes as fixed warning or error badges on provider cards, model rows and fallbacks in model details. If all outcomes are `ok`, it SHALL show one short confirmation near **Check health**. It SHALL explain that the check uses model listings, not inference. It SHALL clear results on successful save or navigation and disregard checks started before either event.
 
 #### Scenario: Catalog is saved while the check is running
 - **WHEN** a check returns after the page saved an edit
@@ -22,4 +22,8 @@ The saved catalog page SHALL show provider status next to, but distinct from, ke
 
 #### Scenario: Listing accepts one key but another fails
 - **WHEN** a response lists the primary target but rejects a saved fallback provider's key
-- **THEN** the page SHALL show the primary as listed and the fallback as not checked, while the fallback provider shows both its saved key state and the separate key rejection
+- **THEN** the page SHALL show the key rejection on the fallback provider and **Not checked** on the fallback target, with no badge on the primary
+
+#### Scenario: All outcomes are OK
+- **WHEN** the listing check reports `ok` for every provider, primary and fallback target
+- **THEN** the page SHALL show **No problems found** near the action and no success badge or tick

@@ -40,6 +40,7 @@ jest.mock('@grafana/runtime', () => ({
 const APP = '/a/grafana-aigateway-app';
 const TYPED_KEY = 'typed-provider-key';
 const READ_ONLY = [CatalogActions.Read];
+const SUCCESS_BADGES = /^(Key saved|Key accepted|Model listed)$/;
 const ALL = Object.values(CatalogActions);
 
 const stored: ModelCatalog = {
@@ -132,19 +133,36 @@ describe('pages/CatalogPage', () => {
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
   });
 
-  test('checks only on request and shows listing outcomes separately from stored keys', async () => {
+  test('checks only on request and shows badges only for listing problems', async () => {
     signInAs(OrgRole.Viewer, [...READ_ONLY, CatalogActions.CheckHealth]);
     await openPage();
     expect(checkModelCatalogHealth).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
-    expect(screen.getByRole('button', { name: 'Checking health…' })).toBeDisabled();
-    expect(await card('anthropic').findByText('Key accepted')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Checking health…' })).toHaveAttribute('aria-disabled', 'true');
+    expect(await card('openai').findByText('Key rejected')).toBeInTheDocument();
     expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
-    expect(card('anthropic').getByText('Model listed')).toBeInTheDocument();
-    expect(card('openai').getByText('Key saved')).toBeInTheDocument();
-    expect(card('openai').getByText('Key rejected')).toBeInTheDocument();
+    expect(card('spare').getByText('Provider unreachable')).toBeInTheDocument();
+    expect(card('openai').getByText('Not checked')).toBeInTheDocument();
+    expect(screen.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
     fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
     expect(dialog().getByText('Not checked')).toBeInTheDocument();
+  });
+
+  test('shows one quiet confirmation when all providers and targets pass', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    jest.mocked(checkModelCatalogHealth).mockResolvedValueOnce({
+      providers: { anthropic: 'ok', openai: 'ok', spare: 'ok' },
+      models: { balanced: { primary: 'ok', fallback: ['ok'] }, 'gpt-5': { primary: 'ok', fallback: [] } },
+    });
+    await openPage();
+    expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    expect(await screen.findByText('No problems found')).toBeInTheDocument();
+    expect(screen.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    expect(screen.queryByText('Review flagged providers and models.')).not.toBeInTheDocument();
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
+    expect(dialog().queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
   });
 
   test('a writer without the explicit health permission cannot check', async () => {
@@ -171,7 +189,7 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(dialog().getByRole('button', { name: 'Save model' }));
     expect(await card('anthropic').findByText('Edited')).toBeInTheDocument();
     await act(async () => finish(listing));
-    expect(card('anthropic').queryByText('Key accepted')).not.toBeInTheDocument();
+    expect(card('openai').queryByText('Key rejected')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
   });
 
@@ -191,7 +209,7 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Team catalog' }));
     await act(async () => finish(listing));
     expect(await screen.findByRole('button', { name: 'Check health' })).toBeEnabled();
-    expect(card('anthropic').queryByText('Key accepted')).not.toBeInTheDocument();
+    expect(card('openai').queryByText('Key rejected')).not.toBeInTheDocument();
     expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
   });
 
@@ -204,7 +222,7 @@ describe('pages/CatalogPage', () => {
     expect(document.body).not.toHaveTextContent('untrusted-provider-message');
   });
 
-  test('shows each provider with its saved key and the models it serves, never secure names', async () => {
+  test('shows each provider and the models it serves, without key badges or secure names', async () => {
     signInAs(OrgRole.Viewer, READ_ONLY);
     await openPage();
 
@@ -214,7 +232,7 @@ describe('pages/CatalogPage', () => {
       )
     ).toBeInTheDocument();
     expect(card('anthropic').getByRole('heading', { name: 'Anthropic' })).toBeInTheDocument();
-    expect(card('anthropic').getByText('Key saved')).toBeInTheDocument();
+    expect(screen.queryByText('Key saved')).not.toBeInTheDocument();
     expect(card('anthropic').getByRole('listitem', { name: 'balanced' })).toBeInTheDocument();
     expect(card('anthropic').getByText('Balanced')).toBeInTheDocument();
     expect(card('anthropic').getByText('serves claude-sonnet-4-6')).toBeInTheDocument();
@@ -322,7 +340,7 @@ describe('pages/CatalogPage', () => {
     const [, spec, secure] = lastUpdate();
     expect(spec.providers['openai-2']).toEqual({ type: 'openai' });
     expect(secure).toEqual({ 'openai-2': { create: TYPED_KEY } });
-    expect(card('openai-2').getByText('Key saved')).toBeInTheDocument();
+    expect(card('openai-2').getByRole('button', { name: 'Replace key' })).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain(TYPED_KEY);
   });
 

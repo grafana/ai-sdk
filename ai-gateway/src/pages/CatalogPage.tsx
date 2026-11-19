@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
-import { Alert, Button, ConfirmModal, LoadingPlaceholder, Stack, useStyles2 } from '@grafana/ui';
+import { Alert, Button, ConfirmModal, LoadingPlaceholder, Stack, Text, useStyles2 } from '@grafana/ui';
 import {
   CatalogHealth,
   catalogHealthErrorMessage,
@@ -42,6 +42,12 @@ function CatalogView({ name }: Props) {
   const [checking, setChecking] = useState(false);
   const healthGeneration = useRef(0);
   const canCheckHealth = permissions.read && permissions.checkHealth;
+  const allHealthy =
+    health !== undefined &&
+    Object.values(health.providers).every((status) => status === 'ok') &&
+    Object.values(health.models).every(
+      ({ primary, fallback }) => primary === 'ok' && fallback.every((status) => status === 'ok')
+    );
 
   useEffect(() => {
     if (!permissions.read) {
@@ -109,7 +115,6 @@ function CatalogView({ name }: Props) {
       <CatalogEditor
         spec={stored.spec}
         keys={Object.keys(stored.secure ?? {})}
-        keyState="saved"
         health={canCheckHealth ? health : undefined}
         stored
         readOnly={!permissions.update}
@@ -131,11 +136,25 @@ function CatalogView({ name }: Props) {
       }
       actions={
         stored && (
-          <Stack gap={1}>
+          <Stack gap={1} alignItems="center">
             {canCheckHealth && (
-              <Button variant="secondary" disabled={checking} onClick={checkHealth}>
-                {checking ? 'Checking health…' : 'Check health'}
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={checking}
+                  onClick={checkHealth}
+                  tooltip="Checks provider model listings without calling a model."
+                >
+                  {checking ? 'Checking health…' : 'Check health'}
+                </Button>
+                <span role="status">
+                  {health && (
+                    <Text color="secondary" variant="bodySmall">
+                      {allHealthy ? 'No problems found' : 'Review flagged providers and models.'}
+                    </Text>
+                  )}
+                </span>
+              </>
             )}
             {permissions.delete && (
               <Button variant="destructive" fill="outline" icon="trash-alt" onClick={() => setDeleting(true)}>
@@ -161,11 +180,6 @@ function CatalogView({ name }: Props) {
           {canCheckHealth && healthError && (
             <Alert severity="warning" title="Catalog health check failed">
               {healthError}
-            </Alert>
-          )}
-          {canCheckHealth && health && (
-            <Alert severity="info" title="Catalog health check complete">
-              Results are based on provider model listings. No model was called.
             </Alert>
           )}
           {body()}

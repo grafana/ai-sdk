@@ -8,11 +8,10 @@ import { fieldErrors, providerTypeLabel, targetLabel } from './catalogSpec';
 import { useFieldErrors } from './useFieldErrors';
 import { Model, Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
 
-/** KeyState is what the page knows of a provider's key: saved in Grafana, entered for a new catalog, or missing. */
-export type KeyState = 'saved' | 'entered' | 'missing';
+/** KeyState is a key notice: entered for a draft provider or missing. */
+export type KeyState = 'entered' | 'missing';
 
-const KEY_BADGES: Record<KeyState, { text: string; color: 'green' | 'blue' | 'orange' }> = {
-  saved: { text: 'Key saved', color: 'green' },
+const KEY_BADGES: Record<KeyState, { text: string; color: 'blue' | 'orange' }> = {
   entered: { text: 'Key entered', color: 'blue' },
   missing: { text: 'No key', color: 'orange' },
 };
@@ -21,7 +20,7 @@ interface Props {
   name: string;
   provider: Provider;
   models: Array<[string, Model]>;
-  keyState: KeyState;
+  keyState?: KeyState;
   health?: CatalogHealth;
   readOnly: boolean;
   removeBlocked?: string;
@@ -35,14 +34,14 @@ interface Props {
 }
 
 /**
- * ProviderCard shows one provider account with its key state and the models
- * it serves, and lets a writer add a model by its provider model ID alone.
+ * ProviderCard shows one provider account and the models it serves, and lets
+ * a writer add a model by its provider model ID alone.
  */
 export function ProviderCard(props: Props) {
   const { name, provider, models, keyState, health, readOnly, removeBlocked, lastModel } = props;
   const s = useStyles2(getStyles);
   const label = providerTypeLabel(provider.type);
-  const badge = KEY_BADGES[keyState];
+  const badge = keyState && KEY_BADGES[keyState];
 
   return (
     <section className={s.card} aria-label={name}>
@@ -52,8 +51,8 @@ export function ProviderCard(props: Props) {
             {label}
           </Text>
           {name !== provider.type && <code className={s.name}>{name}</code>}
-          <Badge text={badge.text} icon="lock" color={badge.color} />
-          <CatalogHealthBadge status={health?.providers[name]} provider />
+          {badge && <Badge text={badge.text} icon="lock" color={badge.color} />}
+          <CatalogHealthBadge status={health?.providers[name]} />
         </Stack>
         {!readOnly && (
           <Stack alignItems="center" gap={1}>
