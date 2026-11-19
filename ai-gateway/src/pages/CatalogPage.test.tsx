@@ -324,6 +324,42 @@ describe('pages/CatalogPage', () => {
     expect(screen.queryByRole('option', { name: 'claude-custom-stale' })).not.toBeInTheDocument();
   });
 
+  test('connects a provider to an empty catalog, then offers health and browse before adding models', async () => {
+    const empty = { ...stored, spec: { providers: {}, models: {} }, secure: undefined };
+    jest.mocked(getModelCatalog).mockResolvedValue(empty);
+    jest.mocked(checkModelCatalogHealth).mockResolvedValue({ providers: { anthropic: 'ok' }, models: {} });
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+
+    const connect = await screen.findByRole('button', { name: 'Connect a provider' });
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Add a model to anthropic' })).not.toBeInTheDocument();
+    fireEvent.click(connect);
+    type(dialog().getByLabelText(/^API key/), TYPED_KEY);
+    fireEvent.click(dialog().getByRole('button', { name: 'Connect' }));
+    await screen.findByText('No models yet.');
+    expect(lastUpdate()).toEqual([
+      empty,
+      { providers: { anthropic: { type: 'anthropic' } }, models: {} },
+      { anthropic: { create: TYPED_KEY } },
+    ]);
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(listProviderModels).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    const provider = card('anthropic');
+    expect(
+      await within(screen.getByRole('region', { name: 'Providers' })).findByText('No problems found')
+    ).toBeInTheDocument();
+    expect(provider.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.focus(field);
+    expect(listProviderModels).not.toHaveBeenCalled();
+    fireEvent.click(field);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledWith('team', 'anthropic');
+  });
+
   test('checks only on request and shows badges only for listing problems', async () => {
     signInAs(OrgRole.Viewer, [...READ_ONLY, CatalogActions.CheckHealth]);
     await openPage();
@@ -693,16 +729,54 @@ describe('pages/CatalogPage', () => {
     expect(dialog().getByText(/Use up to 128 letters/)).toBeInTheDocument();
   });
 
-  test('removes a model after confirming, but not the last one', async () => {
+  test('removes the last model, then the last provider and key in separate saves', async () => {
+    const single = {
+      ...stored,
+      spec: {
+        providers: { openai: stored.spec.providers.openai },
+        models: { 'gpt-5': stored.spec.models['gpt-5'] },
+      },
+      secure: { openai: { name: 'inline-openai' } },
+    };
+    jest.mocked(getModelCatalog).mockResolvedValue(single);
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+    await screen.findByRole('listitem', { name: 'gpt-5' });
+
+    fireEvent.click(card('openai').getByRole('button', { name: 'Remove gpt-5' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    expect(await card('openai').findByText('No models yet.')).toBeInTheDocument();
+    expect(lastUpdate()).toEqual([single, { providers: single.spec.providers, models: {} }, {}]);
+    expect(card('openai').queryByText('No key')).not.toBeInTheDocument();
+    expect(card('openai').queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+
+    fireEvent.click(card('openai').getByRole('button', { name: 'Remove openai' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    await screen.findByText(/Connect a provider with its API key/);
+    expect(lastUpdate()).toEqual([
+      updated(single, { providers: single.spec.providers, models: {} }, {}),
+      { providers: {}, models: {} },
+      { openai: { remove: true } },
+    ]);
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+  });
+
+  test('removes the provider of the last model without promoting its fallback', async () => {
+    const lastModel = { ...stored, spec: { ...stored.spec, models: { balanced: stored.spec.models.balanced } } };
+    jest.mocked(getModelCatalog).mockResolvedValue(lastModel);
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
-    fireEvent.click(card('openai').getByRole('button', { name: 'Remove gpt-5' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-
-    await waitFor(() => expect(screen.queryByRole('listitem', { name: 'gpt-5' })).not.toBeInTheDocument());
-    expect(Object.keys(lastUpdate()[1].models)).toEqual(['balanced']);
-    expect(card('anthropic').getByRole('button', { name: 'A catalog needs at least one model' })).toBeDisabled();
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'Remove anthropic' }));
+    expect(dialog().getByText(/its models are removed: balanced/)).toBeInTheDocument();
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'anthropic' })).not.toBeInTheDocument());
+    expect(lastUpdate()).toEqual([
+      lastModel,
+      { providers: { openai: stored.spec.providers.openai, spare: stored.spec.providers.spare }, models: {} },
+      { anthropic: { remove: true } },
+    ]);
+    expect(card('openai').queryByText('No key')).not.toBeInTheDocument();
   });
 
   test('shows a refused change as returned in its drawer and keeps the input', async () => {

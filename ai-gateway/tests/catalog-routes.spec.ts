@@ -87,6 +87,33 @@ test.describe('ModelCatalog routes', () => {
     }
   });
 
+  test('a saved empty catalog lists no models and rejects calls as unknown model', async ({ accounts }) => {
+    const name = uniqueName();
+    const response = await accounts.Admin.post(CATALOGS, {
+      data: {
+        apiVersion: `${API_GROUP}/${API_VERSION}`,
+        kind: 'ModelCatalog',
+        metadata: { name },
+        spec: { providers: {}, models: {} },
+      },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    const config = await accounts.Editor.get(`${CATALOGS}/${name}/config`);
+    expect(config.status(), await config.text()).toBe(200);
+    expect(await config.json()).toEqual({ models: [] });
+    for (const streaming of [false, true]) {
+      const invocation = await callCatalog(accounts.Editor, name, 'team-model', streaming);
+      expect(invocation.status(), await invocation.text()).toBe(404);
+      expect((await invocation.json()).error.code).toBe('model_not_found');
+    }
+    const health = await accounts.Admin.post(`${CATALOGS}/${name}/health`);
+    expect(health.status(), await health.text()).toBe(200);
+    expect(await health.json()).toEqual({ providers: {}, models: {} });
+    const unknown = await accounts.Admin.post(`${CATALOGS}/${name}/available-models?provider=claude`);
+    expect(unknown.status(), await unknown.text()).toBe(404);
+    expect(await unknown.json()).toEqual({ message: 'provider not found in stored catalog' });
+  });
+
   test('the invoker role is registered and bound to Editor', async ({ accounts }) => {
     const routeActions = ['language-model', 'config'].map((route) => `${API_GROUP}/modelcatalogs/${route}:get`);
     for (const role of ROLES) {
