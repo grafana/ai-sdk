@@ -109,6 +109,12 @@ func TestMapRequest_Refused(t *testing.T) {
 		`{"model":"alias","input":[{"role":"user","content":[{"type":"input_image","image_url":"https://a/b.png","detail":"high"}]}]}`,
 		`{"model":"alias","input":[{"role":"developer","content":[{"type":"input_image","image_url":"https://a/b.png"}]}]}`,
 		`{"model":"alias","input":[{"role":"tool","content":"x"}]}`,
+		`{"model":"alias","input":null}`,
+		`{"model":"alias","input":[{"role":"user","content":null}]}`,
+		`{"model":"alias","input":[{"role":"developer","content":null}]}`,
+		`{"model":"alias","input":[{"type":"function_call","call_id":"c","name":"weather","arguments":"{}"},{"type":"function_call","call_id":"c","name":"weather","arguments":"{}"},{"type":"function_call_output","call_id":"c","output":"x"}]}`,
+		`{"model":"alias","input":[{"type":"function_call","call_id":"c","name":"weather","arguments":"{}"},{"type":"function_call_output","call_id":"c","output":"x"},{"type":"function_call_output","call_id":"c","output":"x"}]}`,
+		body(`,"text":{"format":{"type":"json_object","schema":{"type":"object"}}}`),
 		`{"model":"alias","input":[{"type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"x"}]}]}`,
 	} {
 		t.Run(raw, func(t *testing.T) {

@@ -1,6 +1,9 @@
-# Spec Delta
+# gateway-openai-responses-codec Specification
 
-## ADDED Requirements
+## Purpose
+Define the OpenAI Responses API subset the Gateway codec accepts, how it encodes provider output as Responses JSON and SSE, and how it reports failures, so Codex and other Responses clients can use Gateway models.
+
+## Requirements
 
 ### Requirement: Responses request subset
 The codec SHALL accept a `POST /v1/responses` JSON body with only these fields: `model`, `input`, `stream`, `tools`, `tool_choice`, `parallel_tool_calls`, `reasoning`, `text`, `store` (absent or `false`), `include` (only `reasoning.encrypted_content`), `prompt_cache_key` and `client_metadata`. It SHALL refuse any other field with a fixed `400` error document and SHALL NOT drop a field silently.
@@ -15,7 +18,7 @@ The codec SHALL accept a `POST /v1/responses` JSON body with only these fields: 
 - **THEN** the codec SHALL respond `400` with the fixed `invalid_request` document and SHALL NOT call a provider
 
 ### Requirement: Responses input items
-The codec SHALL accept `input` as a string or as a list of `message`, `function_call`, `function_call_output` and `reasoning` items. Message content SHALL be `input_text`, `output_text` or `input_image` parts, and an image SHALL be an `https`, `http` or base64 image data URL with `detail` absent or `auto`. `system` and `developer` messages SHALL become provider system messages in their input position. Every `function_call_output` SHALL answer an earlier `function_call` of the same `call_id`. Other items and parts SHALL be refused.
+The codec SHALL accept `input` as a string or as a list of `message`, `function_call`, `function_call_output` and `reasoning` items. Message content SHALL be `input_text`, `output_text` or `input_image` parts. `system` and `developer` messages SHALL become provider system messages in their input position. Every `function_call_output` SHALL answer an earlier `function_call` of the same `call_id`. Other items and parts SHALL be refused.
 
 #### Scenario: Developer message is the system prompt
 - **WHEN** the first input item is a `developer` message followed by a `user` message
@@ -24,6 +27,10 @@ The codec SHALL accept `input` as a string or as a list of `message`, `function_
 #### Scenario: Function call continuation
 - **WHEN** input holds a `function_call` and a `function_call_output` with the same `call_id`
 - **THEN** the provider prompt SHALL hold an assistant tool call and a tool result for that call
+
+#### Scenario: Image parts
+- **WHEN** a user message holds an `input_image` part
+- **THEN** the codec SHALL accept an `https`, `http` or base64 image data URL with `detail` absent or `auto`, and refuse any other URL or detail
 
 #### Scenario: Refused input items
 - **WHEN** input holds a `custom_tool_call`, a `custom_tool_call_output`, an `input_file` part or a `function_call_output` with no matching call
@@ -62,15 +69,23 @@ A streaming response SHALL be SSE whose events follow the OpenAI API order: `res
 - **AND** the item SHALL carry no `encrypted_content`
 
 ### Requirement: Responses terminal events
-A stream SHALL end in `response.completed` for a stop or tool-calls finish, `response.incomplete` with `incomplete_details.reason` of `max_output_tokens` for a length finish or `content_filter` for a content-filter finish, and `response.failed` for any failure. The terminal response SHALL carry the complete output and, when known, `usage` with `input_tokens`, `output_tokens`, `total_tokens`, `input_tokens_details.cached_tokens` and `output_tokens_details.reasoning_tokens`.
+A stream SHALL end in `response.completed` for a stop or tool-calls finish, `response.incomplete` with `incomplete_details.reason` of `max_output_tokens` for a length finish or `content_filter` for a content-filter finish, and `response.failed` for any failure while the request context is live. The terminal response SHALL carry the complete output and, when known, its `usage`.
 
 #### Scenario: Length finish
 - **WHEN** the provider finishes with a length reason
 - **THEN** the last event SHALL be `response.incomplete` with `incomplete_details.reason: "max_output_tokens"`
 
+#### Scenario: Failure after a finish
+- **WHEN** the provider finishes and then fails before it closes the stream
+- **THEN** the stream SHALL end in `response.failed` alone, with every added item done and no `incomplete_details`
+
+#### Scenario: Request context ends
+- **WHEN** the client cancels or the request deadline passes during a stream
+- **THEN** the codec SHALL stop writing without a terminal event, as the Chat Completions adapter does
+
 #### Scenario: Usage
 - **WHEN** the provider reports input, cached, output and reasoning tokens
-- **THEN** `response.completed` SHALL carry each in `usage` with `total_tokens` equal to input plus output tokens
+- **THEN** `response.completed` SHALL carry `input_tokens`, `input_tokens_details.cached_tokens`, `output_tokens`, `output_tokens_details.reasoning_tokens` and `total_tokens`, equal to input plus output tokens, in `usage`
 
 ### Requirement: Responses failure mapping
 Failures SHALL use a fixed mapping from `execution.Category` to an HTTP status and an error code with a fixed message. A failure before the stream starts SHALL be an HTTP error document. A failure after `response.created` SHALL be a `response.failed` event whose `response.error` carries the code. Provider error text SHALL NOT appear in any body or event.

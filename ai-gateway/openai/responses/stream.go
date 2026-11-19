@@ -80,6 +80,9 @@ type encoder struct {
 	reasoning *reasoningState
 	text      strings.Builder
 	events    []event
+
+	terminal         status
+	incompleteReason string
 }
 
 func newEncoder(r mappedRequest, resp *response) *encoder {
@@ -328,7 +331,9 @@ func (e *encoder) openTool(id, name string) *toolState {
 	return t
 }
 
-// finish validates the complete output and adds the terminal event.
+// finish validates the complete output and closes any open reasoning item.
+// The terminal event waits for complete, so a failure after the finish still
+// ends the stream with only response.failed.
 func (e *encoder) finish(p provider.StreamPart) error {
 	if p.FinishReason == nil {
 		return errOutput
@@ -345,12 +350,12 @@ func (e *encoder) finish(p provider.StreamPart) error {
 			return errOutput
 		}
 	}
-	calls := make([]functionCallOutput, 0, len(e.calls))
 	for _, t := range e.tools {
 		if !t.final {
 			return errOutput
 		}
 	}
+	calls := make([]functionCallOutput, 0, len(e.calls))
 	for _, c := range e.calls {
 		calls = append(calls, *c)
 	}
@@ -362,20 +367,26 @@ func (e *encoder) finish(p provider.StreamPart) error {
 			return err
 		}
 	}
-	e.resp.Status = terminal
+	e.terminal, e.incompleteReason = terminal, reason
+	return nil
+}
+
+// complete adds the terminal event for the finish that finish accepted.
+func (e *encoder) complete() {
+	e.resp.Status = e.terminal
 	typ := eventCompleted
-	if reason != "" {
+	if e.incompleteReason != "" {
 		typ = eventIncomplete
-		e.resp.IncompleteDetails = &incompleteDetails{reason}
+		e.resp.IncompleteDetails = &incompleteDetails{e.incompleteReason}
 	}
 	e.add(event{Type: typ, Response: snapshot(e.resp)})
-	return nil
 }
 
 // fail adds a response.failed event with the fixed error for status.
 func (e *encoder) fail(status int) {
 	apiErr := errorFor(status)
 	e.resp.Status = statusFailed
+	e.resp.IncompleteDetails = nil
 	e.resp.Error = &responseError{Code: apiErr.Code, Message: apiErr.Message}
 	e.add(event{Type: eventFailed, Response: snapshot(e.resp)})
 }

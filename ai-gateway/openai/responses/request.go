@@ -212,6 +212,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 
 func mapInput(raw json.RawMessage) ([]provider.Message, error) {
 	var text string
+	if !present(raw) {
+		return nil, errRequest
+	}
 	if json.Unmarshal(raw, &text) == nil {
 		return []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentPart{provider.TextPart(text)}}}, nil
 	}
@@ -307,6 +310,9 @@ func mapMessage(m messageItem) (provider.Message, error) {
 	}
 	message := provider.Message{Role: role}
 	var text string
+	if !present(m.Content) {
+		return message, errRequest
+	}
 	if json.Unmarshal(m.Content, &text) == nil {
 		message.Content = []provider.ContentPart{provider.TextPart(text)}
 		return message, nil

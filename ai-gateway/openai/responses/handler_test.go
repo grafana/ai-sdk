@@ -136,6 +136,28 @@ func TestStream_EventOrder(t *testing.T) {
 			assert.Equal(t, []any{map[string]any{"type": "summary_text", "text": "think"}}, reasoning["summary"])
 			assert.NotContains(t, reasoning, "encrypted_content")
 		}},
+		{"tool call without input parts", `,"tools":[` + weatherTool + `]`, []provider.StreamPart{
+			{Type: provider.PartToolCall, ToolCallID: "call_1", ToolName: "weather", Input: `{"city":"Rio"}`},
+			finishPart(provider.FinishReasonToolCalls),
+		}, []string{"response.created", "response.in_progress", "response.output_item.added", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.done", "response.completed"}, func(t *testing.T, terminal map[string]any) {
+			assert.Equal(t, `{"city":"Rio"}`, terminal["output"].([]any)[0].(map[string]any)["arguments"])
+		}},
+		{"two summary parts", "", []provider.StreamPart{
+			{Type: provider.PartReasoningStart, ID: "r:0"},
+			{Type: provider.PartReasoningDelta, ID: "r:0", Delta: "one"},
+			{Type: provider.PartReasoningEnd, ID: "r:0"},
+			{Type: provider.PartReasoningStart, ID: "r:1"},
+			{Type: provider.PartReasoningDelta, ID: "r:1", Delta: "two"},
+			{Type: provider.PartReasoningEnd, ID: "r:1"},
+			finishPart(provider.FinishReasonStop),
+		}, []string{"response.created", "response.in_progress", "response.output_item.added", "response.reasoning_summary_part.added", "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning_summary_part.done", "response.reasoning_summary_part.added", "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning_summary_part.done", "response.output_item.done", "response.completed"}, func(t *testing.T, terminal map[string]any) {
+			assert.Equal(t, []any{map[string]any{"type": "summary_text", "text": "one"}, map[string]any{"type": "summary_text", "text": "two"}}, terminal["output"].([]any)[0].(map[string]any)["summary"])
+		}},
+		{"content filter finish", "", []provider.StreamPart{
+			finishPart(provider.FinishReasonContentFilter),
+		}, []string{"response.created", "response.in_progress", "response.incomplete"}, func(t *testing.T, terminal map[string]any) {
+			assert.Equal(t, map[string]any{"reason": "content_filter"}, terminal["incomplete_details"])
+		}},
 		{"length finish", "", []provider.StreamPart{
 			{Type: provider.PartTextStart, ID: "t"},
 			{Type: provider.PartTextDelta, ID: "t", Delta: "cut"},
@@ -157,19 +179,29 @@ func TestStream_EventOrder(t *testing.T) {
 }
 
 func TestStream_Failures(t *testing.T) {
+	strictTool := `,"tools":[` + strings.Replace(weatherTool, `"type":"function",`, `"type":"function","strict":true,`, 1) + `]`
+	twoCalls := []provider.StreamPart{
+		{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "weather", Input: `{"city":"A"}`},
+		{Type: provider.PartToolCall, ToolCallID: "b", ToolName: "weather", Input: `{"city":"B"}`},
+		finishPart(provider.FinishReasonToolCalls),
+	}
 	for _, tc := range []struct {
 		name  string
+		extra string
 		parts []provider.StreamPart
 		code  string
 	}{
-		{"provider error", []provider.StreamPart{{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartError, APICallError: &provider.APICallError{StatusCode: 429, Message: secret}}}, "rate_limit_exceeded"},
-		{"in-band error", []provider.StreamPart{{Type: provider.PartError, APICallError: &provider.APICallError{Message: secret}}}, "upstream_error"},
-		{"undeclared tool", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "c", ToolName: "other", Input: "{}"}, finishPart(provider.FinishReasonToolCalls)}, "upstream_error"},
-		{"no finish", []provider.StreamPart{{Type: provider.PartTextStart, ID: "t"}}, "upstream_error"},
-		{"runtime lifecycle violation", []provider.StreamPart{{Type: provider.PartTextStart, ID: "t"}, finishPart(provider.FinishReasonStop)}, "internal_error"},
+		{"provider error", "", []provider.StreamPart{{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartError, APICallError: &provider.APICallError{StatusCode: 429, Message: secret}}}, "rate_limit_exceeded"},
+		{"in-band error", "", []provider.StreamPart{{Type: provider.PartError, APICallError: &provider.APICallError{Message: secret}}}, "upstream_error"},
+		{"undeclared tool", "", []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "c", ToolName: "other", Input: "{}"}, finishPart(provider.FinishReasonToolCalls)}, "upstream_error"},
+		{"strict schema violation", strictTool, []provider.StreamPart{{Type: provider.PartToolCall, ToolCallID: "c", ToolName: "weather", Input: `{"city":1}`}, finishPart(provider.FinishReasonToolCalls)}, "upstream_error"},
+		{"parallel calls refused", `,"parallel_tool_calls":false,"tools":[` + weatherTool + `]`, twoCalls, "upstream_error"},
+		{"tool choice none", `,"tool_choice":"none","tools":[` + weatherTool + `]`, twoCalls, "upstream_error"},
+		{"no finish", "", []provider.StreamPart{{Type: provider.PartTextStart, ID: "t"}}, "upstream_error"},
+		{"runtime lifecycle violation", "", []provider.StreamPart{{Type: provider.PartTextStart, ID: "t"}, finishPart(provider.FinishReasonStop)}, "internal_error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := serve(t, &fakeModel{parts: tc.parts}, body(`,"stream":true`))
+			w := serve(t, &fakeModel{parts: tc.parts}, body(`,"stream":true`+tc.extra))
 			assert.NotContains(t, w.Body.String(), secret)
 			evs := events(t, w)
 			last := evs[len(evs)-1]
@@ -177,6 +209,50 @@ func TestStream_Failures(t *testing.T) {
 			response := last.data["response"].(map[string]any)
 			assert.Equal(t, "failed", response["status"])
 			assert.Equal(t, tc.code, response["error"].(map[string]any)["code"])
+		})
+	}
+}
+
+func TestStream_FailureAfterFinish(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		extra string
+		parts []provider.StreamPart
+	}{
+		{"error after length finish", "", []provider.StreamPart{
+			{Type: provider.PartTextStart, ID: "t"},
+			{Type: provider.PartTextDelta, ID: "t", Delta: "cut"},
+			{Type: provider.PartTextEnd, ID: "t"},
+			finishPart(provider.FinishReasonLength),
+			{Type: provider.PartError, APICallError: &provider.APICallError{Message: secret}},
+		}},
+		{"finish refused after reasoning", `,"tool_choice":"required","tools":[` + weatherTool + `]`, []provider.StreamPart{
+			{Type: provider.PartReasoningStart, ID: "r"},
+			{Type: provider.PartReasoningDelta, ID: "r", Delta: "think"},
+			{Type: provider.PartReasoningEnd, ID: "r"},
+			finishPart(provider.FinishReasonStop),
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := serve(t, &fakeModel{parts: tc.parts}, body(`,"stream":true`+tc.extra))
+			assert.NotContains(t, w.Body.String(), secret)
+			evs := events(t, w)
+			names := types(evs)
+			assert.NotContains(t, names, "response.incomplete")
+			assert.NotContains(t, names, "response.completed")
+			added, done := 0, 0
+			for _, name := range names {
+				switch name {
+				case "response.output_item.added":
+					added++
+				case "response.output_item.done":
+					done++
+				}
+			}
+			assert.Equal(t, added, done, "every added item is done")
+			last := evs[len(evs)-1]
+			require.Equal(t, "response.failed", last.name)
+			assert.Nil(t, last.data["response"].(map[string]any)["incomplete_details"])
 		})
 	}
 }
@@ -214,6 +290,20 @@ func TestUnary(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
 	assert.Equal(t, "incomplete", got["status"])
 	assert.Equal(t, map[string]any{"reason": "max_output_tokens"}, got["incomplete_details"])
+
+	for _, tc := range []struct{ name, extra, input string }{
+		{"undeclared tool", `,"tools":[` + weatherTool + `]`, `{"city":"Rio"}`},
+		{"strict schema violation", `,"tools":[` + strings.Replace(weatherTool, `"type":"function",`, `"type":"function","strict":true,`, 1) + `]`, `{"city":1}`},
+	} {
+		name := "weather"
+		if tc.name == "undeclared tool" {
+			name = "other"
+		}
+		bad := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "c", ToolName: name, Input: json.RawMessage(tc.input)}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+		w = serve(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return bad, nil }}, body(tc.extra))
+		assert.Equal(t, 502, w.Code, tc.name)
+		assert.Contains(t, w.Body.String(), `"code":"upstream_error"`, tc.name)
+	}
 
 	w = serve(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return nil, &provider.APICallError{StatusCode: 429, Message: secret}

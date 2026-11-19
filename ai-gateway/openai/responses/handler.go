@@ -147,7 +147,6 @@ func serveStream(ctx context.Context, w http.ResponseWriter, call *execution.Cal
 		return controller.Flush() == nil
 	}
 	fail := func(status int) {
-		enc.take()
 		enc.fail(status)
 		_ = flush()
 	}
@@ -189,6 +188,7 @@ func serveStream(ctx context.Context, w http.ResponseWriter, call *execution.Cal
 			if ctx.Err() != nil {
 				return
 			}
+			enc.complete()
 			_ = flush()
 			return
 		}

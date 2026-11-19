@@ -13,8 +13,8 @@ import OpenAI from 'openai';
 const gateway = resolve(import.meta.dirname, '../..');
 const recordings = resolve(gateway, '../test/conformance/openai/recorded');
 
-type Item = { type: string; text?: string; name?: string; arguments?: string; summary?: string[] };
-type Outcome = { event: string; items: Item[]; usage: unknown };
+type Item = { type: string; text?: string; name?: string; call_id?: string; arguments?: string; summary?: string[] };
+type Outcome = { event: string; incomplete?: string; items: Item[]; usage: unknown };
 
 function normalizeItem(o: any): Item {
   const item: Item = { type: o.type };
@@ -26,6 +26,7 @@ function normalizeItem(o: any): Item {
   }
   if (o.type === 'function_call') {
     item.name = o.name;
+    item.call_id = o.call_id;
     item.arguments = o.arguments;
   }
   if (o.type === 'reasoning') item.summary = (o.summary ?? []).map((s: any) => s.text);
@@ -65,7 +66,7 @@ async function run(baseURL: string, body: any): Promise<Outcome> {
   const items = response.output.map(normalizeItem);
   assert.deepEqual(done, items, 'done items match the terminal response');
   assert.notEqual(terminal, '', 'stream ends with a terminal event');
-  return { event: terminal, items, usage: normalizeUsage(response.usage) };
+  return { event: terminal, incomplete: response.incomplete_details?.reason, items, usage: normalizeUsage(response.usage) };
 }
 
 test('official JavaScript SDK over recorded inputs: direct and through the codec', async (t) => {
