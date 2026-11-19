@@ -85,7 +85,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	index := newStackIndex(file)
+	index := newStackIndex(file.File)
 	groups, err := resolveGroups(modelID, controls.Models, index.resolve)
 	if err != nil {
 		return execution.Selection{}, err
@@ -107,7 +107,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 // parseStackCatalog checks a stack catalog with the keys that have values, and
 // returns it with those values. Any failure is [execution.ErrCatalogConfiguration],
 // without the reason, which names spec identifiers.
-func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (config.File, []string, error) {
+func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (stackcatalog.Catalog, []string, error) {
 	secureKeys := make([]string, 0, len(stack.Keys))
 	keys := make([]string, 0, len(stack.Keys))
 	for name, value := range stack.Keys {
@@ -119,7 +119,7 @@ func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (
 	}
 	file, err := stackcatalog.Parse(stack.Spec, secureKeys, endpoints)
 	if err != nil {
-		return config.File{}, nil, execution.ErrCatalogConfiguration
+		return stackcatalog.Catalog{}, nil, execution.ErrCatalogConfiguration
 	}
 	return file, keys, nil
 }
@@ -151,7 +151,7 @@ func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.Mode
 	if err != nil {
 		return nil, err
 	}
-	index := newStackIndex(file)
+	index := newStackIndex(file.File)
 	infos := make([]catalog.ModelInfo, 0, len(file.Models))
 	for _, id := range slices.Sorted(maps.Keys(file.Models)) {
 		model := file.Models[id]
