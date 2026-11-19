@@ -62,7 +62,7 @@ func TestOfficialSDK_StackCatalog(t *testing.T) {
 
 			params.StreamOptions.IncludeUsage = openai.Bool(true)
 			stream := client.Chat.Completions.NewStreaming(ctx, params)
-			defer stream.Close()
+			defer func() { _ = stream.Close() }()
 			var text strings.Builder
 			var finishes, usage int
 			for stream.Next() {
@@ -116,6 +116,6 @@ func saveSDKCatalog(t *testing.T, ctx context.Context, base string) {
 	request.Header.Set("Authorization", "Bearer "+testToken)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	require.Equal(t, http.StatusCreated, response.StatusCode)
 }
