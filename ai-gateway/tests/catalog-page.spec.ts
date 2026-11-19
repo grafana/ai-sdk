@@ -202,7 +202,9 @@ test.describe('model catalog page', () => {
     const draft = `org/blocked\n${listed}`;
     await blocklist.fill(draft);
     await save.click();
-    await expect(provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)).toBeVisible();
+    await expect(
+      provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)
+    ).toBeVisible();
     await expect(toggle).toBeChecked();
     await expect(blocklist).toHaveValue(draft);
     const afterRefusal = await stored();
@@ -385,7 +387,9 @@ test.describe('model catalog page', () => {
     expect(message).toContain(ADMISSION_REFUSAL);
     expect(message).toContain('alias "balanced" collides');
     await expect(drawer.getByRole('alert').filter({ hasText: message })).toBeVisible();
-    expect((await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json()).spec.models.balanced.aliases).toBeUndefined();
+    expect(
+      (await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json()).spec.models.balanced.aliases
+    ).toBeUndefined();
     await watch.nowhere(key);
   });
 
