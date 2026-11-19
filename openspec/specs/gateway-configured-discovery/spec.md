@@ -230,7 +230,7 @@ Operator telemetry configuration SHALL remain independent of developer discovery
 - **THEN** discovery SHALL remain available without enabling capture or new topology labels
 
 ### Requirement: Catalog route discovery
-A catalog route's `config` SHALL list the parent catalog's models with the configured route projection: canonical rows, aliases, primary and fallbacks, with each provider name as the provider instance and its provider type as the provider. It SHALL construct no model, make no provider request, and contain no key, secure value name or object metadata.
+A catalog route's `config` SHALL list only the parent catalog's explicitly listed models with the configured route projection: canonical rows, aliases, primary and fallbacks, with each provider name as the provider instance and its provider type as the provider. It SHALL construct no model, make no provider request, and contain no key, secure value name or object metadata.
 
 #### Scenario: Catalog with two models
 - **WHEN** a caller with catalog access requests the catalog's `config`
@@ -243,3 +243,7 @@ A catalog route's `config` SHALL list the parent catalog's models with the confi
 #### Scenario: No configured models
 - **WHEN** a caller with catalog access requests `config` for a valid catalog with no models, with or without connected providers
 - **THEN** the response SHALL be `200` with `{"models":[]}`, with no provider requests
+
+#### Scenario: Catalog has an enabled provider
+- **WHEN** a caller requests `config` for a catalog with a `serveAllModels` provider
+- **THEN** the response SHALL have the same model rows as it would without the setting, and SHALL NOT expand to provider inventory
