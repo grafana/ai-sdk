@@ -116,9 +116,11 @@ admission validators to accept or refuse each create and update. Under
 `POST /language-model`, `POST /v1/messages`, `POST /v1/chat/completions` and
 `POST /health` and `POST /available-models`.
 Grafana reads the catalog as the caller, runs the route's declared access check
-(`get` on the route's own subresource; `aigateway:modelinvoker` grants
-discovery and invocation and `aigateway:catalogwriter` grants health and provider inventory),
-and only then decrypts the catalog's keys and passes the object, its resource
+(`get` on the declared `modelcatalogs` subresource). The
+`aigateway:modelinvoker` role grants discovery and invocation;
+`aigateway:catalogwriter` grants health and provider inventory. Chat checks `modelcatalogs/chat-completions`
+even though its route tail is `v1/chat/completions`. Grafana then decrypts the
+keys and passes the object, its resource
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
