@@ -83,14 +83,22 @@ function isCatalogWrite(method: string, name?: string) {
   return (request: Request) => request.method() === method && new URL(request.url()).pathname.endsWith(path);
 }
 
-async function fillNewCatalog(page: Page, name: string, key: string, model = 'claude-sonnet-4-6') {
+async function createEmptyCatalog(page: Page, name: string) {
   await page.getByRole('textbox', { name: /^Catalog name/ }).fill(name);
+  const created = page.waitForResponse((response) => isCatalogWrite('POST')(response.request()));
+  await page.getByRole('button', { name: 'Create catalog' }).click();
+  const response = await created;
+  expect(response.status(), await response.text()).toBe(201);
+  await expect(page).toHaveURL(new RegExp(`${catalogPageURL(name)}$`));
+  return response;
+}
+
+async function connectAnthropic(page: Page, key: string) {
   await page.getByRole('button', { name: 'Connect a provider' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel(/^API key/).fill(key);
   await dialog.getByRole('button', { name: 'Connect' }).click();
-  await expect(dialog).toHaveCount(0);
-  await addModel(page, 'anthropic', model);
+  await expect(card(page, 'anthropic').getByText('No models yet.')).toBeVisible();
 }
 
 async function addModel(page: Page, provider: string, providerModel: string) {
@@ -114,24 +122,61 @@ test.describe('model catalog page', () => {
     }
   });
 
-  test('an Admin creates a catalog and its key is never shown', async ({ gotoPage, page, accounts }) => {
+  test('an Admin creates by name, connects a provider, and can return to an empty catalog', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
     const name = uniqueName();
-    const key = sentinelKey('create');
+    const key = sentinelKey('connect');
     await gotoPage(`/${ROUTES.Catalogs}`);
     await page.getByRole('link', { name: 'New catalog' }).click();
-    await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
+    const created = await createEmptyCatalog(page, name);
+    const createBody = created.request().postDataJSON();
+    expect(createBody.spec).toEqual({ providers: {}, models: {} });
+    expect(createBody).not.toHaveProperty('secure');
+
+    const stored = async () => {
+      const response = await accounts.Admin.get(`${CATALOGS}/${name}`);
+      expect(response.ok(), await response.text()).toBe(true);
+      return response.json();
+    };
+    const empty = await stored();
+    expect(empty.spec).toEqual({ providers: {}, models: {} });
+    await expect(page.getByRole('button', { name: 'Connect a provider' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
     const watch = keyWatch(page);
-    await fillNewCatalog(page, name, key);
 
-    const created = page.waitForRequest(isCatalogWrite('POST'));
-    await page.getByRole('button', { name: 'Create catalog' }).click();
-    expect((await created).postDataJSON().secure).toEqual({ anthropic: { create: key } });
-    await expect(page).toHaveURL(new RegExp(`${catalogPageURL(name)}$`));
-    await expect(card(page, 'anthropic').getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeVisible();
-    await expect(page.getByText('Key saved')).toHaveCount(0);
+    const connected = page.waitForRequest(isCatalogWrite('PUT', name));
+    await connectAnthropic(page, key);
+    const connectBody = (await connected).postDataJSON();
+    expect(connectBody.metadata.resourceVersion).toBe(empty.metadata.resourceVersion);
+    expect(connectBody.spec.models).toEqual({});
+    expect(connectBody.secure).toEqual({ anthropic: { create: key } });
+    const provider = card(page, 'anthropic');
+    await expect(provider.getByText('No models yet.')).toBeVisible();
+    expect(Object.keys((await stored()).secure.anthropic)).toEqual(['name']);
+    const model = 'claude-sonnet-4-6';
+    await addModel(page, 'anthropic', model);
 
-    const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
-    expect(Object.keys(stored.secure.anthropic)).toEqual(['name']);
+    const removedModel = page.waitForRequest(isCatalogWrite('PUT', name));
+    await provider.getByRole('button', { name: `Remove ${model}` }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+    await expect(provider.getByText('No models yet.')).toBeVisible();
+    expect((await removedModel).postDataJSON()).not.toHaveProperty('secure');
+    expect(Object.keys((await stored()).secure.anthropic)).toEqual(['name']);
+    await expect(provider.getByText(SUCCESS_BADGES)).toHaveCount(0);
+
+    const removedProvider = page.waitForRequest(isCatalogWrite('PUT', name));
+    await provider.getByRole('button', { name: 'Remove anthropic' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+    await expect(provider).toHaveCount(0);
+    expect((await removedProvider).postDataJSON().secure).toEqual({ anthropic: { remove: true } });
+    const cleared = await stored();
+    expect(cleared.spec).toEqual({ providers: {}, models: {} });
+    expect(Object.keys(cleared.secure ?? {})).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
     await watch.nowhere(key);
   });
 
@@ -226,32 +271,28 @@ test.describe('model catalog page', () => {
     expect((await accounts.Admin.get(`${CATALOGS}/${name}`)).status()).toBe(404);
   });
 
-  test('an admission refusal is shown as returned', async ({ gotoPage, page }) => {
-    const key = sentinelKey('refused');
-    await gotoPage(`/${ROUTES.NewCatalog}`);
-    await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
+  test('an admission refusal is shown as returned', async ({ gotoPage, page, accounts }) => {
+    const { name, key } = await createStored(accounts.Admin);
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    await expect(card(page, 'claude').getByRole('button', { name: 'balanced', exact: true })).toBeVisible();
     const watch = keyWatch(page);
-    await fillNewCatalog(page, uniqueName(), key);
-    await card(page, 'anthropic').getByRole('button', { name: 'claude-sonnet-4-6', exact: true }).click();
+    await card(page, 'claude').getByRole('button', { name: 'balanced', exact: true }).click();
     const drawer = page.getByRole('dialog');
-    await drawer.getByPlaceholder('Add an alias and press Enter').fill('claude-sonnet-4-6');
-    await drawer.getByPlaceholder('Add an alias and press Enter').press('Enter');
-    await drawer.getByRole('button', { name: 'Save model' }).click();
-    await expect(drawer).toHaveCount(0);
+    const alias = drawer.getByPlaceholder('Add an alias and press Enter');
+    await alias.fill('balanced');
+    await alias.press('Enter');
 
-    const refused = page.waitForResponse((response) => isCatalogWrite('POST')(response.request()));
-    await page.getByRole('button', { name: 'Create catalog' }).click();
+    const refused = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await drawer.getByRole('button', { name: 'Save model' }).click();
     const response = await refused;
     expect(response.status()).toBe(400);
     const { message } = await response.json();
     expect(message).toContain(ADMISSION_REFUSAL);
-    expect(message).toContain('alias "claude-sonnet-4-6" collides');
-    await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
-    await expect(card(page, 'anthropic').getByText('Also requested as claude-sonnet-4-6')).toBeVisible();
-    expect(await page.locator('body').innerText()).not.toContain(key);
-    await watch.notFetched(key);
-    await page.getByRole('link', { name: 'Cancel' }).click();
-    await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toHaveCount(0);
+    expect(message).toContain('alias "balanced" collides');
+    await expect(drawer.getByRole('alert').filter({ hasText: message })).toBeVisible();
+    expect(
+      (await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json()).spec.models.balanced.aliases
+    ).toBeUndefined();
     await watch.nowhere(key);
   });
 
@@ -336,10 +377,7 @@ test.describe('model catalog page', () => {
     await expect(page.getByText(SUCCESS_BADGES)).toHaveCount(0);
   });
 
-  test('an Admin picks a listed model and adds custom IDs before and after a key replacement', async ({
-    gotoPage,
-    page,
-  }) => {
+  test('an Admin checks and browses a provider before adding its first model', async ({ gotoPage, page }) => {
     const name = uniqueName();
     const accepted = 'e2e-health-accepted-key';
     const rejected = 'e2e-health-rejected-key';
@@ -353,12 +391,17 @@ test.describe('model catalog page', () => {
     await page.getByRole('link', { name: 'New catalog' }).click();
     await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
     const watch = keyWatch(page);
-    await fillNewCatalog(page, name, accepted, 'manual-first');
     await expect(page.getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveCount(0);
-    await expect(page.getByText(/After saving the catalog, you can browse/)).toBeVisible();
-    await page.getByRole('button', { name: 'Create catalog' }).click();
+    await createEmptyCatalog(page, name);
+    await connectAnthropic(page, accepted);
 
     const provider = card(page, 'anthropic');
+    await expect(provider.getByText('No models yet.')).toBeVisible();
+    const health = page.waitForResponse((response) => isCatalogWrite('POST', `${name}/health`)(response.request()));
+    await page.getByRole('button', { name: 'Check health' }).click();
+    expect(await (await health).json()).toEqual({ providers: { anthropic: 'ok' }, models: {} });
+    await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('No problems found');
+    await expect(provider.getByText(SUCCESS_BADGES)).toHaveCount(0);
     const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
     await expect(field).toBeVisible();
     await field.focus();

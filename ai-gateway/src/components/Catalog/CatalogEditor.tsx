@@ -28,7 +28,6 @@ type Dialog =
 interface Props {
   spec: Spec;
   keys: string[];
-  stored: boolean;
   health?: CatalogHealth;
   readOnly: boolean;
   listingRevision?: string;
@@ -38,12 +37,10 @@ interface Props {
 
 /**
  * CatalogEditor shows a catalog's providers, each with the models it serves,
- * and applies each change a writer confirms through onChange: a write for a
- * stored catalog, or the draft of a new one. A stored catalog keeps at least
- * one model, and a provider can't be removed while other providers' models
- * fall back to it.
+ * and applies each change a writer confirms through onChange. A provider
+ * can't be removed while another provider's model falls back to it.
  */
-export function CatalogEditor({ spec, keys, stored, health, readOnly, listingRevision, listModels, onChange }: Props) {
+export function CatalogEditor({ spec, keys, health, readOnly, listingRevision, listModels, onChange }: Props) {
   const [dialog, setDialog] = useState<Dialog>();
   const [error, setError] = useState<string>();
   const pendingListings = useRef(new Map<string, Promise<ProviderModelListing>>());
@@ -62,7 +59,6 @@ export function CatalogEditor({ spec, keys, stored, health, readOnly, listingRev
     return request;
   }, []);
   const providers = Object.entries(spec.providers);
-  const modelCount = Object.keys(spec.models).length;
   const close = () => setDialog(undefined);
 
   const applyChange = async (change: CatalogChange) => {
@@ -91,19 +87,14 @@ export function CatalogEditor({ spec, keys, stored, health, readOnly, listingRev
 
   const removeBlocked = (provider: string): string | undefined => {
     const users = fallbackUsers(spec, provider);
-    if (users.length > 0) {
-      return `${provider} can't be removed while ${users.join(', ')} ${users.length === 1 ? 'falls' : 'fall'} back to it`;
-    }
-    const own = modelsOf(spec, provider).length;
-    return stored && own > 0 && own === modelCount
-      ? `${provider} serves every model, and a catalog needs at least one; delete the catalog instead`
+    return users.length > 0
+      ? `${provider} can't be removed while ${users.join(', ')} ${users.length === 1 ? 'falls' : 'fall'} back to it`
       : undefined;
   };
 
   const removalText = (provider: string) => {
     const own = modelsOf(spec, provider).map(([id]) => id);
-    const key = stored ? 'Its saved API key is deleted' : 'Its API key is discarded';
-    return `Remove ${provider}? ${key}${own.length > 0 ? `, and its models are removed: ${own.join(', ')}` : ''}.`;
+    return `Remove ${provider}? Its saved API key is deleted${own.length > 0 ? `, and its models are removed: ${own.join(', ')}` : ''}.`;
   };
 
   const removal = (() => {
@@ -141,13 +132,12 @@ export function CatalogEditor({ spec, keys, stored, health, readOnly, listingRev
           name={name}
           provider={provider}
           models={modelsOf(spec, name)}
-          keyState={!keys.includes(name) ? 'missing' : stored ? undefined : 'entered'}
+          hasKey={keys.includes(name)}
           health={health}
           readOnly={readOnly}
           listingRevision={listingRevision}
-          listModels={stored && keys.includes(name) && listModels ? () => listSavedModels(name, listModels) : undefined}
+          listModels={keys.includes(name) && listModels ? () => listSavedModels(name, listModels) : undefined}
           removeBlocked={removeBlocked(name)}
-          lastModel={stored && modelCount === 1}
           onOpenModel={(id) => setDialog({ kind: 'model', id })}
           onRemoveModel={(id) => setDialog({ kind: 'removeModel', id })}
           onAddModel={(providerModel) =>

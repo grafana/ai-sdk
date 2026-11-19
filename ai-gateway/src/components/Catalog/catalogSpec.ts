@@ -31,11 +31,6 @@ export interface CatalogChange {
   secure: SecureChanges;
 }
 
-/** emptySpec returns a spec without providers or models. */
-export function emptySpec(): Spec {
-  return { providers: {}, models: {} };
-}
-
 /** providerTypeLabel returns the label of a provider type. */
 export function providerTypeLabel(type: string): string {
   return PROVIDER_TYPES.find((option) => option.value === type)?.label ?? type;
@@ -305,42 +300,4 @@ export function fallbackSuggestions(spec: Spec, draft: ModelDraft, previousId?: 
 /** targetLabel describes a target as its model on its provider. */
 export function targetLabel(target: Target): string {
   return `${target.model} on ${target.provider}`;
-}
-
-/**
- * draftKeys applies a change's secure values to the keys a new catalog's
- * writer has entered, which stay in memory until the catalog is created.
- */
-export function draftKeys(keys: Record<string, string>, secure: SecureChanges): Record<string, string> {
-  const next = { ...keys };
-  for (const [provider, change] of Object.entries(secure)) {
-    if (change.create !== undefined) {
-      next[provider] = change.create;
-    } else if (change.remove) {
-      delete next[provider];
-    }
-  }
-  return next;
-}
-
-/** createSecure returns the secure values that store a new catalog's entered keys. */
-export function createSecure(keys: Record<string, string>): SecureChanges {
-  return Object.fromEntries(Object.entries(keys).map(([provider, key]) => [provider, { create: key }]));
-}
-
-/** NewCatalogProblems are what keep a new catalog from being created. */
-export interface NewCatalogProblems {
-  name?: string;
-  content?: string;
-}
-
-/** newCatalogProblems returns what keeps a new catalog from being created: no name, provider or model. */
-export function newCatalogProblems(name: string, spec: Spec): NewCatalogProblems {
-  const problems: NewCatalogProblems = { name: catalogNameError(name) };
-  if (Object.keys(spec.providers).length === 0) {
-    problems.content = 'Connect a provider and add a model.';
-  } else if (Object.keys(spec.models).length === 0) {
-    problems.content = 'Add at least one model.';
-  }
-  return problems;
 }

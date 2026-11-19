@@ -83,14 +83,13 @@ export function catalogHealthErrorMessage(error: unknown): string {
   return 'The catalog health check could not run. Try again.';
 }
 
-/** createModelCatalog creates a catalog with the given spec and secure values. */
-export function createModelCatalog(name: string, spec: Spec, secure: SecureChanges): Promise<ModelCatalog> {
+/** createModelCatalog creates an empty catalog with the given name. */
+export function createModelCatalog(name: string): Promise<ModelCatalog> {
   const body = {
     apiVersion: `${API_GROUP}/${API_VERSION}`,
     kind: MODEL_CATALOG_KIND,
     metadata: { name },
-    spec,
-    ...withSecure(secure),
+    spec: { providers: {}, models: {} },
   };
   return getBackendSrv().post<ModelCatalog>(modelCatalogsURL(), body, REQUEST_OPTIONS);
 }

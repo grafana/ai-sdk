@@ -50,7 +50,8 @@ function CatalogView({ name }: Props) {
   const [checking, setChecking] = useState(false);
   const healthGeneration = useRef(0);
   const inFlight = useRef(false);
-  const canCheckHealth = permissions.read && permissions.checkHealth;
+  const canCheckHealth =
+    permissions.read && permissions.checkHealth && !!stored && Object.keys(stored.spec.providers).length > 0;
   const problems = canCheckHealth && health ? countHealthProblems(health) : undefined;
 
   useEffect(() => {
@@ -146,7 +147,6 @@ function CatalogView({ name }: Props) {
             spec={stored.spec}
             keys={Object.keys(stored.secure ?? {})}
             health={canCheckHealth ? health : undefined}
-            stored
             readOnly={!permissions.update}
             listingRevision={stored.metadata.resourceVersion}
             listModels={canBrowse ? (provider) => listProviderModels(name, provider) : undefined}
