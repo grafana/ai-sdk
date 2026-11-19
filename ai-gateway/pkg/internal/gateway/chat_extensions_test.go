@@ -82,12 +82,12 @@ func assertChatExtension(t *testing.T, scope extension.Scope, guard gatewayExten
 	}
 	auth := bearer(h.host.AddServiceAccount("chat-extension", testNamespace))
 	for _, route := range []struct {
-		name, url, model string
-		provider         *fakeAnthropic
-		applies          bool
+		name, url, model, primary string
+		provider                  *fakeAnthropic
+		applies                   bool
 	}{
-		{name: "namespace", url: h.url("v1/chat/completions"), model: "public", provider: h.anthropic, applies: scope == extension.ScopeOperator},
-		{name: "catalog", url: h.catalogURL("v1/chat/completions"), model: "team", provider: native, applies: true},
+		{name: "namespace", url: h.url("v1/chat/completions"), model: "public", primary: "backend-private", provider: h.anthropic, applies: scope == extension.ScopeOperator},
+		{name: "catalog", url: h.catalogURL("v1/chat/completions"), model: "team", primary: "claude-sonnet-4-6", provider: native, applies: true},
 	} {
 		t.Run(route.name, func(t *testing.T) {
 			for _, streaming := range []bool{false, true} {
@@ -124,7 +124,12 @@ func assertChatExtension(t *testing.T, scope extension.Scope, guard gatewayExten
 				require.Equal(t, wantCalls, route.provider.requests.Load(), "streaming=%t", streaming)
 				if wantCalls > before {
 					_, bodies := route.provider.nativeCalls()
-					assert.NotContains(t, bodies[before], "chat-fallback")
+					require.Len(t, bodies, int(wantCalls))
+					var request struct {
+						Model string `json:"model"`
+					}
+					require.NoError(t, json.Unmarshal([]byte(bodies[before]), &request))
+					assert.Equal(t, route.primary, request.Model)
 				}
 				assert.NotContains(t, body, privateExtension)
 				assert.NotContains(t, body, routeCatalogKey)
