@@ -401,6 +401,27 @@ describe('pages/CatalogPage', () => {
     expect(provider.queryByRole('option', { name: 'old-key-model' })).not.toBeInTheDocument();
   });
 
+  test('does not reuse a pending listing after changing the serving mode', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    await openPage();
+    const provider = card('anthropic');
+    fireEvent.click(provider.getByRole('combobox', { name: 'Add a model to anthropic' }));
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    fireEvent.click(toggle);
+    const blockedID = await provider.findByRole('combobox', { name: 'Add a blocked model ID' });
+    fireEvent.click(blockedID);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+    await act(() => resolve({ status: 'ok', modelIds: ['old-listing-model'] }));
+    expect(provider.queryByRole('option', { name: 'old-listing-model' })).not.toBeInTheDocument();
+  });
+
   test('shows the busy message for both listing and health 429s', async () => {
     signInAs(OrgRole.Admin, ALL);
     const busy = { status: 429, data: { message: 'untrusted-busy-detail' } };
