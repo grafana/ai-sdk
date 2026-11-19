@@ -2,8 +2,8 @@
 
 ## 1. Kind and admission
 
-- [ ] 1.1 Add the two optional provider fields to `kinds/modelcatalog.cue`. Run `mise run generate-ai-gateway-kinds` and verify the Go and TypeScript types and both manifests expose the fields without changing existing fields, kind membership, routes, or roles.
-- [ ] 1.2 Validate the stack-only policy in `stackcatalog.Parse`, including bounds, duplicates, exact instance/ID conflicts against all primaries and fallbacks, and fixed field errors. Add parser and CREATE/UPDATE validator tests for omitted fields, off with a saved blocklist, same-type account isolation, errors without secrets, and unchanged operator config validation.
+- [x] 1.1 Add the two optional provider fields to `kinds/modelcatalog.cue`. Run `mise run generate-ai-gateway-kinds` and verify the Go and TypeScript types and both manifests expose the fields without changing existing fields, kind membership, routes, or roles.
+- [x] 1.2 Validate the stack-only policy in `stackcatalog.Parse`, including bounds, duplicates, exact instance/ID conflicts against all primaries and fallbacks, and fixed field errors. Add parser and CREATE/UPDATE validator tests for omitted fields, off with a saved blocklist, same-type account isolation, errors without secrets, and unchanged operator config validation.
 
 ## 2. Catalog routes
 
