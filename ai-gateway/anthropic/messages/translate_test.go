@@ -113,7 +113,7 @@ func TestHandler_ClaudeCodeRequestFixture(t *testing.T) {
 	require.Len(t, seen.Prompt, 5)
 	assert.Equal(t, []provider.Role{provider.RoleSystem, provider.RoleUser, provider.RoleSystem, provider.RoleAssistant, provider.RoleTool}, roles(seen.Prompt))
 	require.Len(t, seen.Tools, 2)
-	assert.Empty(t, seen.ProviderOptions)
+	assert.Equal(t, map[string]any{"effort": "medium"}, rawOption(t, seen, "anthropic"))
 }
 
 func roles(messages []provider.Message) []provider.Role {

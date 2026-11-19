@@ -14,17 +14,18 @@ var (
 )
 
 type request struct {
-	Model       string          `json:"model"`
-	MaxTokens   int             `json:"max_tokens"`
-	System      json.RawMessage `json:"system"`
-	Messages    []message       `json:"messages"`
-	Tools       []tool          `json:"tools"`
-	ToolChoice  *toolChoice     `json:"tool_choice"`
-	Stop        []string        `json:"stop_sequences"`
-	Temperature *float64        `json:"temperature"`
-	TopP        *float64        `json:"top_p"`
-	TopK        *int            `json:"top_k"`
-	Stream      bool            `json:"stream"`
+	Model        string          `json:"model"`
+	MaxTokens    int             `json:"max_tokens"`
+	System       json.RawMessage `json:"system"`
+	Messages     []message       `json:"messages"`
+	Tools        []tool          `json:"tools"`
+	ToolChoice   *toolChoice     `json:"tool_choice"`
+	OutputConfig *outputConfig   `json:"output_config"`
+	Stop         []string        `json:"stop_sequences"`
+	Temperature  *float64        `json:"temperature"`
+	TopP         *float64        `json:"top_p"`
+	TopK         *int            `json:"top_k"`
+	Stream       bool            `json:"stream"`
 }
 
 type message struct {
@@ -57,6 +58,10 @@ type toolChoice struct {
 	DisableParallelToolUse *bool  `json:"disable_parallel_tool_use"`
 }
 
+type outputConfig struct {
+	Effort *provider.ReasoningEffort `json:"effort"`
+}
+
 // mapRequest maps an Anthropic Messages request to provider call options.
 // Fields that tune only the Anthropic wire, such as cache_control, metadata,
 // service_tier and the thinking configuration, are accepted and not applied.
@@ -67,6 +72,13 @@ func mapRequest(body []byte) (request, provider.CallOptions, error) {
 	}
 	if in.Model == "" || in.MaxTokens <= 0 || len(in.Messages) == 0 {
 		return in, provider.CallOptions{}, errInvalidRequest
+	}
+	if in.OutputConfig != nil && in.OutputConfig.Effort != nil {
+		switch *in.OutputConfig.Effort {
+		case provider.ReasoningLow, provider.ReasoningMedium, provider.ReasoningHigh, provider.ReasoningXHigh, provider.ReasoningMax:
+		default:
+			return in, provider.CallOptions{}, errInvalidRequest
+		}
 	}
 	options := provider.CallOptions{MaxOutputTokens: &in.MaxTokens, Temperature: in.Temperature, TopP: in.TopP, TopK: in.TopK, StopSequences: in.Stop}
 	if isPresent(in.System) {

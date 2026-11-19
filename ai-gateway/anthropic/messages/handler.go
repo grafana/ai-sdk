@@ -57,7 +57,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, 400)
 		return
 	}
-	call, err := h.runtime.Call(req.Context(), in.Model, options, execution.WithTranslator(messagesTranslator(in.disableParallelToolUse())))
+	call, err := h.runtime.Call(req.Context(), in.Model, options, execution.WithTranslator(messagesTranslator(in)))
 	if err != nil {
 		if errors.Is(req.Context().Err(), context.Canceled) {
 			return
