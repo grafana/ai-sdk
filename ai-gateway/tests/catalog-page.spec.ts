@@ -176,20 +176,6 @@ test.describe('model catalog page', () => {
     expect(blocked.status(), await blocked.text()).toBe(404);
     expect((await blocked.json()).error.code).toBe('model_not_found');
 
-    const refused = await accounts.Admin.put(`${CATALOGS}/${name}`, {
-      data: {
-        apiVersion: seed.apiVersion,
-        kind: seed.kind,
-        metadata: enabled.metadata,
-        spec: {
-          ...enabled.spec,
-          models: { blocked: { name: 'Blocked', primary: { provider: 'claude', model: 'org/blocked' } } },
-        },
-      },
-    });
-    expect(refused.ok()).toBe(false);
-    expect(await refused.text()).toContain(ADMISSION_REFUSAL);
-
     await toggle.press('Space');
     await save.click();
     await expect(provider.getByText('No models yet.')).toBeVisible();
@@ -201,6 +187,20 @@ test.describe('model catalog page', () => {
     const disabled = await invoke('claude/org/new');
     expect(disabled.status(), await disabled.text()).toBe(404);
     expect((await disabled.json()).error.code).toBe('model_not_found');
+
+    const listed = 'claude-sonnet-4-6';
+    await addModel(page, 'claude', listed);
+    const beforeRefusal = await stored();
+    await toggle.press('Space');
+    const draft = `org/blocked\n${listed}`;
+    await blocklist.fill(draft);
+    await save.click();
+    await expect(provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)).toBeVisible();
+    await expect(toggle).toBeChecked();
+    await expect(blocklist).toHaveValue(draft);
+    const afterRefusal = await stored();
+    expect(afterRefusal.metadata.resourceVersion).toBe(beforeRefusal.metadata.resourceVersion);
+    expect(afterRefusal.spec).toEqual(beforeRefusal.spec);
   });
 
   test('an Admin creates with a provider and can remove the last model but not that provider', async ({
@@ -349,9 +349,7 @@ test.describe('model catalog page', () => {
     expect(message).toContain(ADMISSION_REFUSAL);
     expect(message).toContain('alias "balanced" collides');
     await expect(drawer.getByRole('alert').filter({ hasText: message })).toBeVisible();
-    expect(
-      (await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json()).spec.models.balanced.aliases
-    ).toBeUndefined();
+    expect((await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json()).spec.models.balanced.aliases).toBeUndefined();
     await watch.nowhere(key);
   });
 
