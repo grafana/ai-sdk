@@ -43,16 +43,7 @@ interface Props {
  * one model, and a provider can't be removed while other providers' models
  * fall back to it.
  */
-export function CatalogEditor({
-  spec,
-  keys,
-  stored,
-  health,
-  readOnly,
-  listingRevision,
-  listModels,
-  onChange,
-}: Props) {
+export function CatalogEditor({ spec, keys, stored, health, readOnly, listingRevision, listModels, onChange }: Props) {
   const [dialog, setDialog] = useState<Dialog>();
   const [error, setError] = useState<string>();
   const providers = Object.entries(spec.providers);
