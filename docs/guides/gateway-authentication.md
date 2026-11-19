@@ -205,8 +205,7 @@ An App Platform app, a Grafana app plugin with a backend, calls the Gateway
 through Grafana. It can call as itself, or on behalf of the user whose request
 it is serving.
 
-Declare the Gateway's routes in your app manifest, so that Grafana lets your
-app call them:
+For the namespace routes, declare these permissions in your app manifest:
 
 ```cue
 extraPermissions: accessKinds: [
@@ -261,6 +260,47 @@ What each call gets:
 In both environments, a call on behalf of a user also needs the user to have
 the `plugins.app:access` permission on `plugins:id:grafana-aigateway-app`.
 Grafana's Viewer role has it by default.
+
+### Call a stored stack catalog
+
+With a service account or a caller-managed access token, use the full catalog
+prefix as the base URL, such as
+`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/team`.
+
+With token exchange, keep the Gateway API root as the base URL. In your app
+backend, select the stack, the user's token, and the catalog's `metadata.name`
+in the call context. Use that context for both discovery and model calls:
+
+```go
+catalogCtx := grafana.WithNamespace(ctx, namespace)
+catalogCtx = grafana.WithOnBehalfOf(catalogCtx, info.GetAccessToken())
+catalogCtx = grafana.WithCatalog(catalogCtx, "team")
+
+models, err := client.ListModels(catalogCtx)
+```
+
+Pass the same context when calling a model ID from that catalog:
+
+```go
+model, err := client.LanguageModel(modelID)
+if err != nil {
+	return err
+}
+result, err := aisdk.GenerateText(catalogCtx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+)
+```
+
+Use the same context for `aisdk.StreamText`. If the client already has the
+stack's concrete namespace configured, you can omit `WithNamespace`. Calls
+on behalf of a user cannot exchange for `*`.
+
+The option selects a route; it does not grant access. The namespace-route
+permissions above do not grant access to catalog routes. Grafana checks
+`get` access to the catalog's `config` and `language-model` subresources;
+the delegated user needs catalog invocation access (`aigateway:modelinvoker`).
+See [Call a stored catalog](../../ai-gateway/README.md#call-a-stored-catalog)
+for the platform requirements and Grafana Cloud access policy scope.
 
 ## Get your service allowed in Grafana Cloud
 
