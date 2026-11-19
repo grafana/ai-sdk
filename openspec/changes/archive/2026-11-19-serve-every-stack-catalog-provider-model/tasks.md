@@ -14,8 +14,8 @@
 
 ## 3. Catalog page
 
-- [x] 3.1 Add the switch and adjacent manual blocklist to the saved provider card. Use the existing versioned update path with one explicit save, keep keys untouched, and distinguish no listed models from no callable models. Ensure removal copy does not promise that a listed model's backend becomes inaccessible. Cover the update body, retained blocklist, error and draft handling, no automatic health or listing, and update permission checks with Jest.
-- [x] 3.2 Extend Playwright against the pinned Grafana image and fake provider. Enable the setting with a blocklist on a provider with no listed models, verify it round-trips, invoke an unlisted model but not a blocked one, check empty discovery, then disable and verify the callable ID now fails. Exercise admission's primary/fallback conflict and verify read-only presentation.
+- [x] 3.1 Add the switch and blocklist to the saved provider card. Use one versioned update per toggle, add, or remove action, allow editing blocked IDs while off, keep keys untouched, and distinguish no listed models from no callable models. Ensure removal copy does not promise that a listed model's backend becomes inaccessible. Cover the update body, retained blocklist, errors, no automatic health or listing, and update permission checks with Jest.
+- [x] 3.2 Extend Playwright against the pinned Grafana image and fake provider. Save a blocklist while off and enable the setting on a provider with no listed models, verify it round-trips, invoke an unlisted model but not a blocked one, check empty discovery, then disable and verify the callable ID now fails. Exercise admission's primary/fallback conflict and verify read-only presentation.
 
 ## 4. Integration checks
 

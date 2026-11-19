@@ -9,7 +9,7 @@ A stack catalog can connect a provider before adding models, but writers must st
 - Add optional `serveAllModels` and `modelBlocklist` fields to each `ModelCatalog` provider. The default is still listed models only.
 - Resolve listed IDs and aliases first. Otherwise, accept `<provider-instance>/<model-id>` only for an enabled instance and only if its exact backend ID is not blocked. Blocked selectors return the existing unknown-model error.
 - Refuse malformed blocklists and entries that match a configured primary or fallback target of that provider instance. Keep discovery limited to listed models; provider inventory remains an explicit admin action.
-- Put a **Serve every model** switch and a **Blocked model IDs** field together on each saved provider card, with an explicit save for both settings.
+- Put a **Serve every model** switch and a **Blocked model IDs** editor on each saved provider card. Save toggles and blocklist additions and removals immediately, and let writers prepare a blocklist before enabling.
 
 ## Capabilities
 

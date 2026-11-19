@@ -8,73 +8,69 @@ interface Props {
   name: string;
   provider: Provider;
   readOnly: boolean;
-  serveAllModels: boolean;
-  onModeChange: (enabled: boolean) => void;
+  showBlocklist: boolean;
+  onEditBlockedIDs: (editing: boolean) => void;
   listModels?: () => Promise<ProviderModelListing>;
   listingRevision?: string;
   onSave: (provider: Provider) => Promise<void>;
 }
 
-/** ProviderServingSettings edits one saved provider's serving mode and blocklist together. */
+/** ProviderServingSettings saves changes to a provider's serving mode and blocklist. */
 export function ProviderServingSettings({
   name,
   provider,
   readOnly,
-  serveAllModels,
-  onModeChange,
+  showBlocklist,
+  onEditBlockedIDs,
   listModels,
   listingRevision,
   onSave,
 }: Props) {
   const switchID = useId();
-  const [draftBlocklist, setDraftBlocklist] = useState<string[]>();
   const [modelID, setModelID] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const savedEnabled = provider.serveAllModels === true;
-  const savedBlocklist = provider.modelBlocklist ?? [];
-  const blocklist = draftBlocklist ?? savedBlocklist;
-  const dirty =
-    serveAllModels !== savedEnabled ||
-    blocklist.length !== savedBlocklist.length ||
-    blocklist.some((id, index) => id !== savedBlocklist[index]);
+  const serveAllModels = provider.serveAllModels === true;
+  const blocklist = provider.modelBlocklist ?? [];
   const duplicate = blocklist.includes(modelID);
   const canAdd = modelID.trim() !== '' && !duplicate;
 
   if (readOnly) {
     return (
       <Stack direction="column" gap={0.5}>
-        <Text>{savedEnabled ? 'Serves unlisted models' : 'Serves listed models only'}</Text>
-        <Text color="secondary">Blocked model IDs: {savedBlocklist.join(', ') || 'None'}</Text>
+        <Text>{serveAllModels ? 'Serves unlisted models' : 'Serves listed models only'}</Text>
+        <Text color="secondary">Blocked model IDs: {blocklist.join(', ') || 'None'}</Text>
       </Stack>
     );
   }
 
-  const changeBlocklist = (ids: string[]) => {
-    setDraftBlocklist(ids);
-    setError(undefined);
-  };
-
-  const addBlockedID = () => {
-    if (!saving && canAdd) {
-      changeBlocklist([...blocklist, modelID]);
-      setModelID('');
-    }
-  };
-
-  const save = async () => {
-    if (saving || !dirty || modelID !== '') {
-      return;
+  const save = async (next: Provider): Promise<boolean> => {
+    if (saving) {
+      return false;
     }
     setError(undefined);
     setSaving(true);
     try {
-      await onSave({ ...provider, serveAllModels, modelBlocklist: blocklist });
-      setDraftBlocklist(undefined);
+      await onSave(next);
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const changeMode = async (enabled: boolean) => {
+    if (await save({ ...provider, serveAllModels: enabled })) {
+      onEditBlockedIDs(false);
+      setModelID('');
+    }
+  };
+
+  const addBlockedID = async () => {
+    if (canAdd && (await save({ ...provider, modelBlocklist: [...blocklist, modelID] }))) {
+      setModelID('');
     }
   };
 
@@ -82,7 +78,7 @@ export function ProviderServingSettings({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        addBlockedID();
+        void addBlockedID();
       }}
     >
       {error && (
@@ -93,24 +89,36 @@ export function ProviderServingSettings({
       <Field
         label="Serve every model"
         htmlFor={switchID}
-        description={`Apps request unlisted models as ${name}/<model-id>.`}
+        description={`Allows all models this provider account can use, except blocked IDs. Apps request unlisted models as ${name}/<model-id>.`}
       >
         <Switch
           id={switchID}
           aria-label="Serve every model"
           value={serveAllModels}
           disabled={saving}
-          onChange={(event) => {
-            onModeChange(event.currentTarget.checked);
+          onChange={(event) => void changeMode(event.currentTarget.checked)}
+        />
+      </Field>
+      {!serveAllModels && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={saving}
+          aria-expanded={showBlocklist}
+          onClick={() => {
+            onEditBlockedIDs(!showBlocklist);
             setModelID('');
             setError(undefined);
           }}
-        />
-      </Field>
-      {serveAllModels && (
+        >
+          {showBlocklist ? 'Close blocked IDs' : 'Edit blocked IDs'}
+        </Button>
+      )}
+      {showBlocklist && (
         <Field
           label="Blocked model IDs"
-          description="Choose or enter an exact provider model ID, then add it to the blocklist. The blocklist is kept when the switch is off."
+          description="Choose or enter an exact provider model ID. Adding or removing an ID saves immediately."
           invalid={duplicate}
           error={duplicate ? 'This ID is already blocked.' : undefined}
         >
@@ -149,7 +157,9 @@ export function ProviderServingSettings({
                         name="times"
                         tooltip={`Remove blocked ID ${id}`}
                         disabled={saving}
-                        onClick={() => changeBlocklist(blocklist.filter((blocked) => blocked !== id))}
+                        onClick={() =>
+                          void save({ ...provider, modelBlocklist: blocklist.filter((blocked) => blocked !== id) })
+                        }
                       />
                     </Stack>
                   </li>
@@ -159,15 +169,6 @@ export function ProviderServingSettings({
           </Stack>
         </Field>
       )}
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={saving || !dirty || modelID !== ''}
-        onClick={() => void save()}
-      >
-        Save serving settings
-      </Button>
     </form>
   );
 }

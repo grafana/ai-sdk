@@ -37,8 +37,8 @@ export function ProviderCard(props: Props) {
   const { name, provider, models, hasKey, health, readOnly, removeBlocked } = props;
   const s = useStyles2(getStyles);
   const label = providerTypeLabel(provider.type);
-  const [draftServeAll, setDraftServeAll] = useState<boolean>();
-  const serveAllModels = draftServeAll ?? provider.serveAllModels === true;
+  const [editingBlockedIDs, setEditingBlockedIDs] = useState(false);
+  const showBlocklist = provider.serveAllModels === true || editingBlockedIDs;
 
   return (
     <section className={s.card} aria-label={name}>
@@ -70,14 +70,11 @@ export function ProviderCard(props: Props) {
           name={name}
           provider={provider}
           readOnly={readOnly}
-          serveAllModels={serveAllModels}
-          onModeChange={setDraftServeAll}
+          showBlocklist={showBlocklist}
+          onEditBlockedIDs={setEditingBlockedIDs}
           listModels={props.listModels}
           listingRevision={props.listingRevision}
-          onSave={async (updated) => {
-            await props.onSaveServing(updated);
-            setDraftServeAll(undefined);
-          }}
+          onSave={props.onSaveServing}
         />
       </div>
       <ul className={s.models}>
@@ -116,7 +113,7 @@ export function ProviderCard(props: Props) {
           </li>
         ))}
       </ul>
-      {!readOnly && !serveAllModels && (
+      {!readOnly && !showBlocklist && (
         <QuickAdd
           name={name}
           label={label}
