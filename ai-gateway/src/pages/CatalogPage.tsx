@@ -41,6 +41,7 @@ function CatalogView({ name }: Props) {
   const [healthError, setHealthError] = useState<string>();
   const [checking, setChecking] = useState(false);
   const healthGeneration = useRef(0);
+  const inFlight = useRef(false);
   const canCheckHealth = permissions.read && permissions.checkHealth;
   const allHealthy =
     health !== undefined &&
@@ -67,6 +68,7 @@ function CatalogView({ name }: Props) {
     if (stored) {
       setStored(await updateModelCatalog(stored, spec, secure));
       healthGeneration.current++;
+      inFlight.current = false;
       setHealth(undefined);
       setHealthError(undefined);
       setChecking(false);
@@ -74,6 +76,10 @@ function CatalogView({ name }: Props) {
   };
 
   const checkHealth = async () => {
+    if (inFlight.current) {
+      return;
+    }
+    inFlight.current = true;
     const generation = ++healthGeneration.current;
     setHealth(undefined);
     setHealthError(undefined);
@@ -89,6 +95,7 @@ function CatalogView({ name }: Props) {
       }
     } finally {
       if (generation === healthGeneration.current) {
+        inFlight.current = false;
         setChecking(false);
       }
     }

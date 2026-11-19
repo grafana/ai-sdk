@@ -149,6 +149,27 @@ describe('pages/CatalogPage', () => {
     expect(dialog().getByText('Not checked')).toBeInTheDocument();
   });
 
+  test('ignores a repeated click and shows the first check result', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let finish!: (result: CatalogHealth) => void;
+    const pending = new Promise<CatalogHealth>((resolve) => {
+      finish = resolve;
+    });
+    jest.mocked(checkModelCatalogHealth).mockReturnValue(pending);
+    await openPage();
+
+    const check = screen.getByRole('button', { name: 'Check health' });
+    act(() => {
+      fireEvent.click(check);
+      fireEvent.click(check);
+    });
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish(listing));
+    expect(card('openai').getByText('Key rejected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
+  });
+
   test('shows one quiet confirmation when all providers and targets pass', async () => {
     signInAs(OrgRole.Admin, ALL);
     jest.mocked(checkModelCatalogHealth).mockResolvedValueOnce({
