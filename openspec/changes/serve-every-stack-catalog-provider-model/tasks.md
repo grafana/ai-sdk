@@ -1,0 +1,26 @@
+# Tasks
+
+## 1. Kind and admission
+
+- [ ] 1.1 Add the two optional provider fields to `kinds/modelcatalog.cue`. Run `mise run generate-ai-gateway-kinds` and verify the Go and TypeScript types and both manifests expose the fields without changing existing fields, kind membership, routes, or roles.
+- [ ] 1.2 Validate the stack-only policy in `stackcatalog.Parse`, including bounds, duplicates, exact instance/ID conflicts against all primaries and fallbacks, and fixed field errors. Add parser and CREATE/UPDATE validator tests for omitted fields, off with a saved blocklist, same-type account isolation, errors without secrets, and unchanged operator config validation.
+
+## 2. Catalog routes
+
+- [ ] 2.1 Add the qualified lookup after listed IDs and aliases and reuse existing candidate construction and routing. Cover same-type instances, suffixes with slashes, disabled, malformed and blocked selectors, listed precedence, saved keys and attribution, and no construction or provider calls on refusals in Go tests.
+- [ ] 2.2 Verify in Go tests that unlisted candidates neither inherit fallbacks nor opt into Anthropic skills or server-side fallback. Exercise explicit `gateway.models` with an eligible and a blocked selector and preserve `order`, `only`, deduplication and attempt bounds.
+- [ ] 2.3 Add route tests for unary and streaming selection, unknown-model errors, listed-only `/config` without provider traffic, and invalid stored settings failing closed on all catalog routes. Keep on-demand health and inventory unchanged.
+- [ ] 2.4 Document the kind settings and an example qualified call in the README's **Store model catalogs in Grafana** section. Verify the example against the route contract and explain exact matching, listed precedence, listed-only discovery, fallback behavior, and that removing a listed entry need not block its backend ID. Update the Gateway architecture walkthrough and glossary where they describe catalog selection and discovery.
+
+## 3. Catalog page
+
+- [ ] 3.1 Add the switch and adjacent manual blocklist to the saved provider card. Use the existing versioned update path with one explicit save, keep keys untouched, and distinguish no listed models from no callable models. Ensure removal copy does not promise that a listed model's backend becomes inaccessible. Cover the update body, retained blocklist, error and draft handling, no automatic health or listing, and update permission checks with Jest.
+- [ ] 3.2 Extend Playwright against the pinned Grafana image and fake provider. Enable the setting with a blocklist on a provider with no listed models, verify it round-trips, invoke an unlisted model but not a blocked one, check empty discovery, then disable and verify the callable ID now fails. Exercise admission's primary/fallback conflict and verify read-only presentation.
+
+## 4. Integration checks
+
+- [ ] 4.1 Run focused Gateway Go tests and race checks, frontend typecheck/lint/Jest, docs lint, and strict OpenSpec validation. Run the Gateway boundary script and Go lint directly where required by the sandbox; record gaps and use CI for Grafana end-to-end evidence.
+
+## Workflow follow-up
+
+- Sync and archive the OpenSpec change after implementation review.
