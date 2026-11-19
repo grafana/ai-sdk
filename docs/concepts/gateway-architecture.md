@@ -70,7 +70,7 @@ flowchart LR
   ts --> host
   chatclient --> host
   msgclient --> host
-  admin -->|Check health or browse models| host
+  admin -->|Check health or open model suggestions| host
   host --> health
   health -->|shared catalog checks| stack
   health -->|model listings only| apis
@@ -121,11 +121,11 @@ check (`aigateway:modelinvoker` grants discovery and invocation;
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
-and discovery lists it without building models. Health and **Browse models**
-share the same catalog checks, saved keys, bounded provider listing and
-admission, outside the model execution pipeline. Health reports only statuses
-for configured targets; browsing returns IDs for one saved provider without
-caching them.
+and discovery lists it without building models. Health and the provider model
+ID field's suggestions share the same catalog checks, saved keys, bounded
+provider listing and admission, outside the model execution pipeline. Health
+reports only statuses for configured targets; suggestions use IDs from one
+saved provider without caching them.
 Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has

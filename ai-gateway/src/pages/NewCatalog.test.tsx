@@ -76,7 +76,7 @@ describe('pages/NewCatalog', () => {
     expect(screen.getByText(`${URL}/ops`)).toBeInTheDocument();
     await connect('Anthropic', KEY);
     expect(within(screen.getByRole('region', { name: 'anthropic' })).getByText('Key entered')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Browse models' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Add a model to anthropic' })).not.toBeInTheDocument();
     expect(screen.getByText(/After saving the catalog, you can browse/)).toBeInTheDocument();
     await addModel('anthropic', 'claude-sonnet-4-6');
     expect(listProviderModels).not.toHaveBeenCalled();

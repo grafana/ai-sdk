@@ -6,7 +6,7 @@ Catalog writers type provider model IDs by hand. A typo or retired ID can be sav
 
 ## What Changes
 
-- Add a searchable list to **Add model** on each saved provider card. Confirming a listed ID fills the field; writers can always enter an ID that the provider does not list.
+- Make the provider model ID field on each saved provider card searchable and editable. Writers can select a listed ID or enter an unlisted ID in the same field, then save with **Add model**.
 - Recommend **(a), saved providers only**. The create flow still uses manual IDs for its initial models. Once saved, writers can browse for additional models. No new request accepts draft credentials, and neither creating nor saving a catalog triggers a listing.
 - Add one writer-gated `available-models` action on the parent catalog. It uses only the selected named provider's saved key, reuses the health check's listing implementation and bounds. The action does not cache results.
 - Support Anthropic and OpenAI on this base. Custom endpoints and `openai-compatible` remain refused by the shared preflight until the operator allowlist is available.

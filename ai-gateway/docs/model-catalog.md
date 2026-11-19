@@ -18,11 +18,10 @@ Gateway's catalog format, and you don't need this package to use them. See
 [Store model catalogs in Grafana](../README.md#store-model-catalogs-in-grafana).
 
 When creating a catalog, enter the initial provider model IDs by hand. After
-saving, writers can select **Browse models** on a provider card to search what
-that saved account lists. Choose a result and select **Use selected model**
-to fill **Add model** without saving.
-You can still enter a custom ID, including when the list is empty, incomplete,
-or unavailable. Listing uses the saved key only; it never runs on save.
+saving, open or type in the provider model ID field to see matching models from
+that account. Choose a result or type an exact ID, then select **Add model** to
+save it. You can enter a custom ID even if the list is empty, incomplete, or
+unavailable. Listing uses the saved key only; it never runs on save.
 
 After saving, select **Check health** on the catalog page to see which provider
 model listings accepted the saved keys and which primary and fallback model

@@ -167,36 +167,46 @@ function QuickAdd({ name, label, onAdd, addError, listModels, listingRevision }:
     setRefusal(undefined);
   };
 
+  const fieldLabel = `Add a model to ${name}`;
+  const leaveModel = () => checks.leave('model');
   return (
-    <div className={s.addModels}>
-      <form
-        className={s.add}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void add();
-        }}
+    <form
+      className={s.add}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void add();
+      }}
+    >
+      <Field
+        className={s.addField}
+        description={`The model ID in ${label}'s API. Applications request it by the same ID.`}
+        invalid={error !== undefined}
+        error={error}
+        noMargin
       >
-        <Field
-          className={s.addField}
-          description={`The model ID in ${label}'s API. Applications request it by the same ID.`}
-          invalid={error !== undefined}
-          error={error}
-          noMargin
-        >
+        {listModels ? (
+          <ModelPicker
+            key={listingRevision}
+            label={fieldLabel}
+            value={value}
+            onChange={setModel}
+            onBlur={leaveModel}
+            listModels={listModels}
+          />
+        ) : (
           <Input
-            aria-label={`Add a model to ${name}`}
+            aria-label={fieldLabel}
             value={value}
             placeholder="Provider model ID"
             onChange={(event) => setModel(event.currentTarget.value)}
-            onBlur={() => checks.leave('model')}
+            onBlur={leaveModel}
           />
-        </Field>
-        <Button type="submit" variant="secondary" icon="plus" disabled={saving}>
-          Add model
-        </Button>
-      </form>
-      {listModels && <ModelPicker key={listingRevision} listModels={listModels} onSelect={setModel} />}
-    </div>
+        )}
+      </Field>
+      <Button type="submit" variant="secondary" icon="plus" disabled={saving}>
+        Add model
+      </Button>
+    </form>
   );
 }
 
@@ -246,13 +256,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
       textDecoration: 'underline',
     },
   }),
-  addModels: css({
-    padding: theme.spacing(1.5, 2),
-  }),
   add: css({
     display: 'flex',
     alignItems: 'flex-start',
     gap: theme.spacing(1),
+    padding: theme.spacing(1.5, 2),
   }),
   addField: css({
     flex: 1,

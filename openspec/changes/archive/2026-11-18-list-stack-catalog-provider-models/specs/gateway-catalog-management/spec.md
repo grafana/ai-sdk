@@ -3,11 +3,12 @@
 ## ADDED Requirements
 
 ### Requirement: Browse models when adding to a saved provider
-A writer who can read and update a saved catalog and has `get` on `modelcatalogs/available-models` SHALL be able to browse and search a named saved provider's listing from **Add model**. Explicitly confirming a listed ID SHALL fill the provider model ID field without saving. The listing SHALL be fetched only on explicit request and search SHALL NOT trigger further provider requests.
+A writer with read, update, and `modelcatalogs/available-models:get` access SHALL be able to search a saved provider's listing and type a custom ID in the same model ID field. Opening the list SHALL fetch once; focusing the field alone and filtering an open list SHALL NOT request a listing. Selecting a result SHALL fill the field without saving.
 
 #### Scenario: Writer adds a listed model
-- **WHEN** the writer opens the picker and searches the returned IDs
-- **THEN** the writer SHALL be able to confirm a match and add it with the existing model defaults, validation and save behavior
+- **WHEN** the writer opens the model ID field and searches the returned IDs
+- **THEN** clicking a match or pressing Enter on a highlighted match SHALL fill the same field
+- **AND** **Add model** SHALL keep the existing validation, defaults and save behavior
 
 #### Scenario: Create flow or listing permission absent
 - **WHEN** a writer adds a model during catalog creation, before the provider key is saved, or without listing permission
@@ -18,8 +19,8 @@ A writer who can read and update a saved catalog and has `get` on `modelcatalogs
 The **Add model** form SHALL accept IDs that are absent from the list, subject to the same validation as manual entry before listing was available. It SHALL show progress, incomplete results, an empty listing, and failure as distinct states without overwriting or disabling manual entry.
 
 #### Scenario: Writer leaves search without confirming
-- **WHEN** the writer leaves the search field while a suggestion is highlighted
-- **THEN** the manual provider model ID SHALL remain unchanged unless the writer explicitly confirms the suggestion
+- **WHEN** the writer presses Tab or Escape with a suggestion highlighted
+- **THEN** the list SHALL close without replacing the typed model ID
 
 #### Scenario: Listing is empty or fails
 - **WHEN** the provider has no suggestions or a listing cannot be obtained

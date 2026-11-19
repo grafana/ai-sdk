@@ -95,7 +95,7 @@ async function fillNewCatalog(page: Page, name: string, key: string, model = 'cl
 
 async function addModel(page: Page, provider: string, providerModel: string) {
   const card = page.getByRole('region', { name: provider });
-  await card.getByRole('textbox', { name: `Add a model to ${provider}` }).fill(providerModel);
+  await card.getByLabel(`Add a model to ${provider}`).fill(providerModel);
   await card.getByRole('button', { name: 'Add model' }).click();
   await expect(card.getByRole('listitem', { name: providerModel, exact: true })).toBeVisible();
 }
@@ -354,35 +354,39 @@ test.describe('model catalog page', () => {
     await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
     const watch = keyWatch(page);
     await fillNewCatalog(page, name, accepted, 'manual-first');
-    await expect(page.getByRole('button', { name: 'Browse models' })).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveCount(0);
     await expect(page.getByText(/After saving the catalog, you can browse/)).toBeVisible();
     await page.getByRole('button', { name: 'Create catalog' }).click();
 
     const provider = card(page, 'anthropic');
-    const browse = provider.getByRole('button', { name: 'Browse models' });
-    await expect(browse).toBeVisible();
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    await expect(field).toBeVisible();
+    await field.focus();
     expect(listingRequests).toHaveLength(0);
-    await browse.click();
-    const search = provider.getByRole('combobox', { name: 'Search provider models' });
-    await search.fill('sonnet');
-    await page.getByRole('option', { name: 'claude-sonnet-4-6' }).click();
-    await provider.getByRole('button', { name: 'Use selected model' }).click();
-    await expect(provider.getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('claude-sonnet-4-6');
+    await field.click();
+    await field.fill('sonnet');
+    await provider.getByRole('option', { name: 'claude-sonnet-4-6' }).click();
+    await expect(field).toHaveValue('claude-sonnet-4-6');
     await provider.getByRole('button', { name: 'Add model' }).click();
     await expect(provider.getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeVisible();
-    await addModel(page, 'anthropic', 'manual-after-listing');
+    await field.fill('manual-after-listing');
+    await expect(provider.getByText(/No matching models/)).toBeVisible();
+    await field.press('Tab');
+    await expect(field).toHaveValue('manual-after-listing');
+    await provider.getByRole('button', { name: 'Add model' }).click();
+    await expect(provider.getByRole('listitem', { name: 'manual-after-listing' })).toBeVisible();
 
     await provider.getByRole('button', { name: 'Replace key' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel(/^New API key/).fill(rejected);
     await dialog.getByRole('button', { name: 'Save key' }).click();
     await expect(dialog).toHaveCount(0);
-    await browse.click();
+    await field.click();
     await expect(provider.getByRole('status')).toHaveText('The provider rejected the saved key.');
-    await expect(search).toHaveCount(0);
+    await expect(provider.getByRole('option')).toHaveCount(0);
     await addModel(page, 'anthropic', 'manual-with-rejected-key');
 
-    expect(listingRequests).toHaveLength(2);
+    expect(listingRequests).toHaveLength(3);
     for (const request of listingRequests) {
       expect(new URL(request.url()).search).toBe('?provider=anthropic');
       expect(request.postData()).toBeNull();
@@ -409,7 +413,7 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Browse models' })).toHaveCount(0);
+      await expect(page.getByRole('combobox', { name: 'Add a model to claude' })).toHaveCount(0);
       const listingDenied = await page.request.post(`${CATALOGS}/${name}/available-models?provider=claude`);
       expect(listingDenied.status(), await listingDenied.text()).toBe(403);
       expect(await listingDenied.json()).toEqual(

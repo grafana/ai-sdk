@@ -12,8 +12,8 @@
 
 ## 3. Provider card picker
 
-- [x] 3.1 Add the typed listing client and permission check, then wire **Browse models** into the saved provider card's existing quick-add form. Jest: assert a bodyless request for the selected provider, local search, exact selection and explicit copying, keyboard focus loss preserving custom input, no write before Add model, existing defaults and validation, and no listing in create flow or without permission.
-- [x] 3.2 Add progress, empty, no-match, partial, failure and retry states, keeping manual IDs usable. Jest: verify custom adds in every state, fixed messages, and that closed, navigated or updated views ignore late responses. Document saved-only browsing and manual IDs in the model catalog guide and run docs lint.
+- [x] 3.1 Add the typed listing client and permission check, then wire suggestions directly into the editable provider model ID field. Jest: assert a bodyless request for the selected provider, local search, explicit selection, Tab and Escape preserving typed input, no write before Add model, existing defaults and validation, and no listing in create flow or without permission.
+- [x] 3.2 Add progress, empty, no-match, partial and failure states, keeping manual IDs usable. Jest: verify custom adds in every state, fixed messages, and that closed, navigated or updated views ignore late responses. Document saved-only browsing and manual IDs in the model catalog guide and run docs lint.
 
 ## 4. End-to-end integration
 
@@ -21,4 +21,4 @@
 - [x] 4.2 On an existing catalog, prove Editor and Viewer cannot browse and receive `403` on a direct, otherwise-valid POST from their browser sessions. Assert Grafana's structured permission error, not just the status.
 - [x] 4.3 Run the Gateway Go checks (including race coverage of the touched packages), frontend Jest suite and strict OpenSpec validation. Record local results separately from CI.
 
-Playwright cases are implemented and discovered locally. Runtime results are pending CI against the pinned Grafana image; the host harness does not prove its declared access check.
+Playwright cases are implemented and discovered locally. Run them in CI against the pinned Grafana image; the host harness does not prove its declared access check.
