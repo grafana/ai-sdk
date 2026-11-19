@@ -60,7 +60,7 @@ func Start(authority string, handler http.Handler, additionalHosts ...string) (*
 	certificate := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: cert}
 	tunnel := &tls.Config{Certificates: []tls.Certificate{certificate}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12}
 	connections := &listener{accept: make(chan net.Conn), closed: make(chan struct{})}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: time.Second}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = server.Serve(connections) }()
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodConnect || r.Host != authority {

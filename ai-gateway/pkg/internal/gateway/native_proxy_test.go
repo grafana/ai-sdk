@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
@@ -17,12 +18,12 @@ import (
 
 var nativeTarget struct {
 	mu     sync.Mutex
-	target *url.URL
+	target http.Handler
 }
 
 func useNativeAnthropic(t *testing.T, fake *fakeAnthropic) {
 	t.Helper()
-	useNativeAnthropicURL(t, fake.server.URL)
+	useNativeAnthropicHandler(t, fake.server.Config.Handler)
 }
 
 func useNativeAnthropicURL(t *testing.T, rawURL string) {
@@ -31,6 +32,13 @@ func useNativeAnthropicURL(t *testing.T, rawURL string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	useNativeAnthropicHandler(t, &httputil.ReverseProxy{Rewrite: func(request *httputil.ProxyRequest) {
+		request.SetURL(target)
+	}, FlushInterval: -1})
+}
+
+func useNativeAnthropicHandler(t *testing.T, target http.Handler) {
+	t.Helper()
 	nativeTarget.mu.Lock()
 	nativeTarget.target = target
 	nativeTarget.mu.Unlock()
@@ -44,15 +52,16 @@ func useNativeAnthropicURL(t *testing.T, rawURL string) {
 var endpointCertificate tls.Certificate
 
 func TestMain(m *testing.M) {
-	forward := &httputil.ReverseProxy{Rewrite: func(request *httputil.ProxyRequest) {
+	proxy, err := nativeproxy.Start("api.anthropic.com:443", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nativeTarget.mu.Lock()
 		target := nativeTarget.target
 		nativeTarget.mu.Unlock()
-		if target != nil {
-			request.SetURL(target)
+		if target == nil {
+			http.Error(w, "test provider is not configured", http.StatusBadGateway)
+			return
 		}
-	}, FlushInterval: -1}
-	proxy, err := nativeproxy.Start("api.anthropic.com:443", forward, "localhost", "127.0.0.1")
+		target.ServeHTTP(w, r)
+	}), "localhost", "127.0.0.1")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "native proxy:", err)
 		os.Exit(1)
