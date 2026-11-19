@@ -122,12 +122,12 @@ func TestSelectStackCatalog_BuildsOnlyTheChain(t *testing.T) {
 
 func TestSelectStackCatalog_UnlistedModels(t *testing.T) {
 	stack := testStackCatalog()
-	stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", ServeAllModels: new(true), ModelBlocklist: []string{"org/blocked"}}
+	stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", ServeAllModels: new(true), ModelBlocklist: []string{"org/blocked", "alias-only"}}
 	stack.Spec.Providers["second"] = v1alpha1.Provider{Type: "anthropic", ServeAllModels: new(true)}
 	stack.Spec.Providers["gpt"] = v1alpha1.Provider{Type: "openai", ServeAllModels: new(false)}
 	stack.Keys["second"] = "second-catalog-key"
 	balanced := stack.Spec.Models["balanced"]
-	balanced.Aliases = append(balanced.Aliases, "claude/org/special")
+	balanced.Aliases = append(balanced.Aliases, "claude/org/special", "claude/alias-only")
 	stack.Spec.Models["balanced"] = balanced
 	stack.Spec.Models["claude/listed"] = stack.Spec.Models["fast"]
 	for _, tc := range []struct {
@@ -139,6 +139,8 @@ func TestSelectStackCatalog_UnlistedModels(t *testing.T) {
 		{name: "same type and ID blocked only on first account", id: "second/org/blocked", canonical: "second/org/blocked", built: []string{"second/org/blocked"}},
 		{name: "no listed fallback inherited", id: "claude/claude-sonnet", canonical: "claude/claude-sonnet", built: []string{"claude/claude-sonnet"}},
 		{name: "slash alias wins", id: "claude/org/special", canonical: "balanced", built: []string{"claude/claude-sonnet", "gpt/gpt-large"}},
+		{name: "slash alias shadows blocked spelling but selects safe targets", id: "claude/alias-only", canonical: "balanced", built: []string{"claude/claude-sonnet", "gpt/gpt-large"}},
+		{name: "slash alias as explicit fallback shadows blocked spelling", id: "second/new", gateway: `{"models":["claude/alias-only"]}`, canonical: "second/new", built: []string{"second/new", "claude/claude-sonnet", "gpt/gpt-large"}},
 		{name: "slash canonical ID wins", id: "claude/listed", canonical: "claude/listed", built: []string{"gpt/gpt-small"}},
 		{name: "explicit fallback with order and deduplication", id: "claude/claude-sonnet", gateway: `{"models":["balanced","second/org/new"],"order":["openai"]}`, canonical: "claude/claude-sonnet", built: []string{"claude/claude-sonnet", "gpt/gpt-large", "second/org/new"}},
 		{name: "explicit fallback filtered by provider type", id: "fast", gateway: `{"models":["second/org/new"],"only":["anthropic"]}`, canonical: "fast", built: []string{"second/org/new"}},
@@ -180,12 +182,15 @@ func TestSelectStackCatalog_UnlistedAnthropicRejectsNativeGrants(t *testing.T) {
 	})}
 	selected, err := SelectStackCatalog(stack, "claude/new-model", nil, StackCatalogOptions{Client: client})
 	require.NoError(t, err)
-	for _, raw := range []string{`{"fallbacks":[{"model":"blocked"}]}`, `{"container":{"skills":[{"type":"custom","skillId":"skill_01"}]}}`} {
+	for _, raw := range []string{`{"fallbacks":[{"model":"blocked"}]}`, `{"fallbacks":"default"}`, `{"container":{"skills":[{"type":"custom","skillId":"skill_01"}]}}`} {
 		t.Run(raw, func(t *testing.T) {
-			_, err := selected.Model.DoGenerate(t.Context(), provider.CallOptions{
+			options := provider.CallOptions{
 				Prompt:          []provider.Message{provider.UserText("hello")},
 				ProviderOptions: provider.BuildProviderOptions(provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}),
-			})
+			}
+			_, err := selected.Model.DoGenerate(t.Context(), options)
+			assert.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+			_, err = selected.Model.DoStream(t.Context(), options)
 			assert.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
 		})
 	}

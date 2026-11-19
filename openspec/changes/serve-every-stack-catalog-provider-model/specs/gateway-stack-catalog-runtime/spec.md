@@ -51,6 +51,13 @@ After listed lookup misses, an eligible unlisted selector SHALL be `<provider-in
 - **WHEN** a valid unlisted selector's ID has a blocked ID as a proper prefix or differs only in case
 - **THEN** the blocklist SHALL NOT prevent selecting that ID
 
+### Requirement: Blocklist applies to language-model routing
+The provider blocklist SHALL apply to language-model routing. Provider-hosted tool options that name their own model SHALL NOT be covered.
+
+#### Scenario: Hosted tool names a separate model
+- **WHEN** an otherwise allowed language-model call sets a model ID in a provider-hosted tool option
+- **THEN** that option SHALL follow the existing tool behavior, without a `modelBlocklist` check
+
 ### Requirement: No implicit fallback or policy grant for unlisted models
 An unlisted selector SHALL resolve to one candidate and SHALL NOT inherit listed fallbacks or native option grants. An unlisted Anthropic candidate SHALL have no opt-in to container skills or server-side fallback. A caller MAY explicitly add fallback models using `gateway.models` under the usual catalog routing rules.
 
