@@ -32,8 +32,8 @@ type catalogIdentity struct {
 // is the `ModelCatalog` the route names. It stores that catalog, with its
 // decrypted values, for the selector and the lister. A missing or mismatched
 // parent is a platform defect, written as the internal host error before the
-// body is read. A parent whose spec does not decode is stored without spec
-// or keys, so its catalog fails its checks as a catalog configuration error.
+// body is read. A parent with an undecodable spec or missing maps is marked
+// invalid without passing any keys.
 func parentCatalog(errors host.ErrorWriter, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		name := request.PathValue(catalogNameValue)
@@ -49,7 +49,9 @@ func parentCatalog(errors host.ErrorWriter, next http.Handler) http.Handler {
 		}
 		stack := service.StackCatalog{Name: name}
 		var parent v1alpha1.ModelCatalog
-		if json.Unmarshal(info.Parent, &parent) == nil {
+		if err := json.Unmarshal(info.Parent, &parent); err != nil || parent.Spec.Providers == nil || parent.Spec.Models == nil {
+			stack.InvalidSpec = true
+		} else {
 			stack.Spec, stack.Keys = parent.Spec, info.DecryptedSecureValues
 		}
 		next.ServeHTTP(w, request.WithContext(service.WithStackCatalog(request.Context(), stack)))

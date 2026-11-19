@@ -49,6 +49,9 @@ func withoutOpenAI() v1alpha1.Spec {
 
 func TestValidator_Validate(t *testing.T) {
 	spec := testSpec()
+	empty := *v1alpha1.NewSpec()
+	providerOnly := v1alpha1.Spec{Providers: spec.Providers, Models: empty.Models}
+	keys := resource.InlineSecureValues{"anthropic": created(), "openai": created()}
 	tests := []struct {
 		name    string
 		action  resource.AdmissionAction
@@ -56,6 +59,12 @@ func TestValidator_Validate(t *testing.T) {
 		old     resource.Object
 		wantErr string
 	}{
+		{name: "create empty", action: resource.AdmissionActionCreate, object: catalog(empty, nil)},
+		{name: "create with providers only", action: resource.AdmissionActionCreate, object: catalog(providerOnly, keys)},
+		{name: "create provider without key or models", action: resource.AdmissionActionCreate, object: catalog(providerOnly, nil), wantErr: "modelcatalog: providers.anthropic requires the secure value secure.anthropic"},
+		{name: "update removing the last model", action: resource.AdmissionActionUpdate, object: catalog(providerOnly, nil), old: storedCatalog()},
+		{name: "update removing all providers and keys", action: resource.AdmissionActionUpdate, object: catalog(empty, resource.InlineSecureValues{"anthropic": removed(), "openai": removed()}), old: storedCatalog()},
+		{name: "update leaving an orphan key", action: resource.AdmissionActionUpdate, object: catalog(empty, resource.InlineSecureValues{"anthropic": removed()}), old: storedCatalog(), wantErr: "modelcatalog: secure.openai matches no provider"},
 		{name: "create with keys", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": created()})},
 		{name: "create without a key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created()}), wantErr: "modelcatalog: providers.openai requires the secure value secure.openai"},
 		{name: "create removing a key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": removed()}), wantErr: "modelcatalog: providers.openai requires the secure value secure.openai"},
