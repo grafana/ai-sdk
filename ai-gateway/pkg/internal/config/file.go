@@ -82,14 +82,15 @@ type ResolvedProvider struct {
 }
 
 // ParseModelCatalog validates exactly one bounded strict YAML model catalog
-// document. Failures never include the document.
+// document. Failures never include the document; a syntax error names only
+// its line and column.
 func ParseModelCatalog(document string) (File, error) {
 	if len(document) > MaxModelCatalogBytes {
 		return File{}, fmt.Errorf("config: %s exceeds %d bytes", SettingName(ModelCatalogSetting), MaxModelCatalogBytes)
 	}
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(document), &node); err != nil {
-		return File{}, fmt.Errorf("config: invalid YAML document")
+		return File{}, fmt.Errorf("config: invalid YAML document%s", yamlErrorPosition(err))
 	}
 	if err := validateDocumentShape(&node); err != nil {
 		return File{}, err
@@ -103,7 +104,7 @@ func ParseModelCatalog(document string) (File, error) {
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err != nil {
-			return File{}, fmt.Errorf("config: invalid trailing YAML document")
+			return File{}, fmt.Errorf("config: invalid trailing YAML document%s", yamlErrorPosition(err))
 		}
 		return File{}, fmt.Errorf("config: trailing YAML document is not allowed")
 	}
@@ -371,6 +372,17 @@ func validatePublicID(value string) error {
 		return fmt.Errorf("public ID must be 1-128 ASCII bytes matching %s", publicIDPattern.String())
 	}
 	return nil
+}
+
+// yamlErrorPosition returns " at line L, column C" for a YAML load error, or
+// an empty string when err has no position. It reads only the position
+// because the parser message can quote the document.
+func yamlErrorPosition(err error) string {
+	var loadErr *yaml.LoadError
+	if !errors.As(err, &loadErr) || loadErr.Mark.Line == 0 {
+		return ""
+	}
+	return " at " + loadErr.Mark.String()
 }
 
 func validateDocumentShape(document *yaml.Node) error {
