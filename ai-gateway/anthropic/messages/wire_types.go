@@ -70,6 +70,7 @@ type stopReasonType string
 
 const (
 	stopReasonEndTurn      stopReasonType = "end_turn"
+	stopReasonRefusal      stopReasonType = "refusal"
 	stopReasonToolUse      stopReasonType = "tool_use"
 	stopReasonMaxTokens    stopReasonType = "max_tokens"
 	stopReasonPauseTurn    stopReasonType = "pause_turn"

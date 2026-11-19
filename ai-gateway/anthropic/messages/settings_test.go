@@ -72,6 +72,9 @@ func TestHandler_Settings(t *testing.T) {
 						encoded, err := json.Marshal(seen.ProviderOptions)
 						require.NoError(t, err)
 						want := fmt.Sprintf(`{"%s":{"%s":%t}}`, tc.namespace, tc.parallel, disabled != tc.inverse)
+						if tc.target.Type != execution.TargetAnthropic {
+							want = fmt.Sprintf(`{"%s":{"store":false,"%s":%t}}`, tc.namespace, tc.parallel, disabled != tc.inverse)
+						}
 						if tc.target.Type == execution.TargetAnthropic {
 							want = fmt.Sprintf(`{"anthropic":{"effort":"high","disableParallelToolUse":%t}}`, disabled)
 						}
@@ -129,9 +132,9 @@ func TestHandler_SettingsFallback(t *testing.T) {
 				require.Len(t, attempts, 2)
 				encoded, err := json.Marshal(attempts)
 				require.NoError(t, err)
-				want := `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"openai":{"parallelToolCalls":true}}]`
+				want := `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"openai":{"store":false,"parallelToolCalls":true}}]`
 				if target.Type == execution.TargetOpenAICompatible {
-					want = `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"vendor":{"parallel_tool_calls":true}}]`
+					want = `[{"anthropic":{"effort":"low","disableParallelToolUse":false}},{"vendor":{"store":false,"parallel_tool_calls":true}}]`
 				}
 				assert.JSONEq(t, want, string(encoded))
 			})
@@ -193,12 +196,10 @@ func TestMessagesTranslator_NonAnthropicEffort(t *testing.T) {
 						after, err := json.Marshal(options)
 						require.NoError(t, err)
 						assert.JSONEq(t, string(before), string(after))
-						if !withParallel {
-							assert.Equal(t, options, got)
-						}
 						values, _, err := provider.ResolveOption[map[string]json.RawMessage](got.ProviderOptions, tc.namespace)
 						require.NoError(t, err)
 						assert.NotContains(t, values, "effort")
+						assert.Equal(t, "false", string(values["store"]))
 						if withExisting {
 							assert.JSONEq(t, `"low"`, string(values["reasoningEffort"]))
 							assert.Equal(t, "9007199254740993", string(values["opaque"]))

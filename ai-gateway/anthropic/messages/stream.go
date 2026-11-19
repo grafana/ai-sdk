@@ -3,6 +3,7 @@ package messages
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -30,25 +31,21 @@ func (e eventWriter) errorEvent(status int) {
 	e.event(eventError, errorEnvelope{Type: envelopeError, Error: apiError{Type: typ, Message: message}})
 }
 
-type blockKind uint8
-
-const (
-	blockNone blockKind = iota
-	blockText
-	blockTool
-)
+type toolBlock struct {
+	index  int
+	closed bool
+}
 
 type streamState struct {
-	events  eventWriter
-	model   string
-	id      string
-	usage   usage
-	started bool
-	next    int
-	index   int
-	kind    blockKind
-	toolID  string
-	tools   map[string]bool
+	events    eventWriter
+	model     string
+	id        string
+	usage     usage
+	started   bool
+	next      int
+	textIndex int
+	textOpen  bool
+	tools     map[string]*toolBlock
 }
 
 func (s *streamState) start() {
@@ -61,34 +58,44 @@ func (s *streamState) start() {
 	}})
 }
 
-func (s *streamState) closeBlock() {
-	if s.kind == blockNone {
+func (s *streamState) closeText() {
+	if !s.textOpen {
 		return
 	}
-	s.events.event(eventContentBlockStop, map[string]any{"type": eventContentBlockStop, "index": s.index})
-	s.kind, s.toolID = blockNone, ""
+	s.events.event(eventContentBlockStop, map[string]any{"type": eventContentBlockStop, "index": s.textIndex})
+	s.textOpen = false
 }
 
-func (s *streamState) open(kind blockKind, content map[string]any) {
+func (s *streamState) open(content map[string]any) int {
 	s.start()
-	s.closeBlock()
-	s.index, s.kind = s.next, kind
+	s.closeText()
+	index := s.next
 	s.next++
-	s.events.event(eventContentBlockStart, map[string]any{"type": eventContentBlockStart, "index": s.index, "content_block": content})
+	s.events.event(eventContentBlockStart, map[string]any{"type": eventContentBlockStart, "index": index, "content_block": content})
+	return index
 }
 
 func (s *streamState) openText() {
-	s.open(blockText, map[string]any{"type": contentBlockText, "text": ""})
+	s.textIndex = s.open(map[string]any{"type": contentBlockText, "text": ""})
+	s.textOpen = true
 }
 
-func (s *streamState) openTool(id, name string) {
-	s.open(blockTool, map[string]any{"type": contentBlockToolUse, "id": id, "name": name, "input": map[string]any{}})
-	s.toolID = id
-	s.tools[id] = true
+func (s *streamState) openTool(id, name string) *toolBlock {
+	tool := &toolBlock{index: s.open(map[string]any{"type": contentBlockToolUse, "id": id, "name": name, "input": map[string]any{}})}
+	s.tools[id] = tool
+	return tool
 }
 
-func (s *streamState) delta(kind deltaType, key, value string) {
-	s.events.event(eventContentBlockDelta, map[string]any{"type": eventContentBlockDelta, "index": s.index, "delta": map[string]any{"type": kind, key: value}})
+func (s *streamState) closeTool(tool *toolBlock) {
+	if tool.closed {
+		return
+	}
+	s.events.event(eventContentBlockStop, map[string]any{"type": eventContentBlockStop, "index": tool.index})
+	tool.closed = true
+}
+
+func (s *streamState) delta(index int, kind deltaType, key, value string) {
+	s.events.event(eventContentBlockDelta, map[string]any{"type": eventContentBlockDelta, "index": index, "delta": map[string]any{"type": kind, key: value}})
 }
 
 // consume applies one provider part and reports whether it broke the
@@ -108,37 +115,39 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 	case provider.PartTextStart:
 		s.openText()
 	case provider.PartTextDelta:
-		if s.kind != blockText {
+		if !s.textOpen {
 			s.openText()
 		}
-		s.delta(deltaText, "text", part.Delta)
+		s.delta(s.textIndex, deltaText, "text", part.Delta)
 	case provider.PartTextEnd:
-		if s.kind == blockText {
-			s.closeBlock()
+		if s.textOpen {
+			s.closeText()
 		}
 	case provider.PartToolInputStart:
-		if part.ID == "" || part.ToolName == "" {
+		if part.ID == "" || part.ToolName == "" || s.tools[part.ID] != nil {
 			return false
 		}
 		s.openTool(part.ID, part.ToolName)
 	case provider.PartToolInputDelta:
-		if s.kind != blockTool || (part.ID != "" && part.ID != s.toolID) {
+		tool := s.tools[part.ID]
+		if tool == nil || tool.closed {
 			return false
 		}
-		s.delta(deltaInputJSON, "partial_json", part.Delta)
+		s.delta(tool.index, deltaInputJSON, "partial_json", part.Delta)
 	case provider.PartToolInputEnd:
-		if s.kind != blockTool {
+		tool := s.tools[part.ID]
+		if tool == nil {
 			return false
 		}
-		s.closeBlock()
+		s.closeTool(tool)
 	case provider.PartToolCall:
-		if !s.tools[part.ToolCallID] {
+		if s.tools[part.ToolCallID] == nil {
 			if part.ToolCallID == "" || part.ToolName == "" || !isObject(json.RawMessage(part.Input)) {
 				return false
 			}
-			s.openTool(part.ToolCallID, part.ToolName)
-			s.delta(deltaInputJSON, "partial_json", part.Input)
-			s.closeBlock()
+			tool := s.openTool(part.ToolCallID, part.ToolName)
+			s.delta(tool.index, deltaInputJSON, "partial_json", part.Input)
+			s.closeTool(tool)
 		}
 	case provider.PartFinish:
 		if part.FinishReason != nil {
@@ -156,7 +165,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *execution.Call) {
 	stream, err := call.Stream()
 	if err != nil {
-		if ctx.Err() != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return
 		}
 		WriteError(w, categoryStatus(execution.ClassifyProvider(err)))
@@ -171,7 +180,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		events: eventWriter{w: w, flush: func() { _ = controller.Flush() }},
 		model:  call.ModelID(),
 		id:     "msg_" + aisdk.GenerateID(),
-		tools:  make(map[string]bool),
+		tools:  make(map[string]*toolBlock),
 	}
 	var finish provider.FinishReason
 	for {
@@ -180,7 +189,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			if wait == execution.WaitFinished {
 				break
 			}
-			if wait == execution.WaitCanceled && ctx.Err() != nil {
+			if wait == execution.WaitCanceled && errors.Is(ctx.Err(), context.Canceled) {
 				return
 			}
 			if wait != execution.WaitClosedAfterError {
@@ -203,7 +212,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		return
 	}
 	state.start()
-	state.closeBlock()
+	state.closeText()
 	state.events.event(eventMessageDelta, map[string]any{"type": eventMessageDelta, "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": state.usage})
 	state.events.event(eventMessageStop, map[string]any{"type": eventMessageStop})
 }

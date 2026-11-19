@@ -19,7 +19,8 @@ func messagesTranslator(in request) execution.Translator {
 		if in.ToolChoice != nil {
 			disabled = in.ToolChoice.DisableParallelToolUse
 		}
-		if effort == nil && disabled == nil {
+		disableStorage := target.Type == execution.TargetOpenAI || target.Type == execution.TargetOpenAICompatible
+		if effort == nil && disabled == nil && !disableStorage {
 			return options, nil
 		}
 
@@ -63,6 +64,9 @@ func messagesTranslator(in request) execution.Translator {
 		}
 		if values == nil {
 			values = map[string]json.RawMessage{}
+		}
+		if disableStorage {
+			values["store"] = json.RawMessage(`false`)
 		}
 		if effort != nil {
 			encoded, err := json.Marshal(*effort)

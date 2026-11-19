@@ -15,14 +15,15 @@ import (
 )
 
 const (
-	routeChatCompletions      = "chat_completions"
-	routeAnthropicMessages    = "anthropic_messages"
-	routeConfig               = "config"
-	routeLanguageModel        = "language_model"
-	routeCatalogConfig        = "catalog_config"
-	routeCatalogLanguageModel = "catalog_language_model"
-	routeUnmatched            = "unmatched"
-	catalogRoutePrefix        = "/modelcatalogs/{" + catalogNameValue + "}"
+	routeChatCompletions          = "chat_completions"
+	routeAnthropicMessages        = "anthropic_messages"
+	routeConfig                   = "config"
+	routeLanguageModel            = "language_model"
+	routeCatalogConfig            = "catalog_config"
+	routeCatalogLanguageModel     = "catalog_language_model"
+	routeCatalogAnthropicMessages = "catalog_anthropic_messages"
+	routeUnmatched                = "unmatched"
+	catalogRoutePrefix            = "/modelcatalogs/{" + catalogNameValue + "}"
 )
 
 var errInvalidRoute = errors.New("gateway: invalid route table")
@@ -58,6 +59,7 @@ func productionRoutes(discovery, language, chat, messages http.Handler) []route 
 		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
 		{method: http.MethodPost, path: chatcompletions.Path, label: routeChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter()},
 		{method: http.MethodPost, path: anthropicmessages.Path, label: routeAnthropicMessages, handler: messagesPath(messages), errors: anthropicmessages.NewHostErrorWriter()},
+		{method: http.MethodPost, path: catalogRoutePrefix + anthropicmessages.Path, label: routeCatalogAnthropicMessages, handler: messagesPath(messages), errors: anthropicmessages.NewHostErrorWriter(), catalog: true},
 		{method: http.MethodGet, path: catalogRoutePrefix + "/config", label: routeCatalogConfig, handler: discovery, errors: errorWriter, catalog: true},
 		{method: http.MethodPost, path: catalogRoutePrefix + "/language-model", label: routeCatalogLanguageModel, handler: languageModelPath(language), errors: errorWriter, catalog: true},
 	}

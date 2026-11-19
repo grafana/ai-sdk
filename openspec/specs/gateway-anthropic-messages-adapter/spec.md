@@ -12,8 +12,12 @@ yet applied.
 ### Requirement: Messages route on the plugin route table
 
 The Gateway SHALL serve the Anthropic Messages API as `POST v1/messages` under
-`namespaces/{namespace}/`, registered as one route-table entry with the
-`anthropic_messages` telemetry label and an Anthropic host-error writer. A
+`namespaces/{namespace}/` and `namespaces/{namespace}/modelcatalogs/{name}/`.
+The namespace route SHALL use the `anthropic_messages` telemetry label and the
+catalog route SHALL use `catalog_anthropic_messages`. Both SHALL use an
+Anthropic host-error writer. The catalog route SHALL use the shared parent
+catalog validation and catalog access decision, and declare `get` access on
+`ModelCatalog/messages`, granted by `aigateway:modelinvoker`. A
 client SHALL address it by using `/apis/<group>/<version>/namespaces/<namespace>`
 as the Anthropic base URL. Any query string, including `?beta=true`, and the
 `anthropic-version` and `anthropic-beta` headers SHALL be accepted and SHALL NOT
@@ -22,6 +26,11 @@ change the result. Another method or path SHALL NOT reach the adapter.
 #### Scenario: Official client addresses the namespaced route
 - **WHEN** an official Anthropic client uses the namespaced API prefix as its base URL and creates a message
 - **THEN** its request reaches the registered handler through the shared host access decision, runtime and telemetry
+
+#### Scenario: Catalog client
+- **WHEN** an authorized client uses the named catalog's prefix as its base URL
+- **THEN** Messages requests use only that catalog's models and decrypted provider keys, with the canonical catalog model ID in unary and streamed responses
+- **AND** an unknown model or catalog fails without calling a provider
 
 #### Scenario: Beta query and headers
 - **WHEN** a request targets `v1/messages?beta=true` with `anthropic-beta` and `anthropic-version` headers
@@ -68,7 +77,16 @@ with a fixed invalid-request error before model resolution.
 
 #### Scenario: Parallel tool use disabled
 - **WHEN** a request sets `disable_parallel_tool_use` in its tool choice
-- **THEN** the adapter applies it through the call's option translator for each target, as the inverse of the OpenAI and OpenAI-compatible parallel-call options and as Anthropic's own option, and a request that does not set it adds no parallel-tool provider option
+- **THEN** the adapter applies it through the call's option translator for each target, as the inverse of the OpenAI and OpenAI-compatible parallel-call options and as Anthropic's own option, and a request that does not set it adds no parallel-call option
+
+#### Scenario: OpenAI storage disabled
+- **WHEN** any Messages request selects an OpenAI or OpenAI-compatible target, including a fallback
+- **THEN** the translator sets `store: false` in that target's namespace regardless of whether parallel tool use was specified
+
+#### Scenario: Text block boundaries
+- **WHEN** system text or a system-role message contains multiple text blocks
+- **THEN** each nonempty block becomes a separate system message in order
+- **AND** text blocks in a tool result are joined with a newline, retaining the result's error status
 
 #### Scenario: Client tool continuation
 - **WHEN** history contains an assistant `tool_use` block followed by a user `tool_result` block with the same ID
@@ -147,7 +165,7 @@ role, text and `tool_use` content blocks in provider order, the canonical
 catalog model ID, a generated message ID when the provider supplies none,
 a stop reason and provider-reported usage. `stop_sequence` SHALL be null. Reasoning content SHALL be omitted.
 Stop reasons SHALL map: a tool-call finish to `tool_use`, a length finish to
-`max_tokens`, a stop finish carrying the provider reason `pause_turn` or
+`max_tokens`, a content-filter finish to `refusal`, a stop finish carrying the provider reason `pause_turn` or
 `stop_sequence` to that reason, and any other stop to `end_turn`. An
 unrepresented finish reason or content part SHALL fail with a fixed upstream
 error. Usage SHALL report uncached input, output and, separately, cache read and
@@ -161,6 +179,10 @@ cache creation tokens, and SHALL NOT estimate counts the provider omits.
 - **WHEN** the provider returns a client function call
 - **THEN** the response has a `tool_use` block with the call's ID, name and JSON input, and stop reason `tool_use`
 
+#### Scenario: Refusal
+- **WHEN** the provider finishes with content-filter, including Anthropic's raw `refusal`
+- **THEN** unary and streamed messages finish normally with stop reason `refusal`, without an upstream error or client retry
+
 #### Scenario: Cached input
 - **WHEN** the provider reports total input tokens with cache read tokens
 - **THEN** `input_tokens` excludes the cache read count and `cache_read_input_tokens` reports it
@@ -171,7 +193,9 @@ A streaming request SHALL emit Anthropic SSE events as provider parts arrive:
 `message_start`, content block start, delta and stop events, then
 `message_delta` carrying the stop reason and cumulative usage, then
 `message_stop`. Text SHALL stream as `text_delta` and client tool input as
-`input_json_delta`, in provider order, one block at a time. A lifecycle the
+`input_json_delta`. Each tool input SHALL retain its own block index so
+interleaved deltas and deferred end parts address the correct block. A tool
+input end SHALL close only the block identified by that part. A lifecycle the
 adapter cannot represent, a provider error part, or a runtime failure after the
 stream starts SHALL end the stream with an `error` event and no `message_stop`.
 Cancellation SHALL cancel provider execution and SHALL NOT synthesize a
@@ -181,6 +205,10 @@ successful completion. Frames SHALL be flushed as they are written.
 - **WHEN** the provider streams text followed by a tool call
 - **THEN** the client receives a text block with its deltas, then a `tool_use` block with its partial JSON deltas, then `message_delta` with stop reason `tool_use` and `message_stop`
 
+#### Scenario: Parallel tool calls
+- **WHEN** two tool inputs start before either ends, with sequential or interleaved deltas
+- **THEN** each call keeps its own input JSON and block index, each end closes that call's block, and the stream emits `message_stop` after the tool-call finish
+
 #### Scenario: Failure after the stream starts
 - **WHEN** the provider reports an error after content has been sent
 - **THEN** the stream ends with an `error` event, no further candidate is tried, and no `message_stop` is sent
@@ -188,6 +216,10 @@ successful completion. Frames SHALL be flushed as they are written.
 #### Scenario: Caller cancels
 - **WHEN** the client disconnects mid-stream
 - **THEN** provider execution is canceled and the adapter writes no completion
+
+#### Scenario: Setup deadline
+- **WHEN** the request deadline expires while the provider stream is being established
+- **THEN** the adapter returns HTTP 504 with a fixed Anthropic timeout error before sending any SSE headers
 
 #### Scenario: Setup failure
 - **WHEN** the model cannot be selected or the stream cannot be established

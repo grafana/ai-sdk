@@ -106,8 +106,9 @@ selection or provider work, and is labeled `unmatched`.
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. Each catalog
-also has two routes, `GET .../modelcatalogs/{name}/config` and
-`POST .../modelcatalogs/{name}/language-model`, in the same route table.
+also has three routes: `GET .../modelcatalogs/{name}/config`,
+`POST .../modelcatalogs/{name}/language-model` and
+`POST .../modelcatalogs/{name}/v1/messages`, in the same route table.
 Grafana reads the catalog as the caller, runs the route's declared access check
 (`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
 and only then decrypts the catalog's keys and passes the object, its resource
