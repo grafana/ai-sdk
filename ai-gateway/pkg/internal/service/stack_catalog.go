@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/grafana/grafana-app-sdk/resource"
 
@@ -84,7 +85,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	index := newStackIndex(file.File)
+	index := newStackIndex(file)
 	groups, err := resolveGroups(modelID, controls.Models, index.resolve)
 	if err != nil {
 		return execution.Selection{}, err
@@ -150,7 +151,7 @@ func (StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, 
 	if err != nil {
 		return nil, err
 	}
-	index := newStackIndex(file.File)
+	index := newStackIndex(file)
 	infos := make([]catalog.ModelInfo, 0, len(file.Models))
 	for _, id := range slices.Sorted(maps.Keys(file.Models)) {
 		model := file.Models[id]
@@ -166,11 +167,11 @@ func (StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, 
 // stackIndex resolves a checked stack catalog's public IDs without
 // constructing any model.
 type stackIndex struct {
-	file      config.File
+	file      stackcatalog.Catalog
 	canonical map[string]string
 }
 
-func newStackIndex(file config.File) stackIndex {
+func newStackIndex(file stackcatalog.Catalog) stackIndex {
 	canonical := make(map[string]string, len(file.Models))
 	for id, model := range file.Models {
 		canonical[id] = id
@@ -182,12 +183,19 @@ func newStackIndex(file config.File) stackIndex {
 }
 
 func (index stackIndex) resolve(name string) (routedGroup, error) {
-	id, ok := index.canonical[name]
-	if !ok {
-		return routedGroup{}, &catalog.UnknownModelError{ModelID: name}
+	id, listed := index.canonical[name]
+	var descriptors []config.Primary
+	if listed {
+		model := index.file.Models[id]
+		descriptors = append([]config.Primary{model.Primary}, model.Fallback...)
+	} else {
+		instance, model, qualified := strings.Cut(name, "/")
+		if !qualified || !index.file.AllowsUnlistedModel(instance, model) {
+			return routedGroup{}, &catalog.UnknownModelError{ModelID: name}
+		}
+		id = name
+		descriptors = []config.Primary{{Provider: instance, Model: model}}
 	}
-	model := index.file.Models[id]
-	descriptors := append([]config.Primary{model.Primary}, model.Fallback...)
 	candidates := make([]catalog.ConfiguredCandidate, len(descriptors))
 	for i, descriptor := range descriptors {
 		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: index.file.Providers[descriptor.Provider].Type, ModelID: descriptor.Model}

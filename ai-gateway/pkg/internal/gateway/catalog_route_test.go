@@ -67,6 +67,11 @@ func TestCatalogRoutes_MalformedSpec(t *testing.T) {
 		{"undecodable models", func(parent map[string]any) {
 			parent["spec"].(map[string]any)["models"] = []any{}
 		}, true},
+		{"stored blocklist conflicts with listed target", func(parent map[string]any) {
+			parent["spec"].(map[string]any)["providers"] = map[string]any{
+				"claude": map[string]any{"type": "anthropic", "modelBlocklist": []string{"claude-sonnet"}},
+			}
+		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			info := testCatalogInfo(testCatalogParent(t, tc.mutate))

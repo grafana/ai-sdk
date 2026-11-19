@@ -261,7 +261,9 @@ sequenceDiagram
    a configured route. A stack-catalog selection follows the same rules over
    one stored catalog: it checks the catalog on every request, refuses
    `gateway.byok`, and constructs only the candidates its chain attempts, with
-   that catalog's keys. Every selection names its source, `operator-catalog`,
+   that catalog's keys. An unmatched ID can name an enabled instance and an
+   unblocked backend model as `instance/model`; discovery remains listed-only.
+   Every selection names its source, `operator-catalog`,
    `stack-catalog` or `request-byok`. Invalid or unknown
    controls fail here, before any provider call. This private path refuses
    request credentials; its caller cannot switch to request accounts. See

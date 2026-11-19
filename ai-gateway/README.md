@@ -235,9 +235,9 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
   can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
 - Both `spec.providers` and `spec.models` can be empty maps. A catalog with no
-  models is valid: discovery returns `{"models":[]}` and calls return the
-  unknown-model error. The operator `model_catalog` setting still requires at
-  least one provider and one model when set.
+  listed models returns `{"models":[]}` from discovery. Unless a provider
+  serves unlisted models, calls return the unknown-model error. The operator
+  `model_catalog` setting still requires at least one provider and one model.
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.
@@ -245,6 +245,26 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   and Admins can write them (`aigateway:catalogwriter`).
 - The Gateway validates every create and update, so writes fail while the
   plugin is unavailable. Deletes always work.
+
+### Serve every model of a provider
+
+Providers serve only listed models by default. On a saved provider card,
+turn on **Serve every model**, enter any **Blocked model IDs**, and save the
+settings together. With the API, set `serveAllModels: true` and optionally
+`modelBlocklist: ["model-to-block"]` on that provider in `spec.providers`.
+The blocklist matches exact, case-sensitive backend IDs on that provider
+instance, not prefixes or other accounts. It stays saved when you turn
+unlisted serving off. A listed model's primary or fallback cannot use a
+blocked target. Removing a listed model does not block its backend ID;
+add it to the blocklist if it must not be served.
+
+Call an unlisted model as `<provider-instance>/<model-id>`, for example
+`team-openai/gpt-5` for the instance named `team-openai`. A listed ID or alias
+wins if it matches the full selector. A blocked selector returns
+`404 model_not_found`. Unlisted models have no implicit fallback, but can use
+or be named in explicit `gateway.models` fallbacks. `/config` still discovers
+only listed models, and the provider still decides which requests and models
+its account supports. **Browse models** remains a separate on-demand lookup.
 
 ### Call a stored catalog
 
