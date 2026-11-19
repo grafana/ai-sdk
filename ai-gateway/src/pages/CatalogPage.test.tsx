@@ -31,7 +31,9 @@ jest.mock('@grafana/runtime', () => ({
   PluginPage: ({ subTitle, actions, children }: PluginPageProps) => (
     <>
       {subTitle}
-      {actions}
+      <div role="group" aria-label="Catalog actions">
+        {actions}
+      </div>
       {children}
     </>
   ),
@@ -143,6 +145,9 @@ describe('pages/CatalogPage', () => {
     expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
     expect(card('spare').getByText('Provider unreachable')).toBeInTheDocument();
     expect(card('openai').getByText('Not checked')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Providers' })).getByRole('status')).toHaveTextContent(
+      '4 problems'
+    );
     expect(screen.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
     expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
     fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
@@ -179,11 +184,23 @@ describe('pages/CatalogPage', () => {
     await openPage();
     expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
-    expect(await screen.findByText('No problems found')).toBeInTheDocument();
+    const providers = within(screen.getByRole('region', { name: 'Providers' }));
+    expect(await providers.findByText('No problems found')).toBeInTheDocument();
+    expect(providers.getByRole('status')).toHaveTextContent('No problems found');
     expect(screen.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
-    expect(screen.queryByText('Review flagged providers and models.')).not.toBeInTheDocument();
+    const actions = within(screen.getByRole('group', { name: 'Catalog actions' }));
+    expect(actions.queryByRole('status')).not.toBeInTheDocument();
+    expect(actions.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Check health',
+      'Delete catalog',
+    ]);
     fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
     expect(dialog().queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    fireEvent.click(dialog().getByRole('button', { name: 'Close' }));
+
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(actions.getByRole('button', { name: 'Check health' }));
+    expect(providers.getByRole('status')).toBeEmptyDOMElement();
   });
 
   test('a writer without the explicit health permission cannot check', async () => {
@@ -211,6 +228,7 @@ describe('pages/CatalogPage', () => {
     expect(await card('anthropic').findByText('Edited')).toBeInTheDocument();
     await act(async () => finish(listing));
     expect(card('openai').queryByText('Key rejected')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Providers' })).getByRole('status')).toBeEmptyDOMElement();
     expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
   });
 

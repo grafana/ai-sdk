@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
-import { Alert, Button, ConfirmModal, LoadingPlaceholder, Stack, Text, useStyles2 } from '@grafana/ui';
+import { Alert, Badge, Button, ConfirmModal, LoadingPlaceholder, Stack, Text, useStyles2 } from '@grafana/ui';
 import {
   CatalogHealth,
   catalogHealthErrorMessage,
@@ -25,6 +25,13 @@ interface Props {
   name: string;
 }
 
+function countHealthProblems(health: CatalogHealth): number {
+  return [
+    ...Object.values(health.providers),
+    ...Object.values(health.models).flatMap(({ primary, fallback }) => [primary, ...fallback]),
+  ].filter((status) => status !== 'ok').length;
+}
+
 /**
  * CatalogView shows a stored catalog's URL and its providers with their
  * models. Each change a writer confirms is saved at once, as an update of the
@@ -43,12 +50,7 @@ function CatalogView({ name }: Props) {
   const healthGeneration = useRef(0);
   const inFlight = useRef(false);
   const canCheckHealth = permissions.read && permissions.checkHealth;
-  const allHealthy =
-    health !== undefined &&
-    Object.values(health.providers).every((status) => status === 'ok') &&
-    Object.values(health.models).every(
-      ({ primary, fallback }) => primary === 'ok' && fallback.every((status) => status === 'ok')
-    );
+  const problems = canCheckHealth && health ? countHealthProblems(health) : undefined;
 
   useEffect(() => {
     if (!permissions.read) {
@@ -119,14 +121,35 @@ function CatalogView({ name }: Props) {
       return error ? null : <LoadingPlaceholder text="Loading catalog..." />;
     }
     return (
-      <CatalogEditor
-        spec={stored.spec}
-        keys={Object.keys(stored.secure ?? {})}
-        health={canCheckHealth ? health : undefined}
-        stored
-        readOnly={!permissions.update}
-        onChange={save}
-      />
+      <section aria-labelledby="catalog-providers-heading">
+        <Stack direction="column" gap={2}>
+          <Stack alignItems="center" gap={1}>
+            <Text element="h2" id="catalog-providers-heading" variant="h3">
+              Providers
+            </Text>
+            {canCheckHealth && (
+              <div role="status">
+                {problems !== undefined && (
+                  <Badge
+                    color={problems === 0 ? 'darkgrey' : 'orange'}
+                    text={
+                      problems === 0 ? 'No problems found' : `${problems} ${problems === 1 ? 'problem' : 'problems'}`
+                    }
+                  />
+                )}
+              </div>
+            )}
+          </Stack>
+          <CatalogEditor
+            spec={stored.spec}
+            keys={Object.keys(stored.secure ?? {})}
+            health={canCheckHealth ? health : undefined}
+            stored
+            readOnly={!permissions.update}
+            onChange={save}
+          />
+        </Stack>
+      </section>
     );
   };
 
@@ -145,23 +168,14 @@ function CatalogView({ name }: Props) {
         stored && (
           <Stack gap={1} alignItems="center">
             {canCheckHealth && (
-              <>
-                <Button
-                  variant="secondary"
-                  disabled={checking}
-                  onClick={checkHealth}
-                  tooltip="Checks provider model listings without calling a model."
-                >
-                  {checking ? 'Checking health…' : 'Check health'}
-                </Button>
-                <span role="status">
-                  {health && (
-                    <Text color="secondary" variant="bodySmall">
-                      {allHealthy ? 'No problems found' : 'Review flagged providers and models.'}
-                    </Text>
-                  )}
-                </span>
-              </>
+              <Button
+                variant="secondary"
+                disabled={checking}
+                onClick={checkHealth}
+                tooltip="Checks provider model listings without calling a model."
+              >
+                {checking ? 'Checking health…' : 'Check health'}
+              </Button>
             )}
             {permissions.delete && (
               <Button variant="destructive" fill="outline" icon="trash-alt" onClick={() => setDeleting(true)}>

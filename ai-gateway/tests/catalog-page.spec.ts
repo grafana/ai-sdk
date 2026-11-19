@@ -315,6 +315,7 @@ test.describe('model catalog page', () => {
     await expect(card(page, 'claude').getByText('Model not listed')).toBeVisible();
     await expect(card(page, 'other').getByText('Key rejected')).toBeVisible();
     await expect(card(page, 'other').getByText('Not checked')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('3 problems');
     await expect(page.getByText(SUCCESS_BADGES)).toHaveCount(0);
     await expect(page.getByText('No problems found')).toHaveCount(0);
     await watch.nowhere(ACCEPTED_HEALTH_KEY);
@@ -331,9 +332,8 @@ test.describe('model catalog page', () => {
     const finished = page.waitForResponse((result) => isCatalogWrite('POST', `${name}/health`)(result.request()));
     await check.click();
     expect((await finished).status()).toBe(200);
-    await expect(page.getByText('No problems found')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('No problems found');
     await expect(page.getByText(SUCCESS_BADGES)).toHaveCount(0);
-    await expect(page.getByText('Review flagged providers and models.')).toHaveCount(0);
   });
 
   for (const role of BROWSER_ROLES) {

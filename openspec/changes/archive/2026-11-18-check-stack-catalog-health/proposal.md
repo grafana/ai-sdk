@@ -8,7 +8,7 @@ Catalog admission can validate the shape of a `ModelCatalog`, but it cannot tell
 
 - Add a bodyless `POST …/modelcatalogs/{name}/health` action authorized as `get` on `modelcatalogs/health`, granted to `aigateway:catalogwriter` only among the default catalog roles.
 - Use the stored catalog and the same key, shape and endpoint policy as selection. Probe model-listing APIs, not inference. Return fixed outcomes for each provider and each model's primary and fallback targets; do not return upstream data or errors.
-- On the saved catalog page, add a permission-gated **Check health** button and flag only outcomes that need attention. When all checks pass, show a single short confirmation instead of per-row success badges.
+- On the saved catalog page, add a permission-gated **Check health** button and flag only outcomes that need attention. Beside **Providers**, show the problem count or a neutral confirmation instead of per-row success badges.
 - Keep draft checks, save-time probes, background polling, model pickers, operator-catalog health and end-to-end inference checks out of scope.
 
 ## Capabilities

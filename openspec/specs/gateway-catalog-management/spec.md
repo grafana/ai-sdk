@@ -149,7 +149,7 @@ The saved catalog page SHALL offer an explicit **Check health** action only to a
 - **THEN** the page SHALL neither show the control nor request health results
 
 ### Requirement: Show results until the catalog is edited or left
-The saved catalog page SHALL show only non-`ok` outcomes as fixed warning or error badges on provider cards, model rows and fallbacks in model details. If all outcomes are `ok`, it SHALL show one short confirmation near **Check health**. It SHALL explain that the check uses model listings, not inference. It SHALL clear results on successful save or navigation and disregard checks started before either event.
+The saved catalog page SHALL show only non-`ok` outcomes as fixed warning or error badges on provider cards, model rows and fallbacks in model details. It SHALL summarize results beside **Providers** in a polite live region without adding content beside the page actions. It SHALL explain that the check uses model listings, not inference. It SHALL clear results on a new check, successful save, or navigation and disregard stale results.
 
 #### Scenario: Catalog is saved while the check is running
 - **WHEN** a check returns after the page saved an edit
@@ -161,4 +161,8 @@ The saved catalog page SHALL show only non-`ok` outcomes as fixed warning or err
 
 #### Scenario: All outcomes are OK
 - **WHEN** the listing check reports `ok` for every provider, primary and fallback target
-- **THEN** the page SHALL show **No problems found** near the action and no success badge or tick
+- **THEN** the page SHALL show one neutral **No problems found** badge beside **Providers** and no per-row success badge or tick
+
+#### Scenario: Some outcomes need attention
+- **WHEN** a check reports any outcome other than `ok`
+- **THEN** the page SHALL show a warning badge beside **Providers** counting one problem per non-`ok` provider, primary target, or fallback target
