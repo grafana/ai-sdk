@@ -145,7 +145,7 @@ export function CatalogEditor({ spec, keys, health, readOnly, listingRevision, l
             applyChange({ spec: withModel(spec, providerModel, quickModel(name, providerModel)), secure: {} })
           }
           addError={(providerModel) => quickAddError(spec, providerModel)}
-          onSaveServing={(provider) => onChange({ spec: withProvider(spec, name, provider), secure: {} })}
+          onSaveServing={(provider) => applyChange({ spec: withProvider(spec, name, provider), secure: {} })}
           onReplaceKey={() => setDialog({ kind: 'replaceKey', provider: name })}
           onRemove={() => setDialog({ kind: 'removeProvider', provider: name })}
         />
