@@ -197,7 +197,8 @@ ctx = grafana.WithOnBehalfOf(ctx, userToken)
 result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.UserText("Summarize this incident.")))
 ```
 
-The call still uses your service's models, and is made on the user's behalf.
+On namespace routes, the call still uses your service's models. To select a
+stack's models instead, [call a stored stack catalog](#call-a-stored-stack-catalog).
 
 ## Call from an App Platform app
 
@@ -250,15 +251,16 @@ ctx = grafana.WithNamespace(ctx, namespace)
 ctx = grafana.WithOnBehalfOf(ctx, info.GetAccessToken())
 ```
 
-What each call gets:
+What each call gets on namespace routes. For the separate catalog permissions,
+see [Call a stored stack catalog](#call-a-stored-stack-catalog).
 
 | Call | Self-hosted Grafana | Grafana Cloud |
 |---|---|---|
 | As the app | Refused, because the Gateway needs a user or service account | The configured models once your app is [allowed](#get-your-service-allowed-in-grafana-cloud); refused before |
 | On behalf of a user | The configured models | The configured models once your app is allowed; before that, your own provider key |
 
-In both environments, a call on behalf of a user also needs the user to have
-the `plugins.app:access` permission on `plugins:id:grafana-aigateway-app`.
+In both environments, a namespace-route call on behalf of a user also needs
+the user to have `plugins.app:access` on `plugins:id:grafana-aigateway-app`.
 Grafana's Viewer role has it by default.
 
 ### Call a stored stack catalog

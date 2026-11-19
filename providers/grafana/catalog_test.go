@@ -74,12 +74,23 @@ func TestWithCatalog_RoutesAndExchangesPerCall(t *testing.T) {
 	require.NoError(t, err)
 	stream, err := m.DoStream(WithNamespace(WithCatalog(user, "team"), "stacks-2"), opts)
 	require.NoError(t, err)
-	require.NotEmpty(t, collectParts(t, stream))
-	_, err = p.ListModels(WithCatalog(selected, "Other #?%2F"))
-	var apiError *provider.APICallError
-	require.ErrorAs(t, err, &apiError)
-	assert.Equal(t, http.StatusNotFound, apiError.StatusCode)
+	parts := collectParts(t, stream)
+	require.Len(t, parts, 1)
+	assert.Equal(t, provider.PartFinish, parts[0].Type)
+
+	missing := WithCatalog(selected, "Other #?%2F")
+	_, err = p.ListModels(missing)
+	var discoveryError *provider.APICallError
+	require.ErrorAs(t, err, &discoveryError)
+	assert.Equal(t, http.StatusNotFound, discoveryError.StatusCode)
+	_, err = m.DoGenerate(missing, opts)
+	var modelError *provider.APICallError
+	require.ErrorAs(t, err, &modelError)
+	assert.Equal(t, http.StatusNotFound, modelError.StatusCode)
+
 	_, err = p.ListModels(stack1)
+	require.NoError(t, err)
+	_, err = m.DoGenerate(stack1, opts)
 	require.NoError(t, err)
 
 	cfg.Namespace = "stacks-1"
@@ -103,7 +114,9 @@ func TestWithCatalog_RoutesAndExchangesPerCall(t *testing.T) {
 		{"POST", "/namespaces/stacks-1/modelcatalogs/team/language-model", "false", "application/json", exchangeKey{"stacks-1", subject}},
 		{"POST", "/namespaces/stacks-2/modelcatalogs/team/language-model", "true", "text/event-stream", exchangeKey{"stacks-2", subject}},
 		{"GET", "/namespaces/stacks-1/modelcatalogs/Other%20%23%3F%252F/config", "", "", exchangeKey{"stacks-1", subject}},
+		{"POST", "/namespaces/stacks-1/modelcatalogs/Other%20%23%3F%252F/language-model", "false", "application/json", exchangeKey{"stacks-1", subject}},
 		{"GET", "/namespaces/stacks-1/config", "", "", exchangeKey{"stacks-1", subject}},
+		{"POST", "/namespaces/stacks-1/language-model", "false", "application/json", exchangeKey{"stacks-1", subject}},
 		{"GET", "/namespaces/stacks-1/modelcatalogs/team/config", "", "", exchangeKey{"stacks-1", subject}},
 		{"GET", "/namespaces/stacks-1/modelcatalogs/team/config", "", "", exchangeKey{"stacks-1", subject}},
 		{"GET", "/namespaces/stacks-2/modelcatalogs/team/config", "", "", exchangeKey{"*", ""}},
