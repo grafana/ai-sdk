@@ -147,7 +147,11 @@ func TestCatalogHealth_ThroughPlatformHost(t *testing.T) {
 }
 
 func TestCatalogHealth_ParentAndConfiguration(t *testing.T) {
-	checker := service.NewCatalogHealthChecker(nil)
+	var providerCalls int
+	checker := service.NewCatalogHealthChecker(roundTrip(func(*http.Request) (*http.Response, error) {
+		providerCalls++
+		return nil, http.ErrNotSupported
+	}))
 	handler, err := newHandler(gatewayauth.AccessPolicy{}, newTestTelemetry(t), productionRoutes(
 		http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), catalogHealth(checker),
 	))
@@ -170,4 +174,15 @@ func TestCatalogHealth_ParentAndConfiguration(t *testing.T) {
 			assert.NotContains(t, response.Body.String(), "catalog-key")
 		})
 	}
+	t.Run("get does not read the body or call the provider", func(t *testing.T) {
+		request := callerRequest(bodyBYOKCaller, http.MethodGet, "/modelcatalogs/"+testCatalogName+"/health", nil)
+		request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), testCatalogInfo(testCatalogParent(t, nil))))
+		body := &countingBody{}
+		request.Body = io.NopCloser(body)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		assert.Equal(t, http.StatusMethodNotAllowed, response.Code)
+		assert.Zero(t, body.reads.Load())
+		assert.Zero(t, providerCalls)
+	})
 }
