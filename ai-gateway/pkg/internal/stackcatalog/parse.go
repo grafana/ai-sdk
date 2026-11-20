@@ -19,6 +19,12 @@ const (
 // Parse validates a stack catalog spec whose providers have the secure keys
 // in keys, and returns it as a config.File without provider keys.
 func Parse(spec v1alpha1.Spec, keys []string) (config.File, error) {
+	if spec.Providers == nil {
+		return config.File{}, fmt.Errorf("modelcatalog: spec.providers must be a map")
+	}
+	if spec.Models == nil {
+		return config.File{}, fmt.Errorf("modelcatalog: spec.models must be a map")
+	}
 	if err := checkPolicy(spec); err != nil {
 		return config.File{}, err
 	}

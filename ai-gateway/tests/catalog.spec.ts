@@ -112,6 +112,13 @@ test.describe('ModelCatalog', () => {
     expect(foldered.status(), await foldered.text()).toBeGreaterThanOrEqual(400);
   });
 
+  test('a catalog requires explicit maps even when empty', async ({ accounts }) => {
+    for (const spec of [{ models: {} }, { providers: {} }, { providers: {}, models: null }]) {
+      const response = await create(accounts.Admin, { ...catalog(uniqueName(), {}), spec });
+      expect([400, 422], await response.text()).toContain(response.status());
+    }
+  });
+
   test('secure.create stores a secret and reads return names only', async ({ accounts }) => {
     const { name, object } = await createStored(accounts.Admin);
     for (const provider of Object.keys(twoProviders)) {

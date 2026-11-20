@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/grafana/grafana-app-sdk/resource"
@@ -13,6 +14,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
 const testCatalogName = "team"
@@ -46,6 +48,67 @@ func testCatalogInfo(parent []byte) *resource.RouteRequestInfo {
 	}
 }
 
+func TestCatalogRoutes_MalformedSpec(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	native := newFakeAnthropic(t)
+	useNativeAnthropic(t, native)
+	for _, tc := range []struct {
+		name    string
+		mutate  func(map[string]any)
+		withKey bool
+	}{
+		{"undecodable spec", func(parent map[string]any) { parent["spec"] = "sentinel-spec" }, true},
+		{"missing spec", func(parent map[string]any) { delete(parent, "spec") }, false},
+		{"null spec", func(parent map[string]any) { parent["spec"] = nil }, false},
+		{"missing providers", func(parent map[string]any) { parent["spec"] = map[string]any{"models": map[string]any{}} }, false},
+		{"null models with a connected provider", func(parent map[string]any) {
+			parent["spec"].(map[string]any)["models"] = nil
+		}, true},
+		{"undecodable models", func(parent map[string]any) {
+			parent["spec"].(map[string]any)["models"] = []any{}
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := testCatalogInfo(testCatalogParent(t, tc.mutate))
+			if !tc.withKey {
+				info.DecryptedSecureValues = nil
+			}
+			for _, route := range []string{"config", "language-model", "health", "available-models?provider=claude"} {
+				t.Run(route, func(t *testing.T) {
+					path := "/modelcatalogs/" + testCatalogName + "/" + route
+					method := http.MethodPost
+					if route == "config" {
+						method = http.MethodGet
+					}
+					request := callerRequest(bodyBYOKCaller, method, path, nil)
+					if route == "language-model" {
+						wire := bodyLanguageRequest(bodyBYOKCaller, strings.NewReader(unaryBody))
+						wire.URL, wire.RequestURI = request.URL, request.RequestURI
+						request = wire
+					}
+					request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), info))
+					response := httptest.NewRecorder()
+					h.gateway.Handler().ServeHTTP(response, request)
+					assert.Equal(t, http.StatusFailedDependency, response.Code, response.Body.String())
+					switch route {
+					case "config", "language-model":
+						assert.JSONEq(t, `{"error":{"message":"model catalog is invalid or missing a provider key","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
+					default:
+						assert.JSONEq(t, `{"message":"invalid stored catalog configuration"}`, response.Body.String())
+					}
+				})
+			}
+			request := callerRequest(bodyBYOKCaller, http.MethodPost, "/modelcatalogs/"+testCatalogName+"/health?unexpected=true", nil)
+			request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), info))
+			response := httptest.NewRecorder()
+			h.gateway.Handler().ServeHTTP(response, request)
+			assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+		})
+	}
+	assert.Zero(t, native.requests.Load())
+	assert.Zero(t, h.anthropic.requests.Load())
+}
+
 func TestParentCatalog(t *testing.T) {
 	metadata := func(key, value string) func(map[string]any) {
 		return func(object map[string]any) { object["metadata"].(map[string]any)[key] = value }
@@ -67,7 +130,7 @@ func TestParentCatalog(t *testing.T) {
 		}},
 		{name: "spec that does not decode", info: func(t *testing.T) *resource.RouteRequestInfo {
 			return testCatalogInfo(testCatalogParent(t, func(object map[string]any) { object["spec"] = "not a spec" }))
-		}, status: http.StatusNoContent, stack: &service.StackCatalog{Name: testCatalogName}},
+		}, status: http.StatusNoContent, stack: &service.StackCatalog{Name: testCatalogName, InvalidSpec: true}},
 		{name: "no route info", info: func(*testing.T) *resource.RouteRequestInfo { return nil }, status: http.StatusInternalServerError},
 		{name: "no parent", info: func(*testing.T) *resource.RouteRequestInfo { return testCatalogInfo(nil) }, status: http.StatusInternalServerError},
 		{name: "another plural", info: func(t *testing.T) *resource.RouteRequestInfo {

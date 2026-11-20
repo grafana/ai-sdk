@@ -40,7 +40,6 @@ it('shares one pending listing across two fields for the same saved provider', a
     <CatalogEditor
       keys={['anthropic']}
       spec={{ providers: { anthropic: { type: 'anthropic' } }, models: {} }}
-      stored
       readOnly={false}
       listModels={listModels}
       onChange={jest.fn()}
