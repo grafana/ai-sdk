@@ -81,6 +81,26 @@ describe("effective tool choice", () => {
     expect(message?.parts[1]).toHaveProperty("output", undefined);
   });
 
+  it("withholds client and provider tool parts when choice is none", async () => {
+    const { chunks, errors, message } = await readScenario("none-rejects");
+    expect(chunks).toEqual([
+      { type: "start", messageId: "message-1" },
+      { type: "start-step" },
+      { type: "text-start", id: "t1" },
+      { type: "text-delta", id: "t1", delta: "response" },
+      { type: "text-end", id: "t1" },
+      { type: "error", errorText: "tool choice violated" },
+      { type: "finish-step" },
+      { type: "finish", finishReason: "error" },
+    ]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toHaveProperty("message", "tool choice violated");
+    expect(message?.parts).toEqual([
+      { type: "step-start" },
+      { type: "text", text: "response", state: "done" },
+    ]);
+  });
+
   it.each(["required-valid", "named-valid"])("retains normal output for %s", async (name) => {
     const { chunks, errors, message } = await readScenario(name);
     expect(chunks).toEqual([
