@@ -962,6 +962,8 @@ loop:
 			break loop
 		}
 
+		// Withheld parts must not start a step, count as output, or satisfy or
+		// extend content deadlines.
 		if withholdToolParts {
 			switch part.Type {
 			case provider.PartToolCall:
