@@ -254,8 +254,8 @@ custom_endpoints = https://llm.corp.example/v1, https://eu.anthropic-proxy.examp
   same path or one below it: `https://llm.corp.example/v1/team` matches the
   first entry; `.../v10`, `http://...` and `...:8443/v1` don't. There are no
   wildcards, and `http` works only where listed.
-- Paths with `.` or `..` segments, a backslash, or an encoded `/`, `\` or `%`
-  are refused.
+- Paths with `.` or `..` segments, a backslash, a `;`, or an encoded `/`, `\`,
+  `%` or `;` are refused.
 - The provider's own endpoint needs no entry. Without the setting, only those
   endpoints work.
 - The list is checked when a catalog is saved (`400`), on every call to a

@@ -29,7 +29,7 @@ func TestParseCustomEndpoints(t *testing.T) {
 		"ftp://llm.corp.example", "llm.corp.example", "/v1", "https://*.corp.example", "https://llm.corp.example/*",
 		"https://llm.corp.example/v1/../private", "https://llm.corp.example/%2e%2e/private", "https://llm.corp.example/./v1",
 		"https://bücher.example", "https://llm.corp.example/v1,https://LLM.corp.example/v1/",
-		"https://llm.corp.example/team/..%2fadmin", "https://llm.corp.example/team%2Fsub", "https://llm.corp.example/team/..%5cadmin", "https://llm.corp.example/team\\admin",
+		"https://llm.corp.example/team/..%2fadmin", "https://llm.corp.example/team%2Fsub", "https://llm.corp.example/team/..%5cadmin", "https://llm.corp.example/team\\admin", "https://llm.corp.example/team;v=1", "https://llm.corp.example/team/%3B",
 	} {
 		t.Run(raw, func(t *testing.T) {
 			_, err := ParseCustomEndpoints(raw)
@@ -74,6 +74,13 @@ func TestCustomEndpoints_Check(t *testing.T) {
 		{raw: "https://llm.corp.example/v1/a%2Fb", err: ErrEndpointForm},
 		{raw: "https://llm.corp.example/v1/%252e%252e/admin", err: ErrEndpointForm},
 		{raw: "https://llm.corp.example/v1/%41dmin", want: "https://llm.corp.example/v1/%41dmin"},
+		{raw: "https://llm.corp.example/v1/..;/admin", err: ErrEndpointForm},
+		{raw: "https://llm.corp.example/v1/.;/x", err: ErrEndpointForm},
+		{raw: "https://llm.corp.example/v1/%2e%2e;/admin", err: ErrEndpointForm},
+		{raw: "https://llm.corp.example/v1/..;foo/admin", err: ErrEndpointForm},
+		{raw: "https://llm.corp.example/v1;foo", err: ErrEndpointForm},
+		{raw: "https://llm.corp.example/v1/%3B", err: ErrEndpointForm},
+		{raw: "https://llm.corp.example/v1/a;b", err: ErrEndpointForm},
 		{raw: "https://\u212Aey.corp.example/v1", err: ErrEndpointForm},
 		{raw: "https://llm.corp.examplé/v1", err: ErrEndpointForm},
 		{raw: "https://llm.corp.example/v1/../admin", err: ErrEndpointForm},

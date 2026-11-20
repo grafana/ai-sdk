@@ -13,7 +13,8 @@ const MaxCustomEndpoints = 256
 var (
 	// ErrEndpointForm reports a custom endpoint that is not an absolute URL
 	// with an ASCII host and no userinfo, query or fragment, or whose path has
-	// a backslash, a "." or ".." segment, or an encoded "/", backslash or "%".
+	// a backslash, a "." or ".." segment, a ";" or an encoded "/", backslash
+	// or "%".
 	ErrEndpointForm = errors.New("gateway outbound: endpoint must be an absolute URL without userinfo, query, fragment, dot segments or encoded separators")
 	// ErrEndpointNotListed reports a custom endpoint the operator doesn't list.
 	ErrEndpointNotListed = errors.New("gateway outbound: endpoint is not a listed custom endpoint")
@@ -42,10 +43,11 @@ func (e endpoint) matches(candidate endpoint) bool {
 // parseEndpoint parses and normalizes a base URL, refusing one that isn't an
 // absolute http or https URL with an ASCII host and no userinfo, query or
 // fragment. It must not contain "\", and no path segment may decode to "."
-// or "..", or to a value containing "/", "\" or "%": the provider SDKs decode
-// the base URL's path and resolve dot segments when they join it with their
-// own, so an encoded separator, or a doubly encoded dot segment at a server
-// that decodes twice, could move a request outside a listed path.
+// or "..", or to a value containing "/", "\", "%" or ";": the provider SDKs
+// decode the base URL's path and resolve dot segments when they join it with
+// their own, so an encoded separator, a doubly encoded dot segment at a server
+// that decodes twice, or a dot segment with a path parameter at a server that
+// strips it, could move a request outside a listed path.
 func parseEndpoint(raw string) (endpoint, *url.URL, bool) {
 	if strings.Contains(raw, "\\") {
 		return endpoint{}, nil, false
@@ -57,7 +59,7 @@ func parseEndpoint(raw string) (endpoint, *url.URL, bool) {
 	path := strings.TrimSuffix(parsed.EscapedPath(), "/")
 	for segment := range strings.SplitSeq(path, "/") {
 		decoded, err := url.PathUnescape(segment)
-		if err != nil || decoded == "." || decoded == ".." || strings.ContainsAny(decoded, "/\\%") {
+		if err != nil || decoded == "." || decoded == ".." || strings.ContainsAny(decoded, "/\\%;") {
 			return endpoint{}, nil, false
 		}
 	}

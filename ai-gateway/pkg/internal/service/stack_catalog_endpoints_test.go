@@ -170,6 +170,7 @@ func TestCustomEndpoints_AcceptedEndpointIsTheDestination(t *testing.T) {
 	candidates := []string{
 		"https://llm.corp.example/team", "https://LLM.corp.example/team/", "https://llm.corp.example/team/sub",
 		"https://llm.corp.example/team/%252e%252e/admin", "https://llm.corp.example/team/a;b", "https://llm.corp.example/team//sub",
+		"https://llm.corp.example/team/..;/admin", "https://llm.corp.example/team/.;/x", "https://llm.corp.example/team/%2e%2e;/admin", "https://llm.corp.example/team;foo", "https://llm.corp.example/team/%3B",
 		"https://llm.corp.example/team/..%2fadmin", "https://llm.corp.example/team/%2e%2e%2fadmin", "https://llm.corp.example/team/..%5cadmin",
 		"https://llm.corp.example/team/x%2F..%2F..%2Fadmin", "https://llm.corp.example/team/a%2Fb", "https://llm.corp.example/team/../admin",
 		"https://llm.corp.example:/team", "https://llm.corp.example/team/%2E",
@@ -195,8 +196,10 @@ func TestCustomEndpoints_AcceptedEndpointIsTheDestination(t *testing.T) {
 				assert.Contains(t, []string{"", "443"}, destination.Port())
 				assert.True(t, strings.HasPrefix(destination.EscapedPath(), "/team/"), destination.String())
 				assert.NotContains(t, destination.Path, "/admin")
+				assert.NotContains(t, destination.EscapedPath(), ";")
+				assert.NotContains(t, strings.ToLower(destination.EscapedPath()), "%3b")
 			})
 		}
 	}
-	assert.Equal(t, 6, accepted, "the accepted candidates")
+	assert.Equal(t, 5, accepted, "the accepted candidates")
 }
