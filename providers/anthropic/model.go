@@ -2,7 +2,10 @@ package anthropic
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -15,6 +18,8 @@ import (
 	vertexsdk "github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 const specVersion = "v4"
@@ -22,6 +27,8 @@ const specVersion = "v4"
 const vertexCloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
 
 var vertexGoogleAuth = vertexsdk.WithGoogleAuth
+
+var vertexLocationPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 
 type model struct {
 	client       anthropic.Client
@@ -31,15 +38,12 @@ type model struct {
 	requestOpts  []option.RequestOption
 	generateID   func() string
 	capabilities providerCapabilities
+	httpClient   *http.Client
 }
 
 // New creates a LanguageModel for the direct Anthropic API.
 func New(apiKey, modelID string, opts ...Option) provider.LanguageModel {
 	m := &model{
-		client: anthropic.NewClient(
-			option.WithoutEnvironmentDefaults(),
-			option.WithAPIKey(apiKey),
-		),
 		requestOpts:  []option.RequestOption{option.WithQueryDel("beta")},
 		modelID:      modelID,
 		providerName: "anthropic",
@@ -50,10 +54,12 @@ func New(apiKey, modelID string, opts ...Option) provider.LanguageModel {
 	for _, o := range opts {
 		o(m)
 	}
+	m.client = anthropic.NewClient(m.clientOptions(option.WithoutEnvironmentDefaults(), option.WithAPIKey(apiKey))...)
 	return m
 }
 
 // NewVertex creates a LanguageModel for Anthropic models on Google Vertex AI.
+// location must be a single DNS label, such as "us-east5" or "global".
 //
 // The underlying anthropic-sdk-go Vertex helper panics when the region is
 // empty, when Application Default Credentials cannot be loaded, or when the
@@ -61,12 +67,93 @@ func New(apiKey, modelID string, opts ...Option) provider.LanguageModel {
 // returned as ordinary errors so callers can handle authentication failures
 // without crashing the process.
 func NewVertex(ctx context.Context, location, projectID, modelID string, opts ...Option) (provider.LanguageModel, error) {
-	authOpt, err := vertexAuth(ctx, location, projectID)
+	if err := checkVertexLocation(location); err != nil {
+		return nil, err
+	}
+	m := newVertexModel(modelID, opts)
+	authOpt, err := vertexAuth(m.oauthContext(ctx), location, projectID)
 	if err != nil {
 		return nil, err
 	}
+	m.client = anthropic.NewClient(m.clientOptions(authOpt)...)
+	return m, nil
+}
+
+// NewVertexWithCredentials creates a LanguageModel for Anthropic models on
+// Google Vertex AI authenticated by a service account key. credentialsJSON must
+// be a "service_account" key file; other credential types are rejected, and
+// Application Default Credentials and ambient Google settings such as
+// GOOGLE_CLOUD_QUOTA_PROJECT are never consulted. The key's token_uri is
+// trusted as given, so the key must come from a trusted source.
+func NewVertexWithCredentials(ctx context.Context, location, projectID, modelID string, serviceAccountKey []byte, opts ...Option) (provider.LanguageModel, error) {
+	if location == "" || projectID == "" {
+		return nil, fmt.Errorf("anthropic vertex: location and project ID are required")
+	}
+	if err := checkVertexLocation(location); err != nil {
+		return nil, err
+	}
+	m := newVertexModel(modelID, opts)
+	// Without a client of its own, the SDK builds one from the environment and
+	// adds GOOGLE_CLOUD_QUOTA_PROJECT to every request.
+	if m.httpClient == nil {
+		m.httpClient = &http.Client{}
+	}
+	ctx = m.oauthContext(ctx)
+	creds, err := google.CredentialsFromJSONWithType(ctx, serviceAccountKey, google.ServiceAccount, vertexCloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic vertex credentials: %w", err)
+	}
+	// oauth2 parses the private key only on the first token request; parse it
+	// here so a malformed key fails at construction.
+	jwtConfig, err := google.JWTConfigFromJSON(serviceAccountKey, vertexCloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic vertex credentials: %w", err)
+	}
+	if !validPrivateKey(jwtConfig.PrivateKey) {
+		return nil, fmt.Errorf("anthropic vertex credentials: private key is not a PEM, PKCS #1 or PKCS #8 RSA key")
+	}
+	authOpt, err := recoverVertexAuth(func() option.RequestOption {
+		return vertexsdk.WithCredentials(ctx, location, projectID, creds)
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.client = anthropic.NewClient(m.clientOptions(authOpt)...)
+	return m, nil
+}
+
+// validPrivateKey accepts the key encodings oauth2 signs with.
+func validPrivateKey(key []byte) bool {
+	if block, _ := pem.Decode(key); block != nil {
+		key = block.Bytes
+	}
+	if parsed, err := x509.ParsePKCS8PrivateKey(key); err == nil {
+		_, ok := parsed.(*rsa.PrivateKey)
+		return ok
+	}
+	_, err := x509.ParsePKCS1PrivateKey(key)
+	return err == nil
+}
+
+// checkVertexLocation rejects a location that is not a single DNS label, since
+// the location becomes part of the request host.
+func checkVertexLocation(location string) error {
+	if location != "" && !vertexLocationPattern.MatchString(location) {
+		return fmt.Errorf("anthropic vertex: location must be a single DNS label of letters, digits and hyphens")
+	}
+	return nil
+}
+
+// oauthContext routes OAuth token requests through the configured client.
+func (m *model) oauthContext(ctx context.Context) context.Context {
+	if m.httpClient == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, oauth2.HTTPClient, m.httpClient)
+}
+
+func newVertexModel(modelID string, opts []Option) *model {
 	m := &model{
-		client:       anthropic.NewClient(authOpt),
 		modelID:      modelID,
 		providerName: "anthropic.vertex",
 		resolveModel: ResolveVertexModelID,
@@ -76,14 +163,29 @@ func NewVertex(ctx context.Context, location, projectID, modelID string, opts ..
 	for _, o := range opts {
 		o(m)
 	}
-	return m, nil
+	return m
+}
+
+// clientOptions puts the configured HTTP client ahead of opts, so Vertex
+// authorization wraps it rather than being replaced by it.
+func (m *model) clientOptions(opts ...option.RequestOption) []option.RequestOption {
+	if m.httpClient == nil {
+		return opts
+	}
+	return append([]option.RequestOption{option.WithHTTPClient(m.httpClient)}, opts...)
 }
 
 // vertexAuth invokes vertexsdk.WithGoogleAuth and converts any panic it raises
 // into a returned error. The upstream SDK panics on misconfiguration (empty
 // region, missing credentials, HTTP client setup failure); we honor the
 // ai-sdk rule of never propagating panics across our API boundary.
-func vertexAuth(ctx context.Context, location, projectID string) (opt option.RequestOption, err error) {
+func vertexAuth(ctx context.Context, location, projectID string) (option.RequestOption, error) {
+	return recoverVertexAuth(func() option.RequestOption {
+		return vertexGoogleAuth(ctx, location, projectID, vertexCloudPlatformScope)
+	})
+}
+
+func recoverVertexAuth(auth func() option.RequestOption) (opt option.RequestOption, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			switch v := r.(type) {
@@ -95,7 +197,7 @@ func vertexAuth(ctx context.Context, location, projectID string) (opt option.Req
 			opt = nil
 		}
 	}()
-	return vertexGoogleAuth(ctx, location, projectID, vertexCloudPlatformScope), nil
+	return auth(), nil
 }
 
 func (m *model) SpecificationVersion() string               { return specVersion }
