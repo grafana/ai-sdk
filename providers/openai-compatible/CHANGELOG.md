@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.2...providers/openai-compatible/v0.1.0-alpha.3) (2026-11-20)
+
+
+### Features
+
+* **ai-gateway:** configure openai-compatible structured outputs per provider ([#597](https://github.com/grafana/ai-sdk/issues/597)) ([25932dd](https://github.com/grafana/ai-sdk/commit/25932ddaeeb9764a4ab1b01a9e49b2850f02bbaf))
+* **openai-compatible:** preserve typed Chat output metadata ([#675](https://github.com/grafana/ai-sdk/issues/675)) ([768e9a6](https://github.com/grafana/ai-sdk/commit/768e9a63b48c5bfce334f0659c269d12dce012d7))
+* **openai-compatible:** report warnings from request transforms ([#625](https://github.com/grafana/ai-sdk/issues/625)) ([7c9e949](https://github.com/grafana/ai-sdk/commit/7c9e94965d35a35d9d8e828b2c4b4ac4a96b413a))
+* **openai-compatible:** support uploaded user-file references ([#598](https://github.com/grafana/ai-sdk/issues/598)) ([4fdb70a](https://github.com/grafana/ai-sdk/commit/4fdb70afbe91ee6044c5d75e8cea81cc0f6b5aa0))
+* **parity:** advance pinned upstream to ai 7.0.173 ([#819](https://github.com/grafana/ai-sdk/issues/819)) ([c626c35](https://github.com/grafana/ai-sdk/commit/c626c35bd9a636e4764960fb646e827f130c13e1))
+
+
+### Bug Fixes
+
+* **openai-compatible:** send explicit none reasoning effort ([#831](https://github.com/grafana/ai-sdk/issues/831)) ([79319cb](https://github.com/grafana/ai-sdk/commit/79319cb139ad62307a908ff1b9e0aff22ab26d05))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.1...providers/openai-compatible/v0.1.0-alpha.2) (2026-10-28)
 
 
