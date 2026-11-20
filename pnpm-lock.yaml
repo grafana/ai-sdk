@@ -372,6 +372,22 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  ai-gateway/test/openai-responses-codec:
+    dependencies:
+      openai:
+        specifier: 6.49.0
+        version: 6.49.0(ws@8.22.0)(zod@4.6.7)
+    devDependencies:
+      '@types/node':
+        specifier: 25.9.9
+        version: 25.9.9
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   ai-gateway/test/providerwire-v4:
     dependencies:
       '@ai-sdk/gateway':
