@@ -7,7 +7,7 @@ Lets customers point stack-catalog providers and request accounts at provider en
 ## ADDED Requirements
 
 ### Requirement: Custom endpoint list setting
-The `custom_endpoints` setting SHALL accept comma-separated base URLs, each absolute, `http` or `https`, with an ASCII host and no userinfo, query, fragment, wildcard, backslash, or path segment that decodes to `.`, `..` or a value containing `/`, `\` or `%`. An unset or empty setting SHALL allow no custom endpoint. Empty, duplicate after normalization or invalid entries SHALL fail startup with a reason naming the setting, without echoing the value.
+The `custom_endpoints` setting SHALL accept comma-separated base URLs, each absolute, `http` or `https`, with an ASCII host and no userinfo, query, fragment, wildcard, backslash, or path segment that decodes to `.`, `..` or a value containing `/`, `\`, `%` or `;`. An unset or empty setting SHALL allow no custom endpoint. Empty, duplicate after normalization or invalid entries SHALL fail startup with a reason naming the setting, without echoing the value.
 
 #### Scenario: Valid list
 - **WHEN** the setting is `https://llm.corp.example/v1, http://10.20.0.5:8080`
@@ -41,8 +41,8 @@ A custom endpoint SHALL be allowed when it matches an entry. Its scheme and host
 - **THEN** the endpoint SHALL NOT match
 
 #### Scenario: Dot segments and encoded separators
-- **WHEN** an endpoint's path holds a backslash or a segment that decodes to `.`, `..` or a value containing `/`, `\` or `%`, such as `https://llm.corp.example/v1/../admin`, `.../v1/..%2fadmin`, `.../v1/..%5cadmin` or `.../v1/%252e%252e/admin`
-- **THEN** it SHALL be refused as malformed, whatever the list holds, because the provider SDKs decode the path and resolve dot segments when they join their own path
+- **WHEN** an endpoint's path holds a backslash or a segment that decodes to `.`, `..` or a value containing `/`, `\`, `%` or `;`, such as `https://llm.corp.example/v1/../admin`, `.../v1/..%2fadmin`, `.../v1/..%5cadmin`, `.../v1/%252e%252e/admin` or `.../v1/..;/admin`
+- **THEN** it SHALL be refused as malformed, whatever the list holds, because the provider SDKs decode the path and resolve dot segments when they join their own path, and some servers strip `;` path parameters before resolving them
 
 #### Scenario: Non-ASCII host
 - **WHEN** an endpoint's host holds a non-ASCII character, even one that lowercases to a listed ASCII host
