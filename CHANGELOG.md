@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.1.0-alpha.6](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.5...v0.1.0-alpha.6) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **middleware:** A stream recording is no longer enqueued before its first `finish` is forwarded. Consumers that close or shut down the shared agento11y client after reading a `finish` must drain the stream to EOF or wait for `RecordingOptions.OnRecordComplete`. A consumer that stops at `finish` and cancels still records a successful generation. Stream usage in logs, metrics and Agent Observability now comes from the last `finish`: a finish reporting a lower counter than an earlier part of the same response wins, and a multi-finish stream reports the last finish's usage instead of the greatest value across the stream.
+* **ai-gateway:** forward sequential response segments in one stream ([#583](https://github.com/grafana/ai-sdk/issues/583))
+
+### Features
+
+* **ai-gateway:** add Chat Completions unary adapter ([#556](https://github.com/grafana/ai-sdk/issues/556)) ([d94de80](https://github.com/grafana/ai-sdk/commit/d94de8039d5dd1e6b2efa8e4a90e00e9007f2eab))
+* **ai-gateway:** add the Middleware kind with admission validation ([#777](https://github.com/grafana/ai-sdk/issues/777)) ([c44791e](https://github.com/grafana/ai-sdk/commit/c44791eea563a4f9a34191d3c6df07245601bdb9))
+* **ai-gateway:** forward sequential response segments in one stream ([#583](https://github.com/grafana/ai-sdk/issues/583)) ([c0a7a6f](https://github.com/grafana/ai-sdk/commit/c0a7a6f7f33650b057754a4bcfee1af776038403))
+* **ai-gateway:** register Chat route and verify official SDKs ([#585](https://github.com/grafana/ai-sdk/issues/585)) ([7ea9bdd](https://github.com/grafana/ai-sdk/commit/7ea9bdd0d949ccb4b8e9415bbbc523c77016acb1))
+* **middleware:** record every response segment of one stream ([#614](https://github.com/grafana/ai-sdk/issues/614)) ([03c01b2](https://github.com/grafana/ai-sdk/commit/03c01b2a81c1a16b052de171fe86a292dd69424b))
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+* **parity:** advance pinned upstream to ai 7.0.154 ([#632](https://github.com/grafana/ai-sdk/issues/632)) ([e594140](https://github.com/grafana/ai-sdk/commit/e5941402544b59414ad4179069a8a09cb6b78bd5))
+* **parity:** advance pinned upstream to ai 7.0.159 ([#660](https://github.com/grafana/ai-sdk/issues/660)) ([b171e48](https://github.com/grafana/ai-sdk/commit/b171e48550570b1374f951b4f4657d7c4541c463))
+* **parity:** advance pinned upstream to ai 7.0.162 ([#745](https://github.com/grafana/ai-sdk/issues/745)) ([a1c79c4](https://github.com/grafana/ai-sdk/commit/a1c79c4b5c7fbc7dbf6a5358c6ca1846434e135a))
+* **parity:** advance pinned upstream to ai 7.0.173 ([#819](https://github.com/grafana/ai-sdk/issues/819)) ([c626c35](https://github.com/grafana/ai-sdk/commit/c626c35bd9a636e4764960fb646e827f130c13e1))
+
+
+### Bug Fixes
+
+* **deps:** update dependency react-router-dom to v7 ([#752](https://github.com/grafana/ai-sdk/issues/752)) ([ce05b0c](https://github.com/grafana/ai-sdk/commit/ce05b0cb7cf15ce7ea1e5b27692e8b166983dc9a))
+* **deps:** update npm non-major dependencies ([#643](https://github.com/grafana/ai-sdk/issues/643)) ([b1785f3](https://github.com/grafana/ai-sdk/commit/b1785f3c0fff0d8c865853fef7044f8ba45acb69))
+* **deps:** update npm non-major dependencies ([#801](https://github.com/grafana/ai-sdk/issues/801)) ([ec5862e](https://github.com/grafana/ai-sdk/commit/ec5862ef08dfe02a8a250675471c2a9c3550ada4))
+* **security/medium/ai-gateway:** update dependency glob to v14 [security] ([#637](https://github.com/grafana/ai-sdk/issues/637)) ([ce6cb99](https://github.com/grafana/ai-sdk/commit/ce6cb9956ed9025dbb2f74a858b25b120be43b9b))
+* **streamtext:** align partial output and step text with upstream ([#551](https://github.com/grafana/ai-sdk/issues/551)) ([d62ed14](https://github.com/grafana/ai-sdk/commit/d62ed140f586a4158150e3eea2018ba155f38a4d))
+
 ## [0.1.0-alpha.5](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.4...v0.1.0-alpha.5) (2026-10-28)
 
 
