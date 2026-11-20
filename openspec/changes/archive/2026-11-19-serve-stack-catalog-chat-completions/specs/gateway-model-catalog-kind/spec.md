@@ -1,7 +1,12 @@
 ## MODIFIED Requirements
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health` and `ModelCatalog/available-models`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model`, `ModelCatalog/config`, `ModelCatalog/messages` and `ModelCatalog/chat-completions`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
+The manifest SHALL bind these roles:
+- Viewer: `aigateway:catalogreader`, the viewer set on `ModelCatalog`.
+- Admin: `aigateway:catalogwriter`, the editor set on `ModelCatalog` and `get` on its `health` and `available-models` subresources.
+- Editor: `aigateway:modelinvoker`, `get` on `ModelCatalog` and its `language-model`, `config`, `messages` and `chat-completions` subresources.
+
+Gateway role names SHALL use lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace
