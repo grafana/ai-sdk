@@ -800,6 +800,35 @@ func TestBuildRequest_NativeStructuredOutputForSupportedAnthropic(t *testing.T) 
 	assert.Equal(t, "json_schema", fmt2["type"])
 }
 
+func TestBuildRequest_NativeOutputRetainsRootRefDefinitions(t *testing.T) {
+	for _, key := range []string{"definitions", "$defs"} {
+		t.Run(key, func(t *testing.T) {
+			raw := fmt.Sprintf(`{
+				"$ref": "#/%[1]s/Answer",
+				"title": "discarded",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value", "title": "discarded"}}},
+					"Value": {"type": "string", "minLength": 2}
+				}
+			}`, key)
+			req, _, meta := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt:         []provider.Message{provider.UserText("x")},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(raw)},
+			})
+			assert.False(t, meta.usesJSONResponseTool)
+			assert.False(t, meta.usesJSONInstruction)
+			fields := marshalRequestBody(t, req)
+			assert.JSONEq(t, fmt.Sprintf(`{"output_config":{"format":{"type":"json_schema","schema":{
+				"$ref": "#/%[1]s/Answer",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value"}}, "additionalProperties": false},
+					"Value": {"type": "string", "description": "min length: 2."}
+				}
+			}}}}`, key), string(fields["additionalModelRequestFields"]))
+		})
+	}
+}
+
 func TestBuildRequest_NativeStructuredOutputSanitizesUnsupportedConstraints(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"labels":{"type":"array","maxItems":3,"items":{"type":"string"}}},"required":["labels"],"additionalProperties":true}`)
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
