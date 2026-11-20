@@ -76,11 +76,12 @@ func TestCatalogRoutes_MalformedSpec(t *testing.T) {
 			for _, route := range []string{"config", "language-model", "health", "available-models?provider=claude"} {
 				t.Run(route, func(t *testing.T) {
 					path := "/modelcatalogs/" + testCatalogName + "/" + route
-					request := callerRequest(bodyBYOKCaller, path, nil)
-					switch route {
-					case "config":
-						request.Method = http.MethodGet
-					case "language-model":
+					method := http.MethodPost
+					if route == "config" {
+						method = http.MethodGet
+					}
+					request := callerRequest(bodyBYOKCaller, method, path, nil)
+					if route == "language-model" {
 						wire := bodyLanguageRequest(bodyBYOKCaller, strings.NewReader(unaryBody))
 						wire.URL, wire.RequestURI = request.URL, request.RequestURI
 						request = wire
@@ -97,7 +98,7 @@ func TestCatalogRoutes_MalformedSpec(t *testing.T) {
 					}
 				})
 			}
-			request := callerRequest(bodyBYOKCaller, "/modelcatalogs/"+testCatalogName+"/health?unexpected=true", nil)
+			request := callerRequest(bodyBYOKCaller, http.MethodPost, "/modelcatalogs/"+testCatalogName+"/health?unexpected=true", nil)
 			request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), info))
 			response := httptest.NewRecorder()
 			h.gateway.Handler().ServeHTTP(response, request)
