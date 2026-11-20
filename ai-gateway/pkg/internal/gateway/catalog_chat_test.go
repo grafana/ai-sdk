@@ -23,6 +23,7 @@ func TestCatalogChat_ParentAccessAndErrors(t *testing.T) {
 		name   string
 		caller bodyTestCaller
 		parent func() *resource.RouteRequestInfo
+		method string
 		path   string
 		status int
 		code   string
@@ -51,13 +52,18 @@ func TestCatalogChat_ParentAccessAndErrors(t *testing.T) {
 			return testCatalogInfo(testCatalogParent(t, nil))
 		}, status: 404, code: "model_not_found"},
 		{name: "unlisted endpoint", caller: bodyBYOKCaller, path: "/modelcatalogs/" + testCatalogName + "/chat-completions", status: 404, unread: true},
+		{name: "undeclared method", caller: bodyBYOKCaller, method: http.MethodGet, status: http.StatusMethodNotAllowed, unread: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			method := tc.method
+			if method == "" {
+				method = http.MethodPost
+			}
 			path := tc.path
 			if path == "" {
 				path = catalogChatPath
 			}
-			request := callerRequest(tc.caller, http.MethodPost, path, strings.NewReader(`{"model":"public","messages":[{"role":"user","content":"hi"}]}`))
+			request := callerRequest(tc.caller, method, path, strings.NewReader(`{"model":"public","messages":[{"role":"user","content":"hi"}]}`))
 			request.Header.Set("Content-Type", "application/json")
 			if tc.parent != nil {
 				request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), tc.parent()))
@@ -69,6 +75,9 @@ func TestCatalogChat_ParentAccessAndErrors(t *testing.T) {
 			response := httptest.NewRecorder()
 			h.gateway.Handler().ServeHTTP(response, request)
 			assert.Equal(t, tc.status, response.Code, response.Body.String())
+			if tc.status == http.StatusMethodNotAllowed {
+				assert.Equal(t, http.MethodPost, response.Header().Get("Allow"))
+			}
 			if tc.code != "" {
 				assert.Contains(t, response.Body.String(), `"code":"`+tc.code+`"`)
 				assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
