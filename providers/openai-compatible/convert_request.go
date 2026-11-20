@@ -909,10 +909,5 @@ func reasoningEffort(reasoning provider.ReasoningEffort, opts OpenAIOptions) str
 	if opts.ReasoningEffort != "" {
 		return opts.ReasoningEffort
 	}
-	switch reasoning {
-	case provider.ReasoningProviderDefault, provider.ReasoningNone:
-		return ""
-	default:
-		return string(reasoning)
-	}
+	return string(reasoning)
 }

@@ -36,6 +36,8 @@ func TestManifest_DeclaresGatewayRoutesAndKinds(t *testing.T) {
 		"/namespaces/{namespace}/config":                              {http.MethodGet},
 		"/namespaces/{namespace}/language-model":                      {http.MethodPost},
 		"/namespaces/{namespace}/v1/chat/completions":                 {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages":    {http.MethodPost},
+		"/namespaces/{namespace}/v1/messages":                         {http.MethodPost},
 		"/namespaces/{namespace}/modelcatalogs/{name}/config":         {http.MethodGet},
 		"/namespaces/{namespace}/modelcatalogs/{name}/language-model": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
@@ -283,6 +285,7 @@ func TestManifest_DeclaredAccessChecks(t *testing.T) {
 		operation   func(spec3.PathProps) *spec3.Operation
 		subresource string
 	}{
+		{path: "/namespaces/{namespace}/modelcatalogs/{name}/v1/messages", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "messages"},
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/config", operation: func(p spec3.PathProps) *spec3.Operation { return p.Get }, subresource: "config"},
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/language-model", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "language-model"},
 	} {
@@ -320,6 +323,7 @@ func TestManifest_Roles(t *testing.T) {
 		"aigateway:modelinvoker": {Title: "Model invoker", Description: "Discover and invoke models from AI Gateway model catalogs", Kinds: []app.ManifestRoleKind{
 			{Kind: "ModelCatalog", Verbs: []string{"get"}},
 			{Kind: "ModelCatalog/language-model", Verbs: []string{"get"}},
+			{Kind: "ModelCatalog/messages", Verbs: []string{"get"}},
 			{Kind: "ModelCatalog/config", Verbs: []string{"get"}},
 		}, Routes: []string{}},
 	}, data.Roles)

@@ -57,13 +57,18 @@ Use the model IDs supported by the selected Anthropic or Vertex endpoint. The
 package exposes model-ID helpers for discovery; availability still depends on
 your account and region.
 
-Vertex uses native `output_config.format` for JSON-schema responses on models
-that support structured output, rather than forcing a synthetic tool call.
-Your Google Cloud organization must allow the `structured_outputs` feature in
+Vertex supports native `output_config.format` for JSON-schema responses on
+models that support structured output. Your Google Cloud organization must
+allow the `structured_outputs` feature in
 `constraints/vertexai.allowedPartnerModelFeatures`; see
 [Google Cloud's structured-output guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/structured-outputs).
-The explicit `StructuredOutputJSONTool` mode remains available for models that
-support forced tool choice.
+
+With explicit `StructuredOutputJSONTool` mode on direct Anthropic or Vertex,
+models that reject forced tool use, such as `claude-sonnet-5-5`, switch to
+native output with a warning only when native output is supported and can
+represent the original schema. For recursive schemas, open objects, or schemas
+with more than ten optional properties, the provider keeps the JSON response
+tool and uses `auto` tool choice instead.
 
 For Claude on Microsoft Azure, use the [Azure provider](azure.md).
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	anthropicmessages "github.com/grafana/ai-sdk/ai-gateway/anthropic/messages"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
@@ -14,13 +15,15 @@ import (
 )
 
 const (
-	routeChatCompletions      = "chat_completions"
-	routeConfig               = "config"
-	routeLanguageModel        = "language_model"
-	routeCatalogConfig        = "catalog_config"
-	routeCatalogLanguageModel = "catalog_language_model"
-	routeUnmatched            = "unmatched"
-	catalogRoutePrefix        = "/modelcatalogs/{" + catalogNameValue + "}"
+	routeChatCompletions          = "chat_completions"
+	routeAnthropicMessages        = "anthropic_messages"
+	routeConfig                   = "config"
+	routeLanguageModel            = "language_model"
+	routeCatalogConfig            = "catalog_config"
+	routeCatalogLanguageModel     = "catalog_language_model"
+	routeCatalogAnthropicMessages = "catalog_anthropic_messages"
+	routeUnmatched                = "unmatched"
+	catalogRoutePrefix            = "/modelcatalogs/{" + catalogNameValue + "}"
 )
 
 var errInvalidRoute = errors.New("gateway: invalid route table")
@@ -49,12 +52,14 @@ func RoutePrefix() string {
 // productionRoutes is the route table the committed manifest declares. The
 // namespace and catalog routes share the discovery and language handlers,
 // which serve each caller by its account access.
-func productionRoutes(discovery, language, chat http.Handler) []route {
+func productionRoutes(discovery, language, chat, messages http.Handler) []route {
 	errorWriter := providerv4.NewHostErrorWriter()
 	return []route{
 		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
 		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
 		{method: http.MethodPost, path: chatcompletions.Path, label: routeChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodPost, path: anthropicmessages.Path, label: routeAnthropicMessages, handler: messagesPath(messages), errors: anthropicmessages.NewHostErrorWriter()},
+		{method: http.MethodPost, path: catalogRoutePrefix + anthropicmessages.Path, label: routeCatalogAnthropicMessages, handler: messagesPath(messages), errors: anthropicmessages.NewHostErrorWriter(), catalog: true},
 		{method: http.MethodGet, path: catalogRoutePrefix + "/config", label: routeCatalogConfig, handler: discovery, errors: errorWriter, catalog: true},
 		{method: http.MethodPost, path: catalogRoutePrefix + "/language-model", label: routeCatalogLanguageModel, handler: languageModelPath(language), errors: errorWriter, catalog: true},
 	}
@@ -141,6 +146,15 @@ func chatCompletionsPath(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		cloned := request.Clone(request.Context())
 		cloned.URL.Path = chatcompletions.Path
+		cloned.URL.RawPath = ""
+		next.ServeHTTP(w, cloned)
+	})
+}
+
+func messagesPath(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Path = anthropicmessages.Path
 		cloned.URL.RawPath = ""
 		next.ServeHTTP(w, cloned)
 	})
