@@ -125,7 +125,12 @@ Admission SHALL review `CREATE` and `UPDATE` only. Deletes SHALL NOT be reviewed
 - **THEN** the plugin SHALL receive no admission request
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health` and `ModelCatalog/available-models`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model`, `ModelCatalog/config` and `ModelCatalog/messages`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
+The manifest SHALL bind these roles:
+- Viewer: `aigateway:catalogreader`, the viewer set on `ModelCatalog`.
+- Admin: `aigateway:catalogwriter`, the editor set on `ModelCatalog` and `get` on its `health` and `available-models` subresources.
+- Editor: `aigateway:modelinvoker`, `get` on `ModelCatalog` and its `language-model`, `config`, `messages` and `chat-completions` subresources.
+
+Gateway role names SHALL use lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace
@@ -136,7 +141,7 @@ The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `
 - **THEN** authorization SHALL allow the request, subject to admission
 
 #### Scenario: Invoker
-- **WHEN** an Editor or Admin calls `language-model`, `config` or `v1/messages` on a catalog in their namespace
+- **WHEN** an Editor or Admin calls `language-model`, `config`, `v1/messages` or `v1/chat/completions` on a catalog in their namespace
 - **THEN** Grafana's declared check SHALL allow it, and a Viewer's call SHALL be refused with `403` before the plugin is called
 
 #### Scenario: Authorized health check
