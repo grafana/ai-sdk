@@ -45,6 +45,12 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, provider.ContentPartTypeToolCall, got[0].Content[0].Type)
 	})
 
+	t.Run("empty text with present options is kept", func(t *testing.T) {
+		part := provider.TextPart("")
+		part.ProviderOptions = provider.ProviderOptions{}
+		assert.Equal(t, []provider.Message{provider.NewAssistantMessage(part)}, ToResponseMessages([]provider.ContentPart{part}))
+	})
+
 	t.Run("text + tool-call assembled in order", func(t *testing.T) {
 		got := ToResponseMessages(
 			[]provider.ContentPart{
@@ -661,6 +667,61 @@ func TestStreamTextResponseMessages(t *testing.T) {
 
 	// result.Response() reflects the last step.
 	assert.Equal(t, steps[1].Response.Messages, result.Response().Messages)
+}
+
+func TestStreamTextResponseMessages_EmptyTextWithMetadata(t *testing.T) {
+	meta := provider.ProviderMetadata{"google": json.RawMessage(`{"thoughtSignature":"opaque"}`)}
+	firstStep := []provider.StreamPart{
+		{Type: provider.PartTextStart, ID: "visible"},
+		{Type: provider.PartTextDelta, ID: "visible", Delta: "Checking"},
+		{Type: provider.PartTextEnd, ID: "visible"},
+		{Type: provider.PartTextStart, ID: "signed"},
+		{Type: provider.PartTextEnd, ID: "signed", ProviderMetadata: meta},
+		{Type: provider.PartTextStart, ID: "plain"},
+		{Type: provider.PartTextEnd, ID: "plain"},
+		{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`},
+		{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}},
+	}
+	var nextPrompt []provider.Message
+	model := &mockModel{}
+	model.streamFunc = func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+		if model.callCount == 1 {
+			parts := make(chan provider.StreamPart, len(firstStep))
+			for _, part := range firstStep {
+				parts <- part
+			}
+			close(parts)
+			return &provider.StreamResult{Stream: parts}, nil
+		}
+		nextPrompt = opts.Prompt
+		return &provider.StreamResult{Stream: textStreamParts("Done")}, nil
+	}
+
+	result := StreamText(t.Context(), model,
+		WithModelMessages(provider.UserText("check")),
+		WithTools(ToolSet{"lookup": {
+			InputSchema: testMustSchema(t, `{"type":"object"}`),
+			Execute: func(_ context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
+				return json.RawMessage(`"ok"`), nil
+			},
+		}}),
+		WithStopWhen(StepCountIs(2)),
+	)
+	for range result.FullStream() {
+	}
+	require.NoError(t, result.Err())
+	steps := result.Steps()
+	require.Len(t, steps, 2)
+	require.Len(t, steps[0].Response.Messages, 2)
+	require.Len(t, nextPrompt, 3)
+	want := provider.NewAssistantMessage(provider.TextPart("Checking"), provider.ContentPart{
+		Type: provider.ContentPartTypeText,
+		ProviderOptions: provider.ProviderOptions{
+			"google": provider.RawProviderOption{Key: "google", Raw: meta["google"]},
+		},
+	}, provider.ToolCallPart("c1", "lookup", json.RawMessage(`{}`)))
+	assert.Equal(t, want, steps[0].Response.Messages[0])
+	assert.Equal(t, want, nextPrompt[1])
 }
 
 // TestStreamTextResponseMessages_GeneratedFiles asserts that file parts
