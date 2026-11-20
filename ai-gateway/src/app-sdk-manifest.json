@@ -16,6 +16,7 @@
                     {
                         "kind": "ModelCatalog",
                         "plural": "ModelCatalogs",
+                        "resource": "modelcatalogs",
                         "scope": "Namespaced",
                         "userReadable": false,
                         "folderScoped": false,
@@ -371,6 +372,7 @@
                     {
                         "kind": "Middleware",
                         "plural": "Middlewares",
+                        "resource": "middlewares",
                         "scope": "Namespaced",
                         "userReadable": false,
                         "folderScoped": false,
