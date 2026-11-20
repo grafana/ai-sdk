@@ -12,7 +12,7 @@ Each request writes one `http request completed` line:
 
 | Field | Value |
 |---|---|
-| `route` | `config` for model listing, `language_model` for model calls, and `catalog_config` and `catalog_language_model` for a `ModelCatalog` resource's routes |
+| `route` | `config` for model listing, `language_model` for model calls, `chat_completions` for Chat Completions calls, `catalog_config` and `catalog_language_model` for a `ModelCatalog` resource's routes, and `unmatched` for a path the Gateway does not serve |
 | `status` | Status class, such as `2xx` or `4xx` |
 | `access` | `configured`, `byok` (bring your own key), `catalog` (a `ModelCatalog` resource's routes) or `refused` |
 | `correlation_id` | ID that links the request to its attempt logs |
@@ -21,15 +21,17 @@ Each request writes one `http request completed` line:
 Each model call also writes a start line and an end line with the model, the
 outcome, usage, timing and the same `correlation_id` and `caller_identity`.
 
-Each model the Gateway tries for a request writes a `gateway_physical_attempt`
-line with the same `correlation_id`, the provider and model it tried, the
-outcome and whether a fallback followed. Use these lines to see which provider
-answered a request. They reveal your provider configuration, so limit who can
+When a request has more than one candidate, from a model's fallbacks or from
+routing controls, each model the Gateway tries writes a
+`gateway_physical_attempt` line with the same `correlation_id`, the provider and
+model it tried, the outcome and whether a fallback followed. Use these lines to
+see which provider answered a request. A request with one candidate writes no
+attempt line. They reveal your provider configuration, so limit who can
 read them.
 
 Under heavy load the Gateway drops attempt lines rather than slow down model
 calls. `grafana_ai_gateway_physical_attempt_dropped_total` counts the dropped
-lines.
+lines. It appears in the metrics only after the first drop.
 
 ## Metrics
 
