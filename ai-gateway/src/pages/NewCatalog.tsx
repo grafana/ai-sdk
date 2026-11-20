@@ -94,14 +94,7 @@ function NewCatalog() {
           description="Each provider is an account with its own API key. Add the models applications can use by their provider model ID."
         >
           <Stack direction="column" gap={1}>
-            <CatalogEditor
-              spec={spec}
-              keys={Object.keys(keys)}
-              keyState="entered"
-              stored={false}
-              readOnly={false}
-              onChange={change}
-            />
+            <CatalogEditor spec={spec} keys={Object.keys(keys)} stored={false} readOnly={false} onChange={change} />
             {problems.content && (
               <Text color="error" variant="bodySmall">
                 {problems.content}

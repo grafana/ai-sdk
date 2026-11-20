@@ -6,7 +6,7 @@ Lets stack administrators manage the stack's `ModelCatalog` resources from the G
 ## Requirements
 
 ### Requirement: Catalog page
-The app SHALL have a model catalogs page that lists the request namespace's `ModelCatalog` resources with their names, base URLs, provider types and provider and model counts, and a page per catalog that shows its base URL and each provider with its type, whether it has a saved key, and the models whose primary it is, with their display names, aliases and fallbacks. It SHALL read and write catalogs only through the `ModelCatalog` API as the signed-in user.
+The app SHALL have a model catalogs page that lists the request namespace's `ModelCatalog` resources with their names, base URLs, provider types and provider and model counts, and a page per catalog that shows its base URL and each provider with its type and the models whose primary it is, with their display names, aliases and fallbacks. It SHALL read and write catalogs only through the `ModelCatalog` API as the signed-in user.
 
 #### Scenario: Reader opens the page
 - **WHEN** a user who may read catalogs opens the catalog page
@@ -14,7 +14,7 @@ The app SHALL have a model catalogs page that lists the request namespace's `Mod
 
 #### Scenario: Reader opens a catalog
 - **WHEN** a user who may read catalogs opens a catalog's page
-- **THEN** the page SHALL show each provider with its key state and the models it serves, and SHALL show a model's details read-only
+- **THEN** the page SHALL show each provider and the models it serves, and SHALL show a model's details read-only
 
 #### Scenario: No catalogs
 - **WHEN** the namespace holds no catalog
@@ -74,11 +74,11 @@ The page SHALL decide each control from the signed-in user's Grafana permissions
 - **THEN** the matching control SHALL follow the permission
 
 ### Requirement: Write-only provider keys
-A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. A provider with a stored key SHALL show that its key is saved, with a control to replace the key for a writer.
+A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. The page SHALL NOT show a saved-key badge. A writer SHALL have a control to replace a provider's key.
 
 #### Scenario: Key after saving
 - **WHEN** a provider is saved with a key, the catalog is reopened, or the list is shown
-- **THEN** the page SHALL NOT contain the key, and the provider SHALL show that its key is saved
+- **THEN** the page SHALL NOT contain the key or a saved-key badge
 - **AND** no response the page fetches and no browser console message SHALL contain the key
 
 #### Scenario: Key on create
@@ -131,8 +131,38 @@ For a user who may read catalogs, the overview page SHALL list each catalog in t
 - **THEN** the overview SHALL show the returned message in the catalog section, and the rest of the page SHALL still render
 
 ### Requirement: Catalog management evidence
-Jest tests SHALL cover the request bodies, the defaults, the permission matrix, key states, local checks, error display and the overview. Playwright tests against Grafana with the built plugin SHALL cover an Admin creating a catalog, editing and adding models, replacing a key, connecting and removing a provider, and deleting a catalog with keys never displayed, Viewer and Editor read-only pages, and the overview's base URLs.
+Jest tests SHALL cover the request bodies, the defaults, the permission matrix, write-only keys, local checks, error display and the overview. Playwright tests against Grafana with the built plugin SHALL cover an Admin creating a catalog, editing and adding models, replacing a key, connecting and removing a provider, and deleting a catalog with keys never displayed, Viewer and Editor read-only pages, and the overview's base URLs.
 
 #### Scenario: End-to-end suite
 - **WHEN** the plugin end-to-end suite runs
 - **THEN** it SHALL exercise the catalog page in a browser as Admin, Editor and Viewer
+
+### Requirement: Check the saved catalog from its page
+The saved catalog page SHALL offer an explicit **Check health** action only to a caller who may read the catalog and has the `modelcatalogs/health` `get` permission. The page SHALL NOT check as part of loading, saving or creation, or from the list or overview. It SHALL prevent duplicate submissions while checking and report route failures separately from probe results.
+
+#### Scenario: Writer checks a catalog
+- **WHEN** a caller with both permissions clicks **Check health** on a saved catalog
+- **THEN** the page SHALL request one health check for that catalog and display its progress without modifying the catalog
+
+#### Scenario: Caller may read or invoke but may not run health
+- **WHEN** a caller without health permission opens a stored catalog
+- **THEN** the page SHALL neither show the control nor request health results
+
+### Requirement: Show results until the catalog is edited or left
+The saved catalog page SHALL show only non-`ok` outcomes as fixed warning or error badges on provider cards, model rows and fallbacks in model details. It SHALL summarize results beside **Providers** in a polite live region without adding content beside the page actions. It SHALL explain that the check uses model listings, not inference. It SHALL clear results on a new check, successful save, or navigation and disregard stale results.
+
+#### Scenario: Catalog is saved while the check is running
+- **WHEN** a check returns after the page saved an edit
+- **THEN** the page SHALL NOT put those statuses on the edited provider or model rows
+
+#### Scenario: Listing accepts one key but another fails
+- **WHEN** a response lists the primary target but rejects a saved fallback provider's key
+- **THEN** the page SHALL show the key rejection on the fallback provider and **Not checked** on the fallback target, with no badge on the primary
+
+#### Scenario: All outcomes are OK
+- **WHEN** the listing check reports `ok` for every provider, primary and fallback target
+- **THEN** the page SHALL show one neutral **No problems found** badge beside **Providers** and no per-row success badge or tick
+
+#### Scenario: Some outcomes need attention
+- **WHEN** a check reports any outcome other than `ok`
+- **THEN** the page SHALL show a warning badge beside **Providers** counting one problem per non-`ok` provider, primary target, or fallback target

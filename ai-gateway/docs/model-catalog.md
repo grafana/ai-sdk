@@ -17,6 +17,13 @@ stores with its own provider keys and manages from the app. They use the
 Gateway's catalog format, and you don't need this package to use them. See
 [Store model catalogs in Grafana](../README.md#store-model-catalogs-in-grafana).
 
+After saving, select **Check health** on the catalog page to see which provider
+model listings accepted the saved keys and which primary and fallback model
+IDs appeared. The Model catalog writer role grants this action by default.
+A listing can succeed even if inference is blocked by permissions, quota, or
+billing. A model ID that is not listed may still work as a provider alias.
+The check sends no prompts, generates no tokens, and does not run during save.
+
 ## Map public names to models
 
 A catalog keeps three names separate:

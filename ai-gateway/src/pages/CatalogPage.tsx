@@ -1,10 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
-import { Alert, Button, ConfirmModal, LoadingPlaceholder, Stack, useStyles2 } from '@grafana/ui';
-import { deleteModelCatalog, errorMessage, getModelCatalog, updateModelCatalog } from '../api/modelCatalogs';
+import { Alert, Badge, Button, ConfirmModal, LoadingPlaceholder, Stack, Text, useStyles2 } from '@grafana/ui';
+import {
+  CatalogHealth,
+  catalogHealthErrorMessage,
+  checkModelCatalogHealth,
+  deleteModelCatalog,
+  errorMessage,
+  getModelCatalog,
+  updateModelCatalog,
+} from '../api/modelCatalogs';
 import { CatalogEditor } from '../components/Catalog/CatalogEditor';
 import { CatalogURL } from '../components/Catalog/CatalogURL';
 import { CatalogChange } from '../components/Catalog/catalogSpec';
@@ -15,6 +23,13 @@ import { catalogPermissions } from '../permissions';
 
 interface Props {
   name: string;
+}
+
+function countHealthProblems(health: CatalogHealth): number {
+  return [
+    ...Object.values(health.providers),
+    ...Object.values(health.models).flatMap(({ primary, fallback }) => [primary, ...fallback]),
+  ].filter((status) => status !== 'ok').length;
 }
 
 /**
@@ -29,6 +44,13 @@ function CatalogView({ name }: Props) {
   const [stored, setStored] = useState<ModelCatalog>();
   const [error, setError] = useState<string>();
   const [deleting, setDeleting] = useState(false);
+  const [health, setHealth] = useState<CatalogHealth>();
+  const [healthError, setHealthError] = useState<string>();
+  const [checking, setChecking] = useState(false);
+  const healthGeneration = useRef(0);
+  const inFlight = useRef(false);
+  const canCheckHealth = permissions.read && permissions.checkHealth;
+  const problems = canCheckHealth && health ? countHealthProblems(health) : undefined;
 
   useEffect(() => {
     if (!permissions.read) {
@@ -47,6 +69,37 @@ function CatalogView({ name }: Props) {
   const save = async ({ spec, secure }: CatalogChange) => {
     if (stored) {
       setStored(await updateModelCatalog(stored, spec, secure));
+      healthGeneration.current++;
+      inFlight.current = false;
+      setHealth(undefined);
+      setHealthError(undefined);
+      setChecking(false);
+    }
+  };
+
+  const checkHealth = async () => {
+    if (inFlight.current) {
+      return;
+    }
+    inFlight.current = true;
+    const generation = ++healthGeneration.current;
+    setHealth(undefined);
+    setHealthError(undefined);
+    setChecking(true);
+    try {
+      const result = await checkModelCatalogHealth(name);
+      if (generation === healthGeneration.current) {
+        setHealth(result);
+      }
+    } catch (err) {
+      if (generation === healthGeneration.current) {
+        setHealthError(catalogHealthErrorMessage(err));
+      }
+    } finally {
+      if (generation === healthGeneration.current) {
+        inFlight.current = false;
+        setChecking(false);
+      }
     }
   };
 
@@ -68,14 +121,35 @@ function CatalogView({ name }: Props) {
       return error ? null : <LoadingPlaceholder text="Loading catalog..." />;
     }
     return (
-      <CatalogEditor
-        spec={stored.spec}
-        keys={Object.keys(stored.secure ?? {})}
-        keyState="saved"
-        stored
-        readOnly={!permissions.update}
-        onChange={save}
-      />
+      <section aria-labelledby="catalog-providers-heading">
+        <Stack direction="column" gap={2}>
+          <Stack alignItems="center" gap={1}>
+            <Text element="h2" id="catalog-providers-heading" variant="h3">
+              Providers
+            </Text>
+            {canCheckHealth && (
+              <div role="status">
+                {problems !== undefined && (
+                  <Badge
+                    color={problems === 0 ? 'darkgrey' : 'orange'}
+                    text={
+                      problems === 0 ? 'No problems found' : `${problems} ${problems === 1 ? 'problem' : 'problems'}`
+                    }
+                  />
+                )}
+              </div>
+            )}
+          </Stack>
+          <CatalogEditor
+            spec={stored.spec}
+            keys={Object.keys(stored.secure ?? {})}
+            health={canCheckHealth ? health : undefined}
+            stored
+            readOnly={!permissions.update}
+            onChange={save}
+          />
+        </Stack>
+      </section>
     );
   };
 
@@ -91,11 +165,24 @@ function CatalogView({ name }: Props) {
         )
       }
       actions={
-        stored &&
-        permissions.delete && (
-          <Button variant="destructive" fill="outline" icon="trash-alt" onClick={() => setDeleting(true)}>
-            Delete catalog
-          </Button>
+        stored && (
+          <Stack gap={1} alignItems="center">
+            {canCheckHealth && (
+              <Button
+                variant="secondary"
+                disabled={checking}
+                onClick={checkHealth}
+                tooltip="Checks provider model listings without calling a model."
+              >
+                {checking ? 'Checking health…' : 'Check health'}
+              </Button>
+            )}
+            {permissions.delete && (
+              <Button variant="destructive" fill="outline" icon="trash-alt" onClick={() => setDeleting(true)}>
+                Delete catalog
+              </Button>
+            )}
+          </Stack>
         )
       }
     >
@@ -109,6 +196,11 @@ function CatalogView({ name }: Props) {
           {stored && !permissions.update && (
             <Alert severity="info" title="Read-only">
               You can view this catalog. Changing it needs the Model catalog writer role, which Admins have by default.
+            </Alert>
+          )}
+          {canCheckHealth && healthError && (
+            <Alert severity="warning" title="Catalog health check failed">
+              {healthError}
             </Alert>
           )}
           {body()}

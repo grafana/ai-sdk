@@ -89,7 +89,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	}
 	lower, expected, err := composeRoute(groups, controls, func(group routedGroup, candidate int) (provider.LanguageModel, error) {
 		descriptor := group.descriptors[candidate]
-		return build(config.ResolvedProvider{Type: file.Providers[descriptor.Provider].Type, APIKey: string(stack.Keys[descriptor.Provider])}, descriptor)
+		return build(resolveStackProvider(file.Providers[descriptor.Provider], stack, descriptor.Provider), descriptor)
 	}, nil)
 	if err != nil {
 		return execution.Selection{}, err
@@ -119,6 +119,13 @@ func parseStackCatalog(stack StackCatalog) (config.File, []string, error) {
 		return config.File{}, nil, execution.ErrCatalogConfiguration
 	}
 	return file, keys, nil
+}
+
+func resolveStackProvider(configured config.Provider, stack StackCatalog, name string) config.ResolvedProvider {
+	return config.ResolvedProvider{
+		Type: configured.Type, APIKey: string(stack.Keys[name]), BaseURL: configured.BaseURL,
+		ProviderName: configured.ProviderName, SupportsStructuredOutputs: configured.SupportsStructuredOutputs,
+	}
 }
 
 var errNoStackCatalog = errors.New("gateway service: the request carries no stack catalog")

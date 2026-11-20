@@ -4,6 +4,8 @@ import { API_GROUP, API_VERSION, catalogPageURL, prefixRoute, ROUTES } from '../
 
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;
 const SENTINEL = 'e2e-catalog-sentinel-key';
+const ACCEPTED_HEALTH_KEY = 'e2e-health-accepted-key';
+const SUCCESS_BADGES = /^(Key saved|Key accepted|Model listed)$/;
 const ADMISSION_REFUSAL = 'admission hook for ModelCatalog denied the request';
 const GRAFANA_BOOT_TIMEOUT_MS = 20_000;
 
@@ -125,8 +127,8 @@ test.describe('model catalog page', () => {
     await page.getByRole('button', { name: 'Create catalog' }).click();
     expect((await created).postDataJSON().secure).toEqual({ anthropic: { create: key } });
     await expect(page).toHaveURL(new RegExp(`${catalogPageURL(name)}$`));
-    await expect(card(page, 'anthropic').getByText('Key saved')).toBeVisible();
     await expect(card(page, 'anthropic').getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeVisible();
+    await expect(page.getByText('Key saved')).toHaveCount(0);
 
     const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
     expect(Object.keys(stored.secure.anthropic)).toEqual(['name']);
@@ -140,7 +142,7 @@ test.describe('model catalog page', () => {
   }) => {
     const { name, key, object } = await createStored(accounts.Admin);
     await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
-    await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'claude')).toBeVisible();
     const watch = keyWatch(page);
 
     await card(page, 'claude').getByRole('button', { name: 'balanced', exact: true }).click();
@@ -178,10 +180,8 @@ test.describe('model catalog page', () => {
     expect(replacedBody.secure).toEqual({ claude: { create: replacement } });
     expect(replacedBody.metadata.resourceVersion).toBe((await addedResponse.json()).metadata.resourceVersion);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
 
     await page.reload();
-    await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
     await expect(card(page, 'claude').getByRole('listitem', { name: 'claude-haiku-4-5' })).toBeVisible();
     await watch.nowhere(key);
     await watch.nowhere(replacement);
@@ -201,7 +201,7 @@ test.describe('model catalog page', () => {
     const added = page.waitForRequest(isCatalogWrite('PUT', name));
     await dialog.getByRole('button', { name: 'Connect' }).click();
     expect((await added).postDataJSON().secure).toEqual({ openai: { create: key } });
-    await expect(card(page, 'openai').getByText('Key saved')).toBeVisible();
+    await expect(card(page, 'openai')).toBeVisible();
 
     await card(page, 'openai').getByRole('button', { name: 'Remove openai' }).click();
     const removed = page.waitForRequest(isCatalogWrite('PUT', name));
@@ -282,6 +282,60 @@ test.describe('model catalog page', () => {
     expect(Object.keys(current.spec.models)).toEqual(['other']);
   });
 
+  test('an Admin checks the stored keys and models without exposing provider errors', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
+    const name = uniqueName();
+    const rejected = 'e2e-health-rejected-key';
+    const object = catalog(name, ACCEPTED_HEALTH_KEY);
+    const response = await accounts.Admin.post(CATALOGS, {
+      data: {
+        ...object,
+        spec: {
+          providers: { ...object.spec.providers, other: { type: 'anthropic' } },
+          models: {
+            ...object.spec.models,
+            typo: { name: 'Typo', primary: { provider: 'claude', model: 'not-a-model' } },
+            rejected: { name: 'Rejected', primary: { provider: 'other', model: 'claude-sonnet-4-6' } },
+          },
+        },
+        secure: { ...object.secure, other: { create: rejected } },
+      },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    const check = page.getByRole('button', { name: 'Check health' });
+    await expect(check).toBeVisible();
+    const watch = keyWatch(page);
+    const finished = page.waitForResponse((result) => isCatalogWrite('POST', `${name}/health`)(result.request()));
+    await check.click();
+    expect((await finished).status()).toBe(200);
+    await expect(card(page, 'claude').getByText('Model not listed')).toBeVisible();
+    await expect(card(page, 'other').getByText('Key rejected')).toBeVisible();
+    await expect(card(page, 'other').getByText('Not checked')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('3 problems');
+    await expect(page.getByText(SUCCESS_BADGES)).toHaveCount(0);
+    await expect(page.getByText('No problems found')).toHaveCount(0);
+    await watch.nowhere(ACCEPTED_HEALTH_KEY);
+    await watch.nowhere(rejected);
+    await watch.nowhere('e2e-health-provider-error');
+  });
+
+  test('an all-OK catalog check shows one confirmation and no health badges', async ({ gotoPage, page, accounts }) => {
+    const { name } = await createStored(accounts.Admin, ACCEPTED_HEALTH_KEY);
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    const check = page.getByRole('button', { name: 'Check health' });
+    await expect(check).toBeVisible();
+    await expect(page.getByText('No problems found')).toHaveCount(0);
+    const finished = page.waitForResponse((result) => isCatalogWrite('POST', `${name}/health`)(result.request()));
+    await check.click();
+    expect((await finished).status()).toBe(200);
+    await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('No problems found');
+    await expect(page.getByText(SUCCESS_BADGES)).toHaveCount(0);
+  });
+
   for (const role of BROWSER_ROLES) {
     test(`${role} users see catalogs read-only`, async ({ pageAs, accounts }) => {
       test.slow();
@@ -293,11 +347,22 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('link', { name: 'New catalog' })).toHaveCount(0);
 
       await page.getByRole('link', { name }).click();
-      await expect(card(page, 'claude').getByText('Key saved')).toBeVisible();
+      await expect(card(page, 'claude')).toBeVisible();
       await expect(page.getByText('Read-only')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
+      const denied = await page.request.post(`${CATALOGS}/${name}/health`);
+      expect(denied.status(), await denied.text()).toBe(403);
+      expect(await denied.json()).toEqual(
+        expect.objectContaining({
+          status: 'Failure',
+          reason: 'Forbidden',
+          code: 403,
+          message: expect.stringContaining('get modelcatalogs is not allowed'),
+        })
+      );
 
       await page.goto(prefixRoute(ROUTES.NewCatalog));
       await expect(page.getByText("You can't create model catalogs")).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });

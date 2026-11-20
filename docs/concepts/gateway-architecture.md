@@ -37,8 +37,10 @@ flowchart LR
     chatclient[Official OpenAI clients]
     msgclient[Anthropic clients and Claude Code]
   end
+  admin[Grafana catalog page]
   subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
+    health[Stored catalog health check]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
       chat[Chat Completions decoder and response encoder]
@@ -68,6 +70,10 @@ flowchart LR
   ts --> host
   chatclient --> host
   msgclient --> host
+  admin -->|Check health| host
+  host --> health
+  health -->|shared catalog checks| stack
+  health -->|model listings only| apis
   host --> pw
   host --> chat --> runtime
   host --> messages --> runtime
@@ -106,16 +112,19 @@ selection or provider work, and is labeled `unmatched`.
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. Each catalog
-also has three routes: `GET .../modelcatalogs/{name}/config`,
-`POST .../modelcatalogs/{name}/language-model` and
-`POST .../modelcatalogs/{name}/v1/messages`, in the same route table.
-Grafana reads the catalog as the caller, runs the route's declared access check
-(`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
-and only then decrypts the catalog's keys and passes the object, its resource
+also has four routes in the same table: `GET .../modelcatalogs/{name}/config`,
+`POST .../modelcatalogs/{name}/language-model`, `POST .../modelcatalogs/{name}/v1/messages`,
+and `POST .../modelcatalogs/{name}/health`. Grafana reads the catalog as the
+caller, runs the route's declared `get` access check (`aigateway:modelinvoker`
+grants discovery and invocation; `aigateway:catalogwriter` grants health), and
+only then decrypts the catalog's keys and passes the object, its resource
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
-and discovery lists it without building models. Without the `model_catalog`
+and discovery lists it without building models. The health action uses the
+same catalog checks and saved keys but queries provider model listings with
+bounded concurrency and deadlines, outside the model execution pipeline.
+Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
 one typed member per public tenant type in the `tenanttype` registry, and its

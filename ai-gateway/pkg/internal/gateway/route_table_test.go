@@ -89,7 +89,7 @@ func TestProductionRoutes_MatchTheManifest(t *testing.T) {
 	}
 	routed := map[string]struct{}{}
 	labels := map[string]string{}
-	for _, entry := range productionRoutes(http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler()) {
+	for _, entry := range productionRoutes(http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler()) {
 		routed[entry.method+" /namespaces/{namespace}"+entry.path] = struct{}{}
 		labels[entry.method+" "+entry.path] = entry.label
 		assert.Equal(t, strings.HasPrefix(entry.path, "/modelcatalogs/"), entry.catalog, entry.path)
@@ -103,6 +103,7 @@ func TestProductionRoutes_MatchTheManifest(t *testing.T) {
 		"POST /namespaces/{namespace}/v1/messages":                         {},
 		"GET /namespaces/{namespace}/modelcatalogs/{name}/config":          {},
 		"POST /namespaces/{namespace}/modelcatalogs/{name}/language-model": {},
+		"POST /namespaces/{namespace}/modelcatalogs/{name}/health":         {},
 	}, routed)
 	assert.Equal(t, map[string]string{
 		"GET /config":                               "config",
@@ -112,5 +113,6 @@ func TestProductionRoutes_MatchTheManifest(t *testing.T) {
 		"POST /v1/messages":                         "anthropic_messages",
 		"GET /modelcatalogs/{name}/config":          "catalog_config",
 		"POST /modelcatalogs/{name}/language-model": "catalog_language_model",
+		"POST /modelcatalogs/{name}/health":         "catalog_health",
 	}, labels)
 }
