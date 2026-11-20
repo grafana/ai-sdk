@@ -43,9 +43,13 @@ result := aisdk.StreamText(ctx, model,
   begins.
 
 `FirstChunk` and `Chunk` apply only to `StreamText`. Non-content events such as
-metadata, starts, ends, raw events, and empty deltas do not reset them. All four
-timeouts are disabled unless configured. Choose values from the calling
-endpoint's latency budget; the example values are illustrative.
+metadata, starts, ends, raw events, and empty deltas do not reset them. When the
+effective tool choice is `none`, the SDK withholds tool input and tool calls
+before checking these timeouts. Withheld events neither satisfy `FirstChunk`
+nor reset `Chunk`.
+
+All four timeouts are disabled unless configured. Choose values from the
+calling endpoint's latency budget; the example values are illustrative.
 
 Always pass the caller's context. Its cancellation or deadline composes with
 SDK timeouts and interrupts retry waits.
