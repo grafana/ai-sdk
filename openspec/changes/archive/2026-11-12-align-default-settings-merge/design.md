@@ -26,11 +26,11 @@ Upstream reference: `ai@7.0.159`, commit `028a0253`, fetched with `gh api repos/
 
 ### Provider options: share the existing `mergeObjects` port
 
-Move the merge from `provider_options.go` into a root-module internal package. `StreamText` step preparation keeps calling the existing whole-map merge (`Merge`) unchanged. `DefaultSettings` calls a second entry point (`MergeOverlapping`) that shares the same recursive object merge but only merges namespaces present on both sides. Errors are returned from `TransformParams`.
+Move the merge from `provider_options.go` into a root-module internal package. `StreamText` step preparation keeps calling the existing whole-map merge (`MergeRaw`) unchanged. `DefaultSettings` calls a second entry point (`Merge`) that shares the same recursive object merge but only merges namespaces present on both sides. Errors are returned from `TransformParams`.
 
 - Alternative: a second copy in `middleware`. Rejected as duplication of a security-relevant rule set.
 - Alternative: an exported `provider` helper. Rejected: new public API with no other consumer.
-- Alternative: reuse `Merge` as is. Rejected: it turns every namespace into `RawProviderOption`, breaking custom models that type-assert a typed option set on only one side. Changing `Merge` instead would change `prepareStep` behavior.
+- Alternative: reuse `MergeRaw` as is. Rejected: it turns every namespace into `RawProviderOption`, breaking custom models that type-assert a typed option set on only one side. Changing `MergeRaw` instead would change `prepareStep` behavior.
 - Consequence: only namespaces that are JSON objects on both sides reach the model as `RawProviderOption`; providers resolve them with `provider.ResolveOption`. Other namespaces keep their original values, and only the shared namespaces are marshaled.
 
 ### Response format: merge active members only

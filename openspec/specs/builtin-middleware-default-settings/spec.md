@@ -6,7 +6,7 @@ Define middleware behavior for applying default language-model call settings whi
 
 ### Requirement: Apply default call options
 
-`DefaultSettings` SHALL accept a settings struct and return a `Middleware` whose `TransformParams` merges defaults into `provider.CallOptions`. Caller values SHALL take precedence. A pointer or slice default SHALL fill only a nil caller field; a non-nil empty slice SHALL be kept. Supported fields: `MaxOutputTokens`, `Temperature`, `TopP`, `TopK`, `PresencePenalty`, `FrequencyPenalty`, `StopSequences`, `ResponseFormat`, `Seed`, `Reasoning`, `Headers`, `ProviderOptions`, `Tools`, `ToolChoice`.
+`DefaultSettings` SHALL return a `Middleware` whose `TransformParams` merges a settings struct into `provider.CallOptions`. Caller values SHALL win. A pointer or slice default other than `ResponseFormat` SHALL fill only a nil caller field; a non-nil empty slice SHALL be kept. Supported fields: `MaxOutputTokens`, `Temperature`, `TopP`, `TopK`, `PresencePenalty`, `FrequencyPenalty`, `StopSequences`, `ResponseFormat`, `Seed`, `Reasoning`, `Headers`, `ProviderOptions`, `Tools`, `ToolChoice`.
 
 #### Scenario: Default temperature applied
 - **WHEN** `DefaultSettings` is configured with `Temperature: ptr(0.7)`
@@ -65,7 +65,7 @@ A namespace that both sides set to JSON objects SHALL merge recursively and reac
 - **THEN** the model SHALL receive nil `ProviderOptions`
 
 #### Scenario: Prototype keys are ignored
-- **WHEN** the caller's namespace contains `__proto__`, `constructor` or `prototype` keys alongside ordinary keys and both sides supply provider options
+- **WHEN** the caller's namespace contains `__proto__`, `constructor` or `prototype` keys alongside ordinary keys and the defaults set the same namespace to a JSON object
 - **THEN** the merged namespace SHALL contain the default keys and the caller's ordinary keys only
 
 #### Scenario: One-sided namespaces keep their values
@@ -91,7 +91,7 @@ A default `ResponseFormat` SHALL apply when the caller's is nil. When both are s
 
 #### Scenario: Caller schema wins
 - **WHEN** both the default and the caller supply JSON formats with schemas
-- **THEN** the model SHALL receive the caller's schema
+- **THEN** the model SHALL receive the caller's schema whole, without deep-merging the default schema into it
 
 #### Scenario: Text caller over JSON default
 - **WHEN** the default is JSON with a schema, name and description

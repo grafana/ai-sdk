@@ -10,9 +10,10 @@ import (
 )
 
 // DefaultSettingsOptions defines default values for CallOptions fields.
-// Pointer and slice defaults fill only nil caller fields, so a non-nil empty
-// caller slice is kept. Reasoning is a Go addition to the upstream settings:
-// a caller's zero ReasoningProviderDefault receives the default.
+// Pointer and slice defaults other than ResponseFormat fill only nil caller
+// fields, so a non-nil empty caller slice is kept. Reasoning is a Go
+// addition to the upstream settings: a caller's zero ReasoningProviderDefault
+// receives the default.
 type DefaultSettingsOptions struct {
 	MaxOutputTokens  *int
 	Temperature      *float64

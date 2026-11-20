@@ -314,7 +314,7 @@ func TestDefaultSettings_ProviderOptions(t *testing.T) {
 		_, err := mw.TransformParams(context.Background(), TransformParamsInput{
 			Params: provider.CallOptions{ProviderOptions: rawOptions(t, `{"anthropic":{}}`)},
 		})
-		require.Error(t, err)
+		require.ErrorContains(t, err, "merging default provider options")
 	})
 }
 
