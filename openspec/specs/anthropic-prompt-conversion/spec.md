@@ -157,6 +157,22 @@ Assistant text with `ProviderOptions["anthropic"].type == "compaction"` SHALL se
 - **WHEN** the prompt is `[RoleSystem("a"), RoleSystem("b"), RoleUser([text("hi")])]`
 - **THEN** the resulting request SHALL have two entries in `System` (`Text == "a"` then `Text == "b"`), and exactly one `BetaMessageParam` with `Role: "user"`
 
+### Requirement: Client tool-use input normalization from assistant history
+
+For a client `tool_use` block, the Anthropic provider SHALL parse a string-valued input once and send the parsed input only if it is a JSON object accepted by the registered upstream parser. It SHALL wrap the original string as `rawInvalidInput` if parsing fails or produces a non-object value. Inputs already supplied as objects SHALL be unchanged.
+
+#### Scenario: History contains serialized object input
+- **WHEN** a client tool call has the input string `{"city":"Berlin"}`
+- **THEN** the request SHALL contain a `tool_use` block whose `input` is the object `{"city":"Berlin"}`
+
+#### Scenario: Structured replay uses Go JSON value handling
+- **WHEN** accepted input text decodes to an object
+- **THEN** the provider SHALL serialize it without rounding JSON numbers through a floating-point type, keep the last value for duplicate members, and use ordinary Go JSON decoding for Unicode (unpaired surrogate escapes become U+FFFD)
+
+#### Scenario: History contains malformed or non-object input text
+- **WHEN** the call has input text that is malformed, rejected by the parser, or parses to an array, scalar, or null
+- **THEN** the block's input SHALL be an object with `rawInvalidInput` set to the original string
+
 ### Requirement: Single shared helper builds Anthropic tool_result blocks
 
 `convertUserContent` and `convertToolContent` SHALL share one helper for `ContentPartTypeToolResult`, producing `OfToolResult` through `serializeToolOutput` for both `RoleUser` and `RoleTool` parts, with the tool-result cache-control cascade from anthropic-prompt-caching. The helper SHALL NOT produce `OfMCPToolResult`.

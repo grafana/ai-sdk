@@ -18,6 +18,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
+	"github.com/grafana/ai-sdk/internal/toolhistory"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -1292,8 +1293,13 @@ func toAnthropicToolInput(input json.RawMessage) any {
 	if err := json.Unmarshal(input, &value); err != nil {
 		return map[string]any{"rawInvalidInput": string(input)}
 	}
-	if _, ok := value.(map[string]any); ok {
+	switch v := value.(type) {
+	case map[string]any:
 		return input
+	case string:
+		if object, ok := toolhistory.Object(v); ok {
+			return object
+		}
 	}
 	return map[string]any{"rawInvalidInput": value}
 }
