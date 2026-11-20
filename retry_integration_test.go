@@ -226,11 +226,8 @@ func TestStreamText_StepTimeout(t *testing.T) {
 		WithMaxRetries(0),
 	)
 
-	for range result.FullStream() {
-	}
-
-	err := result.Err()
-	require.Error(t, err)
+	assert.Equal(t, []TextStreamPart{StreamStart{}, StreamAbort{Reason: context.Canceled.Error()}}, collectLifecycleParts(result))
+	assert.NoError(t, result.Err())
 }
 
 func TestStreamText_ChunkTimeout(t *testing.T) {
@@ -430,11 +427,8 @@ func TestStreamText_TimeoutCancelsRetry(t *testing.T) {
 		withRetryTiming(30, 1),
 	)
 
-	for range result.FullStream() {
-	}
-
-	err := result.Err()
-	require.Error(t, err)
+	assert.Equal(t, []TextStreamPart{StreamStart{}, StreamAbort{Reason: context.Canceled.Error()}}, collectLifecycleParts(result))
+	assert.NoError(t, result.Err())
 	calls := callCount.Load()
 	assert.Greater(t, calls, int32(1), "should have retried at least once")
 	assert.Less(t, calls, int32(100), "step timeout should have prevented all retries")
@@ -600,11 +594,18 @@ func TestStreamText_StepTimeoutAbortsEntireOperation(t *testing.T) {
 		WithMaxRetries(0),
 	)
 
-	for range result.FullStream() {
+	parts := collectLifecycleParts(result)
+	require.NotEmpty(t, parts)
+	assert.Equal(t, StreamAbort{Reason: context.Canceled.Error()}, parts[len(parts)-1])
+	for _, part := range parts {
+		switch part.(type) {
+		case StreamError, StreamFinish:
+			assert.Failf(t, "unexpected terminal part", "%T", part)
+		}
 	}
-
-	err := result.Err()
-	require.Error(t, err, "step timeout in step 2 should abort the entire operation")
+	assert.NoError(t, result.Err())
+	require.Len(t, result.Steps(), 1)
+	assert.Equal(t, aggregateUsage(result.Steps()), result.TotalUsage())
 	assert.Equal(t, int32(2), callCount.Load())
 }
 

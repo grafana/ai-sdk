@@ -72,6 +72,21 @@ Closure without terminal after model output SHALL retain a partial step, not Err
 - **THEN** the partial step is recorded with finish reason `other`
 - **AND** `StreamText` does not execute the tools or start a continuation step
 
+### Requirement: Step start follows the provider stream
+
+`StreamText` SHALL emit `StreamStartStep` once per step on the first provider part processed after any `stream-start` parts. It SHALL include the warnings from `stream-start` and the step request metadata. Tool parts withheld by the effective tool choice SHALL NOT trigger `StreamStartStep`. This boundary SHALL be independent of the first-chunk timeout, which waits for semantic model output. Receiving an eligible semantic part SHALL stop the first-chunk timer before emitting downstream events for that part.
+
+#### Scenario: The first part follows stream start
+
+- **WHEN** the provider sends `stream-start` followed by a part that is not withheld
+- **THEN** `StreamStartStep` SHALL carry the provider warnings, if any, and precede that part's downstream events
+- **AND** the UI stream SHALL emit `start-step` without exposing the warnings as UI chunk fields
+
+#### Scenario: Stream start alone is followed by EOF
+
+- **WHEN** the provider stream ends after only `stream-start`
+- **THEN** the full stream and the UI stream SHALL emit `start`, then `error`, without a step lifecycle event
+
 ### Requirement: Incomplete output classification follows the baseline
 
 Model output classification SHALL follow the registered upstream baseline, distinguishing output-bearing parts from administrative, raw, finish and error parts.
@@ -95,6 +110,13 @@ Context cancellation while reading a provider stream SHALL use abort behavior ra
 ### Requirement: Cancellation skips the finish callback
 
 Matching upstream, which skips `onEnd` when aborted, cancellation SHALL call OnAbort with the completed steps and SHALL NOT call OnFinish, even when earlier steps completed. The StreamTextResult SHALL still retain those steps, their all-step projection and their total usage.
+
+#### Scenario: Cancellation during step startup
+
+- **WHEN** `PrepareStep` or provider `DoStream` returns an error and the operation context is canceled
+- **THEN** `StreamText` SHALL emit `StreamAbort` with the context cancellation cause and call `OnAbort` once
+- **AND** it SHALL NOT emit `StreamError` or `StreamFinish`, or call `OnError` or `OnFinish`
+- **AND** `GenerateText` SHALL return a nil result and the first recorded stream error, if any; otherwise it SHALL return the error from `PrepareStep` or from the existing `DoStream` retry path, even if the abort chunk contains a different context cause
 
 #### Scenario: Cancellation after a completed step
 
