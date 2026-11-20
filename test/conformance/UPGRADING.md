@@ -77,7 +77,7 @@ changed expectations without modifying provider input provenance.
 | `mise run parity-coverage` | Provider fixture inventory, imports and byte-identical provenance | Does not measure behavioral coverage of every capability |
 | `mise run generate-conformance` | Upstream expectations from existing inputs | Generation succeeding does not mean Go matches |
 | `mise run test-conformance` | Go request/output equivalence for exercised scenarios | Unrepresented behavior requires other tests or source review |
-| `mise run parity-provider-shape` | Selected provider discriminator differences | Not full API/semantic parity; missing values are warnings and unavailable source can be skipped |
+| `mise run parity-provider-shape` | Blocks missing exact source and unapproved provider discriminator drift in either direction | Not full API/semantic parity; reviewed differences must match a versioned `providerShapeException` in `upstream.yaml` |
 | `mise run test-integration` | Covered frontend hook and stream interactions | Lower-level schema acceptance alone does not prove hook lifecycle behavior |
 | ProviderWire/Gateway contract and runtime tests | Covered mapping, client consumption, service lifecycle and privacy | Verify the actual dependency versions and runtime exercised |
 | `mise run verify-module-requirements` | First-party requirements follow the version manifest with complete local replacements | Does not test published versions; publication verifies those |

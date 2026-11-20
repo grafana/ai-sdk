@@ -15,6 +15,11 @@ func TestGetModelCapabilities(t *testing.T) {
 		modelID string
 		want    modelCapabilities
 	}{
+		{"haiku 5.5", "claude-haiku-5-5@latest", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsBudgetThinking: true, isKnownModel: true}},
+		{"base fable 5", "claude-fable-5", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, isKnownModel: true}},
+		{"dated base fable 5", "claude-fable-5-20260701", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, isKnownModel: true}},
+		{"fable 5.1 does not inherit base Fable restrictions", "claude-fable-5-1", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, isKnownModel: true}},
+		{"fable 5.2 does not inherit base Fable restrictions", "claude-fable-5-2@latest", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, isKnownModel: true}},
 		{"opus 5", "claude-opus-5", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true}},
 		{"opus 4-7", "claude-opus-4-7", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, isKnownModel: true}},
 		{"sonnet 5", "claude-sonnet-5", modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, isKnownModel: true}},
@@ -45,7 +50,7 @@ func TestResolveReasoningConfig_XHighEffort(t *testing.T) {
 	caps := modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true}
 	var warnings []provider.Warning
 
-	rc := resolveReasoningConfig(provider.ReasoningXHigh, caps, &warnings)
+	rc := resolveReasoningConfig("claude-opus-4-7", provider.ReasoningXHigh, caps, &warnings)
 	require.NotNil(t, rc)
 	assert.Equal(t, ThinkingAdaptive, rc.thinking.Type)
 	assert.Equal(t, ThinkingDisplaySummarized, rc.thinking.Display)
@@ -67,12 +72,12 @@ func TestResolveReasoningConfig_AdaptivePath(t *testing.T) {
 		{"low maps to low", provider.ReasoningLow, ThinkingAdaptive, "low", ""},
 		{"medium maps to medium", provider.ReasoningMedium, ThinkingAdaptive, "medium", ""},
 		{"high maps to high", provider.ReasoningHigh, ThinkingAdaptive, "high", ""},
-		{"xhigh maps to max with warning", provider.ReasoningXHigh, ThinkingAdaptive, "max", provider.WarnCompatibility},
+		{"xhigh maps to high with warning", provider.ReasoningXHigh, ThinkingAdaptive, "high", provider.WarnCompatibility},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var warnings []provider.Warning
-			rc := resolveReasoningConfig(tc.reasoning, caps, &warnings)
+			rc := resolveReasoningConfig("claude-opus-4-6", tc.reasoning, caps, &warnings)
 			require.NotNil(t, rc)
 			assert.Equal(t, tc.wantThinking, rc.thinking.Type)
 			assert.Equal(t, ThinkingDisplaySummarized, rc.thinking.Display)
@@ -106,7 +111,7 @@ func TestResolveReasoningConfig_BudgetPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var warnings []provider.Warning
-			rc := resolveReasoningConfig(tc.reasoning, tc.caps, &warnings)
+			rc := resolveReasoningConfig("test-model", tc.reasoning, tc.caps, &warnings)
 			require.NotNil(t, rc)
 			assert.Equal(t, ThinkingEnabled, rc.thinking.Type)
 			assert.Equal(t, tc.wantBudget, rc.thinking.BudgetTokens)
@@ -119,7 +124,7 @@ func TestResolveReasoningConfig_BudgetPath(t *testing.T) {
 func TestResolveReasoningConfig_None(t *testing.T) {
 	caps := modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true}
 	var warnings []provider.Warning
-	rc := resolveReasoningConfig(provider.ReasoningNone, caps, &warnings)
+	rc := resolveReasoningConfig("claude-sonnet-5", provider.ReasoningNone, caps, &warnings)
 	require.NotNil(t, rc)
 	assert.Equal(t, ThinkingDisabled, rc.thinking.Type)
 	assert.Empty(t, rc.effort)
