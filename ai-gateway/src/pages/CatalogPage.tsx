@@ -11,6 +11,7 @@ import {
   deleteModelCatalog,
   errorMessage,
   getModelCatalog,
+  listProviderModels,
   updateModelCatalog,
 } from '../api/modelCatalogs';
 import { CatalogEditor } from '../components/Catalog/CatalogEditor';
@@ -113,6 +114,7 @@ function CatalogView({ name }: Props) {
     }
   };
 
+  const canBrowse = permissions.read && permissions.update && permissions.listProviderModels;
   const body = () => {
     if (!permissions.read) {
       return <NoCatalogAccess />;
@@ -146,6 +148,8 @@ function CatalogView({ name }: Props) {
             health={canCheckHealth ? health : undefined}
             stored
             readOnly={!permissions.update}
+            listingRevision={stored.metadata.resourceVersion}
+            listModels={canBrowse ? (provider) => listProviderModels(name, provider) : undefined}
             onChange={save}
           />
         </Stack>

@@ -9,6 +9,8 @@ import {
   checkModelCatalogHealth,
   deleteModelCatalog,
   getModelCatalog,
+  listProviderModels,
+  ProviderModelListing,
   SecureChanges,
   updateModelCatalog,
 } from '../api/modelCatalogs';
@@ -21,6 +23,7 @@ jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   getModelCatalog: jest.fn(),
   checkModelCatalogHealth: jest.fn(),
+  listProviderModels: jest.fn(),
   updateModelCatalog: jest.fn(),
   deleteModelCatalog: jest.fn(),
 }));
@@ -129,10 +132,196 @@ describe('pages/CatalogPage', () => {
     jest.mocked(getModelCatalog).mockReset().mockResolvedValue(stored);
     jest.mocked(checkModelCatalogHealth).mockReset().mockResolvedValue(listing);
     jest
+      .mocked(listProviderModels)
+      .mockReset()
+      .mockResolvedValue({ status: 'ok', modelIds: ['claude-listed', 'claude-other'] });
+    jest
       .mocked(updateModelCatalog)
       .mockReset()
       .mockImplementation((catalog, spec, secure) => Promise.resolve(updated(catalog, spec, secure)));
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
+  });
+
+  test('uses the model ID field to fetch, search and choose, with Add model as the only write', async () => {
+    signInAs(OrgRole.Viewer, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.focus(field);
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(listProviderModels).not.toHaveBeenCalled();
+
+    fireEvent.click(field);
+    await provider.findByRole('option', { name: 'claude-listed' });
+    expect(listProviderModels).toHaveBeenCalledWith('team', 'anthropic');
+    type(field, 'listed');
+    expect(provider.queryByRole('option', { name: 'claude-other' })).not.toBeInTheDocument();
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(field).toHaveAttribute('aria-activedescendant', provider.getByRole('option', { name: 'claude-listed' }).id);
+    expect(fireEvent.keyDown(field, { key: 'Enter' })).toBe(false);
+    expect(field).toHaveValue('claude-listed');
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+    fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
+    await provider.findByRole('listitem', { name: 'claude-listed' });
+    expect(lastUpdate()[1].models['claude-listed']?.primary).toEqual({ provider: 'anthropic', model: 'claude-listed' });
+  });
+
+  test.each(['Tab', 'Escape'])('%s closes suggestions without replacing the typed ID', async (key) => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    type(field, 'claude');
+    await provider.findByRole('option', { name: 'claude-listed' });
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(field).toHaveAttribute('aria-activedescendant', provider.getByRole('option', { name: 'claude-listed' }).id);
+    fireEvent.keyDown(field, { key });
+    if (key === 'Tab') {
+      fireEvent.blur(field, { relatedTarget: provider.getByRole('button', { name: 'Add model' }) });
+    }
+    expect(field).toHaveValue('claude');
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [CatalogActions.Read, CatalogActions.Update],
+    [CatalogActions.Read, CatalogActions.ListProviderModels],
+  ])('does not offer listings with only %s and %s', async (read, action) => {
+    signInAs(OrgRole.Admin, [read, action]);
+    await openPage();
+    expect(screen.queryByRole('combobox', { name: 'Add a model to anthropic' })).not.toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [{ status: 'ok', modelIds: [] }, 'The provider returned no models.'],
+    [{ status: 'ok', modelIds: ['claude-listed'] }, 'No matching models.'],
+    [{ status: 'partial', modelIds: ['claude-listed'] }, 'The provider listing is incomplete.'],
+    [{ status: 'invalidKey', modelIds: [] }, 'The provider rejected the saved key.'],
+    [undefined, 'Could not list models.'],
+  ] satisfies Array<[ProviderModelListing | undefined, string]>)(
+    'can add a custom ID with listing %j',
+    async (result, message) => {
+      signInAs(OrgRole.Admin, ALL);
+      if (result) {
+        jest.mocked(listProviderModels).mockResolvedValueOnce(result);
+      } else {
+        jest.mocked(listProviderModels).mockRejectedValueOnce(new Error('raw-provider-error-sentinel'));
+      }
+      await openPage();
+      const provider = card('anthropic');
+      const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+      type(field, 'claude-custom');
+      expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+      await provider.findByText(message, { exact: false });
+      expect(screen.queryByText('raw-provider-error-sentinel')).not.toBeInTheDocument();
+      expect(field).toHaveValue('claude-custom');
+      fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
+      await provider.findByRole('listitem', { name: 'claude-custom' });
+    }
+  );
+
+  test('reopens a pending listing without another request and fetches again after it settles', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.click(field);
+    fireEvent.keyDown(field, { key: 'Escape' });
+    fireEvent.click(field);
+    expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
+    await act(() => resolve({ status: 'ok', modelIds: ['reused-model'] }));
+    expect(provider.getByRole('option', { name: 'reused-model' })).toBeInTheDocument();
+
+    fireEvent.keyDown(field, { key: 'Escape' });
+    fireEvent.click(field);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not reuse a pending listing after replacing the key', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    const pending = new Promise<ProviderModelListing>((finish) => {
+      resolve = finish;
+    });
+    jest.mocked(listProviderModels).mockReturnValueOnce(pending);
+    await openPage();
+    const provider = card('anthropic');
+    const fieldName = { name: 'Add a model to anthropic' };
+    fireEvent.click(provider.getByRole('combobox', fieldName));
+    fireEvent.click(provider.getByRole('button', { name: 'Replace key' }));
+    type(dialog().getByLabelText(/^New API key/), TYPED_KEY);
+    fireEvent.click(dialog().getByRole('button', { name: 'Save key' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    fireEvent.click(provider.getByRole('combobox', fieldName));
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+    await act(() => resolve({ status: 'ok', modelIds: ['old-key-model'] }));
+    expect(provider.queryByRole('option', { name: 'old-key-model' })).not.toBeInTheDocument();
+  });
+
+  test('shows the busy message for both listing and health 429s', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    const busy = { status: 429, data: { message: 'untrusted-busy-detail' } };
+    jest.mocked(listProviderModels).mockRejectedValueOnce(busy);
+    jest.mocked(checkModelCatalogHealth).mockRejectedValueOnce(busy);
+    await openPage();
+    const provider = card('anthropic');
+    fireEvent.click(provider.getByRole('combobox', { name: 'Add a model to anthropic' }));
+    const message = 'Another check is running for this catalog. Try again in a moment.';
+    expect(await provider.findByText(message)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    const alert = await screen.findByText('Catalog health check failed');
+    expect(alert.closest('[role="alert"]')).toHaveTextContent(message);
+    expect(document.body).not.toHaveTextContent('untrusted-busy-detail');
+  });
+
+  test.each(['escape', 'save', 'navigate'])('ignores a listing that finishes after %s', async (action) => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    renderPage(true);
+    await screen.findByRole('listitem', { name: 'balanced' });
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    type(field, 'claude-custom');
+    expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+    switch (action) {
+      case 'escape':
+        fireEvent.keyDown(field, { key: 'Escape' });
+        break;
+      case 'save':
+        fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
+        await provider.findByRole('listitem', { name: 'claude-custom' });
+        break;
+      case 'navigate':
+        fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+        fireEvent.click(screen.getByRole('link', { name: 'Team catalog' }));
+        await screen.findByRole('listitem', { name: 'balanced' });
+        break;
+    }
+    await act(() => resolve({ status: 'ok', modelIds: ['claude-custom-stale'] }));
+    expect(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.queryByRole('option', { name: 'claude-custom-stale' })).not.toBeInTheDocument();
   });
 
   test('checks only on request and shows badges only for listing problems', async () => {
@@ -304,7 +493,7 @@ describe('pages/CatalogPage', () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
-    type(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' }), 'claude-haiku-4-5');
+    type(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' }), 'claude-haiku-4-5');
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
 
     expect(await card('anthropic').findByRole('listitem', { name: 'claude-haiku-4-5' })).toBeInTheDocument();
@@ -315,13 +504,13 @@ describe('pages/CatalogPage', () => {
       primary: { provider: 'anthropic', model: 'claude-haiku-4-5' },
     });
     expect(secure).toEqual({});
-    expect(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('');
+    expect(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveValue('');
   });
 
   test('shows a format error when the quick-add field is left and clears it as the value is fixed', async () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
-    const field = card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' });
+    const field = card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' });
     const formatError = /Applications request the model by this ID\./;
 
     type(field, 'bad id');
@@ -342,7 +531,7 @@ describe('pages/CatalogPage', () => {
   test('clears the quick-add field and its errors after a model is added', async () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
-    const field = card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' });
+    const field = card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' });
 
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
     expect(await card('anthropic').findByText("Enter the provider's model ID.")).toBeInTheDocument();
@@ -350,7 +539,7 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
 
     expect(await card('anthropic').findByRole('listitem', { name: 'claude-haiku-4-5' })).toBeInTheDocument();
-    expect(field).toHaveValue('');
+    expect(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveValue('');
     expect(card('anthropic').queryByText("Enter the provider's model ID.")).not.toBeInTheDocument();
   });
 
@@ -358,7 +547,7 @@ describe('pages/CatalogPage', () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
-    type(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' }), 'gpt-5');
+    type(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' }), 'gpt-5');
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
 
     expect(await card('anthropic').findByText(/already has a model with ID "gpt-5"/)).toBeInTheDocument();

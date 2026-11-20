@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Alert, Button, ConfirmModal, Stack, Text } from '@grafana/ui';
-import { CatalogHealth, errorMessage } from '../../api/modelCatalogs';
+import { CatalogHealth, errorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 import { ConnectProviderModal } from './ConnectProviderModal';
 import { ModelDrawer } from './ModelDrawer';
 import { ProviderCard } from './ProviderCard';
@@ -31,6 +31,8 @@ interface Props {
   stored: boolean;
   health?: CatalogHealth;
   readOnly: boolean;
+  listingRevision?: string;
+  listModels?: (provider: string) => Promise<ProviderModelListing>;
   onChange: (change: CatalogChange) => Promise<void>;
 }
 
@@ -41,15 +43,35 @@ interface Props {
  * one model, and a provider can't be removed while other providers' models
  * fall back to it.
  */
-export function CatalogEditor({ spec, keys, stored, health, readOnly, onChange }: Props) {
+export function CatalogEditor({ spec, keys, stored, health, readOnly, listingRevision, listModels, onChange }: Props) {
   const [dialog, setDialog] = useState<Dialog>();
   const [error, setError] = useState<string>();
+  const pendingListings = useRef(new Map<string, Promise<ProviderModelListing>>());
+  const listSavedModels = useCallback((provider: string, load: NonNullable<Props['listModels']>) => {
+    const requests = pendingListings.current;
+    const pending = requests.get(provider);
+    if (pending) {
+      return pending;
+    }
+    const request = load(provider).finally(() => {
+      if (requests.get(provider) === request) {
+        requests.delete(provider);
+      }
+    });
+    requests.set(provider, request);
+    return request;
+  }, []);
   const providers = Object.entries(spec.providers);
   const modelCount = Object.keys(spec.models).length;
   const close = () => setDialog(undefined);
 
-  const save = async (change: CatalogChange) => {
+  const applyChange = async (change: CatalogChange) => {
     await onChange(change);
+    pendingListings.current.clear();
+  };
+
+  const save = async (change: CatalogChange) => {
+    await applyChange(change);
     setError(undefined);
     close();
   };
@@ -60,7 +82,7 @@ export function CatalogEditor({ spec, keys, stored, health, readOnly, onChange }
       return;
     }
     try {
-      await onChange(change);
+      await applyChange(change);
       setError(undefined);
     } catch (err) {
       setError(errorMessage(err));
@@ -122,12 +144,14 @@ export function CatalogEditor({ spec, keys, stored, health, readOnly, onChange }
           keyState={!keys.includes(name) ? 'missing' : stored ? undefined : 'entered'}
           health={health}
           readOnly={readOnly}
+          listingRevision={listingRevision}
+          listModels={stored && keys.includes(name) && listModels ? () => listSavedModels(name, listModels) : undefined}
           removeBlocked={removeBlocked(name)}
           lastModel={stored && modelCount === 1}
           onOpenModel={(id) => setDialog({ kind: 'model', id })}
           onRemoveModel={(id) => setDialog({ kind: 'removeModel', id })}
           onAddModel={(providerModel) =>
-            onChange({ spec: withModel(spec, providerModel, quickModel(name, providerModel)), secure: {} })
+            applyChange({ spec: withModel(spec, providerModel, quickModel(name, providerModel)), secure: {} })
           }
           addError={(providerModel) => quickAddError(spec, providerModel)}
           onReplaceKey={() => setDialog({ kind: 'replaceKey', provider: name })}
