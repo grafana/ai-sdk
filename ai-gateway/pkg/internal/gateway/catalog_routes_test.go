@@ -194,3 +194,48 @@ func TestCatalogRoutes_AttributeTheDirectCaller(t *testing.T) {
 	assert.False(t, strings.Contains(metrics, "svc-b"))
 	assert.False(t, strings.Contains(metrics, "private-user-uid"))
 }
+
+func TestCatalogRoutes_Messages(t *testing.T) {
+	for _, topology := range []platformhost.Topology{platformhost.TopologyCloud, platformhost.TopologySelfHosted} {
+		t.Run(string(topology), func(t *testing.T) {
+			h := newHarness(t, topology)
+			native := newFakeAnthropic(t)
+			useNativeAnthropic(t, native)
+			h.createTeamCatalog(t)
+			auth := bearer(h.host.AddServiceAccount("messages-client", testNamespace))
+			for _, streaming := range []bool{false, true} {
+				body := `{"model":"team","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`
+				if streaming {
+					body = strings.TrimSuffix(body, "}") + `,"stream":true}`
+				}
+				status, response := do(t, chatRequest(t, h.catalogURL("v1/messages"), body, auth))
+				require.Equal(t, http.StatusOK, status, response)
+				assert.Contains(t, response, `"model":"team-model"`)
+				if streaming {
+					assert.Contains(t, response, "event: message_stop")
+				} else {
+					assert.Contains(t, response, `"stop_reason":"end_turn"`)
+				}
+			}
+			keys, bodies := native.nativeCalls()
+			assert.Equal(t, []string{routeCatalogKey, routeCatalogKey}, keys)
+			for _, body := range bodies {
+				assert.Contains(t, body, `"model":"claude-sonnet"`)
+			}
+			assert.Zero(t, h.anthropic.requests.Load())
+			before := native.requests.Load()
+			body := `{"model":"public","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`
+			status, response := do(t, chatRequest(t, h.catalogURL("v1/messages"), body, auth))
+			assert.Equal(t, http.StatusNotFound, status, response)
+			assert.Contains(t, response, `"type":"not_found_error"`)
+			anonymous := session(h.host.AddSession(types.TypeAnonymous, "anon", testNamespace))
+			status, response = do(t, chatRequest(t, h.catalogURL("v1/messages"), body, anonymous))
+			assert.Equal(t, http.StatusForbidden, status, response)
+			assert.Contains(t, response, `"type":"permission_error"`)
+			status, _ = do(t, chatRequest(t, h.url("modelcatalogs/missing/v1/messages"), body, auth))
+			assert.Equal(t, http.StatusNotFound, status)
+			assert.Equal(t, before, native.requests.Load())
+			assert.Contains(t, h.logs.String(), `"route":"catalog_anthropic_messages"`)
+		})
+	}
+}

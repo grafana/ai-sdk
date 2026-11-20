@@ -47,6 +47,7 @@ func TestRequestTransformAndWarnings_HTTP(t *testing.T) {
 					incoming = append([]provider.Warning(nil), warnings...)
 					assert.Equal(t, "test-model", body["model"])
 					assert.Contains(t, body, "messages")
+					assert.Equal(t, "none", body["reasoning_effort"])
 					if streaming {
 						assert.Equal(t, true, body["stream"])
 						assert.Equal(t, streamOptions{IncludeUsage: true}, body["stream_options"])
@@ -56,7 +57,7 @@ func TestRequestTransformAndWarnings_HTTP(t *testing.T) {
 					return map[string]any{"model": "backend-alias", "stream": streaming}, append(warnings, added), nil
 				}))
 			topK := 5
-			opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, TopK: &topK}
+			opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, TopK: &topK, Reasoning: provider.ReasoningNone}
 			var warnings []provider.Warning
 			var metadata *provider.RequestMetadata
 			if streaming {

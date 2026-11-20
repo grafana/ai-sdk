@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
 import {
+  Alert,
   CollapsableSection,
   Grid,
   LinkButton,
@@ -14,16 +16,14 @@ import {
   TextLink,
   useStyles2,
 } from '@grafana/ui';
+import { errorMessage, listModelCatalogs } from '../api/modelCatalogs';
 import { CodeSnippet } from '../components/CodeSnippet/CodeSnippet';
 import { LinkCard } from '../components/LinkCard/LinkCard';
 import { SetupStep } from '../components/SetupStep/SetupStep';
-import { API_GROUP, API_VERSION } from '../constants';
+import { catalogBaseURL, catalogPageURL, gatewayEndpoint, prefixRoute, ROUTES } from '../constants';
+import { catalogPermissions } from '../permissions';
 import { CALLERS, LINKS, RESOURCES, SERVICE_ACCOUNT_PATH } from './overview/content';
 import { callExample, ENVIRONMENT, INSTALL, Language, LANGUAGES } from './overview/examples';
-
-export function gatewayEndpoint(appUrl: string, namespace: string): string {
-  return `${appUrl.replace(/\/+$/, '')}/apis/${API_GROUP}/${API_VERSION}/namespaces/${encodeURIComponent(namespace)}`;
-}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -103,6 +103,51 @@ function GetStarted({ endpoint }: { endpoint: string }) {
           <QuickStart endpoint={endpoint} />
         </SetupStep>
       </ol>
+    </Section>
+  );
+}
+
+function CatalogURLs({ endpoint }: { endpoint: string }) {
+  const s = useStyles2(getStyles);
+  const [names, setNames] = useState<string[]>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let current = true;
+    listModelCatalogs().then(
+      (catalogs) => current && setNames(catalogs.map((catalog) => catalog.metadata.name)),
+      (err) => current && setError(errorMessage(err))
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  return (
+    <Section title="Model catalogs">
+      <Text element="p" color="secondary">
+        Use a catalog&apos;s URL as the base URL to call only that catalog&apos;s models, with its own provider keys.
+        Editors and Admins can call catalogs.
+      </Text>
+      {error && (
+        <Alert severity="warning" title="Couldn't load model catalogs">
+          {error}
+        </Alert>
+      )}
+      {names?.length === 0 && <Text element="p">This stack has no model catalogs yet.</Text>}
+      {names?.map((name) => (
+        <Stack key={name} direction="column" gap={0.5}>
+          <Link className={s.link} to={catalogPageURL(name)}>
+            {name}
+          </Link>
+          <CodeSnippet code={catalogBaseURL(endpoint, name)} />
+        </Stack>
+      ))}
+      <div>
+        <LinkButton variant="secondary" fill="text" icon="arrow-right" href={prefixRoute(ROUTES.Catalogs)}>
+          Manage model catalogs
+        </LinkButton>
+      </div>
     </Section>
   );
 }
@@ -200,6 +245,7 @@ function HeaderActions() {
 function Overview() {
   const s = useStyles2(getStyles);
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
+  const { read: readCatalogs } = catalogPermissions();
 
   return (
     <PluginPage
@@ -214,6 +260,7 @@ function Overview() {
             output as a direct provider.
           </Text>
           <GetStarted endpoint={endpoint} />
+          {readCatalogs && <CatalogURLs endpoint={endpoint} />}
           <Callers />
           <SelfHosted />
           <Resources />
@@ -236,6 +283,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(3),
+  }),
+  link: css({
+    color: theme.colors.text.link,
+    fontWeight: theme.typography.fontWeightMedium,
   }),
   list: css({
     margin: 0,
