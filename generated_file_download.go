@@ -233,6 +233,9 @@ func newGeneratedFileClient(lookup func(context.Context, string) ([]net.IPAddr, 
 			if len(via) > 10 {
 				return fmt.Errorf("generated file exceeded 10 redirects")
 			}
+			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme == "http" {
+				return errors.New("generated file redirect from HTTPS to HTTP was blocked")
+			}
 			return validateGeneratedFileURL(req.URL)
 		},
 	}

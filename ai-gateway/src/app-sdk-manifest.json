@@ -262,6 +262,37 @@
                                     "x-grafana-declared-authz-subresource": "language-model",
                                     "x-grafana-declared-authz-verb": "get"
                                 }
+                            },
+                            "/v1/messages": {
+                                "post": {
+                                    "operationId": "createModelCatalogAnthropicMessage",
+                                    "parameters": [
+                                        {
+                                            "name": "namespace",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "name": "name",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    ],
+                                    "responses": {
+                                        "default": {
+                                            "description": "Anthropic Messages response for the catalog"
+                                        }
+                                    },
+                                    "x-grafana-declared-authz-resource": "modelcatalogs",
+                                    "x-grafana-declared-authz-subresource": "messages",
+                                    "x-grafana-declared-authz-verb": "get"
+                                }
                             }
                         }
                     },
@@ -440,6 +471,26 @@
                                     }
                                 }
                             }
+                        },
+                        "/v1/messages": {
+                            "post": {
+                                "operationId": "createAnthropicMessage",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Anthropic Messages response"
+                                    }
+                                }
+                            }
                         }
                     }
                 },
@@ -603,6 +654,55 @@
                                 "x-grafana-declared-authz-verb": "get"
                             }
                         },
+                        "/namespaces/{namespace}/modelcatalogs/{name}/v1/messages": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "in": "path",
+                                    "name": "name",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "createModelCatalogAnthropicMessage",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "name",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Anthropic Messages response for the catalog"
+                                    }
+                                },
+                                "x-grafana-declared-authz-resource": "modelcatalogs",
+                                "x-grafana-declared-authz-subresource": "messages",
+                                "x-grafana-declared-authz-verb": "get"
+                            }
+                        },
                         "/namespaces/{namespace}/v1/chat/completions": {
                             "parameters": [
                                 {
@@ -629,6 +729,36 @@
                                 "responses": {
                                     "default": {
                                         "description": "OpenAI Chat Completions response"
+                                    }
+                                }
+                            }
+                        },
+                        "/namespaces/{namespace}/v1/messages": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "createAnthropicMessage",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Anthropic Messages response"
                                     }
                                 }
                             }
@@ -691,6 +821,12 @@
                     },
                     {
                         "kind": "ModelCatalog/language-model",
+                        "verbs": [
+                            "get"
+                        ]
+                    },
+                    {
+                        "kind": "ModelCatalog/messages",
                         "verbs": [
                             "get"
                         ]

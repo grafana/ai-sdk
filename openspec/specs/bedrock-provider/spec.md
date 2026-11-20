@@ -168,8 +168,16 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 
 #### Scenario: Final assistant prefill whitespace
 
-- **WHEN** the prompt ends with an assistant block whose final message's final content part is text containing surrounding whitespace
+- **WHEN** the final prompt block is an assistant block and its final source message ends with text containing surrounding whitespace after foreign empty text is filtered
 - **THEN** that final text is trimmed before it is emitted to Converse, while every other retained text part and signed reasoning text are emitted byte-for-byte unchanged
+
+#### Scenario: Foreign empty assistant text is not replayed
+
+- **WHEN** an assistant text part is exactly empty and has non-nil provider options with no non-null `amazonBedrock` or `bedrock` entry
+- **THEN** the part SHALL be removed before determining the source's last part for prefill trimming and message cache placement, even alongside signed reasoning
+- **AND** the handling of empty text with native Bedrock options or with no provider options SHALL remain unchanged
+
+Current wire limitation: Go retains the native empty text slot next to signed reasoning but encodes it as `{}` rather than the pinned upstream converter's `{"text":""}`. This filtering does not change that representation. Synthetic request tests verify signed bytes and slot placement; they do not establish service acceptance of the empty slot.
 
 #### Scenario: Assistant tool call
 
@@ -187,7 +195,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **THEN** each run of tool results is emitted as user-role `toolResult` content between the assistant content before and after it, preserving part order
 - **AND** the results use the same output conversion, tool call ID normalization, document naming and rejection rules as tool-role results
 - **AND** user content that follows a user message carrying tool results is appended to that message, while a leading tool result after plain user content still starts a separate user message, matching upstream
-- **AND** an assistant message cache point follows the tool results when the message ends with one, and otherwise follows that message's trailing assistant content when it emits any
+- **AND** after filtering foreign empty text, an assistant message cache point follows the tool results when the source message ends with one, and otherwise follows that source message's trailing assistant content when it emits any
 
 #### Scenario: Inference config mapping
 
@@ -199,10 +207,10 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **WHEN** the consumer supplies function tools and `ToolChoice = required`
 - **THEN** the request body includes `toolConfig.tools` with each tool's name, description, and JSON schema, and `toolConfig.toolChoice = {any: {}}`
 
-#### Scenario: Specific tool choice
+#### Scenario: Specific tool choice on a non-Anthropic model
 
-- **WHEN** the consumer sets `ToolChoice` to a specific tool named `weather`
-- **THEN** the request body includes `toolConfig.toolChoice = {tool: {name: "weather"}}`
+- **WHEN** the consumer supplies function tools to a non-Anthropic model and the effective tool choice after response-format routing is the tool named `weather`
+- **THEN** `toolConfig.tools` SHALL contain only `weather` and `toolConfig.toolChoice` SHALL be `{tool: {name: "weather"}}`
 
 #### Scenario: Auto tool choice
 
@@ -477,7 +485,13 @@ For JSON schemas, the provider SHALL select native output, a JSON tool or a JSON
 #### Scenario: Native JSON output on supported Anthropic model
 
 - **WHEN** the model supports structured output and `ResponseFormat.Type = json` with a schema
-- **THEN** the request body includes `additionalModelRequestFields.output_config.format = {type: "json_schema", schema: <schema>}` and no synthetic `json` tool
+- **THEN** the request body includes `additionalModelRequestFields.output_config.format = {type: "json_schema", schema: <sanitized schema>}` and no synthetic `json` tool
+
+#### Scenario: Native output retains root reference definitions
+
+- **WHEN** a native response schema has a root `$ref` alongside `definitions` or `$defs`
+- **THEN** `output_config.format.schema` SHALL keep the reference and recursively sanitize each sibling definition map
+- **AND** it SHALL drop all other sibling keywords
 
 #### Scenario: JSON-tool fallback on unsupported model
 
@@ -584,9 +598,21 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 - **WHEN** `strict:true` is set but any nested object in `properties`, `patternProperties`, `definitions`, `$defs`, `dependencies`, `items`, `anyOf`, `allOf`, `oneOf`, `if/then/else`, `not`, `contains`, or `propertyNames` lacks `additionalProperties:false`
 - **THEN** `strict` is omitted with an unsupported schema-compatibility warning, rather than an error
 
+#### Scenario: Named tool choice keeps the function-tool list
+
+- **WHEN** a Converse or ConverseStream request uses an Anthropic model that accepts forced tool use and the effective tool choice after response-format routing is the tool named `lookup`
+- **THEN** `toolConfig.tools` SHALL retain every function tool in caller order, with the same definitions as an `auto` request with the same tool inputs
+- **AND** when `anthropic.disableParallelToolUse` is omitted or `true`, `additionalModelRequestFields.tool_choice` SHALL be `{type: "tool", name: "lookup", disable_parallel_tool_use: true}` and `toolConfig.toolChoice` SHALL be absent
+
+#### Scenario: Named tool choice with parallel use explicitly allowed
+
+- **WHEN** an Anthropic model accepts forced tool use, the effective tool choice after response-format routing is the tool named `lookup`, and `anthropic.disableParallelToolUse` is `false`
+- **THEN** every function tool SHALL be retained; with only function tools the adapter SHALL emit `toolConfig.toolChoice = {tool: {name: "lookup"}}` instead of an additional-fields choice
+- **AND** with supported Anthropic provider tools present, the adapter SHALL retain those definitions and emit the additional-fields choice with `disable_parallel_tool_use:false` instead of `toolConfig.toolChoice`
+
 #### Scenario: Parallel choice replaces Converse choice
 
-- **WHEN** an Anthropic function-tool request has `anthropic.disableParallelToolUse:true` and choice `auto`, `required`, or named tool
+- **WHEN** an Anthropic function-tool request has `anthropic.disableParallelToolUse:true` and its effective choice after model-specific fallback is `auto`, `required`, or named tool
 - **THEN** `additionalModelRequestFields.tool_choice` contains the equivalent `auto`, `any`, or `tool` type with `disable_parallel_tool_use:true`, while `toolConfig.toolChoice` is absent
 
 #### Scenario: None choice with function-only tools

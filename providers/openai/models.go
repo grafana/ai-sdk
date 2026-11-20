@@ -15,24 +15,27 @@ type modelCapabilities struct {
 	supportsFlexProcessing         bool
 	supportsPriorityProcessing     bool
 	supportsNonReasoningParameters bool
+	logprobsRequireNonReasoning    bool
 	supportsConfigurationUpdate    bool
 	supportsAsyncToolCalling       bool
 	supportedReasoningEfforts      []string
 }
 
 const (
-	gpt6SolModelID  = "gpt-6-sol"
-	gpt6LunaModelID = "gpt-6-luna"
+	gpt6SolModelID    = "gpt-6-sol"
+	gpt6LunaModelID   = "gpt-6-luna"
+	gpt61TerraModelID = "gpt-6.1-terra"
 )
 
 var (
-	gpt6ReasoningEfforts        = []string{"low", "medium", "high", "xhigh", "max"}
-	gpt6SolLunaReasoningEfforts = append([]string{"none"}, gpt6ReasoningEfforts...)
+	gpt6ReasoningEfforts  = []string{"low", "medium", "high", "xhigh", "max"}
+	noneThroughMaxEfforts = []string{"none", "low", "medium", "high", "xhigh", "max"}
 )
 
 var (
-	oSeriesModelPattern = regexp.MustCompile(`^o(\d+)(?:-|$)`)
-	gptModelPattern     = regexp.MustCompile(`^gpt-(\d+)(?:\.(\d+))?(?:-(.+))?$`)
+	oSeriesModelPattern        = regexp.MustCompile(`^o(\d+)(?:-|$)`)
+	gptModelPattern            = regexp.MustCompile(`^gpt-(\d+)(?:\.(\d+))?(?:-(.+))?$`)
+	standardGPT5VariantPattern = regexp.MustCompile(`^(?:(?:mini|nano|sol|luna|terra)(?:-\d{4}-\d{2}-\d{2})?|\d{4}-\d{2}-\d{2})$`)
 )
 
 type gptVersion struct {
@@ -55,6 +58,7 @@ func getBedrockMantleModelCapabilities(modelID string) modelCapabilities {
 	caps.supportsFlexProcessing = false
 	caps.supportsPriorityProcessing = false
 	caps.supportsNonReasoningParameters = false
+	caps.logprobsRequireNonReasoning = false
 	caps.supportsConfigurationUpdate = false
 	caps.supportsAsyncToolCalling = false
 	caps.supportedReasoningEfforts = nil
@@ -73,15 +77,19 @@ func getOpenAIModelCapabilities(modelID string) modelCapabilities {
 		(hasGPTVersion && gpt.major >= 5 && !isGPTNano && !isGPTChat) ||
 		(hasOSeriesVersion && oVersion >= 3)
 	isGPT6OrLater := hasGPTVersion && gpt.major >= 6
-	isGPT6SolOrLuna := modelID == gpt6SolModelID || modelID == gpt6LunaModelID
-	supportsNonReasoningParams := isGPT6SolOrLuna ||
+	isGPT6WithNone := modelID == gpt6SolModelID || modelID == gpt6LunaModelID || modelID == gpt61TerraModelID
+	supportsNonReasoningParams := isGPT6WithNone ||
 		(hasGPTVersion && gpt.major == 5 && gpt.minor != nil && *gpt.minor >= 1)
+	isStandardGPT5 := hasGPTVersion && gpt.major == 5 &&
+		(gpt.variant == "" || standardGPT5VariantPattern.MatchString(gpt.variant))
 	var supportedReasoningEfforts []string
 	switch {
-	case isGPT6SolOrLuna:
-		supportedReasoningEfforts = gpt6SolLunaReasoningEfforts
+	case isGPT6WithNone:
+		supportedReasoningEfforts = noneThroughMaxEfforts
 	case isGPT6OrLater:
 		supportedReasoningEfforts = gpt6ReasoningEfforts
+	case isStandardGPT5:
+		supportedReasoningEfforts = getGPT5ReasoningEfforts(gpt.minor)
 	}
 
 	mode := "system"
@@ -94,9 +102,23 @@ func getOpenAIModelCapabilities(modelID string) modelCapabilities {
 		supportsFlexProcessing:         supportsFlex,
 		supportsPriorityProcessing:     supportsPriority,
 		supportsNonReasoningParameters: supportsNonReasoningParams,
+		logprobsRequireNonReasoning:    isGPT6OrLater,
 		supportsConfigurationUpdate:    isGPT6OrLater,
 		supportsAsyncToolCalling:       isGPT6OrLater,
 		supportedReasoningEfforts:      supportedReasoningEfforts,
+	}
+}
+
+func getGPT5ReasoningEfforts(minor *int) []string {
+	switch {
+	case minor == nil || *minor == 0:
+		return []string{"minimal", "low", "medium", "high"}
+	case *minor == 1:
+		return []string{"none", "low", "medium", "high"}
+	case *minor < 6:
+		return []string{"none", "low", "medium", "high", "xhigh"}
+	default:
+		return noneThroughMaxEfforts
 	}
 }
 
@@ -196,6 +218,7 @@ var knownResponsesModelIDs = []string{
 	"gpt-6-luna",
 	"gpt-6-sol",
 	"gpt-6.1-sol",
+	gpt61TerraModelID,
 	"o1",
 	"o1-2024-12-17",
 	"o3",
