@@ -477,7 +477,13 @@ For JSON schemas, the provider SHALL select native output, a JSON tool or a JSON
 #### Scenario: Native JSON output on supported Anthropic model
 
 - **WHEN** the model supports structured output and `ResponseFormat.Type = json` with a schema
-- **THEN** the request body includes `additionalModelRequestFields.output_config.format = {type: "json_schema", schema: <schema>}` and no synthetic `json` tool
+- **THEN** the request body includes `additionalModelRequestFields.output_config.format = {type: "json_schema", schema: <sanitized schema>}` and no synthetic `json` tool
+
+#### Scenario: Native output retains root reference definitions
+
+- **WHEN** a native response schema has a root `$ref` alongside `definitions` or `$defs`
+- **THEN** `output_config.format.schema` SHALL keep the reference and recursively sanitize each sibling definition map
+- **AND** it SHALL drop all other sibling keywords
 
 #### Scenario: JSON-tool fallback on unsupported model
 
