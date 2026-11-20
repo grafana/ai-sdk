@@ -988,6 +988,9 @@ func clonePart(part Part) Part {
 	case CustomPart:
 		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
 		return p
+	case rawPart:
+		p.Raw = cloneRawMessage(p.Raw)
+		return p
 	case StepStartPart:
 		return p
 	default:

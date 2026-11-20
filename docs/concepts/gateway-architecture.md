@@ -19,8 +19,9 @@ follows the Gateway plugin backend in `ai-gateway/pkg`. For setup, see
 ## The pieces and their boundaries
 
 The shipped plugin backend accepts **ProviderWire V4**, used by the Go Grafana provider
-and server-side Vercel Gateway client, and a **Chat Completions subset** for
-official OpenAI clients. These are separate adapters over one execution runtime.
+and server-side Vercel Gateway client, a **Chat Completions subset** for
+official OpenAI clients, and an **Anthropic Messages subset** for official
+Anthropic clients and Claude Code. These are separate adapters over one execution runtime.
 Neither is the
 browser UI message stream protocol. A Go application can consume Gateway output
 and then produce a separate [UI message stream](wire-protocol.md) for React.
@@ -34,12 +35,14 @@ flowchart LR
     go[Go Grafana provider]
     ts[Vercel Gateway client]
     chatclient[Official OpenAI clients]
+    msgclient[Anthropic clients and Claude Code]
   end
   subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
       chat[Chat Completions decoder and response encoder]
+      messages[Anthropic Messages decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
       runtime[Execution runtime]
@@ -64,8 +67,10 @@ flowchart LR
   go --> host
   ts --> host
   chatclient --> host
+  msgclient --> host
   host --> pw
   host --> chat --> runtime
+  host --> messages --> runtime
   pw --> runtime -->|first selects| select
   select -->|private| catalog
   catalog -->|no routing controls| routing
@@ -94,14 +99,16 @@ a telemetry label, the adapter's handler and the adapter's host-error writer.
 Every entry gets the same access decision and request telemetry, and a refused
 caller gets that adapter's permission document without its body being read. The
 production table matches the committed manifest: `GET {prefix}/config` and
-`POST {prefix}/language-model`, and `POST {prefix}/v1/chat/completions`. A request that matches no entry does no access,
+`POST {prefix}/language-model`, `POST {prefix}/v1/chat/completions` and
+`POST {prefix}/v1/messages`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. Each catalog
-also has two routes, `GET .../modelcatalogs/{name}/config` and
-`POST .../modelcatalogs/{name}/language-model`, in the same route table.
+also has three routes: `GET .../modelcatalogs/{name}/config`,
+`POST .../modelcatalogs/{name}/language-model` and
+`POST .../modelcatalogs/{name}/v1/messages`, in the same route table.
 Grafana reads the catalog as the caller, runs the route's declared access check
 (`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
 and only then decrypts the catalog's keys and passes the object, its resource
@@ -153,10 +160,19 @@ Self-hosted users/service accounts and allowlisted internal services use the
 configured catalog. Chat parses its own request body; selection, execution,
 cancellation and stream cleanup use the shared runtime and host contract.
 
-`/v1/messages` and `/v1/responses` are not registered inbound routes. An outbound
-Anthropic provider does not establish Claude Code support, and an outbound
-Responses provider does not establish Codex support. Those clients need their
-own compatible ingress and end-to-end evidence.
+The [Anthropic Messages adapter](../guides/anthropic-messages.md) is built the
+same way: it maps a text and client-tool subset into the shared runtime and
+supplies its own response, stream and error documents. Its translator applies
+`disable_parallel_tool_use` per native candidate and `output_config.effort` only
+to Anthropic candidates. Other targets retain their configured effort options.
+It accepts but does not yet apply the fields that tune only the Anthropic wire,
+such as thinking and cache control; the guide lists them. A session of Claude
+Code has completed against it, but the adapter is not yet claimed as Claude Code
+compatible.
+
+`/v1/responses` is not a registered inbound route. An outbound Responses
+provider does not establish Codex support; that client needs its own compatible
+ingress and end-to-end evidence.
 
 ## Follow one request
 

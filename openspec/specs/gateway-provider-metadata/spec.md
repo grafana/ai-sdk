@@ -118,12 +118,12 @@ Scope witnesses SHALL include supported Anthropic tool-call caller and reasoning
 - **WHEN** first outputs include Anthropic caller/signature/redacted values, OpenAI text item/phase/encrypted reasoning or google tool-call thought signatures
 - **THEN** continuation tests SHALL cover those supported native values, with compatible google tool-call signatures sourced from unary output or the initial streaming tool-call delta
 
-### Requirement: Compatible google continuation namespace and timing boundary
-The compatible witness SHALL retain the native google namespace unchanged and produce extra_content.google.thought_signature in the second native request; arbitrary configured-name consumer and late-signature support SHALL NOT be inferred or fixed by metadata rewriting.
+### Requirement: Compatible continuation namespace and timing boundary
+The compatible Gateway witness SHALL retain returned metadata under the unchanged `google` key. The Gateway SHALL NOT rewrite metadata to implement the [native adapter's thought-signature lookup](../openai-compatible-stream-metadata/spec.md#requirement-tool-call-thought-signature-continuation). The `google` witness does not establish Gateway continuation coverage for other configured names or for signatures that arrive after a tool call's initial delta.
 
 #### Scenario: Compatible google continuation namespace and timing boundary
-- **WHEN** a configured providerName google returns a tool-call thought signature in unary output or the initial streaming delta
-- **THEN** the second native request SHALL carry extra_content.google.thought_signature under the unchanged google namespace without inferring arbitrary-name or late-signature support
+- **WHEN** a configured `providerName` of `google` returns a tool-call thought signature in unary output or the initial streaming delta
+- **THEN** the Gateway continuation SHALL preserve the `google` metadata key in history and the second native request SHALL carry `extra_content.google.thought_signature`
 
 ### Requirement: Continuation metadata replacement and response-only families
 Latest non-nullish object replacement SHALL be retained rather than deep merge; an explicit empty object SHALL replace earlier metadata. Sources SHALL remain response-only and families not represented in the native request SHALL NOT be echoed solely to claim continuation.

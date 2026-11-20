@@ -9,10 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Sonnet 5.5 behavior mirrors @ai-sdk/anthropic 4.0.67: thinking cannot be
-// disabled (between_tools is the lowest setting), forced tool use is rejected,
-// and sampling parameters are rejected.
-
 func TestSonnet55ModelIDs(t *testing.T) {
 	assert.Contains(t, ModelIDs(), "claude-sonnet-5-5")
 	assert.Contains(t, VertexModelIDs(), "claude-sonnet-5-5")
@@ -28,6 +24,7 @@ func TestSonnet55Capabilities(t *testing.T) {
 	assert.True(t, caps.rejectsSamplingParams)
 	assert.True(t, caps.supportsXHighEffort)
 	assert.True(t, caps.rejectsThinkingDisabled)
+	assert.True(t, caps.rejectsBudgetThinking)
 	assert.True(t, caps.rejectsForcedToolUse)
 	assert.True(t, caps.supportsBetweenToolsThinking)
 	assert.True(t, caps.isKnownModel)
@@ -38,6 +35,7 @@ func TestSonnet55Capabilities(t *testing.T) {
 
 	sonnet5 := getModelCapabilities("claude-sonnet-5")
 	assert.False(t, sonnet5.rejectsThinkingDisabled)
+	assert.False(t, sonnet5.rejectsBudgetThinking)
 	assert.False(t, sonnet5.rejectsForcedToolUse)
 	assert.False(t, sonnet5.supportsBetweenToolsThinking)
 }
@@ -47,7 +45,11 @@ func TestSonnet55ReasoningNoneUsesBetweenTools(t *testing.T) {
 	require.NoError(t, err)
 	assertThinkingJSON(t, p.Thinking, `{"type":"between_tools"}`)
 	assert.Empty(t, string(p.OutputConfig.Effort))
-	assert.Empty(t, warnings)
+	assert.Equal(t, []provider.Warning{{
+		Type:    provider.WarnCompatibility,
+		Feature: "reasoning",
+		Details: "reasoning 'none' is not supported by claude-sonnet-5-5; thinking cannot be disabled. Using 'between_tools' thinking, the lowest thinking setting, instead.",
+	}}, warnings)
 
 	// Sonnet 5 still disables thinking.
 	p, _, _, _, err = buildParams("claude-sonnet-5", provider.CallOptions{Reasoning: provider.ReasoningNone}, false)
