@@ -45,6 +45,25 @@ when a continuation call has no top-level provider options. For compatibility,
 the existing `NewResponses` path with the default `"openai"` identity retains
 its per-call OpenAI-first, Azure-fallback option resolution.
 
+For function tools, Azure identities read the tool's `azure` options first and
+fall back to `openai` only if the Azure object is absent or null. An empty Azure
+object still wins; fields are never merged. This selection also controls how
+past tool results with an output schema are encoded. Default OpenAI identities
+read only `openai` function-tool options, even when call-level options use the
+legacy Azure fallback.
+
+Attach the existing typed options directly under the Azure map key:
+
+```go
+deferLoading := true
+tool.ProviderOptions = provider.ProviderOptions{
+    "azure": openai.OpenAIToolOptions{DeferLoading: &deferLoading},
+}
+```
+
+`provider.BuildProviderOptions(openai.OpenAIToolOptions{...})` continues to use
+`openai`, which Azure identities accept as the fallback.
+
 ## Configure a call
 
 Set request-scoped headers with `aisdk.WithHeaders`. Headers configured through
