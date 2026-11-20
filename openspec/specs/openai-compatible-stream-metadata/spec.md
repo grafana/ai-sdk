@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Define when OpenAI-compatible responses expose meaningful identity and timestamp
-metadata rather than provider placeholder values.
+Define OpenAI-compatible response metadata and how tool-call thought signatures
+are carried into subsequent requests.
 
 ## Requirements
 
@@ -29,6 +29,23 @@ OpenAI-compatible streaming tool calls SHALL emit `tool-input-start`, `tool-inpu
 #### Scenario: Streamed tool call
 - **WHEN** a streamed tool call produces input parts
 - **THEN** each part SHALL carry the call `id`, only the start part SHALL carry `toolName`, and the final `tool-call` part SHALL carry `toolCallId` and `toolName`
+
+### Requirement: Tool-call thought signature continuation
+
+The provider SHALL expose a nonempty Google thought signature under the resolved
+metadata key on unary tool calls or from the initial streaming tool-call delta.
+Generation and streaming requests SHALL read `thoughtSignature` from assistant
+tool-call `ProviderOptions` under the same resolved key, falling back to
+`google` only for missing or null values. A selected nonempty signature SHALL
+be sent as `extra_content.google.thought_signature`.
+
+#### Scenario: Configured provider round trip
+- **WHEN** a caller reuses a returned tool call and its metadata as assistant history under the same resolved key
+- **THEN** the next native request SHALL carry the returned signature in `extra_content.google.thought_signature` without rewriting the metadata namespace
+
+#### Scenario: Configured key takes precedence over google
+- **WHEN** an assistant tool call supplies a signature under both the resolved key and `google`
+- **THEN** the resolved value SHALL take precedence, and an explicit empty string SHALL suppress the generated signature rather than use the `google` value
 
 ### Requirement: Opt-in Chat output metadata
 The provider SHALL offer constructor option `WithChatCompletionMetadata()` to
