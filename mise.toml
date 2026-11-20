@@ -413,7 +413,7 @@ cd test && pnpm --filter @ai-sdk/conformance-tools coverage-inventory
 """
 
 [tasks.parity-provider-shape]
-description = "Report provider V4 discriminator drift against local upstream source"
+description = "Check provider V4 discriminator parity against the registered package source"
 run = """
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools provider-shape

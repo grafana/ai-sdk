@@ -451,6 +451,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@babel/parser':
+        specifier: 7.29.9
+        version: 7.29.9
       '@types/node':
         specifier: ^25.5.0
         version: 25.9.5
