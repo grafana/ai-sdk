@@ -18,7 +18,7 @@ var effortMap = map[provider.ReasoningEffort]string{
 	provider.ReasoningLow:     "low",
 	provider.ReasoningMedium:  "medium",
 	provider.ReasoningHigh:    "high",
-	provider.ReasoningXHigh:   "max",
+	provider.ReasoningXHigh:   "high",
 	provider.ReasoningMax:     "max",
 }
 
@@ -33,18 +33,25 @@ var budgetPercentages = map[provider.ReasoningEffort]float64{
 
 const minReasoningBudget = 1024
 
-func resolveReasoningConfig(reasoning provider.ReasoningEffort, caps modelCapabilities, warnings *[]provider.Warning) *reasoningConfig {
+func resolveReasoningConfig(modelID string, reasoning provider.ReasoningEffort, caps modelCapabilities, warnings *[]provider.Warning) *reasoningConfig {
 	if reasoning == provider.ReasoningNone {
-		// between_tools is the lowest thinking setting on models that reject
-		// disabled thinking: no up-front thinking, only short progress notes
-		// between tool calls.
-		if caps.supportsBetweenToolsThinking {
-			return &reasoningConfig{
-				thinking: &ThinkingConfig{Type: ThinkingBetweenTools},
-			}
-		}
-		return &reasoningConfig{
-			thinking: &ThinkingConfig{Type: ThinkingDisabled},
+		switch {
+		case caps.supportsBetweenToolsThinking:
+			*warnings = append(*warnings, provider.Warning{
+				Type:    provider.WarnCompatibility,
+				Feature: "reasoning",
+				Details: fmt.Sprintf("reasoning 'none' is not supported by %s; thinking cannot be disabled. Using 'between_tools' thinking, the lowest thinking setting, instead.", modelID),
+			})
+			return &reasoningConfig{thinking: &ThinkingConfig{Type: ThinkingBetweenTools}}
+		case caps.rejectsThinkingDisabled:
+			*warnings = append(*warnings, provider.Warning{
+				Type:    provider.WarnCompatibility,
+				Feature: "reasoning",
+				Details: fmt.Sprintf("reasoning 'none' is not supported by %s; it always uses adaptive thinking. Using effort 'low' to minimize thinking instead.", modelID),
+			})
+			return &reasoningConfig{effort: "low"}
+		default:
+			return &reasoningConfig{thinking: &ThinkingConfig{Type: ThinkingDisabled}}
 		}
 	}
 

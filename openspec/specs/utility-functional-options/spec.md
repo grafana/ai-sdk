@@ -52,7 +52,7 @@ Define ergonomic, scoped functional options for utility APIs that previously req
 - **THEN** the resulting SSE stream applies those output filtering settings
 
 #### Scenario: Called with callback options
-- **WHEN** `WriteUIMessageStream` is called with options such as `WithUIMessageStreamGenerateID`, `WithUIMessageStreamOriginalMessages`, `WithUIMessageStreamMessageMetadata`, `OnUIMessageStreamFinish`, or `OnUIMessageStreamError`
+- **WHEN** `WriteUIMessageStream` is called with options such as `WithUIMessageStreamGenerateID`, `WithUIMessageStreamOriginalMessages`, `WithUIMessageStreamMessageMetadata`, `OnUIMessageStreamStepEnd`, `OnUIMessageStreamFinish`, or `OnUIMessageStreamError`
 - **THEN** the resulting UI message stream applies the configured callback behavior
 
 #### Scenario: Pointer options are not accepted
@@ -115,6 +115,48 @@ An invalid application tool call SHALL produce one `tool-input-error` chunk; the
 #### Scenario: Nil option values are ignored
 - **WHEN** a caller accidentally passes a nil `UIMessageStreamOption` to `ToUIMessageStream`
 - **THEN** the method treats that option as absent and continues using the remaining options
+
+### Requirement: UI stream step metadata precedes the boundary
+`ToUIMessageStream` SHALL emit metadata returned for a `StreamFinishStep` as a separate `message-metadata` chunk immediately before the corresponding `finish-step` chunk. A nil result SHALL NOT emit a metadata chunk for that step. This requirement applies equally when the result is streamed through the HTTP or Agent helpers.
+
+#### Scenario: Finish-step metadata is visible to a step snapshot
+- **WHEN** the message metadata callback returns metadata for a `StreamFinishStep` after text output
+- **THEN** the UI stream emits `text-end`, `message-metadata`, then `finish-step`, in that order
+- **AND** the assembled response at the step boundary includes the step metadata
+
+### Requirement: UI streams expose step-end callbacks
+`ToUIMessageStream` SHALL accept `OnUIMessageStreamStepEnd` and `CreateUIMessageStreamParams` SHALL accept `OnStepEnd`, both with `UIMessageStreamOnStepEndState`. A configured callback SHALL run once per emitted `finish-step`, after applying the chunk and before forwarding it, even without a stream-finish callback.
+
+#### Scenario: Standalone streams use existing step boundaries
+- **WHEN** `CreateUIMessageStream` receives a written or merged `finish-step` chunk
+- **THEN** it assembles the chunks forwarded by the standalone stream and invokes `OnStepEnd` for the boundary
+- **AND** it does not synthesize other step boundaries
+
+#### Scenario: Step-end state is cumulative and isolated
+- **WHEN** the stream emits multiple step boundaries
+- **THEN** each callback receives the cumulative `ResponseMessage` and `Messages` history at its own boundary
+- **AND** mutations to one snapshot do not change the original history, the stream, or another snapshot
+- **AND** the last step's response equals the finish callback's response when no later chunks change the assembled message
+
+#### Scenario: Continuation replaces the last original assistant message
+- **WHEN** the response keeps the last original assistant message's ID
+- **THEN** the step-end state marks `IsContinuation` and the accumulated response replaces that last entry in `Messages`
+- **AND** when there is no such continuation, the step-end state clears `IsContinuation` and appends the response instead
+
+#### Scenario: Assembly uses the original history at stream construction
+- **WHEN** a step-end or stream-finish callback is configured
+- **THEN** the stream captures the supplied history before starting to produce output and uses that same history for ID selection, assembly, and callback history
+- **AND** changes to the input history after construction do not change the callbacks' response or continuation
+
+#### Scenario: A step-end callback panic does not change the wire
+- **WHEN** a step-end callback panics
+- **THEN** the stream recovers the panic and notifies its configured error handler, if any
+- **AND** it forwards the boundary and subsequent chunks without emitting an error chunk for that panic
+
+#### Scenario: Assembly errors do not change the wire
+- **WHEN** a chunk cannot be applied while assembling the step-end snapshot
+- **THEN** the callback reports the error in `AssemblyError` with the partial snapshot, consistent with finish callback assembly
+- **AND** the chunk is forwarded unchanged
 
 ### Requirement: StreamUIMessage uses reader functional options
 `StreamUIMessage` SHALL have the signature `func StreamUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption) <-chan UIMessage`. Calls with no options SHALL use default reader settings.

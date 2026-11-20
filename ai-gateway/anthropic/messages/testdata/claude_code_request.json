@@ -1,0 +1,33 @@
+{
+  "model": "alias",
+  "max_tokens": 32000,
+  "stream": true,
+  "metadata": {"user_id": "placeholder-user"},
+  "thinking": {"type": "adaptive", "display": "omitted"},
+  "context_management": {"edits": [{"type": "clear_thinking_20251015", "keep": "all"}]},
+  "output_config": {"effort": "medium"},
+  "system": [
+    {"type": "text", "text": "PLACEHOLDER billing header"},
+    {"type": "text", "text": "PLACEHOLDER identity", "cache_control": {"type": "ephemeral"}},
+    {"type": "text", "text": "PLACEHOLDER instructions", "cache_control": {"type": "ephemeral", "ttl": "1h"}}
+  ],
+  "messages": [
+    {"role": "user", "content": [
+      {"type": "text", "text": "PLACEHOLDER context"},
+      {"type": "text", "text": "PLACEHOLDER question", "cache_control": {"type": "ephemeral"}}
+    ]},
+    {"role": "system", "content": [{"type": "text", "text": "PLACEHOLDER reminder"}]},
+    {"role": "assistant", "content": [
+      {"type": "thinking", "thinking": "PLACEHOLDER", "signature": "PLACEHOLDER-SIGNATURE"},
+      {"type": "text", "text": "PLACEHOLDER reply"},
+      {"type": "tool_use", "id": "toolu_01", "name": "Read", "input": {"file_path": "PLACEHOLDER"}}
+    ]},
+    {"role": "user", "content": [
+      {"type": "tool_result", "tool_use_id": "toolu_01", "content": [{"type": "text", "text": "PLACEHOLDER output"}], "cache_control": {"type": "ephemeral"}}
+    ]}
+  ],
+  "tools": [
+    {"name": "Read", "description": "PLACEHOLDER", "input_schema": {"type": "object", "properties": {"file_path": {"type": "string"}}, "required": ["file_path"], "additionalProperties": false, "$schema": "http://json-schema.org/draft-07/schema#"}},
+    {"name": "Task", "description": "PLACEHOLDER", "input_schema": {"type": "object", "properties": {}}, "cache_control": {"type": "ephemeral"}}
+  ]
+}

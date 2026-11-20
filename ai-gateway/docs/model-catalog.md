@@ -9,6 +9,14 @@ The catalog resolves those names to models and returns listing metadata for a
 model picker or API. The application still decides which authenticated users or
 tenants may discover and invoke each model.
 
+## Stack catalogs
+
+This package builds a catalog inside your own Go service. The Gateway plugin
+also serves stack catalogs: `ModelCatalog` resources that a Grafana stack
+stores with its own provider keys and manages from the app. They use the
+Gateway's catalog format, and you don't need this package to use them. See
+[Store model catalogs in Grafana](../README.md#store-model-catalogs-in-grafana).
+
 ## Map public names to models
 
 A catalog keeps three names separate:

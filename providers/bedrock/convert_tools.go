@@ -129,11 +129,12 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		}
 	}
 
-	// Function tools: filter to a single tool when toolChoice targets one,
-	// matching upstream's behavior of pruning the tool list for a forced
-	// choice.
+	namedChoice := toolChoice != nil && toolChoice.Type == provider.ToolChoiceTool
+	if isAnthropic && namedChoice && disableParallelToolUse == nil {
+		disableParallelToolUse = new(true)
+	}
 	filteredFunctionTools := functionTools
-	if toolChoice != nil && toolChoice.Type == provider.ToolChoiceTool {
+	if namedChoice && !isAnthropic {
 		filteredFunctionTools = filteredFunctionTools[:0]
 		for _, t := range functionTools {
 			if t.Name == toolChoice.ToolName {
