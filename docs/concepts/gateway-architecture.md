@@ -70,7 +70,7 @@ flowchart LR
   ts --> host
   chatclient --> host
   msgclient --> host
-  admin -->|Check health| host
+  admin -->|Check health or open model suggestions| host
   host --> health
   health -->|shared catalog checks| stack
   health -->|model listings only| apis
@@ -112,18 +112,20 @@ selection or provider work, and is labeled `unmatched`.
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. Each catalog
-also has four routes in the same table: `GET .../modelcatalogs/{name}/config`,
+also has five routes in the same table: `GET .../modelcatalogs/{name}/config`,
 `POST .../modelcatalogs/{name}/language-model`, `POST .../modelcatalogs/{name}/v1/messages`,
-and `POST .../modelcatalogs/{name}/health`. Grafana reads the catalog as the
-caller, runs the route's declared `get` access check (`aigateway:modelinvoker`
-grants discovery and invocation; `aigateway:catalogwriter` grants health), and
-only then decrypts the catalog's keys and passes the object, its resource
+`POST .../modelcatalogs/{name}/health`, and `POST .../modelcatalogs/{name}/available-models`.
+Grafana reads the catalog as the caller, runs the route's declared `get` access
+check (`aigateway:modelinvoker` grants discovery and invocation;
+`aigateway:catalogwriter` grants health and provider inventory), and only then decrypts the catalog's keys and passes the object, its resource
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
-and discovery lists it without building models. The health action uses the
-same catalog checks and saved keys but queries provider model listings with
-bounded concurrency and deadlines, outside the model execution pipeline.
+and discovery lists it without building models. Health and the provider model
+ID field's suggestions share the same catalog checks, saved keys, bounded
+provider listing and admission, outside the model execution pipeline. Health
+reports only statuses for configured targets; suggestions use IDs from one
+saved provider without caching them.
 Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has

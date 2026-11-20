@@ -17,6 +17,12 @@ stores with its own provider keys and manages from the app. They use the
 Gateway's catalog format, and you don't need this package to use them. See
 [Store model catalogs in Grafana](../README.md#store-model-catalogs-in-grafana).
 
+When creating a catalog, enter the initial provider model IDs by hand. After
+saving, open or type in the provider model ID field to see matching models from
+that account. Choose a result or type an exact ID, then select **Add model** to
+save it. You can enter a custom ID even if the list is empty, incomplete, or
+unavailable. Listing uses the saved key only; it never runs on save.
+
 After saving, select **Check health** on the catalog page to see which provider
 model listings accepted the saved keys and which primary and fallback model
 IDs appeared. The Model catalog writer role grants this action by default.

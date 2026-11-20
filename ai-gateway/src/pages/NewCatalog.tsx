@@ -91,7 +91,7 @@ function NewCatalog() {
         <Step
           number={2}
           title="Connect providers and add models"
-          description="Each provider is an account with its own API key. Add the models applications can use by their provider model ID."
+          description="Each provider is an account with its own API key. Enter a provider model ID to add a model. After saving the catalog, you can browse for more models."
         >
           <Stack direction="column" gap={1}>
             <CatalogEditor spec={spec} keys={Object.keys(keys)} stored={false} readOnly={false} onChange={change} />

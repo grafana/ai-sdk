@@ -141,6 +141,8 @@ func TestCatalogHealth_ThroughPlatformHost(t *testing.T) {
 		}
 		code, _ := send(http.MethodPost, h.catalogURL("health"), "", user)
 		assert.Equal(t, http.StatusTooManyRequests, code)
+		code, _ = send(http.MethodPost, h.catalogURL("available-models")+"?provider=claude", "", user)
+		assert.Equal(t, http.StatusTooManyRequests, code)
 		release <- struct{}{}
 		<-finished
 	})
@@ -153,7 +155,7 @@ func TestCatalogHealth_ParentAndConfiguration(t *testing.T) {
 		return nil, http.ErrNotSupported
 	}))
 	handler, err := newHandler(gatewayauth.AccessPolicy{}, newTestTelemetry(t), productionRoutes(
-		http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), catalogHealth(checker),
+		http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), catalogHealth(checker), catalogAvailableModels(checker),
 	))
 	require.NoError(t, err)
 	for _, tc := range []struct {

@@ -13,8 +13,8 @@ import (
 
 func catalogHealth(checker *service.CatalogHealthChecker) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" || r.ContentLength > 0 || hasCatalogHealthBody(r.Body) {
-			writeCatalogHealth(w, http.StatusBadRequest, catalogHealthError{Message: "catalog health does not accept a body or query parameters"})
+		if r.URL.RawQuery != "" || r.ContentLength > 0 || hasCatalogActionBody(r.Body) {
+			writeCatalogAction(w, http.StatusBadRequest, catalogActionError{Message: "catalog health does not accept a body or query parameters"})
 			return
 		}
 		stack, ok := service.StackCatalogFromContext(r.Context())
@@ -27,16 +27,16 @@ func catalogHealth(checker *service.CatalogHealthChecker) http.Handler {
 		case errors.Is(err, execution.ErrCatalogConfiguration):
 			catalogHealthErrors{}.WriteHostError(w, host.ErrorCatalogConfiguration)
 		case errors.Is(err, service.ErrCatalogHealthBusy):
-			writeCatalogHealth(w, http.StatusTooManyRequests, catalogHealthError{Message: "a catalog health check is already running or the Gateway is busy"})
+			writeCatalogAction(w, http.StatusTooManyRequests, catalogActionError{Message: "a catalog health check is already running or the Gateway is busy"})
 		case err != nil:
 			catalogHealthErrors{}.WriteHostError(w, host.ErrorInternal)
 		default:
-			writeCatalogHealth(w, http.StatusOK, result)
+			writeCatalogAction(w, http.StatusOK, result)
 		}
 	})
 }
 
-func hasCatalogHealthBody(body io.Reader) bool {
+func hasCatalogActionBody(body io.Reader) bool {
 	if body == nil || body == http.NoBody {
 		return false
 	}
@@ -45,7 +45,7 @@ func hasCatalogHealthBody(body io.Reader) bool {
 	return err != io.EOF
 }
 
-type catalogHealthError struct {
+type catalogActionError struct {
 	Message string `json:"message"`
 }
 
@@ -54,15 +54,15 @@ type catalogHealthErrors struct{}
 func (catalogHealthErrors) WriteHostError(w http.ResponseWriter, category host.ErrorCategory) {
 	switch category {
 	case host.ErrorPermission:
-		writeCatalogHealth(w, http.StatusForbidden, catalogHealthError{Message: "access to catalog health denied"})
+		writeCatalogAction(w, http.StatusForbidden, catalogActionError{Message: "access to catalog health denied"})
 	case host.ErrorCatalogConfiguration:
-		writeCatalogHealth(w, http.StatusFailedDependency, catalogHealthError{Message: "invalid stored catalog configuration"})
+		writeCatalogAction(w, http.StatusFailedDependency, catalogActionError{Message: "invalid stored catalog configuration"})
 	default:
-		writeCatalogHealth(w, http.StatusInternalServerError, catalogHealthError{Message: "catalog health check failed"})
+		writeCatalogAction(w, http.StatusInternalServerError, catalogActionError{Message: "catalog health check failed"})
 	}
 }
 
-func writeCatalogHealth(w http.ResponseWriter, status int, body any) {
+func writeCatalogAction(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
