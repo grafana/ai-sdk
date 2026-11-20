@@ -241,19 +241,17 @@ Go test is `TestAnthropicSyntheticUnary`.
 
 ### Upstream
 
-Fixtures copied from the Vercel AI SDK test fixtures
-(`packages/<provider>/src/__fixtures__/`). These are static — we don't
-control the original test scenario, so the fixture files can't be
-re-recorded. They can be refreshed by re-copying from the upstream repo.
-`mise run parity-coverage` verifies that every mapped provider input remains
-byte-identical to the matching fixture at the exact commit recorded in
-`upstream.yaml`; it fails when that Git object is unavailable. CI fetches that
-commit before running the check.
+Fixtures copied from the matching Vercel AI SDK provider packages are static:
+we don't control the original test scenarios or re-record their inputs.
+`mise run parity-coverage` checks each provider's inventory and imported bytes
+against the Git release tag for its package version in `upstream.yaml`. CI
+fetches those tags. Locally, fetch the same tags into `~/src/ai` or point
+`AI_SDK_UPSTREAM_ROOT` to another Git checkout containing them. The check fails
+if a tag is unavailable or its package manifest does not match the pin.
 
-Each provider's `upstream/` directory has an `INDEX.yaml` that maps
-upstream fixture names to local test case directories. Entries with
-`null` indicate fixtures that exist upstream but haven't been imported
-yet. Update this file when importing new fixtures.
+Each provider's `upstream/INDEX.yaml` maps upstream fixture names to local test
+case directories. Use `null` for an unimported unary fixture; streaming
+fixtures must be imported. Update the index when importing new fixtures.
 
 ### Recorded
 
@@ -425,10 +423,12 @@ Copy a fixture from the Vercel AI SDK and generate expected output:
 
 ### 1. Find the fixture
 
-Browse upstream fixtures:
+Read the Anthropic version from [`upstream.yaml`](upstream.yaml) and use its
+release tag in the upstream Git checkout:
 
 ```bash
-ls ../ai/packages/anthropic/src/__fixtures__/*.chunks.txt
+tag='refs/tags/@ai-sdk/anthropic@<registered-version>'
+git --no-replace-objects -C ../ai ls-tree -r --name-only "$tag" -- packages/anthropic/src/__fixtures__
 ```
 
 Pick one. For example, `anthropic-text.chunks.txt` (basic text generation).
@@ -442,8 +442,8 @@ mkdir -p test/conformance/anthropic/upstream/<test-name>
 ### 3. Copy the fixture
 
 ```bash
-cp ../ai/packages/anthropic/src/__fixtures__/<fixture>.chunks.txt \
-   test/conformance/anthropic/upstream/<test-name>/input.chunks.txt
+git --no-replace-objects -C ../ai show "$tag:packages/anthropic/src/__fixtures__/<fixture>.chunks.txt" \
+  > test/conformance/anthropic/upstream/<test-name>/input.chunks.txt
 ```
 
 For multi-step fixtures (multiple `.chunks.txt` files for the same scenario),
@@ -465,8 +465,7 @@ the fixture through a different code path and produce wrong expected output.
 Find the test in the upstream source:
 
 ```bash
-# Search for the fixture name in the test file
-grep -n '<fixture-name>' ../ai/packages/anthropic/src/anthropic-messages-language-model.test.ts
+git --no-replace-objects -C ../ai grep -n -F -e '<fixture-name>' "$tag" -- 'packages/anthropic/src/*.test.ts'
 ```
 
 Check for:
