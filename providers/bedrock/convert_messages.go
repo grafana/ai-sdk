@@ -1,10 +1,13 @@
 package bedrock
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/toolhistory"
@@ -173,8 +176,12 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 		case promptBlockAssistant:
 			blockStart := len(out.Messages)
 			for messageIndex, msg := range block.messages {
+				parts := msg.Content
+				if slices.ContainsFunc(parts, isForeignEmptyText) {
+					parts = slices.DeleteFunc(slices.Clone(parts), isForeignEmptyText)
+				}
 				trimLastText := blockIndex == len(blocks)-1 && messageIndex == len(block.messages)-1
-				segments, err := convertAssistantContent(msg.Content, &documentCounter, &warnings, isMistral, trimLastText)
+				segments, err := convertAssistantContent(parts, &documentCounter, &warnings, isMistral, trimLastText)
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
@@ -182,7 +189,7 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				if last := len(segments) - 1; cp != nil && last >= 0 && segments[last].Role == assistantCachePointRole(msg.Content) {
+				if last := len(segments) - 1; cp != nil && last >= 0 && segments[last].Role == assistantCachePointRole(parts) {
 					segments[last].Content = append(segments[last].Content, contentBlock{CachePoint: cp})
 				}
 				for _, segment := range segments {
@@ -218,6 +225,26 @@ func containsToolResult(content []contentBlock) bool {
 		}
 	}
 	return false
+}
+
+func isForeignEmptyText(part provider.ContentPart) bool {
+	if part.Type != provider.ContentPartTypeText || part.Text != "" || part.ProviderOptions == nil {
+		return false
+	}
+	for _, key := range providerOptionKeys {
+		opt := part.ProviderOptions[key]
+		if opt == nil {
+			continue
+		}
+		if v := reflect.ValueOf(opt); v.Kind() == reflect.Pointer && v.IsNil() {
+			continue
+		}
+		if raw, ok := opt.(provider.RawProviderOption); ok && (len(raw.Raw) == 0 || bytes.Equal(bytes.TrimSpace(raw.Raw), []byte("null"))) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func assistantCachePointRole(parts []provider.ContentPart) converseRole {

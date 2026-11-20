@@ -233,7 +233,7 @@ Silently diverging is the one option that is not available.
 ```bash
 mise run validate-parity-baseline   # metadata-only check of upstream.yaml
 mise run parity-coverage            # validate fixture inventory and imports
-mise run parity-provider-shape      # report provider API shape drift
+mise run parity-provider-shape      # reject unapproved provider discriminator drift
 mise run parity-check               # full check when changing committed parity behavior
 mise run test-conformance           # replay conformance fixtures
 mise run generate-conformance       # regenerate expected fixtures

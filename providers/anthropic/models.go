@@ -14,6 +14,7 @@ var directAnthropicModelIDs = []string{
 	"claude-fable-5",
 	"claude-haiku-4-5",
 	"claude-haiku-4-5-20251001",
+	"claude-haiku-5-5",
 	"claude-opus-4-0",
 	"claude-opus-4-1",
 	"claude-opus-4-1-20250805",
@@ -141,9 +142,8 @@ type modelCapabilities struct {
 	rejectsSamplingParams                  bool
 	supportsXHighEffort                    bool
 	rejectsThinkingDisabledAboveHighEffort bool
-	// rejectsThinkingDisabled marks models that reject thinking type
-	// "disabled" and budget-based "enabled" with a 400.
-	rejectsThinkingDisabled bool
+	rejectsThinkingDisabled                bool
+	rejectsBudgetThinking                  bool
 	// rejectsForcedToolUse marks models that reject tool_choice "any" and
 	// named-tool choices with a 400.
 	rejectsForcedToolUse bool
@@ -153,14 +153,21 @@ type modelCapabilities struct {
 	isKnownModel                 bool
 }
 
-var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-.:])|3($|[-.]))`)
+var (
+	baseFable5ModelPattern   = regexp.MustCompile(`claude-fable-5(?:$|@|-[0-9]{8}(?:$|[-@:]))`)
+	legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-.:])|3($|[-.]))`)
+)
 
 // getModelCapabilities returns metadata for model ID string matching against
 // known Claude families (substring checks, most specific first).
 func getModelCapabilities(modelID string) modelCapabilities {
 	switch {
 	case strings.Contains(modelID, "claude-sonnet-5-5"):
-		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, supportsBetweenToolsThinking: true, isKnownModel: true}
+		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, rejectsForcedToolUse: true, supportsBetweenToolsThinking: true, isKnownModel: true}
+	case strings.Contains(modelID, "claude-haiku-5-5"):
+		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsBudgetThinking: true, isKnownModel: true}
+	case baseFable5ModelPattern.MatchString(modelID):
+		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabled: true, rejectsBudgetThinking: true, isKnownModel: true}
 	case strings.Contains(modelID, "claude-opus-5"):
 		return modelCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsStructuredOutput: true, rejectsSamplingParams: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true}
 	case strings.Contains(modelID, "claude-opus-4-8") ||

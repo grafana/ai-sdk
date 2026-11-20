@@ -202,20 +202,29 @@ The repository SHALL validate that every retained test package consuming `ai` or
 - **WHEN** the registered package set is upgraded
 - **THEN** conformance, integration, and CLI package manifests that consume a tracked package are updated together
 
-### Requirement: Provider API-shape drift report
-The repository SHALL provide a provider V4 API-shape drift report that compares upstream LanguageModelV4 discriminator values with Go provider constants. By default, the report SHALL resolve the `@ai-sdk/provider` source version declared in the upstream parity baseline. An explicitly supplied source root MAY override that source, but the report SHALL NOT silently fall back to an arbitrary local checkout.
-
-#### Scenario: Upstream adds a stream part type
-- **WHEN** upstream LanguageModelV4 declares a stream part discriminator missing from Go provider constants
-- **THEN** the drift report identifies the missing value as parity review input
+### Requirement: Provider API-shape drift check
+The repository SHALL enforce provider V4 discriminator parity in the parity command and CI parity job. The check SHALL derive the stream part, generated content part, tool-result output, unified finish reason and warning values from the named declarations in the registered `@ai-sdk/provider` package source, including imported union members, and compare them with the corresponding Go provider constants in both directions.
 
 #### Scenario: Registered provider source is selected
-- **WHEN** the drift report runs without an explicit source-root override
-- **THEN** it reads `@ai-sdk/provider` from the registered baseline and compares against that installed package source
+- **WHEN** the check runs in CI or without an explicit source-root override
+- **THEN** it resolves the installed `@ai-sdk/provider` dependency and verifies its package name and version against the registered baseline
+- **AND** an explicitly supplied source root must identify the same package and version
 
-#### Scenario: Registered provider source is unavailable
-- **WHEN** the registered provider package source is not installed
-- **THEN** the drift report reports that the registered source is unavailable and does not substitute another upstream version silently
+#### Scenario: Registered provider source cannot be checked
+- **WHEN** the required source is missing, unreadable, a different version, or cannot be fully extracted
+- **THEN** the check fails with a diagnostic identifying the unavailable or unsupported source instead of skipping or falling back
+
+#### Scenario: Discriminators drift in either direction
+- **WHEN** the upstream declaration or the Go provider constants contain a value missing from the other side
+- **THEN** the check reports the value and which side declares it, and fails unless the difference matches an explicit exception
+
+#### Scenario: A documented difference is allowed
+- **WHEN** a known gap records an exception with a rationale and the exact check, direction, discriminator and registered provider version
+- **THEN** the check reports that exception without suppressing any other difference
+
+#### Scenario: An exception becomes stale
+- **WHEN** the registered provider version changes or the exact difference no longer exists in the declared direction
+- **THEN** the check fails until the exception is removed or reviewed for the current baseline
 
 ### Requirement: Frontend hook interop coverage
 The repository SHALL include hook-level frontend interop tests for upstream AI SDK UI consumers at the package versions registered in `test/conformance/upstream.yaml`. A behavior SHALL count as hook-level evidence only when an assertion executes through the corresponding public upstream hook surface; lower-level chunk snapshots, SSE parsing, or UI-message reader tests SHALL NOT substitute for hook state-machine evidence.

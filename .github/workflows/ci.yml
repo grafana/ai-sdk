@@ -258,13 +258,17 @@ jobs:
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-providerwire-v4
 
-      - name: Fetch pinned upstream fixtures
+      - name: Fetch upstream provider fixture release tags
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        working-directory: test/conformance/tools
         run: |
-          commit=$(awk '/^  commit:/ { print $2 }' test/conformance/upstream.yaml)
+          refs=$(node --input-type=module -e '
+            import { providerFixtureReleases } from "./coverage-inventory.mts";
+            for (const { ref } of providerFixtureReleases("..")) console.log(`${ref}:${ref}`);
+          ')
+          mapfile -t refspecs <<< "$refs"
           git init "$RUNNER_TEMP/vercel-ai"
-          git -C "$RUNNER_TEMP/vercel-ai" remote add origin https://github.com/vercel/ai.git
-          git -C "$RUNNER_TEMP/vercel-ai" fetch --depth=1 origin "$commit"
+          git -C "$RUNNER_TEMP/vercel-ai" fetch --no-tags --depth=1 https://github.com/vercel/ai.git "${refspecs[@]}"
 
       - name: Validate parity coverage
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -272,7 +276,7 @@ jobs:
           AI_SDK_UPSTREAM_ROOT: ${{ runner.temp }}/vercel-ai
         run: mise run parity-coverage
 
-      - name: Report provider API shape parity
+      - name: Check provider API shape parity
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run parity-provider-shape
 

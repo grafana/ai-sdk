@@ -340,6 +340,16 @@ knownGaps:
       finish, preserving Go's incomplete-stream distinction, where the registered
       upstream reference emits finish with interrupted; complete upstream EOF
       parity is not claimed.
+  - id: provider-stream-ping
+    surface: provider-contract
+    status: gap
+    description: Go does not yet expose upstream's opt-in provider stream keep-alive
+      part. Tracked by grafana/ai-sdk#810.
+    providerShapeException:
+      version: 4.0.38
+      check: stream part
+      direction: upstream-only
+      value: ping
   - id: realtime-model-surface
     surface: provider-contract
     status: gap

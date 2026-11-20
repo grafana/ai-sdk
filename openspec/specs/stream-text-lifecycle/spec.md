@@ -121,7 +121,7 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 
 - **WHEN** a provider emits a text start and end without a text delta
 - **THEN** `StepResult.Content` SHALL retain the empty text part in its recorded position
-- **AND** response-message content SHALL omit the empty text part
+- **AND** response-message content SHALL retain it in that position if provider metadata was supplied for the part, and omit it otherwise
 
 #### Scenario: Local tool content follows recorded content
 
