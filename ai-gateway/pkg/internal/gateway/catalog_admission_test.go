@@ -119,7 +119,7 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 		body   string
 		reason string
 	}{
-		{name: "base URL", method: http.MethodPost, reason: "providers.anthropic.baseURL is not supported", body: catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "https://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})},
+		{name: "base URL", method: http.MethodPost, reason: "providers.anthropic.baseURL is not a listed custom endpoint", body: catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "https://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})},
 		{name: "removing a used key", method: http.MethodPut, path: "default", reason: "providers.anthropic requires the secure value secure.anthropic", body: catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"remove": true}})},
 		{name: "another secret by name", method: http.MethodPut, path: "default", reason: "secure.anthropic must not reference a secret by name", body: catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"name": "shared"}})},
 		{name: "provider without a key", method: http.MethodPut, path: "default", reason: "providers.openai requires the secure value secure.openai", body: catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic"}, "openai": map[string]any{"type": "openai"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})},

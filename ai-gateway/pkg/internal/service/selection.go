@@ -11,6 +11,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/byok"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -20,6 +21,8 @@ import (
 type BYOKOptions struct {
 	// Client is the shared model HTTP client for request accounts.
 	Client *http.Client
+	// Endpoints are the custom endpoints a request account may use.
+	Endpoints outbound.CustomEndpoints
 	// Factory gives the request accounts' chain its logical identity.
 	Factory ModelFactory
 }
@@ -80,7 +83,7 @@ func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions, stackOptions
 }
 
 func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (execution.Selection, error) {
-	request, err := byok.DecodeRequest(id, controls, nil)
+	request, err := byok.DecodeRequest(id, controls, options.Endpoints)
 	switch {
 	case errors.Is(err, byok.ErrInvalidSelector):
 		return execution.Selection{}, execution.ErrInvalidBYOKSelector

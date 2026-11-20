@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 const (
@@ -51,13 +52,16 @@ type healthCatalogID struct{ namespace, name string }
 // CatalogHealthChecker runs bounded model-listing checks.
 type CatalogHealthChecker struct {
 	transport http.RoundTripper
+	endpoints outbound.CustomEndpoints
 	mu        sync.Mutex
 	active    map[healthCatalogID]struct{}
 }
 
-// NewCatalogHealthChecker creates the checker shared by the Gateway's health requests.
-func NewCatalogHealthChecker(transport http.RoundTripper) *CatalogHealthChecker {
-	return &CatalogHealthChecker{transport: transport, active: make(map[healthCatalogID]struct{})}
+// NewCatalogHealthChecker creates the checker shared by the Gateway's health
+// requests. A catalog whose custom endpoints aren't all in endpoints is
+// refused before any listing request.
+func NewCatalogHealthChecker(transport http.RoundTripper, endpoints outbound.CustomEndpoints) *CatalogHealthChecker {
+	return &CatalogHealthChecker{transport: transport, endpoints: endpoints, active: make(map[healthCatalogID]struct{})}
 }
 
 // Check uses only the checked stored catalog and its decrypted keys.
@@ -69,7 +73,7 @@ func (c *CatalogHealthChecker) Check(ctx context.Context, namespace string, stac
 	defer c.release(id)
 	ctx, cancel := context.WithTimeout(ctx, healthRunTimeout)
 	defer cancel()
-	file, keys, err := parseStackCatalog(stack)
+	file, keys, err := parseStackCatalog(stack, c.endpoints)
 	if err != nil {
 		return CatalogHealth{}, err
 	}

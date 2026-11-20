@@ -1,6 +1,7 @@
 package stackcatalog
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -9,21 +10,29 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 const (
-	providerAnthropic = "anthropic"
-	providerOpenAI    = "openai"
+	providerAnthropic  = "anthropic"
+	providerOpenAI     = "openai"
+	providerCompatible = "openai-compatible"
 )
 
 // Parse validates a stack catalog spec whose providers have the secure keys
-// in keys, and returns it as a config.File without provider keys.
-func Parse(spec v1alpha1.Spec, keys []string) (config.File, error) {
+// in keys, and returns it as a config.File without provider keys. A baseURL
+// equal to its type's native endpoint counts as unset; any other must match
+// one of endpoints, without a DNS lookup.
+func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints) (config.File, error) {
 	if err := checkPolicy(spec); err != nil {
 		return config.File{}, err
 	}
 	file := convert(spec)
 	if err := file.ValidateShape(); err != nil {
+		return config.File{}, err
+	}
+	if err := checkEndpoints(file, endpoints); err != nil {
 		return config.File{}, err
 	}
 	if err := checkKeys(file, keys); err != nil {
@@ -37,22 +46,32 @@ func checkPolicy(spec v1alpha1.Spec) error {
 		if !validName(name) {
 			return fmt.Errorf("modelcatalog: provider names must be DNS labels: 1 to 63 lowercase letters, digits or '-', starting and ending with a letter or digit")
 		}
-		provider := spec.Providers[name]
-		if provider.Type != providerAnthropic && provider.Type != providerOpenAI {
-			return fmt.Errorf("modelcatalog: providers.%s.type must be %s or %s", name, providerAnthropic, providerOpenAI)
+		switch spec.Providers[name].Type {
+		case providerAnthropic, providerOpenAI, providerCompatible:
+		default:
+			return fmt.Errorf("modelcatalog: providers.%s.type must be %s, %s or %s", name, providerAnthropic, providerOpenAI, providerCompatible)
 		}
-		for _, field := range []struct {
-			name string
-			set  bool
-		}{
-			{"baseURL", provider.BaseURL != nil},
-			{"providerName", provider.ProviderName != nil},
-			{"supportsStructuredOutputs", provider.SupportsStructuredOutputs != nil},
-		} {
-			if field.set {
-				return fmt.Errorf("modelcatalog: providers.%s.%s is not supported in a model catalog", name, field.name)
-			}
+	}
+	return nil
+}
+
+// checkEndpoints checks and normalizes each custom endpoint. Messages name
+// the field path, never the URL or its host.
+func checkEndpoints(file config.File, endpoints outbound.CustomEndpoints) error {
+	for _, name := range slices.Sorted(maps.Keys(file.Providers)) {
+		provider := file.Providers[name]
+		if provider.BaseURL == "" {
+			continue
 		}
+		endpoint, err := endpoints.Check(provider.BaseURL, nativemodel.DefaultBaseURL(provider.Type))
+		switch {
+		case errors.Is(err, outbound.ErrEndpointForm):
+			return fmt.Errorf("modelcatalog: providers.%s.baseURL must be an absolute URL without userinfo, query, fragment, dot segments or encoded separators", name)
+		case err != nil:
+			return fmt.Errorf("modelcatalog: providers.%s.baseURL is not a listed custom endpoint", name)
+		}
+		provider.BaseURL = endpoint
+		file.Providers[name] = provider
 	}
 	return nil
 }
@@ -60,7 +79,7 @@ func checkPolicy(spec v1alpha1.Spec) error {
 func convert(spec v1alpha1.Spec) config.File {
 	file := config.File{Providers: make(map[string]config.Provider, len(spec.Providers)), Models: make(map[string]config.Model, len(spec.Models))}
 	for name, provider := range spec.Providers {
-		file.Providers[name] = config.Provider{Type: provider.Type}
+		file.Providers[name] = config.Provider{Type: provider.Type, BaseURL: deref(provider.BaseURL), ProviderName: deref(provider.ProviderName), SupportsStructuredOutputs: deref(provider.SupportsStructuredOutputs)}
 	}
 	for id, model := range spec.Models {
 		converted := config.Model{Name: model.Name, Primary: target(model.Primary), Aliases: slices.Clone(model.Aliases)}
@@ -73,6 +92,14 @@ func convert(spec v1alpha1.Spec) config.File {
 		file.Models[id] = converted
 	}
 	return file
+}
+
+func deref[T any](pointer *T) T {
+	if pointer == nil {
+		var zero T
+		return zero
+	}
+	return *pointer
 }
 
 func target(value v1alpha1.Target) config.Primary {
