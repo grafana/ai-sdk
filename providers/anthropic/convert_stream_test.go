@@ -1935,12 +1935,8 @@ func TestStreamAdapter_PrePopulatedInput(t *testing.T) {
 	})
 }
 
-// TestStreamAdapter_MarkCodeExecutionDynamic covers the upstream
-// hasDynamicWebToolWithoutCodeExecution behavior on the streaming path: when
-// a 20260209 web tool is configured without an explicit code_execution tool,
-// implicit code_execution server_tool_use blocks must carry dynamic: true on
-// both tool-input-start and the final tool-call events
-// (anthropic-language-model.ts:1705-1714 and :2104-2121).
+// TestStreamAdapter_MarkCodeExecutionDynamic verifies that the marker from
+// hasDynamicFilteringWebToolWithoutCodeExecution reaches tool-input-start and tool-call.
 func TestStreamAdapter_MarkCodeExecutionDynamic(t *testing.T) {
 	codeExecutionEvents := []anthropic.BetaRawMessageStreamEventUnion{
 		unmarshalEvent(t, `{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"stu_1","name":"code_execution"}}`),

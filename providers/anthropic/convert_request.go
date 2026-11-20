@@ -565,7 +565,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 		applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
 	}
-	br.markCodeExecutionDynamic = hasDynamicWebToolWithoutCodeExecution(tools, br.usesJsonResponseTool)
+	br.markCodeExecutionDynamic = hasDynamicFilteringWebToolWithoutCodeExecution(p.Tools)
 	if len(p.Tools) > 0 {
 		br.requestOptions = append(br.requestOptions, webToolNumberOptions(tools, p.Tools)...)
 	}
@@ -3383,24 +3383,18 @@ func hasFunctionTools(tools []provider.Tool) bool {
 	return false
 }
 
-func hasDynamicWebToolWithoutCodeExecution(tools []provider.Tool, jsonFallback bool) bool {
-	var hasDynamicWebTool, hasCodeExecutionTool bool
-	for _, t := range tools {
-		if t.Type != provider.ToolTypeProvider {
-			continue
-		}
-		switch t.ID {
-		case "anthropic.web_fetch_20260209", "anthropic.web_search_20260209":
+func hasDynamicFilteringWebToolWithoutCodeExecution(tools []anthropic.BetaToolUnionParam) bool {
+	hasDynamicWebTool := false
+	for _, tool := range tools {
+		switch {
+		case tool.OfCodeExecutionTool20250522 != nil, tool.OfCodeExecutionTool20250825 != nil, tool.OfCodeExecutionTool20260120 != nil:
+			return false
+		case tool.OfWebFetchTool20260209 != nil, tool.OfWebFetchTool20260318 != nil,
+			tool.OfWebSearchTool20260209 != nil, tool.OfWebSearchTool20260318 != nil:
 			hasDynamicWebTool = true
-		case "anthropic.web_fetch_20260318", "anthropic.web_search_20260318":
-			hasDynamicWebTool = hasDynamicWebTool || jsonFallback
-		case "anthropic.code_execution_20250522",
-			"anthropic.code_execution_20250825",
-			"anthropic.code_execution_20260120":
-			hasCodeExecutionTool = true
 		}
 	}
-	return hasDynamicWebTool && !hasCodeExecutionTool
+	return hasDynamicWebTool
 }
 
 // resolveAnthropicToolStreaming reads AnthropicOptions.ToolStreaming and

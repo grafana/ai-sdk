@@ -6344,7 +6344,7 @@ func TestGroupIntoBlocks_GroupingRules(t *testing.T) {
 
 func ptrInt(i int) *int { return &i }
 
-func TestHasDynamicWebToolWithoutCodeExecution(t *testing.T) {
+func TestHasDynamicFilteringWebToolWithoutCodeExecution(t *testing.T) {
 	tests := []struct {
 		name  string
 		tools []provider.Tool
@@ -6410,7 +6410,9 @@ func TestHasDynamicWebToolWithoutCodeExecution(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, hasDynamicWebToolWithoutCodeExecution(tc.tools, false))
+			tools, warnings, _ := convertTools(&cacheControlValidator{}, tc.tools, false)
+			require.Empty(t, warnings)
+			assert.Equal(t, tc.want, hasDynamicFilteringWebToolWithoutCodeExecution(tools))
 		})
 	}
 }
