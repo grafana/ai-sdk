@@ -1485,7 +1485,7 @@ func TestBuildParams_TopLevelReasoning(t *testing.T) {
 		provider.ReasoningXHigh,
 	} {
 		t.Run("maps "+string(effort), func(t *testing.T) {
-			body, _ := buildBody(t, "gpt-5.5", provider.CallOptions{
+			body, _ := buildBody(t, "o3-mini", provider.CallOptions{
 				Prompt:    []provider.Message{provider.UserText("hi")},
 				Reasoning: effort,
 			})

@@ -777,40 +777,46 @@ func TestInvalidDirectFileInputs(t *testing.T) {
 	}
 }
 
-func TestFileSelectedEmptyDataAndUnsupportedText(t *testing.T) {
+func TestBuildRequest_SelectedFileData(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		mediaType string
-		data      provider.DataContent
-		wantType  string
-		wantData  string
-		invalid   bool
+		name         string
+		mediaType    string
+		data         provider.DataContent
+		partMetadata json.RawMessage
+		want         string
+		wantError    string
 	}{
-		{name: "PDF empty data", mediaType: "application/pdf", data: provider.Base64DataContent(""), wantType: "file", wantData: "data:application/pdf;base64,"},
-		{name: "plain text empty data", mediaType: "text/plain", data: provider.BytesDataContent(nil), wantType: "text", wantData: ""},
-		{name: "text arm unsupported", mediaType: "text/plain", data: provider.TextDataContent(""), invalid: true},
+		{name: "PDF empty data", mediaType: "application/pdf", data: provider.Base64DataContent(""), want: `{"type":"file","file":{"filename":"document.pdf","file_data":"data:application/pdf;base64,"}}`},
+		{name: "plain text empty data", mediaType: "text/plain", data: provider.BytesDataContent(nil), want: `{"type":"text","text":""}`},
+		{
+			name:         "inline text with part metadata",
+			mediaType:    "text/plain",
+			data:         provider.TextDataContent("Résumé: café, 日本語"),
+			partMetadata: json.RawMessage(`{"cache_control":{"type":"ephemeral"}}`),
+			want:         `{"type":"text","text":"Résumé: café, 日本語","cache_control":{"type":"ephemeral"}}`,
+		},
+		{name: "empty inline text", mediaType: "text/plain", data: provider.TextDataContent(""), want: `{"type":"text","text":""}`},
+		{name: "inline text with uppercase media type", mediaType: "TEXT/PLAIN", data: provider.TextDataContent("hello"), want: `{"type":"text","text":"hello"}`},
+		{name: "inline text rejected for PDF", mediaType: "application/pdf", data: provider.TextDataContent("not a PDF"), wantError: "expected binary data"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			part := provider.FilePart(tc.mediaType, tc.data)
+			if tc.partMetadata != nil {
+				part.ProviderOptions = provider.ProviderOptions{
+					"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: tc.partMetadata},
+				}
+			}
 			body, _, err := (&model{modelID: "test-model"}).buildRequest(provider.CallOptions{
-				Prompt: []provider.Message{provider.NewUserMessage(provider.FilePart(tc.mediaType, tc.data))},
+				Prompt: []provider.Message{provider.NewUserMessage(part)},
 			}, false)
-			if tc.invalid {
-				require.Error(t, err)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
 				return
 			}
 			require.NoError(t, err)
-			encoded, err := json.Marshal(body)
+			encoded, err := json.Marshal(body["messages"])
 			require.NoError(t, err)
-			var native map[string]any
-			require.NoError(t, json.Unmarshal(encoded, &native))
-			message := native["messages"].([]any)[0].(map[string]any)
-			content := message["content"].([]any)[0].(map[string]any)
-			assert.Equal(t, tc.wantType, content["type"])
-			if tc.wantType == "file" {
-				assert.Equal(t, tc.wantData, content["file"].(map[string]any)["file_data"])
-			} else {
-				assert.Equal(t, tc.wantData, content["text"])
-			}
+			assert.JSONEq(t, `[{"role":"user","content":[`+tc.want+`]}]`, string(encoded))
 		})
 	}
 }

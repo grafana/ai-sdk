@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseJsonEventStream } from "@ai-sdk/provider-utils";
-import { uiMessageChunkSchema, type UIMessageChunk } from "ai";
+import { readUIMessageStream, uiMessageChunkSchema, type UIMessage, type UIMessageChunk } from "ai";
 import { fetchScenario } from "./helpers.js";
 
 describe("SSE wire format", () => {
@@ -44,6 +44,45 @@ describe("SSE wire format", () => {
     );
     const fullText = textDeltas.map((c) => c.delta).join("");
     expect(fullText).toBe("Hello, world!");
+  });
+
+  it("applies step metadata before forwarding finish-step", async () => {
+    const res = await fetchScenario("finish-step-metadata");
+    expect(res.status).toBe(200);
+
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    expect(chunks.slice(-4)).toEqual([
+      expect.objectContaining({ type: "text-end" }),
+      { type: "message-metadata", messageMetadata: { step: 1 } },
+      { type: "finish-step" },
+      { type: "finish", finishReason: "stop" },
+    ]);
+
+    let snapshot: UIMessage | undefined;
+    for await (const message of readUIMessageStream({
+      stream: new ReadableStream<UIMessageChunk>({
+        start(controller) {
+          for (const chunk of chunks.slice(0, -1)) controller.enqueue(chunk);
+          controller.close();
+        },
+      }),
+      terminateOnError: true,
+    })) {
+      snapshot = message;
+    }
+    expect(snapshot?.metadata).toEqual({ step: 1 });
+    expect(snapshot?.parts).toContainEqual(
+      expect.objectContaining({ type: "text", text: "Hello, world!", state: "done" }),
+    );
   });
 
   it("preserves a length finish reason", async () => {
