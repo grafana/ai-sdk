@@ -174,28 +174,56 @@ func TestSonnet55ForcedToolChoiceFallsBackToAuto(t *testing.T) {
 	})
 }
 
-func TestSonnet55JSONToolModeUsesOutputFormat(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
-	opts := provider.CallOptions{
-		ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
-		ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: StructuredOutputJSONTool}),
+func TestSonnet55JSONToolMode(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		native bool
+	}{
+		{"closed object", `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`, true},
+		{"recursive", `{"type":"object","properties":{"next":{"$ref":"#"}},"additionalProperties":false}`, false},
+		{"map", `{"type":"object","properties":{"scores":{"type":"object","additionalProperties":{"type":"number"}}},"required":["scores"],"additionalProperties":false}`, false},
+		{"11 optional properties", `{"type":"object","additionalProperties":false,"properties":{
+			"a":{"type":"string"},"b":{"type":"string"},"c":{"type":"string"},"d":{"type":"string"},
+			"e":{"type":"string"},"f":{"type":"string"},"g":{"type":"string"},"h":{"type":"string"},
+			"i":{"type":"string"},"j":{"type":"string"},"k":{"type":"string"}}}`, false},
 	}
 	for name, caps := range map[string]providerCapabilities{
 		"direct": directProviderCapabilities,
 		"vertex": vertexProviderCapabilities,
 	} {
-		t.Run(name, func(t *testing.T) {
-			p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-5-5", opts, false, caps)
-			require.NoError(t, err)
-			assert.False(t, br.usesJsonResponseTool)
-			assert.NotEmpty(t, p.OutputConfig.Format.Schema)
-			assert.Nil(t, p.ToolChoice.OfAny)
-			assert.Contains(t, warnings, provider.Warning{
-				Type:    provider.WarnUnsupported,
-				Feature: "providerOptions.anthropic.structuredOutputMode",
-				Details: "structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.",
+		for _, tc := range tests {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				p, _, warnings, br, err := buildParamsWithCapabilities("claude-sonnet-5-5", provider.CallOptions{
+					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(tc.schema)},
+					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: StructuredOutputJSONTool}),
+				}, false, caps)
+				require.NoError(t, err)
+				assert.Nil(t, p.ToolChoice.OfAny)
+				if tc.native {
+					assert.False(t, br.usesJsonResponseTool)
+					assert.NotEmpty(t, p.OutputConfig.Format.Schema)
+					assert.Empty(t, p.Tools)
+					assert.Equal(t, []provider.Warning{{
+						Type:    provider.WarnUnsupported,
+						Feature: "providerOptions.anthropic.structuredOutputMode",
+						Details: "structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.",
+					}}, warnings)
+					return
+				}
+				assert.True(t, br.usesJsonResponseTool)
+				assert.Nil(t, p.OutputConfig.Format.Schema)
+				assert.Equal(t, []provider.Warning{forcedToolChoiceWarning(provider.ToolChoice{Type: provider.ToolChoiceRequired})}, warnings)
+				require.NotNil(t, p.ToolChoice.OfAuto)
+				assert.True(t, p.ToolChoice.OfAuto.DisableParallelToolUse.Value)
+				require.Len(t, p.Tools, 1)
+				require.NotNil(t, p.Tools[0].OfTool)
+				assert.Equal(t, "json", p.Tools[0].OfTool.Name)
+				inputSchema, err := json.Marshal(p.Tools[0].OfTool.InputSchema)
+				require.NoError(t, err)
+				assert.JSONEq(t, tc.schema, string(inputSchema))
 			})
-		})
+		}
 	}
 }
 

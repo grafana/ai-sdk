@@ -26,6 +26,7 @@ manifest: {
 			kinds: [
 				{kind: "ModelCatalog", verbs: ["get"]},
 				{kind: "ModelCatalog/language-model", verbs: ["get"]},
+				{kind: "ModelCatalog/messages", verbs: ["get"]},
 				{kind: "ModelCatalog/config", verbs: ["get"]},
 			]
 		}
@@ -59,6 +60,10 @@ v1alpha1: {
 			operationId: "createChatCompletion"
 			responses: default: description: "OpenAI Chat Completions response"
 		}
+		"/namespaces/{namespace}/v1/messages": post: {
+			operationId: "createAnthropicMessage"
+			responses: default: description: "Anthropic Messages response"
+		}
 		"/namespaces/{namespace}/language-model": post: {
 			operationId: "createLanguageModel"
 			responses: default: description: "ProviderWire language-model response"
@@ -69,6 +74,13 @@ v1alpha1: {
 			"x-grafana-declared-authz-subresource": "config"
 			"x-grafana-declared-authz-verb":        "get"
 			responses: default: description: "ProviderWire discovery response for the catalog"
+		}
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages": post: {
+			operationId:                            "createModelCatalogAnthropicMessage"
+			"x-grafana-declared-authz-resource":    "modelcatalogs"
+			"x-grafana-declared-authz-subresource": "messages"
+			"x-grafana-declared-authz-verb":        "get"
+			responses: default: description: "Anthropic Messages response for the catalog"
 		}
 		"/namespaces/{namespace}/modelcatalogs/{name}/language-model": post: {
 			operationId:                            "createModelCatalogLanguageModel"

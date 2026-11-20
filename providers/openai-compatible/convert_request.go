@@ -26,7 +26,8 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
-	messages, err := convertPrompt(opts.Prompt, providerOptionsName(m.providerName))
+	metadataKey := resolveMetadataKey(opts.ProviderOptions, m.providerName)
+	messages, err := convertPrompt(opts.Prompt, providerOptionsName(m.providerName), metadataKey)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -326,7 +327,7 @@ func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
 	}
 }
 
-func convertPrompt(prompt []provider.Message, providerName string) ([]chatMessage, error) {
+func convertPrompt(prompt []provider.Message, providerName, metadataKey string) ([]chatMessage, error) {
 	messages := make([]chatMessage, 0, len(prompt))
 	for _, msg := range prompt {
 		switch msg.Role {
@@ -347,7 +348,7 @@ func convertPrompt(prompt []provider.Message, providerName string) ([]chatMessag
 			}
 			messages = append(messages, chatMessage{Role: "user", Content: converted, ExtraFields: extra})
 		case provider.RoleAssistant:
-			converted, err := convertAssistantMessage(msg.Content, msg.ProviderOptions)
+			converted, err := convertAssistantMessage(msg.Content, msg.ProviderOptions, metadataKey)
 			if err != nil {
 				return nil, err
 			}
@@ -410,7 +411,7 @@ func convertUserContent(parts []provider.ContentPart, messageOptions provider.Pr
 	return out, messageExtra, nil
 }
 
-func convertAssistantMessage(parts []provider.ContentPart, messageOptions provider.ProviderOptions) (chatMessage, error) {
+func convertAssistantMessage(parts []provider.ContentPart, messageOptions provider.ProviderOptions, metadataKey string) (chatMessage, error) {
 	var text strings.Builder
 	var reasoning strings.Builder
 	var toolCalls []chatToolCall
@@ -447,7 +448,7 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 				return chatMessage{}, err
 			}
 			toolCall.ExtraFields = partExtra
-			thoughtSignature, err := googleThoughtSignature(part.ProviderOptions)
+			thoughtSignature, err := googleThoughtSignature(part.ProviderOptions, metadataKey)
 			if err != nil {
 				return chatMessage{}, err
 			}
@@ -494,7 +495,16 @@ type googleOptions struct {
 	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 
-func googleThoughtSignature(opts provider.ProviderOptions) (string, error) {
+func googleThoughtSignature(opts provider.ProviderOptions, metadataKey string) (string, error) {
+	if metadataKey != "" && metadataKey != "google" {
+		configured, err := configuredThoughtSignature(opts[metadataKey])
+		if err != nil {
+			return "", fmt.Errorf("openai: reading %s provider options: %w", metadataKey, err)
+		}
+		if configured != nil {
+			return *configured, nil
+		}
+	}
 	google, ok, err := provider.ResolveOption[googleOptions](opts, "google")
 	if err != nil {
 		return "", fmt.Errorf("openai: reading google provider options: %w", err)
@@ -503,6 +513,32 @@ func googleThoughtSignature(opts provider.ProviderOptions) (string, error) {
 		return "", nil
 	}
 	return google.ThoughtSignature, nil
+}
+
+func configuredThoughtSignature(opt provider.ProviderOption) (*string, error) {
+	var raw []byte
+	switch opt := opt.(type) {
+	case nil:
+		return nil, nil
+	case provider.RawProviderOption:
+		if len(opt.Raw) == 0 {
+			return nil, nil
+		}
+		raw = opt.Raw
+	default:
+		var err error
+		raw, err = json.Marshal(opt)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var configured struct {
+		ThoughtSignature *string `json:"thoughtSignature,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &configured); err != nil {
+		return nil, err
+	}
+	return configured.ThoughtSignature, nil
 }
 
 func convertToolMessages(parts []provider.ContentPart) ([]chatMessage, error) {
@@ -725,6 +761,8 @@ func base64Data(data *provider.DataContent) (string, error) {
 
 func textFileContent(data *provider.DataContent) (string, error) {
 	switch {
+	case data.IsText():
+		return data.Text, nil
 	case data.IsURL():
 		return data.URL, nil
 	case data.Bytes != nil:
@@ -873,10 +911,5 @@ func reasoningEffort(reasoning provider.ReasoningEffort, opts OpenAIOptions) str
 	if opts.ReasoningEffort != "" {
 		return opts.ReasoningEffort
 	}
-	switch reasoning {
-	case provider.ReasoningProviderDefault, provider.ReasoningNone:
-		return ""
-	default:
-		return string(reasoning)
-	}
+	return string(reasoning)
 }

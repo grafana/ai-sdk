@@ -171,33 +171,30 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 	cases := []struct {
 		name         string
 		toolChoice   provider.ToolChoice
-		assertChoice func(t *testing.T, c *toolChoiceUnion)
+		assertChoice func(t *testing.T, req *converseInput)
 	}{
 		{
 			name:       "auto",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceAuto},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				assert.NotNil(t, c.Auto)
-				assert.Nil(t, c.Any)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Equal(t, &toolChoiceUnion{Auto: &struct{}{}}, req.ToolConfig.ToolChoice)
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
 			},
 		},
 		{
 			name:       "required",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceRequired},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				assert.NotNil(t, c.Any)
-				assert.Nil(t, c.Auto)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Equal(t, &toolChoiceUnion{Any: &struct{}{}}, req.ToolConfig.ToolChoice)
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
 			},
 		},
 		{
 			name:       "specific tool",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				require.NotNil(t, c.Tool)
-				assert.Equal(t, "weather", c.Tool.Name)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Nil(t, req.ToolConfig.ToolChoice)
+				assert.Equal(t, map[string]any{"type": "tool", "name": "weather", "disable_parallel_tool_use": true}, req.AdditionalModelRequestFields["tool_choice"])
 			},
 		},
 	}
@@ -214,7 +211,7 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 			require.Len(t, req.ToolConfig.Tools, 1)
 			require.NotNil(t, req.ToolConfig.Tools[0].ToolSpec)
 			assert.Equal(t, "weather", req.ToolConfig.Tools[0].ToolSpec.Name)
-			tc.assertChoice(t, req.ToolConfig.ToolChoice)
+			tc.assertChoice(t, req)
 		})
 	}
 }
@@ -798,6 +795,35 @@ func TestBuildRequest_NativeStructuredOutputForSupportedAnthropic(t *testing.T) 
 	fmt2, _ := oc["format"].(map[string]any)
 	require.NotNil(t, fmt2)
 	assert.Equal(t, "json_schema", fmt2["type"])
+}
+
+func TestBuildRequest_NativeOutputRetainsRootRefDefinitions(t *testing.T) {
+	for _, key := range []string{"definitions", "$defs"} {
+		t.Run(key, func(t *testing.T) {
+			raw := fmt.Sprintf(`{
+				"$ref": "#/%[1]s/Answer",
+				"title": "discarded",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value", "title": "discarded"}}},
+					"Value": {"type": "string", "minLength": 2}
+				}
+			}`, key)
+			req, _, meta := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt:         []provider.Message{provider.UserText("x")},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(raw)},
+			})
+			assert.False(t, meta.usesJSONResponseTool)
+			assert.False(t, meta.usesJSONInstruction)
+			fields := marshalRequestBody(t, req)
+			assert.JSONEq(t, fmt.Sprintf(`{"output_config":{"format":{"type":"json_schema","schema":{
+				"$ref": "#/%[1]s/Answer",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value"}}, "additionalProperties": false},
+					"Value": {"type": "string", "description": "min length: 2."}
+				}
+			}}}}`, key), string(fields["additionalModelRequestFields"]))
+		})
+	}
 }
 
 func TestBuildRequest_NativeStructuredOutputSanitizesUnsupportedConstraints(t *testing.T) {
