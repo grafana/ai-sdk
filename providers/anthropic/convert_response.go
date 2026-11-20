@@ -204,11 +204,8 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				ProviderExecuted: true,
 				ProviderMetadata: callerMetadata,
 			}
-			// Mirrors upstream anthropic-language-model.ts:1043-1047: when
-			// a 20260209 web tool is configured without an explicit
-			// code_execution tool, mark the implicit code_execution
-			// server_tool_use as dynamic so the tool-validation layer accepts
-			// the call.
+			// Implicit code execution from a prepared dynamic web tool
+			// bypasses validation against the declared tool list.
 			if markCodeExecutionDynamic && resolvedName == "code_execution" {
 				part.Dynamic = ptrBool(true)
 			}
