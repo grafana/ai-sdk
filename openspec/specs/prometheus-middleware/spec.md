@@ -168,8 +168,12 @@ Middleware SHALL instrument `WrapGenerate` around `DoGenerate`: increment in-fli
 
 #### Scenario: Stream error classification respects earlier cancellation
 - **WHEN** an upstream `provider.PartError` is observed
-- **THEN** final request status SHALL be `error` unless the context was canceled first
+- **THEN** final request status SHALL be `error` unless the context was canceled before the error part was observed, including when the context is canceled afterwards
 - **AND** the error part SHALL still be forwarded unchanged
+
+#### Scenario: Denial outranks a later cancellation
+- **WHEN** the denial classifier reports an observed error part as a denial and the request context is canceled afterwards
+- **THEN** final request status SHALL be `denied`
 
 ### Requirement: Provider and model identity labels
 

@@ -66,7 +66,7 @@ func (i *instrumentation) runStreamTee(
 				i.finalizeStream(ctx, requested, obs, start, ctx.Err() != nil)
 				return
 			}
-			obs.observe(part, start, receivedAt)
+			obs.observe(part, start, receivedAt, ctx.Err() != nil)
 
 			select {
 			case tee <- part:
@@ -112,14 +112,14 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 	defer streamrecover.Recover(func() {})
 	finalID := i.streamFinalIdentity(requested, obs.responseIdentity)
 	out := outcome{status: statusSuccess, errorType: errorTypeNone, statusCode: statusCodeNone, finishReason: obs.finishReason}
-	if canceled {
-		if ctxOut, ok := classifyContext(ctx); ok {
-			out = ctxOut
-		}
-	} else if obs.streamError != nil {
+	if obs.streamError != nil {
 		out = *obs.streamError
 		if out.status != statusDenied && out.finishReason == finishReasonNone && obs.finishReason != finishReasonNone {
 			out.finishReason = obs.finishReason
+		}
+	} else if canceled {
+		if ctxOut, ok := classifyContext(ctx); ok {
+			out = ctxOut
 		}
 	}
 
@@ -142,7 +142,9 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 	}
 }
 
-func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt time.Time) {
+// observe records part. An error part received after cancellation does not
+// change the outcome, so the stream stays canceled.
+func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt time.Time, canceled bool) {
 	chunkType := streamChunkTypeLabel(part.Type)
 	o.chunkCounts[chunkType]++
 	o.usage.Observe(part)
@@ -157,6 +159,9 @@ func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt 
 			o.finishReason = finishReasonLabel(*part.FinishReason)
 		}
 	case provider.PartError:
+		if canceled {
+			break
+		}
 		out := o.config.classifyStreamError(part.APICallError)
 		if o.streamError == nil || o.streamError.status != statusDenied {
 			o.streamError = &out

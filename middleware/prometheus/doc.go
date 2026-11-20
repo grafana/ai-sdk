@@ -64,6 +64,13 @@
 // classify policy denials, such as a gateway refusing a call, as `denied` with
 // error type `none`, so they stay out of error rates.
 //
+// A stream's status is `denied` if an observed error part was a denial, then
+// `error` if an error part was observed, then `canceled` if the request
+// context was canceled, and `success` otherwise. An error part counts only
+// when the tee receives it before the context is canceled, so a consumer that
+// cancels after reading an error part records the error, and parts that
+// arrive after cancellation leave the stream canceled.
+//
 // Histogram buckets use seconds. Options can override request duration,
 // time-to-first-output, and inter-chunk-delay buckets. Setting
 // DisableStreamChunkMetrics disables aisdk_model_stream_chunks_total and
