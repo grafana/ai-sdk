@@ -116,6 +116,16 @@ The library SHALL provide shared `WithTools(ToolSet)`, `WithToolChoice(provider.
 - **THEN** its shared provider streaming call SHALL contain the same automatic choice as `StreamText`
 - **AND** configured, Agent per-call, and step-specific explicit choices SHALL retain their existing precedence
 
+### Requirement: Active tools also constrain new application calls
+
+`StreamText`, `GenerateText` and both ToolLoopAgent entry points SHALL filter step tools by the effective active selection before discovery and caller routing, even when neither is enabled. Non-nil `PrepareStepResult.ActiveTools` SHALL override the configured selection for that step only. An omitted selection SHALL include all tools; an explicit empty selection SHALL include none. Historical approval resume SHALL keep using the original registry.
+
+#### Scenario: Model calls an excluded application tool
+- **WHEN** the model returns a new application tool call for a tool excluded by the active selection
+- **AND** effective tool choice does not withhold the call
+- **THEN** orchestration SHALL mark the call invalid without invoking the excluded tool's callbacks, approval, or execution
+- **AND** the unavailable-tool error result SHALL list only names in the step's effective execution set, even if the tool input is malformed
+
 ### Requirement: Tool choice presence and step isolation
 
 Absent configured and step choices SHALL produce `provider.ToolChoice{Type: provider.ToolChoiceAuto}` in `CallOptions.ToolChoice`, even with absent, empty or filtered-empty tools. Explicit auto, none, required and named choices SHALL survive without replacement or tool-count omission. Step overrides SHALL NOT mutate configured choice or leak to later steps.

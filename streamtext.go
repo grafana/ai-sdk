@@ -644,9 +644,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 		// Build provider tools (sorted for deterministic order)
 		stepTools := toolSearch.prepare(cfg.tools, activeTools, activeToolsSet, stepContext)
-		stepTools = resolveToolDescriptions(stepTools, stepContext, activeTools, activeToolsSet)
-		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes, activeTools, activeToolsSet)
-		modelTools = resolveToolDescriptions(modelTools, stepContext, activeTools, activeToolsSet)
+		stepTools = resolveToolDescriptions(stepTools, stepContext)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes)
+		modelTools = resolveToolDescriptions(modelTools, stepContext)
 		if err := validateToolExecutors(executionTools); err != nil {
 			r.emitError(err, cfg.onError)
 			return
@@ -654,8 +654,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		currentMsgs = appendToolCallerMessages(currentMsgs, callerMessages)
 		provTools, toolWarnings := toolSetToProviderTools(modelTools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if cfg.toolRoutes == nil && activeToolsSet {
-			provTools = filterProviderTools(provTools, activeTools)
+		if cfg.toolRoutes == nil && activeToolsSet && len(provTools) == 0 {
+			provTools = nil
 		}
 		if toolChoice == nil {
 			auto := provider.ToolChoice{Type: provider.ToolChoiceAuto}
@@ -717,7 +717,11 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		stepCfg := *cfg
 		stepCfg.tools = executionTools
 		stepCfg.toolChoice = toolChoice
-		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
+		providerResultTools := executionTools
+		if toolSearch == nil && cfg.toolRoutes == nil {
+			providerResultTools = cfg.tools
+		}
+		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, providerResultTools, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
@@ -869,6 +873,7 @@ func (r *StreamTextResult) processStep(
 	stepModel StepModel,
 	streamResult *provider.StreamResult,
 	cfg *streamConfig,
+	providerResultTools ToolSet,
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
@@ -1180,7 +1185,7 @@ loop:
 			}
 
 		case provider.PartToolResult:
-			if err := r.handleToolResult(part, &step, cfg); err != nil {
+			if err := r.handleToolResult(part, &step, cfg, providerResultTools); err != nil {
 				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			preliminary := part.Preliminary != nil && *part.Preliminary
@@ -1488,35 +1493,18 @@ func (r *StreamTextResult) handleToolCall(
 	toolTitleByID map[string]string,
 	stepContext any,
 ) {
-	var parsedInput json.RawMessage
-	if strings.TrimSpace(part.Input) == "" {
+	t, toolExists := cfg.tools[part.ToolName]
+	unavailable := !toolExists && !part.ProviderExecuted
+	parsedInput := json.RawMessage(part.Input)
+	if !unavailable && strings.TrimSpace(part.Input) == "" {
 		parsedInput = json.RawMessage(`{}`)
-	} else {
-		if !json.Valid([]byte(part.Input)) {
-			input, _ := json.Marshal(string(part.Input))
-			r.rejectToolCall(part, json.RawMessage(input), step, cfg, toolTitleByID, fmt.Errorf("invalid JSON input for tool %q", part.ToolName))
-			return
-		}
-		parsedInput = json.RawMessage(part.Input)
+	}
+	validJSON := json.Valid(parsedInput)
+	if !validJSON {
+		parsedInput, _ = json.Marshal(part.Input)
 	}
 
-	if t, ok := cfg.tools[part.ToolName]; ok {
-		if t.InputSchema.Compiled() != nil {
-			if err := t.InputSchema.Validate(parsedInput); err != nil {
-				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, err))
-				return
-			}
-		}
-		if t.ValidateInput != nil {
-			if valErr := t.ValidateInput(parsedInput); valErr != nil {
-				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, valErr))
-				return
-			}
-		}
-	}
-
-	_, toolExists := cfg.tools[part.ToolName]
-	if !toolExists && !part.ProviderExecuted {
+	if unavailable {
 		availableTools := make([]string, 0, len(cfg.tools))
 		for name := range cfg.tools {
 			availableTools = append(availableTools, name)
@@ -1531,6 +1519,25 @@ func (r *StreamTextResult) handleToolCall(
 		}
 		r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, errors.New(errMsg))
 		return
+	}
+
+	if !validJSON {
+		r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid JSON input for tool %q", part.ToolName))
+		return
+	}
+	if toolExists {
+		if t.InputSchema.Compiled() != nil {
+			if err := t.InputSchema.Validate(parsedInput); err != nil {
+				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, err))
+				return
+			}
+		}
+		if t.ValidateInput != nil {
+			if valErr := t.ValidateInput(parsedInput); valErr != nil {
+				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, valErr))
+				return
+			}
+		}
 	}
 
 	title := part.Title
@@ -1559,7 +1566,7 @@ func (r *StreamTextResult) handleToolCall(
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
 
-	if t, ok := cfg.tools[part.ToolName]; ok && t.OnInputAvailable != nil {
+	if toolExists && t.OnInputAvailable != nil {
 		t.OnInputAvailable(parsedInput, ToolExecutionOptions{ToolCallID: part.ToolCallID, Context: stepContext})
 	}
 }
@@ -1568,6 +1575,7 @@ func (r *StreamTextResult) handleToolResult(
 	part provider.StreamPart,
 	step *StepResult,
 	cfg *streamConfig,
+	providerResultTools ToolSet,
 ) error {
 	preliminary := part.Preliminary != nil && *part.Preliminary
 	dynamic := part.Dynamic
@@ -1616,7 +1624,7 @@ func (r *StreamTextResult) handleToolResult(
 		return nil
 	}
 
-	if tool, ok := cfg.tools[part.ToolName]; ok && tool.ToModelOutput != nil {
+	if tool, ok := providerResultTools[part.ToolName]; ok && tool.ToModelOutput != nil {
 		modelOutput, err := tool.ToModelOutput(ToolOutputContext{
 			ToolCallID: part.ToolCallID,
 			Input:      input,
@@ -2881,23 +2889,6 @@ func collectResponseMessages(initial []provider.Message, steps []StepResult) []p
 		messages = append(messages, step.Response.Messages...)
 	}
 	return messages
-}
-
-func filterProviderTools(tools []provider.Tool, activeNames []string) []provider.Tool {
-	nameSet := make(map[string]bool, len(activeNames))
-	for _, n := range activeNames {
-		nameSet[n] = true
-	}
-	var filtered []provider.Tool
-	for _, t := range tools {
-		if t.Type != provider.ToolTypeFunction && t.Type != provider.ToolTypeProvider {
-			continue
-		}
-		if nameSet[t.Name] {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
 }
 
 func generateConfigID(cfg *streamConfig) string {
