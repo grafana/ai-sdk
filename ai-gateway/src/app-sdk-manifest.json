@@ -86,8 +86,17 @@
                                     "baseURL": {
                                         "type": "string"
                                     },
+                                    "modelBlocklist": {
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "type": "array"
+                                    },
                                     "providerName": {
                                         "type": "string"
+                                    },
+                                    "serveAllModels": {
+                                        "type": "boolean"
                                     },
                                     "supportsStructuredOutputs": {
                                         "type": "boolean"

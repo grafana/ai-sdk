@@ -46,7 +46,8 @@ func TestParse_ConvertsTheSpec(t *testing.T) {
 				Fallback:    []config.Primary{{Provider: "openai", Model: "gpt-5"}},
 			},
 		},
-	}, file)
+	}, file.File)
+	assert.False(t, file.AllowsUnlistedModel("openai", "unlisted"))
 }
 
 func TestParse_Refuses(t *testing.T) {

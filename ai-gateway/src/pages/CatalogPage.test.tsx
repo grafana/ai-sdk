@@ -142,6 +142,135 @@ describe('pages/CatalogPage', () => {
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
   });
 
+  test('saves blocked IDs before enabling and keeps them when unlisted serving is disabled', async () => {
+    signInAs(OrgRole.Viewer, ALL);
+    await openPage();
+    const provider = card('spare');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    const addModel = () => provider.queryByRole('combobox', { name: 'Add a model to spare' });
+    const blockedIDs = () => within(provider.getByRole('list', { name: 'Blocked model IDs' }));
+    const specWith = (serveAllModels: boolean | undefined, modelBlocklist: string[]) => ({
+      ...stored.spec,
+      providers: { ...stored.spec.providers, spare: { type: 'openai', serveAllModels, modelBlocklist } },
+    });
+    expect(toggle).not.toBeChecked();
+    expect(addModel()).toBeInTheDocument();
+
+    fireEvent.click(provider.getByRole('button', { name: 'Edit blocked IDs' }));
+    expect(addModel()).not.toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+    const field = provider.getByRole('combobox', { name: 'Add a blocked model ID' });
+    fireEvent.click(field);
+    fireEvent.click(await provider.findByRole('option', { name: 'claude-listed' }));
+    expect(listProviderModels).toHaveBeenCalledWith('team', 'spare');
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+    fireEvent.click(provider.getByRole('button', { name: 'Add blocked ID' }));
+    await waitFor(() => expect(blockedIDs().getByText('claude-listed')).toBeInTheDocument());
+    const blockedWhileOff = specWith(undefined, ['claude-listed']);
+    expect(lastUpdate()).toEqual([stored, blockedWhileOff, {}]);
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(await provider.findByText('No listed models yet.')).toBeInTheDocument();
+    const enabled = specWith(true, ['claude-listed']);
+    expect(lastUpdate()).toEqual([updated(stored, blockedWhileOff, {}), enabled, {}]);
+    expect(addModel()).not.toBeInTheDocument();
+    expect(provider.queryByRole('button', { name: 'Edit blocked IDs' })).not.toBeInTheDocument();
+    expect(provider.queryByRole('button', { name: 'Save serving settings' })).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(await provider.findByText('No models yet.')).toBeInTheDocument();
+    const disabled = specWith(false, ['claude-listed']);
+    expect(lastUpdate()).toEqual([updated(stored, enabled, {}), disabled, {}]);
+    expect(addModel()).toBeInTheDocument();
+    fireEvent.click(provider.getByRole('button', { name: 'Edit blocked IDs' }));
+    expect(blockedIDs().getByText('claude-listed')).toBeInTheDocument();
+    fireEvent.click(provider.getByRole('button', { name: 'Remove blocked ID claude-listed' }));
+    await waitFor(() => expect(provider.queryByRole('list', { name: 'Blocked model IDs' })).not.toBeInTheDocument());
+    expect(lastUpdate()).toEqual([updated(stored, disabled, {}), specWith(false, []), {}]);
+    expect(updateModelCatalog).toHaveBeenCalledTimes(4);
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
+  });
+
+  test('enables an empty blocklist in one click and reflects only the saved mode', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeDisabled();
+    await waitFor(() => expect(toggle).toBeChecked());
+    expect(updateModelCatalog).toHaveBeenCalledTimes(1);
+    expect(lastUpdate()).toEqual([
+      stored,
+      {
+        ...stored.spec,
+        providers: { ...stored.spec.providers, anthropic: { type: 'anthropic', serveAllModels: true } },
+      },
+      {},
+    ]);
+    expect(provider.getByRole('button', { name: 'balanced' })).toBeInTheDocument();
+    expect(provider.queryByRole('button', { name: 'Add model' })).not.toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
+  });
+
+  test('keeps the previous mode when a toggle is refused', async () => {
+    jest.mocked(updateModelCatalog).mockRejectedValue({ status: 409, data: { message: 'Serving settings refused' } });
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    fireEvent.click(toggle);
+    expect(await provider.findByText('Serving settings refused')).toBeInTheDocument();
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeEnabled();
+    expect(provider.getByRole('combobox', { name: 'Add a model to anthropic' })).toBeInTheDocument();
+  });
+
+  test.each([400, 409])('keeps the typed blocked ID after a %s refusal', async (status) => {
+    jest.mocked(updateModelCatalog).mockRejectedValue({ status, data: { message: 'Serving settings refused' } });
+    signInAs(
+      OrgRole.Admin,
+      ALL.filter((action) => action !== CatalogActions.ListProviderModels)
+    );
+    await openPage();
+    const provider = card('anthropic');
+    fireEvent.click(provider.getByRole('button', { name: 'Edit blocked IDs' }));
+    const field = provider.getByRole('textbox', { name: 'Add a blocked model ID' });
+    type(field, 'claude-sonnet-4-6');
+    fireEvent.click(provider.getByRole('button', { name: 'Add blocked ID' }));
+    expect(await provider.findByText('Serving settings refused')).toBeInTheDocument();
+    expect(field).toHaveValue('claude-sonnet-4-6');
+    expect(provider.getByRole('switch', { name: 'Serve every model' })).not.toBeChecked();
+    expect(provider.queryByRole('list', { name: 'Blocked model IDs' })).not.toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
+  });
+
+  test('shows saved settings without editing controls to a reader', async () => {
+    jest.mocked(getModelCatalog).mockResolvedValue({
+      ...stored,
+      spec: {
+        ...stored.spec,
+        providers: {
+          ...stored.spec.providers,
+          spare: { type: 'openai', serveAllModels: true, modelBlocklist: ['org/blocked'] },
+        },
+      },
+    });
+    signInAs(OrgRole.Admin, READ_ONLY);
+    await openPage();
+    const provider = card('spare');
+    expect(provider.getByText('Serves unlisted models')).toBeInTheDocument();
+    expect(provider.getByText('Blocked model IDs: org/blocked')).toBeInTheDocument();
+    expect(provider.queryByRole('switch')).not.toBeInTheDocument();
+    expect(provider.queryByRole('combobox', { name: 'Add a blocked model ID' })).not.toBeInTheDocument();
+    expect(provider.queryByRole('textbox', { name: 'Add a blocked model ID' })).not.toBeInTheDocument();
+    expect(provider.queryByRole('button', { name: 'Edit blocked IDs' })).not.toBeInTheDocument();
+  });
+
   test('uses the model ID field to fetch, search and choose, with Add model as the only write', async () => {
     signInAs(OrgRole.Viewer, ALL);
     await openPage();
@@ -270,6 +399,27 @@ describe('pages/CatalogPage', () => {
     expect(listProviderModels).toHaveBeenCalledTimes(2);
     await act(() => resolve({ status: 'ok', modelIds: ['old-key-model'] }));
     expect(provider.queryByRole('option', { name: 'old-key-model' })).not.toBeInTheDocument();
+  });
+
+  test('does not reuse a pending listing after changing the serving mode', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    await openPage();
+    const provider = card('anthropic');
+    fireEvent.click(provider.getByRole('combobox', { name: 'Add a model to anthropic' }));
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    fireEvent.click(toggle);
+    const blockedID = await provider.findByRole('combobox', { name: 'Add a blocked model ID' });
+    fireEvent.click(blockedID);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+    await act(() => resolve({ status: 'ok', modelIds: ['old-listing-model'] }));
+    expect(provider.queryByRole('option', { name: 'old-listing-model' })).not.toBeInTheDocument();
   });
 
   test('shows the busy message for both listing and health 429s', async () => {

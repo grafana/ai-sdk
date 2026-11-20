@@ -47,6 +47,42 @@ func withoutOpenAI() v1alpha1.Spec {
 	return spec
 }
 
+func TestValidator_Blocklist(t *testing.T) {
+	tests := []struct {
+		name     string
+		action   resource.AdmissionAction
+		provider string
+		id       string
+		enabled  bool
+		conflict bool
+	}{
+		{name: "create with primary conflict", action: resource.AdmissionActionCreate, provider: "anthropic", id: "claude-sonnet-4-6", enabled: true, conflict: true},
+		{name: "update with fallback conflict while off", action: resource.AdmissionActionUpdate, provider: "openai", id: "gpt-5", conflict: true},
+		{name: "create with future blocklist while off", action: resource.AdmissionActionCreate, provider: "openai", id: "unlisted"},
+		{name: "update with saved key", action: resource.AdmissionActionUpdate, provider: "openai", id: "unlisted", enabled: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := testSpec()
+			provider := spec.Providers[tc.provider]
+			provider.ServeAllModels = new(tc.enabled)
+			provider.ModelBlocklist = []string{tc.id}
+			spec.Providers[tc.provider] = provider
+			var keys resource.InlineSecureValues
+			if tc.action == resource.AdmissionActionCreate {
+				keys = resource.InlineSecureValues{"anthropic": created(), "openai": created()}
+			}
+			err := Validator{}.Validate(t.Context(), &app.AdmissionRequest{Action: tc.action, Object: catalog(spec, keys), OldObject: storedCatalog()})
+			if !tc.conflict {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, "modelcatalog: providers."+tc.provider+".modelBlocklist[0] conflicts with a listed target")
+			assert.True(t, apierrors.IsBadRequest(err))
+		})
+	}
+}
+
 func TestValidator_Validate(t *testing.T) {
 	spec := testSpec()
 	empty := *v1alpha1.NewSpec()

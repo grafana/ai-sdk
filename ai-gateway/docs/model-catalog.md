@@ -21,7 +21,11 @@ When creating a catalog, enter the initial provider model IDs by hand. After
 saving, open or type in the provider model ID field to see matching models from
 that account. Choose a result or type an exact ID, then select **Add model** to
 save it. You can enter a custom ID even if the list is empty, incomplete, or
-unavailable. Listing uses the saved key only; it never runs on save.
+unavailable. Listing uses the saved key only; it never runs on save. When
+**Serve every model** is on, the picker adds blocked IDs instead of listed
+models. The switch and each blocklist addition or removal save immediately.
+Use **Edit blocked IDs** to set exclusions before enabling. Existing listed
+models stay visible and editable.
 
 After saving, select **Check health** on the catalog page to see which provider
 model listings accepted the saved keys and which primary and fallback model

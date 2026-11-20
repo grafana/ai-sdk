@@ -149,6 +149,45 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 	})
 }
 
+func TestCatalogRoutes_UnlistedModels(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	native := newFakeAnthropic(t)
+	useNativeAnthropic(t, native)
+	writer := h.serviceToken(t, testInternalService)
+	user := session(h.host.AddSession(types.TypeUser, "catalog-user", testNamespace))
+	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"second":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"},"second":{"create":"`+editedCatalogKey+`"}}}`)
+	require.Equal(t, http.StatusCreated, status, body)
+	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.JSONEq(t, `{"models":[]}`, body)
+	for _, tc := range []struct{ id, body string }{
+		{"claude/org/blocked", unaryBody},
+		{"claude/org/new", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"providerOptions":{"gateway":{"models":["claude/org/blocked"]}}}`},
+	} {
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), tc.id, tc.body, false, user))
+		assert.Equal(t, http.StatusNotFound, status, body)
+		assert.Contains(t, body, `"code":"model_not_found"`)
+	}
+	assert.Zero(t, native.requests.Load())
+	for _, streaming := range []bool{false, true} {
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "claude/org/new", streamedCatalogBody, streaming, user))
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Contains(t, body, `"canonicalModelId":"claude/org/new"`)
+		assert.Contains(t, body, `"modelId":"org/new"`)
+		assert.Contains(t, body, `"providerInstance":"claude"`)
+	}
+	status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "second/org/blocked", unaryBody, false, user))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"providerInstance":"second"`)
+	keys, bodies := native.nativeCalls()
+	assert.Equal(t, []string{routeCatalogKey, routeCatalogKey, editedCatalogKey}, keys)
+	require.Len(t, bodies, 3)
+	assert.Contains(t, bodies[0], `"model":"org/new"`)
+	assert.Contains(t, bodies[1], `"model":"org/new"`)
+	assert.Contains(t, bodies[2], `"model":"org/blocked"`)
+}
+
 func TestCatalogRoutes_EmptyCatalogAndProviderWithoutModels(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
 	var probes atomic.Int32
