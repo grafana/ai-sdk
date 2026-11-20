@@ -174,6 +174,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	defer stream.Close()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Connection", "keep-alive")
 	controller := http.NewResponseController(w)
 	state := &streamState{
@@ -192,7 +193,9 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			if wait == execution.WaitCanceled && errors.Is(ctx.Err(), context.Canceled) {
 				return
 			}
-			if wait != execution.WaitClosedAfterError {
+			if wait == execution.WaitClosed {
+				state.events.errorEvent(502)
+			} else if wait != execution.WaitClosedAfterError {
 				state.events.errorEvent(categoryStatus(execution.ClassifyProvider(wait.Err())))
 			}
 			return

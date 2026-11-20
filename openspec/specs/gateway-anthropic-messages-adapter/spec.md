@@ -199,7 +199,8 @@ input end SHALL close only the block identified by that part. A lifecycle the
 adapter cannot represent, a provider error part, or a runtime failure after the
 stream starts SHALL end the stream with an `error` event and no `message_stop`.
 Cancellation SHALL cancel provider execution and SHALL NOT synthesize a
-successful completion. Frames SHALL be flushed as they are written.
+successful completion. Frames SHALL be flushed as they are written, and the
+response SHALL include `X-Accel-Buffering: no` to disable nginx response buffering.
 
 #### Scenario: Text then tool use
 - **WHEN** the provider streams text followed by a tool call
@@ -216,6 +217,10 @@ successful completion. Frames SHALL be flushed as they are written.
 #### Scenario: Caller cancels
 - **WHEN** the client disconnects mid-stream
 - **THEN** provider execution is canceled and the adapter writes no completion
+
+#### Scenario: Truncated upstream stream
+- **WHEN** the provider closes its stream without a finish part
+- **THEN** the adapter emits a fixed upstream-failure `api_error`, not an internal-error message, and no `message_stop`
 
 #### Scenario: Setup deadline
 - **WHEN** the request deadline expires while the provider stream is being established
