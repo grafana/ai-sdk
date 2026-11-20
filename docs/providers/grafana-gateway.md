@@ -41,27 +41,26 @@ the stream idle limit bound it.
 
 ## Authenticate the client
 
-Use your Gateway URL as the base URL. The Gateway's overview page in Grafana
-shows it, for example
-`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123`.
-To use a stack's own stored model catalog instead, append its route:
-`.../namespaces/stacks-123/modelcatalogs/<name>`. Discovery and calls then use
-that catalog's models and keys. Only `NewWithServiceAccountToken` and
-`NewWithAccessToken` accept a catalog URL. Grafana answers a caller without access with
-`403`, and a missing catalog with `404`, as Kubernetes `Status` documents; the
-client reports them as a `*provider.APICallError` with that status, not as a
-`*grafana.GatewayError`. See
-[Call a stored catalog](../../ai-gateway/README.md#call-a-stored-catalog).
-Then choose the constructor for your credential:
+Choose the constructor for your credential:
 
 - `NewWithServiceAccountToken` for a Grafana service account token.
+- `NewWithAccessToken` for an access token you obtain and refresh yourself.
 - `NewWithTokenExchange` for a Grafana service with a Cloud access policy
   token, or an App Platform app with the token exchange Grafana gives its
-  backend. It takes the Gateway API root, the URL without
-  `/namespaces/<namespace>`, so one client can call several stacks: add
-  `WithNamespace` to a call's context to select its stack, and
-  `WithOnBehalfOf` to make it on behalf of a user.
-- `NewWithAccessToken` for an access token you obtain and refresh yourself.
+  backend.
+
+With a service account or your own access token, use the namespaced Gateway URL
+or the full catalog URL shown on the overview page. The catalog URL ends in
+`/namespaces/<namespace>/modelcatalogs/<name>`. With token exchange, keep the
+Gateway API root (without `/namespaces/<namespace>`). Set `WithNamespace` on
+the call context to select a stack, `WithCatalog` to select a stored catalog
+there, and `WithOnBehalfOf` to call for a user. See
+[Call a stored stack catalog](../guides/gateway-authentication.md#call-a-stored-stack-catalog).
+
+Catalog discovery and model calls use only the selected catalog's models and
+keys. Grafana reports denied access (`403`) and missing catalogs (`404`) as
+Kubernetes `Status` documents; the client returns a `*provider.APICallError`
+with that status, not a `*grafana.GatewayError`.
 
 ```go
 client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
@@ -170,21 +169,21 @@ A Grafana plugin can offer the models its Gateway serves, and let each customer
 opt in to their own [stored catalog](../../ai-gateway/README.md#store-model-catalogs-in-grafana)
 with their own provider keys:
 
-- **Use one client per route.** A client has one base URL: the Gateway URL for
-  Grafana's models, or `.../modelcatalogs/<name>` for a customer's catalog.
-  Model IDs on one route mean nothing on the other.
+- **Select the route as well as the model.** With token exchange, use one
+  client for both routes and select the customer's catalog in the call context.
+  With a service account or caller-managed access token, use one client per
+  route, with either the Gateway URL or the catalog URL as its base URL.
+  The same model ID can refer to different models on different routes.
 - **Store the customer's choice in your plugin's settings,** such as the
-  catalog name and model ID, and build the catalog client from it.
+  catalog name and model ID, and select the route and model from it.
 - **Grafana's models** need the credential the
   [authentication guide](../guides/gateway-authentication.md) gives your
   backend, usually token exchange. In Grafana Cloud they are served only to the
   Grafana services the Gateway allows.
-- **Customer catalogs need a client with the catalog's URL as its base URL:**
-  `NewWithServiceAccountToken` or `NewWithAccessToken`. `NewWithTokenExchange`
-  can't call catalog routes yet, because it adds each call's namespace route
-  itself and refuses a base URL with `/namespaces/`. Catalog calls are then made
-  as that service account, so give it the Editor role, or another role that
-  includes `aigateway:modelinvoker`.
+- **For customer catalogs,** use `WithCatalog` with token exchange or pass the
+  catalog URL to `NewWithServiceAccountToken` or `NewWithAccessToken`. To call
+  as a service account, give it the Editor role or another role that includes
+  `aigateway:modelinvoker`.
 - **On behalf of a user,** Grafana checks both the caller and the user: the
   token must be allowed to use `aigateway.ext.grafana.app/modelcatalogs:get`
   on the user's behalf, and the user needs `aigateway:modelinvoker`, which
@@ -195,6 +194,24 @@ with their own provider keys:
   broken catalog. Report the error, such as the `424` for a catalog the Gateway
   can't use, and let them fix it or switch in your settings. The Gateway never
   crosses routes itself: a catalog's fallbacks stay within that catalog.
+
+With token exchange, start with the [app's call context for the stack and user](../guides/gateway-authentication.md#call-from-an-app-platform-app).
+Select the catalog only when the customer opts in:
+
+```go
+modelID := settings.GrafanaModel
+if settings.Catalog != "" {
+	ctx = grafana.WithCatalog(ctx, settings.Catalog)
+	modelID = settings.CatalogModel
+}
+model, err := gatewayClient.LanguageModel(modelID)
+if err != nil {
+	return err
+}
+```
+
+Use `ctx` for discovery and model calls. With a service-account token, select
+between the existing Gateway client and a client with a fixed catalog URL:
 
 ```go
 client, modelID := gatewayClient, settings.GrafanaModel

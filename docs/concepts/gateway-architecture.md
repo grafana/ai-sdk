@@ -449,10 +449,8 @@ and [stream lifecycle tests](../../ai-gateway/providerwire/v4/stream_test.go).
 The [parity coverage map](../../test/conformance/PARITY.md) distinguishes client
 protocol evidence, synthetic native-provider tests, and live-provider evidence.
 
-The registered upstream reference is recorded in
-[upstream.yaml](../../test/conformance/upstream.yaml), including
-`@ai-sdk/gateway` 4.0.116 and `@ai-sdk/provider` 4.0.29. The corresponding
-[upstream Gateway client](https://github.com/vercel/ai/blob/b7f6255acaae7724adc0fd37aac3dae3f3466578/packages/gateway/src/gateway-language-model.ts)
+The [registered upstream baseline](../../test/conformance/upstream.yaml) pins
+the Vercel AI SDK Gateway client and provider contract. The upstream client
 serializes model calls, forwards `providerOptions.gateway` routing controls
 unchanged, and reads JSON or SSE. It establishes the client-facing protocol,
 not Vercel's private hosted-service implementation or Grafana's routing policy.
