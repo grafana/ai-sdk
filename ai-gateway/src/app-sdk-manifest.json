@@ -201,6 +201,47 @@
                         ],
                         "conversion": false,
                         "routes": {
+                            "/available-models": {
+                                "post": {
+                                    "operationId": "listModelCatalogProviderModels",
+                                    "parameters": [
+                                        {
+                                            "name": "provider",
+                                            "in": "query",
+                                            "description": "Name of a saved provider instance",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string",
+                                                "maxLength": 63
+                                            }
+                                        },
+                                        {
+                                            "name": "namespace",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "name": "name",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    ],
+                                    "responses": {
+                                        "default": {
+                                            "description": "Bounded model listing for one saved provider"
+                                        }
+                                    },
+                                    "x-grafana-declared-authz-resource": "modelcatalogs",
+                                    "x-grafana-declared-authz-subresource": "available-models",
+                                    "x-grafana-declared-authz-verb": "get"
+                                }
+                            },
                             "/config": {
                                 "get": {
                                     "operationId": "getModelCatalogConfig",
@@ -229,6 +270,37 @@
                                     },
                                     "x-grafana-declared-authz-resource": "modelcatalogs",
                                     "x-grafana-declared-authz-subresource": "config",
+                                    "x-grafana-declared-authz-verb": "get"
+                                }
+                            },
+                            "/health": {
+                                "post": {
+                                    "operationId": "checkModelCatalogHealth",
+                                    "parameters": [
+                                        {
+                                            "name": "namespace",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "name": "name",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    ],
+                                    "responses": {
+                                        "default": {
+                                            "description": "Provider and model listing outcomes for the catalog"
+                                        }
+                                    },
+                                    "x-grafana-declared-authz-resource": "modelcatalogs",
+                                    "x-grafana-declared-authz-subresource": "health",
                                     "x-grafana-declared-authz-verb": "get"
                                 }
                             },
@@ -556,6 +628,65 @@
                                 }
                             }
                         },
+                        "/namespaces/{namespace}/modelcatalogs/{name}/available-models": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "in": "path",
+                                    "name": "name",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "listModelCatalogProviderModels",
+                                "parameters": [
+                                    {
+                                        "description": "Name of a saved provider instance",
+                                        "in": "query",
+                                        "name": "provider",
+                                        "required": true,
+                                        "schema": {
+                                            "maxLength": 63,
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "name",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Bounded model listing for one saved provider"
+                                    }
+                                },
+                                "x-grafana-declared-authz-resource": "modelcatalogs",
+                                "x-grafana-declared-authz-subresource": "available-models",
+                                "x-grafana-declared-authz-verb": "get"
+                            }
+                        },
                         "/namespaces/{namespace}/modelcatalogs/{name}/config": {
                             "get": {
                                 "operationId": "getModelCatalogConfig",
@@ -604,6 +735,55 @@
                                     }
                                 }
                             ]
+                        },
+                        "/namespaces/{namespace}/modelcatalogs/{name}/health": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "in": "path",
+                                    "name": "name",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "checkModelCatalogHealth",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "name",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Provider and model listing outcomes for the catalog"
+                                    }
+                                },
+                                "x-grafana-declared-authz-resource": "modelcatalogs",
+                                "x-grafana-declared-authz-subresource": "health",
+                                "x-grafana-declared-authz-verb": "get"
+                            }
                         },
                         "/namespaces/{namespace}/modelcatalogs/{name}/language-model": {
                             "parameters": [
@@ -786,6 +966,18 @@
                     {
                         "kind": "ModelCatalog",
                         "permissionSet": "editor"
+                    },
+                    {
+                        "kind": "ModelCatalog/health",
+                        "verbs": [
+                            "get"
+                        ]
+                    },
+                    {
+                        "kind": "ModelCatalog/available-models",
+                        "verbs": [
+                            "get"
+                        ]
                     }
                 ]
             },

@@ -1,10 +1,12 @@
 import { config, getBackendSrv } from '@grafana/runtime';
 import {
+  checkModelCatalogHealth,
   createModelCatalog,
   deleteModelCatalog,
   errorMessage,
   getModelCatalog,
   listModelCatalogs,
+  listProviderModels,
   modelCatalogsURL,
   updateModelCatalog,
 } from './modelCatalogs';
@@ -70,6 +72,24 @@ describe('api/modelCatalogs', () => {
     backendSrv.get.mockResolvedValue(stored);
     await expect(getModelCatalog('team')).resolves.toBe(stored);
     expect(backendSrv.get).toHaveBeenCalledWith(`${CATALOGS}/team`, undefined, undefined, OPTIONS);
+  });
+
+  test('checks only the named saved catalog with no request body', async () => {
+    const result = { providers: { anthropic: 'ok' }, models: {} };
+    backendSrv.post.mockResolvedValue(result);
+    await expect(checkModelCatalogHealth('team')).resolves.toBe(result);
+    expect(backendSrv.post).toHaveBeenCalledWith(`${CATALOGS}/team/health`, undefined, OPTIONS);
+  });
+
+  test('lists one named account with a bodyless POST', async () => {
+    const result = { status: 'ok', modelIds: ['listed'] };
+    backendSrv.post.mockResolvedValue(result);
+    await expect(listProviderModels('team', 'company-account')).resolves.toBe(result);
+    expect(backendSrv.post).toHaveBeenCalledWith(
+      `${CATALOGS}/team/available-models?provider=company-account`,
+      undefined,
+      OPTIONS
+    );
   });
 
   test('creates a catalog with its keys as secure.create', async () => {

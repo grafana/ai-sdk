@@ -6,6 +6,8 @@ describe('permissions', () => {
   test('names the ModelCatalog RBAC actions', () => {
     expect(CatalogActions).toEqual({
       Read: 'aigateway.ext.grafana.app/modelcatalogs:get',
+      CheckHealth: 'aigateway.ext.grafana.app/modelcatalogs/health:get',
+      ListProviderModels: 'aigateway.ext.grafana.app/modelcatalogs/available-models:get',
       Create: 'aigateway.ext.grafana.app/modelcatalogs:create',
       Update: 'aigateway.ext.grafana.app/modelcatalogs:update',
       Delete: 'aigateway.ext.grafana.app/modelcatalogs:delete',
@@ -25,6 +27,10 @@ describe('permissions', () => {
     [OrgRole.Viewer, Object.values(CatalogActions), { read: true, create: true, update: true, delete: true }],
   ])('follows the permissions of a %s holding %j, not the role', (role, actions, expected) => {
     signInAs(role, actions);
-    expect(catalogPermissions()).toEqual(expected);
+    expect(catalogPermissions()).toEqual({
+      ...expected,
+      checkHealth: actions.includes(CatalogActions.CheckHealth),
+      listProviderModels: actions.includes(CatalogActions.ListProviderModels),
+    });
   });
 });

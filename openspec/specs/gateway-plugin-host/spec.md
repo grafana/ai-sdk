@@ -6,12 +6,12 @@ Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWir
 ## Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be one Grafana app plugin whose manifest serves one API version with exactly seven namespaced custom routes: `GET config`, `POST language-model`, `POST v1/chat/completions` and `POST v1/messages` under `namespaces/{namespace}/`, and `GET config`, `POST language-model` and `POST v1/messages` under `namespaces/{namespace}/modelcatalogs/{name}/`, plus two kinds, `ModelCatalog` and `Middleware`, with validation admission and no mutation or conversion hooks. It SHALL declare no other routes, kinds or hooks.
+The Gateway SHALL be one Grafana app plugin. Its manifest SHALL serve one API version with exactly nine namespaced custom routes and only the `ModelCatalog` and `Middleware` kinds. It SHALL declare validation admission, no mutation or conversion hooks, and no other routes, kinds or hooks.
 
 #### Scenario: Committed manifest declares only the supported routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the four namespace routes and the three `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
-- **AND** each catalog route SHALL declare a `get` access check on its `modelcatalogs` subresource (`config`, `language-model` or `messages`), and the namespace routes SHALL declare none
+- **THEN** it SHALL declare one version with only the four namespace routes and the five `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
+- **AND** each catalog route SHALL declare a `get` access check on its `modelcatalogs` subresource (`config`, `language-model`, `messages`, `health` or `available-models`), and the namespace routes SHALL declare none
 
 #### Scenario: Plugin identity is fixed
 - **WHEN** the backend is built by any supported method, including plain `go build` in tests
@@ -232,10 +232,10 @@ The production route table SHALL declare exactly the method and path pairs of th
 
 #### Scenario: Production table and manifest agree
 - **WHEN** the production route table is compared with the committed manifest
-- **THEN** both SHALL contain only `GET namespaces/{namespace}/config`, `POST namespaces/{namespace}/language-model`, `POST namespaces/{namespace}/v1/chat/completions`, `POST namespaces/{namespace}/v1/messages`, and `GET config`, `POST language-model` and `POST v1/messages` under `namespaces/{namespace}/modelcatalogs/{name}/`
+- **THEN** both SHALL contain only `GET config`, `POST language-model`, `POST v1/chat/completions` and `POST v1/messages` under `namespaces/{namespace}/`, and `GET config`, `POST language-model`, `POST v1/messages`, `POST health` and `POST available-models` under `namespaces/{namespace}/modelcatalogs/{name}/`
 
 #### Scenario: Undeclared path or method
-- **WHEN** a request targets another path under the route prefix, or a declared path with another method, including `HEAD` on either `config` route
+- **WHEN** a request targets another path under the route prefix, or a declared path with another method, including `HEAD` on either `config` route or `GET` or `HEAD` on `health` or `available-models`
 - **THEN** no catalog, selection or provider call SHALL occur, and the response SHALL NOT be a Gateway error document
 
 ### Requirement: Closed host-error categories

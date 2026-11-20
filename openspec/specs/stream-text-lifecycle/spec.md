@@ -8,7 +8,7 @@ Define `StreamText` step completion, premature provider-stream closure, partial-
 
 ### Requirement: Provider stream terminal recognition
 
-StreamText SHALL distinguish terminal parts from model/admin output. Finish SHALL complete the model call: semantically valid responses SHALL complete normally; effective required/named tool-choice violations SHALL use completed semantic-failure finalization. Provider error SHALL be terminal for premature-closure detection with existing handling. Closure without finish/error SHALL be incomplete.
+StreamText SHALL distinguish terminal parts from model/admin output. Finish SHALL complete the model call: semantically valid responses SHALL complete normally; effective tool-choice violations SHALL use completed semantic-failure finalization. Provider error SHALL be terminal for premature-closure detection with existing handling. Closure without finish/error SHALL be incomplete.
 
 #### Scenario: Provider finish completes a step
 
@@ -23,7 +23,7 @@ StreamText SHALL distinguish terminal parts from model/admin output. Finish SHAL
 
 #### Scenario: Provider finish permits semantic failure with retained completion
 
-- **WHEN** a provider finish completes a response violating effective required or named choice
+- **WHEN** a provider finish completes a response violating its effective tool choice
 - **THEN** the completed model call SHALL be retained and finalized as a semantic failure, not discarded as an unfinished or ordinary processing-error step
 
 ### Requirement: Empty incomplete stream fails
@@ -167,15 +167,15 @@ OnFinishState SHALL mirror the upstream end event. Its embedded StepResult SHALL
 
 ### Requirement: Tool execution requires an allowed finish
 
-Local executable tools SHALL dispatch only after stop/tool-calls without effective required/named choice violation. Other finish reasons SHALL retain call visibility and approval processing, except completed choice violations SHALL bypass all new local approval/execution. Continuation SHALL require matching result/denial for every client call, not merely a callback, and SHALL never follow a choice violation.
+Local executable tools SHALL dispatch only after stop/tool-calls without an effective tool-choice violation. Except for events withheld under none, other finish reasons SHALL retain call visibility and approval processing. Completed choice violations SHALL bypass all new local approval/execution. Continuation SHALL require matching result/denial for every client call, not merely a callback, and SHALL never follow a choice violation.
 
 #### Scenario: Recovered calls follow a malformed provider event
-- **WHEN** malformed provider data and otherwise valid tool calls result in an error finish without a completed tool-choice violation
+- **WHEN** malformed provider data and otherwise valid, non-withheld tool calls result in an error finish without a completed tool-choice violation
 - **THEN** the calls remain visible without invoking executable callbacks
 - **AND** unresolved calls prevent a subsequent model request
 
 #### Scenario: Approval observations precede dispatch eligibility
-- **WHEN** a disallowed finish contains calls requiring approval or automatic decisions without a completed tool-choice violation
+- **WHEN** a disallowed finish contains non-withheld calls requiring approval or automatic decisions without a completed tool-choice violation
 - **THEN** approval requests and decisions remain observable
 - **AND** approved calls are not executed under that finish
 - **AND** matching denials may satisfy continuation without executing a tool
@@ -190,9 +190,19 @@ Local executable tools SHALL dispatch only after stop/tool-calls without effecti
 - **AND** the received tool calls SHALL remain visible
 - **AND** no subsequent model request SHALL start
 
+### Requirement: None withholds tool events from the current model call
+
+Under effective none, StreamText SHALL withhold normalized tool input, calls, results (including provider failures and preliminary results) and provider approval requests from the full and UI streams, OnChunk and recorded step/response content. Withheld events SHALL NOT run tool input callbacks, trigger input errors or partial-step retention, satisfy the first-chunk deadline, or reset the chunk timeout. Opt-in raw chunks are not normalized tool events and retain their existing handling.
+
+#### Scenario: Local and provider tool events with none
+- **WHEN** a model call under none emits text and structured tool calls with input events, provider results or approval requests
+- **AND** the provider stream finishes without cancellation or a provider error
+- **THEN** full and schema-parsed UI streams SHALL retain the text and carry one terminal semantic error without any of those tool events
+- **AND** assembled UI messages and recorded response content SHALL have no tool parts from the call
+
 ### Requirement: Completed tool-choice failures retain model-call data
 
-Completed choice violations SHALL retain usage, raw finish, response/provider metadata, warnings and original content, set unified step finish to error, build normal content/response projections, emit finish-step and record the failed completed step before terminal finalization. Last-step/response/provider-metadata accessors SHALL reflect it. Prior steps SHALL remain recorded; total usage SHALL include all completed calls.
+Completed choice violations SHALL retain usage, raw finish, response/provider metadata, warnings and content other than tool events withheld under none, set unified step finish to error, build normal content/response projections, emit finish-step and record the failed completed step before terminal finalization. Last-step/response/provider-metadata accessors SHALL reflect it. Prior steps SHALL remain recorded; total usage SHALL include all completed calls.
 
 #### Scenario: Required no-call failure retains completed data
 - **WHEN** a required-choice call finishes with text/reasoning, usage, raw finish and response/provider metadata but no parsed tool call
@@ -218,9 +228,9 @@ Completed choice violations SHALL retain usage, raw finish, response/provider me
 - **AND** direct calls to both streaming entry points SHALL expose equivalent failure and retained data through existing results
 
 #### Scenario: Incomplete and canceled calls are not choice violations
-- **WHEN** required or named choice is active but the stream ends without a provider finish, reports a provider error, or is canceled before completing
-- **THEN** existing empty/partial/error/abort behavior SHALL remain unchanged
-- **AND** no missing-required-call semantic error SHALL replace that outcome
+- **WHEN** an enforced choice is active but the stream ends without a provider finish, reports a provider error, or is canceled before completing
+- **THEN** empty/partial/error/abort handling SHALL apply to the visible output
+- **AND** no tool-choice semantic error SHALL replace that outcome
 
 ### Requirement: Completed choice failure notifications and termination
 
@@ -297,7 +307,7 @@ Within one model call, each provider error part SHALL set the step's unified fin
 
 ### Requirement: Interrupted steps end the invocation
 
-A step whose provider finish is `interrupted` SHALL keep its partial output, usage, provider metadata and finish reason, emit no error solely for the interruption, and end the invocation. Required and named tool choice SHALL NOT be enforced for it. Local tools SHALL NOT execute, and no subsequent model request SHALL start, even when approval denials would otherwise satisfy continuation.
+A step whose provider finish is `interrupted` SHALL keep its visible partial output, usage, provider metadata and raw finish, emit no error solely for the interruption, and end the invocation. Required and named tool choice SHALL NOT be enforced. A none-choice violation SHALL use unified finish error; otherwise the unified finish SHALL remain interrupted. Local tools SHALL NOT execute, and no subsequent model request SHALL start, even when approval denials would otherwise satisfy continuation.
 
 #### Scenario: Interrupted output without a required call
 - **WHEN** a step with required or named tool choice finishes `interrupted` with text and no matching call
@@ -306,6 +316,10 @@ A step whose provider finish is `interrupted` SHALL keep its partial output, usa
 #### Scenario: Interrupted step with tool calls
 - **WHEN** a step finishes `interrupted` with local tool calls, whether approved, denied or without approval
 - **THEN** no tool SHALL execute and no further model request SHALL start
+
+#### Scenario: Interrupted none response containing a call
+- **WHEN** a step under none returns a structured tool call and finishes `interrupted`
+- **THEN** the call SHALL be withheld and the step SHALL complete with a tool-choice error, retaining usage and raw finish
 
 #### Scenario: Frontend does not continue automatically
 - **WHEN** `useChat` receives a Go UI stream ending in an `interrupted` finish with a client tool call and the caller later adds its tool output

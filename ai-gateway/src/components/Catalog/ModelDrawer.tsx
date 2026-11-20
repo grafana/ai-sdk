@@ -2,6 +2,8 @@ import React, { ReactNode, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, Drawer, Field, IconButton, Input, Stack, TagsInput, Text, useStyles2 } from '@grafana/ui';
+import { HealthStatus } from '../../api/modelCatalogs';
+import { CatalogHealthBadge } from './CatalogHealthBadge';
 import { useWrite, WriteError } from './FormModal';
 import { useFieldErrors } from './useFieldErrors';
 import { TargetFields } from './TargetFields';
@@ -25,6 +27,7 @@ const MAX_ALIAS_LENGTH = 128;
 interface Props {
   spec: Spec;
   id: string;
+  fallbackHealth?: HealthStatus[];
   readOnly: boolean;
   onSave: (change: CatalogChange) => Promise<void>;
   onClose: () => void;
@@ -35,7 +38,7 @@ interface Props {
  * applications request it, and its fallbacks. A writer edits and saves them
  * together, including the model's ID.
  */
-export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
+export function ModelDrawer({ spec, id, fallbackHealth, readOnly, onSave, onClose }: Props) {
   const s = useStyles2(getStyles);
   const stored = spec.models[id];
   const [draft, setDraft] = useState<ModelDraft>(() => modelDraft(id, stored));
@@ -142,6 +145,9 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
             {fallback.length === 0 && <Text color="secondary">No fallbacks.</Text>}
             {fallback.map((target, index) => {
               const title = `Fallback ${index + 1}`;
+              const saved = stored.fallback?.[index];
+              const status =
+                saved?.provider === target.provider && saved.model === target.model ? fallbackHealth?.[index] : undefined;
               return (
                 <TargetFields
                   key={index}
@@ -154,27 +160,30 @@ export function ModelDrawer({ spec, id, readOnly, onSave, onClose }: Props) {
                   onChange={(next) => setFallback(fallback.map((current, i) => (i === index ? next : current)))}
                   onLeave={checks.leave}
                   actions={
-                    !readOnly && (
-                      <>
-                        <IconButton
-                          name="arrow-up"
-                          tooltip={`Move ${title.toLowerCase()} up`}
-                          disabled={index === 0}
-                          onClick={() => move(index, index - 1)}
-                        />
-                        <IconButton
-                          name="arrow-down"
-                          tooltip={`Move ${title.toLowerCase()} down`}
-                          disabled={index === fallback.length - 1}
-                          onClick={() => move(index, index + 1)}
-                        />
-                        <IconButton
-                          name="trash-alt"
-                          tooltip={`Remove ${title.toLowerCase()}`}
-                          onClick={() => setFallback(fallback.filter((_, i) => i !== index))}
-                        />
-                      </>
-                    )
+                    <>
+                      <CatalogHealthBadge status={status} />
+                      {!readOnly && (
+                        <>
+                          <IconButton
+                            name="arrow-up"
+                            tooltip={`Move ${title.toLowerCase()} up`}
+                            disabled={index === 0}
+                            onClick={() => move(index, index - 1)}
+                          />
+                          <IconButton
+                            name="arrow-down"
+                            tooltip={`Move ${title.toLowerCase()} down`}
+                            disabled={index === fallback.length - 1}
+                            onClick={() => move(index, index + 1)}
+                          />
+                          <IconButton
+                            name="trash-alt"
+                            tooltip={`Remove ${title.toLowerCase()}`}
+                            onClick={() => setFallback(fallback.filter((_, i) => i !== index))}
+                          />
+                        </>
+                      )}
+                    </>
                   }
                 />
               );

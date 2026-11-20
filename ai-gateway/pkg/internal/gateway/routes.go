@@ -19,6 +19,8 @@ const (
 	routeAnthropicMessages        = "anthropic_messages"
 	routeConfig                   = "config"
 	routeLanguageModel            = "language_model"
+	routeCatalogAvailableModels   = "catalog_available_models"
+	routeCatalogHealth            = "catalog_health"
 	routeCatalogConfig            = "catalog_config"
 	routeCatalogLanguageModel     = "catalog_language_model"
 	routeCatalogAnthropicMessages = "catalog_anthropic_messages"
@@ -52,7 +54,7 @@ func RoutePrefix() string {
 // productionRoutes is the route table the committed manifest declares. The
 // namespace and catalog routes share the discovery and language handlers,
 // which serve each caller by its account access.
-func productionRoutes(discovery, language, chat, messages http.Handler) []route {
+func productionRoutes(discovery, language, chat, messages, health, availableModels http.Handler) []route {
 	errorWriter := providerv4.NewHostErrorWriter()
 	return []route{
 		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
@@ -62,6 +64,8 @@ func productionRoutes(discovery, language, chat, messages http.Handler) []route 
 		{method: http.MethodPost, path: catalogRoutePrefix + anthropicmessages.Path, label: routeCatalogAnthropicMessages, handler: messagesPath(messages), errors: anthropicmessages.NewHostErrorWriter(), catalog: true},
 		{method: http.MethodGet, path: catalogRoutePrefix + "/config", label: routeCatalogConfig, handler: discovery, errors: errorWriter, catalog: true},
 		{method: http.MethodPost, path: catalogRoutePrefix + "/language-model", label: routeCatalogLanguageModel, handler: languageModelPath(language), errors: errorWriter, catalog: true},
+		{method: http.MethodPost, path: catalogRoutePrefix + "/health", label: routeCatalogHealth, handler: health, errors: catalogHealthErrors{}, catalog: true},
+		{method: http.MethodPost, path: catalogRoutePrefix + "/available-models", label: routeCatalogAvailableModels, handler: availableModels, errors: catalogAvailableModelsErrors{}, catalog: true},
 	}
 }
 

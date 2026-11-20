@@ -1,10 +1,19 @@
 import React from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CatalogPage from './CatalogPage';
-import { deleteModelCatalog, getModelCatalog, SecureChanges, updateModelCatalog } from '../api/modelCatalogs';
+import {
+  CatalogHealth,
+  checkModelCatalogHealth,
+  deleteModelCatalog,
+  getModelCatalog,
+  listProviderModels,
+  ProviderModelListing,
+  SecureChanges,
+  updateModelCatalog,
+} from '../api/modelCatalogs';
 import { ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { Spec } from '../generated/modelcatalog/v1alpha1/types.spec.gen';
 import { CatalogActions } from '../permissions';
@@ -13,6 +22,8 @@ import { signInAs } from '../testUtils';
 jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   getModelCatalog: jest.fn(),
+  checkModelCatalogHealth: jest.fn(),
+  listProviderModels: jest.fn(),
   updateModelCatalog: jest.fn(),
   deleteModelCatalog: jest.fn(),
 }));
@@ -23,7 +34,9 @@ jest.mock('@grafana/runtime', () => ({
   PluginPage: ({ subTitle, actions, children }: PluginPageProps) => (
     <>
       {subTitle}
-      {actions}
+      <div role="group" aria-label="Catalog actions">
+        {actions}
+      </div>
       {children}
     </>
   ),
@@ -32,6 +45,7 @@ jest.mock('@grafana/runtime', () => ({
 const APP = '/a/grafana-aigateway-app';
 const TYPED_KEY = 'typed-provider-key';
 const READ_ONLY = [CatalogActions.Read];
+const SUCCESS_BADGES = /^(Key saved|Key accepted|Model listed)$/;
 const ALL = Object.values(CatalogActions);
 
 const stored: ModelCatalog = {
@@ -57,6 +71,11 @@ const stored: ModelCatalog = {
   },
 };
 
+const listing: CatalogHealth = {
+  providers: { anthropic: 'ok', openai: 'invalidKey', spare: 'unreachable' },
+  models: { balanced: { primary: 'ok', fallback: ['notChecked'] }, 'gpt-5': { primary: 'notChecked', fallback: [] } },
+};
+
 function updated(catalog: ModelCatalog, spec: Spec, secure: SecureChanges): ModelCatalog {
   const names = Object.fromEntries(
     Object.entries(catalog.secure ?? {}).filter(([provider]) => !secure[provider]?.remove)
@@ -69,9 +88,15 @@ function updated(catalog: ModelCatalog, spec: Spec, secure: SecureChanges): Mode
   return { ...catalog, metadata: { ...catalog.metadata, resourceVersion: '8' }, spec, secure: names };
 }
 
-function renderPage() {
+function renderPage(withNavigation = false) {
   return render(
     <MemoryRouter initialEntries={[`${APP}/catalogs/edit/team`]}>
+      {withNavigation && (
+        <>
+          <Link to={`${APP}/catalogs`}>Catalog list</Link>
+          <Link to={`${APP}/catalogs/edit/team`}>Team catalog</Link>
+        </>
+      )}
       <Routes>
         <Route path={`${APP}/catalogs`} element={<div>catalog list</div>} />
         <Route path={`${APP}/catalogs/edit/:name`} element={<CatalogPage />} />
@@ -105,6 +130,11 @@ function lastUpdate() {
 describe('pages/CatalogPage', () => {
   beforeEach(() => {
     jest.mocked(getModelCatalog).mockReset().mockResolvedValue(stored);
+    jest.mocked(checkModelCatalogHealth).mockReset().mockResolvedValue(listing);
+    jest
+      .mocked(listProviderModels)
+      .mockReset()
+      .mockResolvedValue({ status: 'ok', modelIds: ['claude-listed', 'claude-other'] });
     jest
       .mocked(updateModelCatalog)
       .mockReset()
@@ -112,7 +142,315 @@ describe('pages/CatalogPage', () => {
     jest.mocked(deleteModelCatalog).mockReset().mockResolvedValue();
   });
 
-  test('shows each provider with its saved key and the models it serves, never secure names', async () => {
+  test('uses the model ID field to fetch, search and choose, with Add model as the only write', async () => {
+    signInAs(OrgRole.Viewer, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.focus(field);
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(listProviderModels).not.toHaveBeenCalled();
+
+    fireEvent.click(field);
+    await provider.findByRole('option', { name: 'claude-listed' });
+    expect(listProviderModels).toHaveBeenCalledWith('team', 'anthropic');
+    type(field, 'listed');
+    expect(provider.queryByRole('option', { name: 'claude-other' })).not.toBeInTheDocument();
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(field).toHaveAttribute('aria-activedescendant', provider.getByRole('option', { name: 'claude-listed' }).id);
+    expect(fireEvent.keyDown(field, { key: 'Enter' })).toBe(false);
+    expect(field).toHaveValue('claude-listed');
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+    fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
+    await provider.findByRole('listitem', { name: 'claude-listed' });
+    expect(lastUpdate()[1].models['claude-listed']?.primary).toEqual({ provider: 'anthropic', model: 'claude-listed' });
+  });
+
+  test.each(['Tab', 'Escape'])('%s closes suggestions without replacing the typed ID', async (key) => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    type(field, 'claude');
+    await provider.findByRole('option', { name: 'claude-listed' });
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(field).toHaveAttribute('aria-activedescendant', provider.getByRole('option', { name: 'claude-listed' }).id);
+    fireEvent.keyDown(field, { key });
+    if (key === 'Tab') {
+      fireEvent.blur(field, { relatedTarget: provider.getByRole('button', { name: 'Add model' }) });
+    }
+    expect(field).toHaveValue('claude');
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [CatalogActions.Read, CatalogActions.Update],
+    [CatalogActions.Read, CatalogActions.ListProviderModels],
+  ])('does not offer listings with only %s and %s', async (read, action) => {
+    signInAs(OrgRole.Admin, [read, action]);
+    await openPage();
+    expect(screen.queryByRole('combobox', { name: 'Add a model to anthropic' })).not.toBeInTheDocument();
+    expect(listProviderModels).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [{ status: 'ok', modelIds: [] }, 'The provider returned no models.'],
+    [{ status: 'ok', modelIds: ['claude-listed'] }, 'No matching models.'],
+    [{ status: 'partial', modelIds: ['claude-listed'] }, 'The provider listing is incomplete.'],
+    [{ status: 'invalidKey', modelIds: [] }, 'The provider rejected the saved key.'],
+    [undefined, 'Could not list models.'],
+  ] satisfies Array<[ProviderModelListing | undefined, string]>)(
+    'can add a custom ID with listing %j',
+    async (result, message) => {
+      signInAs(OrgRole.Admin, ALL);
+      if (result) {
+        jest.mocked(listProviderModels).mockResolvedValueOnce(result);
+      } else {
+        jest.mocked(listProviderModels).mockRejectedValueOnce(new Error('raw-provider-error-sentinel'));
+      }
+      await openPage();
+      const provider = card('anthropic');
+      const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+      type(field, 'claude-custom');
+      expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+      await provider.findByText(message, { exact: false });
+      expect(screen.queryByText('raw-provider-error-sentinel')).not.toBeInTheDocument();
+      expect(field).toHaveValue('claude-custom');
+      fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
+      await provider.findByRole('listitem', { name: 'claude-custom' });
+    }
+  );
+
+  test('reopens a pending listing without another request and fetches again after it settles', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    await openPage();
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.click(field);
+    fireEvent.keyDown(field, { key: 'Escape' });
+    fireEvent.click(field);
+    expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
+    await act(() => resolve({ status: 'ok', modelIds: ['reused-model'] }));
+    expect(provider.getByRole('option', { name: 'reused-model' })).toBeInTheDocument();
+
+    fireEvent.keyDown(field, { key: 'Escape' });
+    fireEvent.click(field);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not reuse a pending listing after replacing the key', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    const pending = new Promise<ProviderModelListing>((finish) => {
+      resolve = finish;
+    });
+    jest.mocked(listProviderModels).mockReturnValueOnce(pending);
+    await openPage();
+    const provider = card('anthropic');
+    const fieldName = { name: 'Add a model to anthropic' };
+    fireEvent.click(provider.getByRole('combobox', fieldName));
+    fireEvent.click(provider.getByRole('button', { name: 'Replace key' }));
+    type(dialog().getByLabelText(/^New API key/), TYPED_KEY);
+    fireEvent.click(dialog().getByRole('button', { name: 'Save key' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    fireEvent.click(provider.getByRole('combobox', fieldName));
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledTimes(2);
+    await act(() => resolve({ status: 'ok', modelIds: ['old-key-model'] }));
+    expect(provider.queryByRole('option', { name: 'old-key-model' })).not.toBeInTheDocument();
+  });
+
+  test('shows the busy message for both listing and health 429s', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    const busy = { status: 429, data: { message: 'untrusted-busy-detail' } };
+    jest.mocked(listProviderModels).mockRejectedValueOnce(busy);
+    jest.mocked(checkModelCatalogHealth).mockRejectedValueOnce(busy);
+    await openPage();
+    const provider = card('anthropic');
+    fireEvent.click(provider.getByRole('combobox', { name: 'Add a model to anthropic' }));
+    const message = 'Another check is running for this catalog. Try again in a moment.';
+    expect(await provider.findByText(message)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    const alert = await screen.findByText('Catalog health check failed');
+    expect(alert.closest('[role="alert"]')).toHaveTextContent(message);
+    expect(document.body).not.toHaveTextContent('untrusted-busy-detail');
+  });
+
+  test.each(['escape', 'save', 'navigate'])('ignores a listing that finishes after %s', async (action) => {
+    signInAs(OrgRole.Admin, ALL);
+    let resolve!: (value: ProviderModelListing) => void;
+    jest.mocked(listProviderModels).mockReturnValueOnce(
+      new Promise((finish) => {
+        resolve = finish;
+      })
+    );
+    renderPage(true);
+    await screen.findByRole('listitem', { name: 'balanced' });
+    const provider = card('anthropic');
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    type(field, 'claude-custom');
+    expect(provider.getByRole('status')).toHaveTextContent('Loading provider models…');
+    switch (action) {
+      case 'escape':
+        fireEvent.keyDown(field, { key: 'Escape' });
+        break;
+      case 'save':
+        fireEvent.click(provider.getByRole('button', { name: 'Add model' }));
+        await provider.findByRole('listitem', { name: 'claude-custom' });
+        break;
+      case 'navigate':
+        fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+        fireEvent.click(screen.getByRole('link', { name: 'Team catalog' }));
+        await screen.findByRole('listitem', { name: 'balanced' });
+        break;
+    }
+    await act(() => resolve({ status: 'ok', modelIds: ['claude-custom-stale'] }));
+    expect(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.queryByRole('option', { name: 'claude-custom-stale' })).not.toBeInTheDocument();
+  });
+
+  test('checks only on request and shows badges only for listing problems', async () => {
+    signInAs(OrgRole.Viewer, [...READ_ONLY, CatalogActions.CheckHealth]);
+    await openPage();
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    expect(screen.getByRole('button', { name: 'Checking health…' })).toHaveAttribute('aria-disabled', 'true');
+    expect(await card('openai').findByText('Key rejected')).toBeInTheDocument();
+    expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
+    expect(card('spare').getByText('Provider unreachable')).toBeInTheDocument();
+    expect(card('openai').getByText('Not checked')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Providers' })).getByRole('status')).toHaveTextContent(
+      '4 problems'
+    );
+    expect(screen.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
+    expect(dialog().getByText('Not checked')).toBeInTheDocument();
+  });
+
+  test('ignores a repeated click and shows the first check result', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let finish!: (result: CatalogHealth) => void;
+    const pending = new Promise<CatalogHealth>((resolve) => {
+      finish = resolve;
+    });
+    jest.mocked(checkModelCatalogHealth).mockReturnValue(pending);
+    await openPage();
+
+    const check = screen.getByRole('button', { name: 'Check health' });
+    act(() => {
+      fireEvent.click(check);
+      fireEvent.click(check);
+    });
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish(listing));
+    expect(card('openai').getByText('Key rejected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
+  });
+
+  test('shows one quiet confirmation when all providers and targets pass', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    jest.mocked(checkModelCatalogHealth).mockResolvedValueOnce({
+      providers: { anthropic: 'ok', openai: 'ok', spare: 'ok' },
+      models: { balanced: { primary: 'ok', fallback: ['ok'] }, 'gpt-5': { primary: 'ok', fallback: [] } },
+    });
+    await openPage();
+    expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    const providers = within(screen.getByRole('region', { name: 'Providers' }));
+    expect(await providers.findByText('No problems found')).toBeInTheDocument();
+    expect(providers.getByRole('status')).toHaveTextContent('No problems found');
+    expect(screen.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    const actions = within(screen.getByRole('group', { name: 'Catalog actions' }));
+    expect(actions.queryByRole('status')).not.toBeInTheDocument();
+    expect(actions.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Check health',
+      'Delete catalog',
+    ]);
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
+    expect(dialog().queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    fireEvent.click(dialog().getByRole('button', { name: 'Close' }));
+
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(actions.getByRole('button', { name: 'Check health' }));
+    expect(providers.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  test('a writer without the explicit health permission cannot check', async () => {
+    signInAs(
+      OrgRole.Admin,
+      ALL.filter((action) => action !== CatalogActions.CheckHealth)
+    );
+    await openPage();
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+  });
+
+  test('ignores a pending check after a successful edit', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let finish!: (result: CatalogHealth) => void;
+    const pending = new Promise<CatalogHealth>((resolve) => {
+      finish = resolve;
+    });
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(pending);
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'balanced' }));
+    type(dialog().getByRole('textbox', { name: /^Display name/ }), 'Edited');
+    fireEvent.click(dialog().getByRole('button', { name: 'Save model' }));
+    expect(await card('anthropic').findByText('Edited')).toBeInTheDocument();
+    await act(async () => finish(listing));
+    expect(card('openai').queryByText('Key rejected')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Providers' })).getByRole('status')).toBeEmptyDOMElement();
+    expect(screen.getByRole('button', { name: 'Check health' })).toBeEnabled();
+  });
+
+  test('ignores a pending health result after leaving and reopening the catalog', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage(true);
+    const first = await screen.findByRole('button', { name: 'Check health' });
+    let finish!: (result: CatalogHealth) => void;
+    jest.mocked(checkModelCatalogHealth).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    fireEvent.click(first);
+    fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+    expect(screen.queryByRole('button', { name: 'Checking health…' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Team catalog' }));
+    await act(async () => finish(listing));
+    expect(await screen.findByRole('button', { name: 'Check health' })).toBeEnabled();
+    expect(card('openai').queryByText('Key rejected')).not.toBeInTheDocument();
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+  });
+
+  test('uses fixed health failure text without displaying the underlying error', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    jest.mocked(checkModelCatalogHealth).mockRejectedValueOnce(new Error('untrusted-provider-message'));
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
+    expect(await screen.findByText('The catalog health check could not run. Try again.')).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('untrusted-provider-message');
+  });
+
+  test('shows each provider and the models it serves, without key badges or secure names', async () => {
     signInAs(OrgRole.Viewer, READ_ONLY);
     await openPage();
 
@@ -122,7 +460,7 @@ describe('pages/CatalogPage', () => {
       )
     ).toBeInTheDocument();
     expect(card('anthropic').getByRole('heading', { name: 'Anthropic' })).toBeInTheDocument();
-    expect(card('anthropic').getByText('Key saved')).toBeInTheDocument();
+    expect(screen.queryByText('Key saved')).not.toBeInTheDocument();
     expect(card('anthropic').getByRole('listitem', { name: 'balanced' })).toBeInTheDocument();
     expect(card('anthropic').getByText('Balanced')).toBeInTheDocument();
     expect(card('anthropic').getByText('serves claude-sonnet-4-6')).toBeInTheDocument();
@@ -155,7 +493,7 @@ describe('pages/CatalogPage', () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
-    type(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' }), 'claude-haiku-4-5');
+    type(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' }), 'claude-haiku-4-5');
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
 
     expect(await card('anthropic').findByRole('listitem', { name: 'claude-haiku-4-5' })).toBeInTheDocument();
@@ -166,13 +504,13 @@ describe('pages/CatalogPage', () => {
       primary: { provider: 'anthropic', model: 'claude-haiku-4-5' },
     });
     expect(secure).toEqual({});
-    expect(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' })).toHaveValue('');
+    expect(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveValue('');
   });
 
   test('shows a format error when the quick-add field is left and clears it as the value is fixed', async () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
-    const field = card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' });
+    const field = card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' });
     const formatError = /Applications request the model by this ID\./;
 
     type(field, 'bad id');
@@ -193,7 +531,7 @@ describe('pages/CatalogPage', () => {
   test('clears the quick-add field and its errors after a model is added', async () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
-    const field = card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' });
+    const field = card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' });
 
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
     expect(await card('anthropic').findByText("Enter the provider's model ID.")).toBeInTheDocument();
@@ -201,7 +539,7 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
 
     expect(await card('anthropic').findByRole('listitem', { name: 'claude-haiku-4-5' })).toBeInTheDocument();
-    expect(field).toHaveValue('');
+    expect(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveValue('');
     expect(card('anthropic').queryByText("Enter the provider's model ID.")).not.toBeInTheDocument();
   });
 
@@ -209,7 +547,7 @@ describe('pages/CatalogPage', () => {
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
-    type(card('anthropic').getByRole('textbox', { name: 'Add a model to anthropic' }), 'gpt-5');
+    type(card('anthropic').getByRole('combobox', { name: 'Add a model to anthropic' }), 'gpt-5');
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Add model' }));
 
     expect(await card('anthropic').findByText(/already has a model with ID "gpt-5"/)).toBeInTheDocument();
@@ -230,7 +568,7 @@ describe('pages/CatalogPage', () => {
     const [, spec, secure] = lastUpdate();
     expect(spec.providers['openai-2']).toEqual({ type: 'openai' });
     expect(secure).toEqual({ 'openai-2': { create: TYPED_KEY } });
-    expect(card('openai-2').getByText('Key saved')).toBeInTheDocument();
+    expect(card('openai-2').getByRole('button', { name: 'Replace key' })).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain(TYPED_KEY);
   });
 

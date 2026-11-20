@@ -197,7 +197,8 @@ ctx = grafana.WithOnBehalfOf(ctx, userToken)
 result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.UserText("Summarize this incident.")))
 ```
 
-The call still uses your service's models, and is made on the user's behalf.
+On namespace routes, the call still uses your service's models. To select a
+stack's models instead, [call a stored stack catalog](#call-a-stored-stack-catalog).
 
 ## Call from an App Platform app
 
@@ -205,8 +206,7 @@ An App Platform app, a Grafana app plugin with a backend, calls the Gateway
 through Grafana. It can call as itself, or on behalf of the user whose request
 it is serving.
 
-Declare the Gateway's routes in your app manifest, so that Grafana lets your
-app call them:
+For the namespace routes, declare these permissions in your app manifest:
 
 ```cue
 extraPermissions: accessKinds: [
@@ -251,16 +251,58 @@ ctx = grafana.WithNamespace(ctx, namespace)
 ctx = grafana.WithOnBehalfOf(ctx, info.GetAccessToken())
 ```
 
-What each call gets:
+What each call gets on namespace routes. For the separate catalog permissions,
+see [Call a stored stack catalog](#call-a-stored-stack-catalog).
 
 | Call | Self-hosted Grafana | Grafana Cloud |
 |---|---|---|
 | As the app | Refused, because the Gateway needs a user or service account | The configured models once your app is [allowed](#get-your-service-allowed-in-grafana-cloud); refused before |
 | On behalf of a user | The configured models | The configured models once your app is allowed; before that, your own provider key |
 
-In both environments, a call on behalf of a user also needs the user to have
-the `plugins.app:access` permission on `plugins:id:grafana-aigateway-app`.
+In both environments, a namespace-route call on behalf of a user also needs
+the user to have `plugins.app:access` on `plugins:id:grafana-aigateway-app`.
 Grafana's Viewer role has it by default.
+
+### Call a stored stack catalog
+
+With a service account or a caller-managed access token, use the full catalog
+prefix as the base URL, such as
+`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/team`.
+
+With token exchange, keep the Gateway API root as the base URL. In your app
+backend, select the stack, the user's token, and the catalog's `metadata.name`
+in the call context. Use that context for both discovery and model calls:
+
+```go
+catalogCtx := grafana.WithNamespace(ctx, namespace)
+catalogCtx = grafana.WithOnBehalfOf(catalogCtx, info.GetAccessToken())
+catalogCtx = grafana.WithCatalog(catalogCtx, "team")
+
+models, err := client.ListModels(catalogCtx)
+```
+
+Pass the same context when calling a model ID from that catalog:
+
+```go
+model, err := client.LanguageModel(modelID)
+if err != nil {
+	return err
+}
+result, err := aisdk.GenerateText(catalogCtx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+)
+```
+
+Use the same context for `aisdk.StreamText`. If the client already has the
+stack's concrete namespace configured, you can omit `WithNamespace`. Calls
+on behalf of a user cannot exchange for `*`.
+
+The option selects a route; it does not grant access. The namespace-route
+permissions above do not grant access to catalog routes. Grafana checks
+`get` access to the catalog's `config` and `language-model` subresources;
+the delegated user needs catalog invocation access (`aigateway:modelinvoker`).
+See [Call a stored catalog](../../ai-gateway/README.md#call-a-stored-catalog)
+for the platform requirements and Grafana Cloud access policy scope.
 
 ## Get your service allowed in Grafana Cloud
 
@@ -289,9 +331,9 @@ that discovery is unsupported with your own key.
 | Response | Likely cause |
 |---|---|
 | `401 Unauthorized` | The token is missing, expired or revoked. |
-| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL; the user or service account lacks `plugins.app:access` on `plugins:id:grafana-aigateway-app`; or an App Platform app's manifest does not [declare the Gateway's routes](#call-from-an-app-platform-app). |
-| `403` Gateway permission error in Grafana Cloud | A service calls as itself and is not [allowed](#get-your-service-allowed-in-grafana-cloud) yet. |
-| `403` Gateway permission error in self-hosted Grafana | A service or app calls without a user or service account. Call on behalf of a user instead. |
+| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL. On namespace routes, the caller may lack `plugins.app:access` on `plugins:id:grafana-aigateway-app`, or the app's manifest may not [declare the namespace routes](#call-from-an-app-platform-app). On catalog routes, check the [catalog's subresource permissions](#call-a-stored-stack-catalog). |
+| `403` Gateway permission error on a Grafana Cloud namespace route | A service calls as itself and is not [allowed](#get-your-service-allowed-in-grafana-cloud) yet. |
+| `403` Gateway permission error on a self-hosted namespace route | A service or app calls without a user or service account. Call on behalf of a user instead. |
 | `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
 | Request ends after 60 seconds | Grafana limits how long a request can run, including a streamed response. |
 

@@ -272,7 +272,7 @@ For approval-requiring streaming local tools, automatic same-invocation approval
 
 ### Requirement: Choice violations create no new local approval effects
 
-Completed effective required/named violations SHALL bypass the new local approval/execution phase in shared StreamText, GenerateText and both ToolLoopAgent paths. No call-level policy, dynamic NeedsApproval, new approval allocation/signing, automatic response/synthetic denial, local Execute/ExecuteStream or execution callback SHALL run for that step. This exception SHALL override ordinary local configuration/request/continuation rules.
+Completed effective tool-choice violations SHALL bypass the new local approval/execution phase in shared StreamText, GenerateText and both ToolLoopAgent paths. No call-level policy, dynamic NeedsApproval, new approval allocation/signing, automatic response/synthetic denial, local Execute/ExecuteStream or execution callback SHALL run for that step. This exception SHALL override ordinary local configuration/request/continuation rules.
 
 #### Scenario: Unrelated tool requiring user approval
 - **WHEN** named choice selects lookup but a completed response contains only another configured local call requiring static or dynamic user approval
@@ -295,7 +295,7 @@ Completed effective required/named violations SHALL bypass the new local approva
 #### Scenario: Prior-message approvals are unaffected
 - **WHEN** a submitted prior-message approval response resolves a local tool before the provider call and that call later violates tool choice
 - **THEN** the prior-message approval execution and generated prompt results SHALL remain unchanged
-- **AND** the new gate SHALL apply only to the violating response's new local approval/execution phase
+- **AND** withholding and local approval suppression SHALL apply to the current model call, not prior-message approval processing
 
 #### Scenario: Valid choice retains ordinary approval behavior
 - **WHEN** a completed response satisfies its effective named or required choice and contains eligible approval-requiring calls
@@ -303,8 +303,10 @@ Completed effective required/named violations SHALL bypass the new local approva
 
 ### Requirement: Choice gates do not undo provider or historical approval effects
 
-Received provider calls/results/approval events SHALL retain stream/content handling; provider-originated approval requests SHALL remain unsigned. The choice gate SHALL NOT undo provider effects or alter prior-input approval resolution/execution before the current model call. Choice-satisfying steps and other disallowed-finish approval behavior SHALL retain existing semantics.
+Provider calls/results/approval events SHALL retain existing handling except that events from a model call under none SHALL be withheld. Provider-originated approval requests SHALL remain unsigned. The choice gate SHALL NOT undo provider effects or alter prior-input approval resolution/execution before the current model call.
 
-#### Scenario: Historical execution remains before a violating model call
-- **WHEN** a prior approved tool executes before a model call that later violates choice
-- **THEN** its execution and prompt results SHALL remain unchanged, and received provider events SHALL retain existing handling.
+#### Scenario: None withholds provider approval requests
+- **WHEN** a model call under none emits a provider approval request with a provider-executed tool call
+- **THEN** no tool or approval event from that response SHALL reach consumers
+- **AND** no local approval or execution effect SHALL run for that response
+- **AND** withholding SHALL NOT imply undoing work already performed by the provider

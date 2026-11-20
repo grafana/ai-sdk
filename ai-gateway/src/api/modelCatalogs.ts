@@ -13,6 +13,7 @@ interface ModelCatalogList {
 }
 
 const REQUEST_OPTIONS = { showErrorAlert: false };
+const CATALOG_BUSY_MESSAGE = 'Another check is running for this catalog. Try again in a moment.';
 
 /** modelCatalogsURL returns the ModelCatalog collection path of this Grafana's namespace. */
 export function modelCatalogsURL(): string {
@@ -32,6 +33,54 @@ export async function listModelCatalogs(): Promise<ModelCatalog[]> {
 /** getModelCatalog returns one catalog. Its secure values carry names only. */
 export function getModelCatalog(name: string): Promise<ModelCatalog> {
   return getBackendSrv().get<ModelCatalog>(modelCatalogURL(name), undefined, undefined, REQUEST_OPTIONS);
+}
+
+/** HealthStatus is a fixed outcome from a provider model listing. */
+export type HealthStatus = 'ok' | 'invalidKey' | 'unknownModel' | 'unreachable' | 'refused' | 'notChecked';
+
+/** CatalogHealth reports provider, primary and fallback listing outcomes. */
+export interface CatalogHealth {
+  providers: Record<string, HealthStatus>;
+  models: Record<string, { primary: HealthStatus; fallback: HealthStatus[] }>;
+}
+
+/** checkModelCatalogHealth checks the saved providers and models without changing the catalog. */
+export function checkModelCatalogHealth(name: string): Promise<CatalogHealth> {
+  return getBackendSrv().post<CatalogHealth>(`${modelCatalogURL(name)}/health`, undefined, REQUEST_OPTIONS);
+}
+
+/** ProviderModelListing contains a fixed outcome and the provider model IDs observed. */
+export interface ProviderModelListing {
+  status: Exclude<HealthStatus, 'unknownModel'> | 'partial';
+  modelIds: string[];
+}
+
+/** listProviderModels lists one provider using its saved key. */
+export function listProviderModels(name: string, provider: string): Promise<ProviderModelListing> {
+  const url = `${modelCatalogURL(name)}/available-models?provider=${encodeURIComponent(provider)}`;
+  return getBackendSrv().post<ProviderModelListing>(url, undefined, REQUEST_OPTIONS);
+}
+
+/** providerListingErrorMessage gives fixed feedback without displaying error details. */
+export function providerListingErrorMessage(error: unknown): string {
+  return isFetchError(error) && error.status === 429
+    ? CATALOG_BUSY_MESSAGE
+    : 'Could not list models. You can still enter a model ID.';
+}
+
+/** catalogHealthErrorMessage gives fixed feedback without displaying error details. */
+export function catalogHealthErrorMessage(error: unknown): string {
+  if (isFetchError(error)) {
+    switch (error.status) {
+      case 403:
+        return 'You do not have permission to check this catalog.';
+      case 424:
+        return 'Check the saved provider configuration and keys, then try again.';
+      case 429:
+        return CATALOG_BUSY_MESSAGE;
+    }
+  }
+  return 'The catalog health check could not run. Try again.';
 }
 
 /** createModelCatalog creates a catalog with the given spec and secure values. */

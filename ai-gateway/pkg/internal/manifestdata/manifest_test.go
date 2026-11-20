@@ -33,13 +33,15 @@ func TestManifest_DeclaresGatewayRoutesAndKinds(t *testing.T) {
 	assert.Equal(t, "v1alpha1", version.Name)
 	assert.True(t, version.Served)
 	assert.Equal(t, map[string][]string{
-		"/namespaces/{namespace}/config":                              {http.MethodGet},
-		"/namespaces/{namespace}/language-model":                      {http.MethodPost},
-		"/namespaces/{namespace}/v1/chat/completions":                 {http.MethodPost},
-		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages":    {http.MethodPost},
-		"/namespaces/{namespace}/v1/messages":                         {http.MethodPost},
-		"/namespaces/{namespace}/modelcatalogs/{name}/config":         {http.MethodGet},
-		"/namespaces/{namespace}/modelcatalogs/{name}/language-model": {http.MethodPost},
+		"/namespaces/{namespace}/config":                                {http.MethodGet},
+		"/namespaces/{namespace}/language-model":                        {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions":                   {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages":      {http.MethodPost},
+		"/namespaces/{namespace}/v1/messages":                           {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/config":           {http.MethodGet},
+		"/namespaces/{namespace}/modelcatalogs/{name}/language-model":   {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/health":           {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/available-models": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
 	require.Len(t, version.Kinds, 2)
 	for _, tc := range []struct {
@@ -288,6 +290,8 @@ func TestManifest_DeclaredAccessChecks(t *testing.T) {
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/v1/messages", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "messages"},
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/config", operation: func(p spec3.PathProps) *spec3.Operation { return p.Get }, subresource: "config"},
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/language-model", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "language-model"},
+		{path: "/namespaces/{namespace}/modelcatalogs/{name}/health", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "health"},
+		{path: "/namespaces/{namespace}/modelcatalogs/{name}/available-models", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "available-models"},
 	} {
 		t.Run(tc.subresource, func(t *testing.T) {
 			operation := tc.operation(paths[tc.path])
@@ -315,9 +319,14 @@ func TestManifest_Roles(t *testing.T) {
 	role := func(title, description, kind, permissionSet string) app.ManifestRole {
 		return app.ManifestRole{Title: title, Description: description, Kinds: []app.ManifestRoleKind{{Kind: kind, PermissionSet: &permissionSet}}, Routes: []string{}}
 	}
+	writer := role("Model catalog writer", "Create, update and delete AI Gateway model catalogs", "ModelCatalog", app.ManifestRolePermissionSetEditor)
+	writer.Kinds = append(writer.Kinds,
+		app.ManifestRoleKind{Kind: "ModelCatalog/health", Verbs: []string{"get"}},
+		app.ManifestRoleKind{Kind: "ModelCatalog/available-models", Verbs: []string{"get"}},
+	)
 	assert.Equal(t, map[string]app.ManifestRole{
 		"aigateway:catalogreader":    role("Model catalog reader", "Read AI Gateway model catalogs", "ModelCatalog", app.ManifestRolePermissionSetViewer),
-		"aigateway:catalogwriter":    role("Model catalog writer", "Create, update and delete AI Gateway model catalogs", "ModelCatalog", app.ManifestRolePermissionSetEditor),
+		"aigateway:catalogwriter":    writer,
 		"aigateway:middlewarereader": role("Middleware reader", "Read AI Gateway tenant extension configuration", "Middleware", app.ManifestRolePermissionSetViewer),
 		"aigateway:middlewarewriter": role("Middleware writer", "Create, update and delete AI Gateway tenant extension configuration", "Middleware", app.ManifestRolePermissionSetEditor),
 		"aigateway:modelinvoker": {Title: "Model invoker", Description: "Discover and invoke models from AI Gateway model catalogs", Kinds: []app.ManifestRoleKind{
