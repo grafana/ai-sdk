@@ -923,6 +923,7 @@ func TestPipeline_StreamOutcome(t *testing.T) {
 	}{
 		{name: "error then finish", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, errorPart, finish}, outcome: extension.OutcomeError},
 		{name: "finish then error", parts: append(textParts("hello"), errorPart), outcome: extension.OutcomeError},
+		{name: "truncated stream without cancellation", parts: []provider.StreamPart{{Type: provider.PartStreamStart}}, outcome: extension.OutcomeError},
 		{name: "invalid output with an error", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, {Type: provider.PartTextDelta, ID: "never-started", Delta: "x"}, errorPart, finish}, outcome: extension.OutcomeInvalidOutput},
 		{name: "inspection denial", parts: textParts("hello"), guard: &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return extension.ErrDenied }}, outcome: extension.OutcomeDenied},
 		{name: "fail-closed inspection failure", parts: textParts("hello"), guard: &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return errors.New("private") }}, outcome: extension.OutcomeError},
@@ -980,6 +981,23 @@ func TestPipeline_StreamOutcome(t *testing.T) {
 			assert.Equal(t, tc.outcome, (<-records).Outcome)
 		})
 	}
+
+	t.Run("caller cancelled before unfinished stream closes", func(t *testing.T) {
+		records := make(chan extension.Record, 1)
+		h := newHarness(t, recorded(records))
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		h.model.stream = func(context.Context) (*provider.StreamResult, error) {
+			cancel()
+			return &provider.StreamResult{Stream: streamOf()}, nil
+		}
+		result, err := h.compose(t, extension.SourceOperatorCatalog).DoStream(ctx, provider.CallOptions{})
+		require.NoError(t, err)
+		assert.Empty(t, collect(t, result.Stream))
+		h.flush()
+		require.Len(t, records, 1)
+		assert.Equal(t, extension.OutcomeCancelled, (<-records).Outcome)
+	})
 
 	t.Run("OpenAI-compatible stream read error", func(t *testing.T) {
 		records := make(chan extension.Record, 1)
