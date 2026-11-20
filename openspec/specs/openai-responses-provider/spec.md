@@ -246,40 +246,53 @@ when no schema is provided.
 - **WHEN** `responseFormat` is `json` with a schema and name
 - **THEN** the request `text.format` is a `json_schema` format carrying the normalized schema, name, and `strict` flag
 
-### Requirement: GPT-6 Responses capability and reasoning-effort validation
+### Requirement: Responses reasoning effort resolution
 
-Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, plus none for exact `gpt-6-sol`/`gpt-6-luna`; others SHALL be omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
+For generate and stream requests to reasoning models, a non-empty provider-option `reasoningEffort` SHALL take precedence over portable `CallOptions.Reasoning` and be sent unchanged, without catalog validation. An unset or provider-default portable effort SHALL omit the request effort when there is no override.
 
-#### Scenario: Supported GPT-6 effort from provider option
-- **WHEN** a `gpt-6-astra` generate or stream request sets `reasoningEffort` to `max`
-- **THEN** the request uses reasoning effort `max` without a capability warning
+#### Scenario: Provider effort overrides portable reasoning
+- **WHEN** a `gpt-6-astra` request sets `reasoningEffort: none` and portable reasoning `high`
+- **THEN** the request sends effort `none` without a reasoning warning or a change to the caller's options
+- **AND** the override does not enable non-reasoning sampling settings
 
-#### Scenario: Unsupported GPT-6 effort from provider option or core fallback
-- **WHEN** a GPT-6 or later generate or stream request resolves effort `minimal`, or resolves `none` on a model other than `gpt-6-sol` or `gpt-6-luna`, from either the OpenAI provider option or the existing core reasoning setting
-- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming the model's supported efforts: `low, medium, high, xhigh, max`, prefixed with `none` for `gpt-6-sol` and `gpt-6-luna`
-- **AND** it does not mutate the supplied options
+### Requirement: Portable reasoning effort mapping
 
-#### Scenario: Only exact Sol and Luna IDs accept effort none
-- **WHEN** a versioned, fast or otherwise suffixed Sol/Luna ID such as `gpt-6.1-sol` or `gpt-6-luna-fast`, or a Mantle-prefixed `openai.gpt-6-sol`, resolves effort `none`
-- **THEN** the direct OpenAI IDs follow the GPT-6 unsupported-effort behavior
-- **AND** the Mantle ID sends effort `none` while omitting `temperature` and `top_p` with `unsupported` warnings
+The provider SHALL preserve a supported portable effort. Otherwise it SHALL select the highest supported lower level, or the lowest supported higher level if there is no lower level, ordered from `minimal` through `max`. It SHALL select `none` only when requested and supported; unsupported `none` SHALL map to the lowest positive effort. A changed effort SHALL emit a `compatibility` warning for `reasoning` naming both levels.
 
-#### Scenario: GPT-6 Sol and Luna retain non-reasoning controls
-- **WHEN** a `gpt-6-sol` or `gpt-6-luna` request under the `openai` or `azure` namespace resolves effort `none` and sets temperature, topP and logprobs
-- **THEN** the request sends reasoning effort `none`, `temperature`, `top_p`, `top_logprobs` and the `message.output_text.logprobs` include without warnings
+#### Scenario: Portable effort rounds to a catalog level
+- **WHEN** a `gpt-6-astra` request sets portable reasoning `none` without a provider override
+- **THEN** it sends effort `low` and emits a `compatibility` warning for `reasoning` with details `reasoning "none" is not directly supported by this model. mapped to effort "low".`
+- **AND** a `gpt-5` request for `xhigh` sends `high` with a corresponding warning
 
-#### Scenario: GPT-6 omits unsupported logprobs
-- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`, unless its effective effort is `none` on a model that supports non-reasoning parameters
-- **THEN** both settings are omitted and an `unsupported` `logprobs` warning is emitted
+#### Scenario: No declared effort list
+- **WHEN** a reasoning model with no declared effort list receives a portable level
+- **THEN** the portable level passes without rounding
+- **AND** an unrecognized ID only emits reasoning settings when reasoning is explicitly forced
 
-#### Scenario: GPT-6 omits legacy prompt-cache retention
-- **WHEN** a GPT-6 or later request specifies `promptCacheRetention`
-- **THEN** the field is omitted with an `unsupported` warning directing the caller to `promptCacheOptions`
-- **AND** pre-GPT-6 and Mantle-prefixed models retain their existing retention behavior
+### Requirement: Responses catalog effort levels
 
-#### Scenario: Conservative model identity
-- **WHEN** a GPT-5.6, `gpt-6chat`, custom, or other nonmatching model ID receives an existing valid reasoning effort
-- **THEN** this new GPT-6 effort-list check does not change that model's previous effort behavior
+The catalog SHALL declare portable effort levels by model family. Mantle SHALL retain its endpoint-specific overrides; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
+
+#### Scenario: Standard GPT-5 models
+- **WHEN** the catalog resolves a base GPT-5 family ID or a `mini`, `nano`, `sol`, `luna`, or `terra` variant, with or without a date suffix
+- **THEN** it declares the GPT-5 levels `minimal`, `low`, `medium`, `high`
+- **AND** GPT-5.1 replaces `minimal` with `none`, GPT-5.2 through GPT-5.5 add `xhigh` to the GPT-5.1 levels, and GPT-5.6 and later GPT-5 minors also add `max`
+- **AND** the standard GPT-5 rules do not match `pro`, `codex`, `chat`, or other variants
+
+#### Scenario: GPT-6 and later models
+- **WHEN** the catalog resolves an anchored GPT-6 or later model ID
+- **THEN** it declares `low`, `medium`, `high`, `xhigh`, and `max`, and supports configuration updates and async calling
+- **AND** exact IDs `gpt-6-sol`, `gpt-6-luna`, and `gpt-6.1-terra` also declare `none` and appear in `ModelIDs()`
+
+#### Scenario: Only exact GPT-6 catalog exceptions support portable none
+- **WHEN** a direct GPT-6 or later reasoning model outside the exact catalog exceptions, such as `gpt-6.1-sol` or `gpt-6-luna-fast`, receives portable `none`
+- **THEN** it sends `low` and emits the compatibility warning
+- **AND** a Mantle-prefixed ID such as `openai.gpt-6.1-terra` sends `none` without rounding but still omits `temperature` and `top_p` with unsupported warnings
+
+#### Scenario: Sol, Luna, and Terra retain non-reasoning controls
+- **WHEN** a `gpt-6-sol`, `gpt-6-luna`, or `gpt-6.1-terra` request under the `openai` or `azure` namespace has effective effort `none` and sets temperature, topP, and logprobs
+- **THEN** it retains `temperature`, `top_p`, `top_logprobs`, and the `message.output_text.logprobs` include without warnings
+- **AND** at effective effort `low` it omits those fields with unsupported warnings
 
 ### Requirement: OpenAI reasoning configuration update and explicit compaction trigger
 
@@ -296,7 +309,7 @@ The provider SHALL accept reasoningEffortUpdate none/low/medium/high/xhigh/max (
 #### Scenario: Update effort unsupported by the model
 - **WHEN** a `gpt-6-astra` request specifies `reasoningEffortUpdate: none`
 - **THEN** no request-level configuration update is sent and an `unsupported` `reasoningEffortUpdate` warning lists the model's supported efforts
-- **AND** the same update on `gpt-6-sol` or `gpt-6-luna` is prepended
+- **AND** the same update on `gpt-6-sol`, `gpt-6-luna`, or `gpt-6.1-terra` is prepended, subject to the same configuration requirements
 
 #### Scenario: Incompatible update combinations
 - **WHEN** a GPT-6 request specifies `reasoningEffortUpdate` together with `reasoningMode: pro`, a present automatic `contextManagement` value, or `truncation: auto`
@@ -390,8 +403,8 @@ Capabilities SHALL follow upstream getOpenAILanguageModelCapabilities model-ID m
 - **THEN** the request omits `temperature` and emits an `unsupported` warning
 
 #### Scenario: Non-reasoning parameter support
-- **WHEN** capabilities are resolved for `gpt-5.1` and later GPT-5 minors, exact `gpt-6-sol`/`gpt-6-luna`, other GPT-6 IDs, `gpt-5`, and Mantle-prefixed IDs
-- **THEN** only the GPT-5.1+ and exact Sol/Luna IDs support non-reasoning parameters
+- **WHEN** capabilities are resolved for `gpt-5.1` and later GPT-5 minors, exact `gpt-6-sol`/`gpt-6-luna`/`gpt-6.1-terra`, other GPT-6 IDs, `gpt-5`, and Mantle-prefixed IDs
+- **THEN** only the GPT-5.1+ and exact Sol, Luna, and Terra IDs support non-reasoning parameters
 
 #### Scenario: Positive configuration update restricts sampling
 - **WHEN** a `gpt-6-sol` request sets reasoning effort `none`, a positive `reasoningEffortUpdate`, temperature and topP
@@ -821,6 +834,27 @@ Subsequent assistant provider-executed calls/results SHALL retain Responses taxo
 - **WHEN** stateless hosted history and a client shell call/output are supplied
 - **THEN** hosted items SHALL follow their taxonomy-specific omission/reconstruction; shell SHALL retain native paired types and call_id, and synthetic unmatched denied assistant results SHALL be omitted
 
+#### Scenario: Replay a web search without storage
+
+- **WHEN** storage is disabled, there is no active conversation, and an assistant result named `web_search` or `web_search_preview` (including configured aliases) is not a synthetic execution denial and has JSON output with a valid action and valid sources if present
+- **THEN** the request SHALL contain one `web_search_call` with status `completed`, using the result's item ID from the active provider options namespace or its tool-call ID if the item ID is absent or null
+- **AND** `search` SHALL retain optional `query` and `queries` and place any URL or API sources supplied in that JSON output under the native action; `openPage` and `findInPage` SHALL become `open_page` and `find_in_page`, preserving absent and null URL or pattern fields where applicable
+
+#### Scenario: Omit an unreplayable web search
+
+- **WHEN** storage is disabled, there is no active conversation, and a web-search result other than a synthetic execution denial has missing or invalid action data, invalid sources, or a non-JSON output
+- **THEN** the adapter SHALL omit the item and retain the existing warning that the tool's results are not sent when storage is disabled
+
+#### Scenario: Keep stored references for web search
+
+- **WHEN** storage is enabled, there is no active conversation, and the web-search result is not a synthetic execution denial
+- **THEN** the adapter SHALL reference the web-search result's item ID or fall back to its tool-call ID, without requiring a replayable action
+
+#### Scenario: Skip web-search results already in a conversation or denied
+
+- **WHEN** there is an active conversation or the web-search result is a synthetic execution denial, including a JSON output with `"type": "execution-denied"`
+- **THEN** the adapter SHALL omit the result without a replay warning
+
 ### Requirement: OpenAI scalar result breakpoint precedence
 
 Scalar output-level cache breakpoints SHALL precede tool-result-part breakpoints in the active OpenAI/Azure namespace. Content-array output SHALL instead preserve ordered input_text/input_image/input_file elements and take cache breakpoints from each element, not result/output-level scalar options.
@@ -850,12 +884,13 @@ Selected scalar child output/result-part breakpoints SHALL produce ordered input
 
 ### Requirement: OpenAI GPT-6 unsupported request fields
 
-GPT-6+ reasoning models SHALL omit requested logprobs and message.output_text.logprobs include with unsupported logprobs warning. They SHALL omit legacy promptCacheRetention with unsupported warning directing callers to promptCacheOptions.
+GPT-6+ reasoning models SHALL omit requested logprobs and the `message.output_text.logprobs` include with an unsupported warning, unless effective effort is `none` and the model supports non-reasoning sampling. This restriction SHALL NOT apply to GPT-5 models solely because the catalog declares an effort list. GPT-6+ models SHALL omit legacy `promptCacheRetention` with an unsupported warning directing callers to `promptCacheOptions`.
 
 #### Scenario: OpenAI GPT-6 unsupported request fields
 
-- **WHEN** GPT-6 requests logprobs, its include and legacy promptCacheRetention
+- **WHEN** a GPT-6 reasoning model with effective effort `low` requests logprobs, its include, and legacy `promptCacheRetention`
 - **THEN** all three SHALL be omitted with their specified warnings rather than sent
+- **AND** pre-GPT-6 and Mantle-prefixed models retain their existing cache retention behavior
 
 ### Requirement: OpenAI Mantle capability ownership
 
@@ -1000,6 +1035,13 @@ Generated provider-executed built-ins SHALL include web_search_call, file_search
 
 - **WHEN** the response contains a web_search_call with ID search_1
 - **THEN** conversion SHALL emit the corresponding provider-executed tool call and tool result linked to search_1 rather than an ordinary client function call
+
+#### Scenario: Report web-search outcome in unary and streaming results
+
+- **WHEN** a unary `web_search_call` item or its streaming `output_item.done` event has a status other than `completed`
+- **THEN** the tool result SHALL set `IsError` and contain only the original status as `{"status": "<status>"}`, even when the item has an action
+- **AND** a `completed` item SHALL retain the success result shape, or an empty object if there is no action
+- **AND** both paths SHALL preserve the call ID, configured tool name, and existing standalone source and citation mapping
 
 ### Requirement: OpenAI annotation source title field
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -102,10 +104,10 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 
 	var warnings []provider.Warning
 	// The JSON response tool relies on forced tool use, which some models
-	// reject. Fall back to native structured outputs when the model supports
-	// them. Mirrors upstream anthropic-language-model.ts (@ai-sdk/anthropic
-	// 4.0.67).
-	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput {
+	// reject. Fall back to native structured output only if it can represent
+	// the original schema.
+	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
+		anthropicschema.SupportsNativeStructuredOutput(schemaMap) {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
 			Feature: "providerOptions.anthropic.structuredOutputMode",
@@ -370,11 +372,15 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			var content []anthropic.BetaContentBlockParamUnion
 			mcpToolUseIDs := make(map[string]bool)
 			for messageIndex, msg := range block.messages {
-				converted := convertAssistantContent(v, mapping, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)
+				parts := msg.Content
+				if slices.ContainsFunc(parts, isEmptyText) {
+					parts = slices.DeleteFunc(slices.Clone(parts), isEmptyText)
+				}
+				converted := convertAssistantContent(v, mapping, parts, msg.ProviderOptions, mcpToolUseIDs, &warnings)
 				isFinalAssistantText := blockIndex == len(blocks)-1 &&
 					messageIndex == len(block.messages)-1 &&
-					len(msg.Content) > 0 &&
-					msg.Content[len(msg.Content)-1].Type == provider.ContentPartTypeText
+					len(parts) > 0 &&
+					parts[len(parts)-1].Type == provider.ContentPartTypeText
 				if isFinalAssistantText && len(converted) > 0 {
 					finalPart := &converted[len(converted)-1]
 					if finalPart.OfText != nil {
@@ -498,41 +504,42 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	// top-level reasoning hint. Mirrors upstream
 	// anthropic-language-model.ts:390-413.
 	if opts.Reasoning != provider.ReasoningProviderDefault && !hasProviderEffort(opts.ProviderOptions) {
-		rc := resolveReasoningConfig(opts.Reasoning, caps, &warnings)
+		rc := resolveReasoningConfig(modelID, opts.Reasoning, caps, &warnings)
 		if rc != nil {
 			providerThinking := providerThinkingType(opts.ProviderOptions)
 			applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
 		}
 	}
 
-	// Some models always think and reject disabled and budget-based enabled
-	// thinking with a 400. Replace the unsupported setting so the request
-	// still succeeds. Mirrors upstream anthropic-language-model.ts
-	// (@ai-sdk/anthropic 4.0.67).
-	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil {
-		switch {
-		case anthropicOpts.Thinking.Type == ThinkingDisabled && caps.supportsBetweenToolsThinking:
+	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil && anthropicOpts.Thinking.Type == ThinkingDisabled {
+		if caps.supportsBetweenToolsThinking {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "providerOptions.anthropic.thinking",
 				Details: fmt.Sprintf("thinking cannot be disabled for %s. Using 'between_tools' thinking, the lowest thinking setting, instead.", modelID),
 			})
 			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingBetweenTools}
-		case anthropicOpts.Thinking.Type == ThinkingDisabled:
+		} else {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "providerOptions.anthropic.thinking",
 				Details: fmt.Sprintf("thinking cannot be disabled for %s; it always uses adaptive thinking. The thinking setting has been removed. Lower 'effort' to reduce thinking.", modelID),
 			})
 			anthropicOpts.Thinking = nil
-		case anthropicOpts.Thinking.Type == ThinkingEnabled:
-			warnings = append(warnings, provider.Warning{
-				Type:    provider.WarnUnsupported,
-				Feature: "providerOptions.anthropic.thinking",
-				Details: fmt.Sprintf("budget-based thinking is not supported by %s; it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID),
-			})
-			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
 		}
+	}
+
+	if caps.rejectsBudgetThinking && anthropicOpts.Thinking != nil && anthropicOpts.Thinking.Type == ThinkingEnabled {
+		qualifier := ""
+		if caps.rejectsThinkingDisabled {
+			qualifier = "; it always uses adaptive thinking"
+		}
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.anthropic.thinking",
+			Details: fmt.Sprintf("budget-based thinking is not supported by %s%s. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID, qualifier),
+		})
+		anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
 	}
 
 	if caps.rejectsThinkingDisabledAboveHighEffort &&
@@ -1118,6 +1125,10 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 	return anthropic.BetaContentBlockParamUnion{OfDocument: &doc}, true
 }
 
+func isEmptyText(part provider.ContentPart) bool {
+	return part.Type == provider.ContentPartTypeText && part.Text == ""
+}
+
 func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
@@ -1126,9 +1137,6 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if isCompaction(p.ProviderOptions) {
-				if p.Text == "" {
-					continue
-				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfCompaction: &anthropic.BetaCompactionBlockParam{
 						Content:      anthropic.String(p.Text),
