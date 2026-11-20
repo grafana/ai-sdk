@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +16,9 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
+	"github.com/grafana/ai-sdk/internal/toolhistory"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -94,6 +97,8 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 
 	useStructuredOutput := caps.supportsStructuredOutput
 	switch opts.StructuredOutputMode {
+	case "", StructuredOutputAuto:
+		useStructuredOutput = useStructuredOutput && anthropicschema.SupportsNativeStructuredOutput(schemaMap)
 	case StructuredOutputFormat:
 		useStructuredOutput = true
 	case StructuredOutputJSONTool:
@@ -102,10 +107,10 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 
 	var warnings []provider.Warning
 	// The JSON response tool relies on forced tool use, which some models
-	// reject. Fall back to native structured outputs when the model supports
-	// them. Mirrors upstream anthropic-language-model.ts (@ai-sdk/anthropic
-	// 4.0.67).
-	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput {
+	// reject. Fall back to native structured output only if it can represent
+	// the original schema.
+	if opts.StructuredOutputMode == StructuredOutputJSONTool && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
+		anthropicschema.SupportsNativeStructuredOutput(schemaMap) {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
 			Feature: "providerOptions.anthropic.structuredOutputMode",
@@ -146,9 +151,9 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	// Override any user-set tool choice to required (OfAny). The json tool must
 	// be callable, and DisableParallelToolUse prevents multi-tool turns that
 	// would complicate response remapping. This matches upstream behavior.
-	// Models that reject forced tool use get auto instead, as upstream
-	// prepareTools does for a required tool choice.
-	if caps.rejectsForcedToolUse {
+	// Models that reject forced tool use and budget-based thinking requests
+	// get auto instead, as upstream prepareTools does for required choice.
+	if caps.rejectsForcedToolUse || p.Thinking.OfEnabled != nil {
 		warnings = append(warnings, forcedToolChoiceWarning(provider.ToolChoice{Type: provider.ToolChoiceRequired}))
 		p.ToolChoice = anthropic.BetaToolChoiceUnionParam{
 			OfAuto: &anthropic.BetaToolChoiceAutoParam{
@@ -370,11 +375,15 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			var content []anthropic.BetaContentBlockParamUnion
 			mcpToolUseIDs := make(map[string]bool)
 			for messageIndex, msg := range block.messages {
-				converted := convertAssistantContent(v, mapping, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)
+				parts := msg.Content
+				if slices.ContainsFunc(parts, isEmptyText) {
+					parts = slices.DeleteFunc(slices.Clone(parts), isEmptyText)
+				}
+				converted := convertAssistantContent(v, mapping, parts, msg.ProviderOptions, mcpToolUseIDs, &warnings)
 				isFinalAssistantText := blockIndex == len(blocks)-1 &&
 					messageIndex == len(block.messages)-1 &&
-					len(msg.Content) > 0 &&
-					msg.Content[len(msg.Content)-1].Type == provider.ContentPartTypeText
+					len(parts) > 0 &&
+					parts[len(parts)-1].Type == provider.ContentPartTypeText
 				if isFinalAssistantText && len(converted) > 0 {
 					finalPart := &converted[len(converted)-1]
 					if finalPart.OfText != nil {
@@ -393,26 +402,6 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 
 	warnings = append(warnings, v.warnings...)
-
-	// forcedToolChoice is a required or named tool choice for a model that
-	// rejects forced tool use. It is resolved after the response format,
-	// because the JSON response tool replaces the caller's tool choice.
-	var forcedToolChoice *provider.ToolChoice
-	if opts.ToolChoice != nil {
-		if opts.ToolChoice.Type == provider.ToolChoiceNone {
-			// Upstream drops tools for none; sending tool_choice none keeps
-			// tool definitions in the prompt cache prefix.
-			if len(p.Tools) > 0 {
-				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &anthropic.BetaToolChoiceNoneParam{}}
-			}
-		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
-			forcedToolChoice = opts.ToolChoice
-			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
-		} else if opts.ToolChoice.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
-			p.ToolChoice = convertToolChoice(*opts.ToolChoice, mapping)
-		}
-	}
-	applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
 
 	if opts.Temperature != nil {
 		temperature := *opts.Temperature
@@ -465,32 +454,6 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		})
 	}
 
-	var br buildResult
-	if opts.ResponseFormat != nil {
-		responseFormatCaps := caps
-		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
-		br = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
-		warnings = append(warnings, br.warnings...)
-	}
-	// Mirrors upstream prepareTools (@ai-sdk/anthropic 4.0.67): send auto,
-	// and for a named tool send only that tool.
-	if forcedToolChoice != nil && !br.usesJsonResponseTool {
-		warnings = append(warnings, forcedToolChoiceWarning(*forcedToolChoice))
-		if forcedToolChoice.Type == provider.ToolChoiceTool {
-			p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(forcedToolChoice.ToolName))
-		}
-	}
-	// The JSON response tool forces tool use, so none sends only that tool.
-	// applyResponseFormat appends it last; a caller tool may share its name.
-	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
-	if noneWithJSONTool {
-		p.Tools = p.Tools[len(p.Tools)-1:]
-	}
-	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
-	if len(p.Tools) > 0 && !noneWithJSONTool {
-		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
-	}
-
 	// Map top-level Reasoning to Anthropic thinking/effort. Provider options
 	// always take precedence: we only fall back to top-level mapping when
 	// `effort` is unset on AnthropicOptions. If thinking is set on
@@ -498,41 +461,42 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	// top-level reasoning hint. Mirrors upstream
 	// anthropic-language-model.ts:390-413.
 	if opts.Reasoning != provider.ReasoningProviderDefault && !hasProviderEffort(opts.ProviderOptions) {
-		rc := resolveReasoningConfig(opts.Reasoning, caps, &warnings)
+		rc := resolveReasoningConfig(modelID, opts.Reasoning, caps, &warnings)
 		if rc != nil {
 			providerThinking := providerThinkingType(opts.ProviderOptions)
 			applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
 		}
 	}
 
-	// Some models always think and reject disabled and budget-based enabled
-	// thinking with a 400. Replace the unsupported setting so the request
-	// still succeeds. Mirrors upstream anthropic-language-model.ts
-	// (@ai-sdk/anthropic 4.0.67).
-	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil {
-		switch {
-		case anthropicOpts.Thinking.Type == ThinkingDisabled && caps.supportsBetweenToolsThinking:
+	if caps.rejectsThinkingDisabled && anthropicOpts.Thinking != nil && anthropicOpts.Thinking.Type == ThinkingDisabled {
+		if caps.supportsBetweenToolsThinking {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "providerOptions.anthropic.thinking",
 				Details: fmt.Sprintf("thinking cannot be disabled for %s. Using 'between_tools' thinking, the lowest thinking setting, instead.", modelID),
 			})
 			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingBetweenTools}
-		case anthropicOpts.Thinking.Type == ThinkingDisabled:
+		} else {
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "providerOptions.anthropic.thinking",
 				Details: fmt.Sprintf("thinking cannot be disabled for %s; it always uses adaptive thinking. The thinking setting has been removed. Lower 'effort' to reduce thinking.", modelID),
 			})
 			anthropicOpts.Thinking = nil
-		case anthropicOpts.Thinking.Type == ThinkingEnabled:
-			warnings = append(warnings, provider.Warning{
-				Type:    provider.WarnUnsupported,
-				Feature: "providerOptions.anthropic.thinking",
-				Details: fmt.Sprintf("budget-based thinking is not supported by %s; it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID),
-			})
-			anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
 		}
+	}
+
+	if caps.rejectsBudgetThinking && anthropicOpts.Thinking != nil && anthropicOpts.Thinking.Type == ThinkingEnabled {
+		qualifier := ""
+		if caps.rejectsThinkingDisabled {
+			qualifier = "; it always uses adaptive thinking"
+		}
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.anthropic.thinking",
+			Details: fmt.Sprintf("budget-based thinking is not supported by %s%s. Using adaptive thinking instead. Use 'effort' to control how much the model thinks.", modelID, qualifier),
+		})
+		anthropicOpts.Thinking = &ThinkingConfig{Type: ThinkingAdaptive}
 	}
 
 	if caps.rejectsThinkingDisabledAboveHighEffort &&
@@ -559,6 +523,48 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			Details: fmt.Sprintf("effort '%s' is not supported with 'between_tools' thinking. The effort has been lowered to 'high'.", anthropicOpts.Effort),
 		})
 		anthropicOpts.Effort = "high"
+	}
+
+	applyThinkingOption(&p, anthropicOpts.Thinking)
+	var br buildResult
+	if opts.ResponseFormat != nil {
+		responseFormatCaps := caps
+		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
+		br = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
+		warnings = append(warnings, br.warnings...)
+	}
+	// The JSON response tool replaces caller tool choice. For none, keep only
+	// the synthetic tool, which was appended last (a caller tool may share its name).
+	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
+	if noneWithJSONTool {
+		p.Tools = p.Tools[len(p.Tools)-1:]
+	}
+	if !br.usesJsonResponseTool {
+		if tc := opts.ToolChoice; tc != nil {
+			switch {
+			case tc.Type == provider.ToolChoiceNone:
+				// Keeping tool definitions on none preserves the prompt cache prefix.
+				if len(p.Tools) > 0 {
+					p.ToolChoice = convertToolChoice(*tc, mapping)
+				}
+			case (caps.rejectsForcedToolUse || p.Thinking.OfEnabled != nil) &&
+				(tc.Type == provider.ToolChoiceRequired || tc.Type == provider.ToolChoiceTool):
+				warnings = append(warnings, forcedToolChoiceWarning(*tc))
+				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
+				if tc.Type == provider.ToolChoiceTool {
+					p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(tc.ToolName))
+				}
+			default:
+				if tc.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
+					p.ToolChoice = convertToolChoice(*tc, mapping)
+				}
+			}
+		}
+		applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
+	}
+	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
+	if len(p.Tools) > 0 && !noneWithJSONTool {
+		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
 	}
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
@@ -1118,6 +1124,10 @@ func convertTextDocumentContentPart(p provider.ContentPart, cc anthropic.BetaCac
 	return anthropic.BetaContentBlockParamUnion{OfDocument: &doc}, true
 }
 
+func isEmptyText(part provider.ContentPart) bool {
+	return part.Type == provider.ContentPartTypeText && part.Text == ""
+}
+
 func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
@@ -1126,9 +1136,6 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if isCompaction(p.ProviderOptions) {
-				if p.Text == "" {
-					continue
-				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfCompaction: &anthropic.BetaCompactionBlockParam{
 						Content:      anthropic.String(p.Text),
@@ -1284,8 +1291,13 @@ func toAnthropicToolInput(input json.RawMessage) any {
 	if err := json.Unmarshal(input, &value); err != nil {
 		return map[string]any{"rawInvalidInput": string(input)}
 	}
-	if _, ok := value.(map[string]any); ok {
+	switch v := value.(type) {
+	case map[string]any:
 		return input
+	case string:
+		if object, ok := toolhistory.Object(v); ok {
+			return object
+		}
 	}
 	return map[string]any{"rawInvalidInput": value}
 }
@@ -2915,12 +2927,11 @@ func extractWebFetchArgs(args map[string]json.RawMessage) webFetchArgs {
 	return a
 }
 
-// forcedToolChoiceWarning reports a required or named tool choice sent as auto
-// to a model that rejects forced tool use.
+// forcedToolChoiceWarning reports a required or named tool choice sent as auto.
 func forcedToolChoiceWarning(tc provider.ToolChoice) provider.Warning {
-	details := "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+	details := "toolChoice 'required' is not supported with this model or thinking configuration. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
 	if tc.Type == provider.ToolChoiceTool {
-		details = fmt.Sprintf("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
+		details = fmt.Sprintf("toolChoice 'tool' is not supported with this model or thinking configuration. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
 	}
 	return provider.Warning{Type: provider.WarnUnsupported, Feature: "toolChoice", Details: details}
 }
@@ -3086,17 +3097,13 @@ func hasCodeExecutionTool(tools []provider.Tool) bool {
 	return false
 }
 
-func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, tools []provider.Tool, warnings *[]provider.Warning) {
-	if !ok {
-		return
-	}
-
-	if ao.Thinking != nil {
-		switch ao.Thinking.Type {
+func applyThinkingOption(p *anthropic.BetaMessageNewParams, thinking *ThinkingConfig) {
+	if thinking != nil {
+		switch thinking.Type {
 		case ThinkingEnabled:
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
 				OfEnabled: &anthropic.BetaThinkingConfigEnabledParam{
-					BudgetTokens: int64(ao.Thinking.BudgetTokens),
+					BudgetTokens: int64(thinking.BudgetTokens),
 				},
 			}
 		case ThinkingDisabled:
@@ -3109,13 +3116,19 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 			}
 		case ThinkingAdaptive:
 			adaptive := &anthropic.BetaThinkingConfigAdaptiveParam{}
-			if ao.Thinking.Display != "" {
-				adaptive.Display = anthropic.BetaThinkingConfigAdaptiveDisplay(ao.Thinking.Display)
+			if thinking.Display != "" {
+				adaptive.Display = anthropic.BetaThinkingConfigAdaptiveDisplay(thinking.Display)
 			}
 			p.Thinking = anthropic.BetaThinkingConfigParamUnion{
 				OfAdaptive: adaptive,
 			}
 		}
+	}
+}
+
+func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions, ok bool, tools []provider.Tool, warnings *[]provider.Warning) {
+	if !ok {
+		return
 	}
 
 	if ao.Effort != "" {

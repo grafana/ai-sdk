@@ -1,9 +1,28 @@
 # openai-compatible-request-transform Specification
 
 ## Purpose
-Define backward-compatible request transformation and per-call warning reporting for OpenAI-compatible generation and streaming calls.
+Define request reasoning conversion, backward-compatible request transformation, and per-call warning reporting for OpenAI-compatible generation and streaming calls.
 
 ## Requirements
+
+### Requirement: Reasoning effort in the converted request
+
+For generation and streaming, a non-empty `OpenAIOptions.ReasoningEffort` SHALL be written unchanged to `reasoning_effort`, taking precedence over `CallOptions.Reasoning`. Without a non-empty override, request conversion SHALL write any non-default top-level reasoning value unchanged, including `none`, and SHALL omit the field for provider-default reasoning. These rules apply before any configured request transform.
+
+#### Scenario: Explicitly disabled reasoning
+
+- **WHEN** a call sets top-level reasoning to `none` and does not set a provider effort override
+- **THEN** the converted request SHALL contain `"reasoning_effort": "none"`
+
+#### Scenario: Provider effort override
+
+- **WHEN** a call sets top-level reasoning to `none` and sets provider effort to `high`
+- **THEN** the converted request SHALL contain `"reasoning_effort": "high"`
+
+#### Scenario: Provider default
+
+- **WHEN** top-level reasoning is unset or provider default and no provider effort override is set
+- **THEN** the converted request SHALL omit `reasoning_effort`
 
 ### Requirement: Warning-aware request transformation
 

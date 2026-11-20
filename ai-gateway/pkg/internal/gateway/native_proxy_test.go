@@ -37,7 +37,12 @@ var nativeTarget struct {
 // the process trusts.
 func useNativeAnthropic(t *testing.T, fake *fakeAnthropic) {
 	t.Helper()
-	target, err := url.Parse(fake.server.URL)
+	useNativeAnthropicURL(t, fake.server.URL)
+}
+
+func useNativeAnthropicURL(t *testing.T, rawURL string) {
+	t.Helper()
+	target, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,7 @@ The `effort` option SHALL be independent of the `thinking` configuration. Caller
 
 ### Requirement: Model capability detection
 
-The `providers/anthropic` module SHALL provide `getModelCapabilities(modelID string)` returning `maxOutputTokens int`, `supportsAdaptiveThinking bool`, and `isKnownModel bool` by substring matching. Checks SHALL be specific-first, e.g. Sonnet 4.6 before `claude-sonnet-4-`.
+The `providers/anthropic` module SHALL provide `getModelCapabilities(modelID string)` returning `maxOutputTokens int`, `supportsAdaptiveThinking bool`, and `isKnownModel bool` among other metadata. Checks SHALL be specific-first, e.g. Sonnet 4.6 before `claude-sonnet-4-`, with family boundaries where versions have different capabilities.
 
 #### Scenario: Sonnet 4-6 capabilities
 - **WHEN** `getModelCapabilities("claude-sonnet-4-6-20260101")` is called
@@ -90,21 +90,21 @@ The `providers/anthropic` module SHALL provide `getModelCapabilities(modelID str
 
 #### Scenario: Unknown effort capability
 
-- **WHEN** the ID matches none of these families
+- **WHEN** the ID is neither a known family nor an unknown Claude ID eligible for Claude defaults
 - **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 4096, false, false respectively
 
 ### Requirement: Reasoning resolution for adaptive-capable models
 
-For non-zero operational `CallOptions.Reasoning` other than `ReasoningNone` on adaptive-capable models, the provider SHALL set adaptive thinking and effort: minimal/low→low, medium→medium, high→high, xhigh→xhigh if supported else max. A changed name (minimal→low, xhigh→max) SHALL emit a compatibility warning; direct xhigh SHALL NOT warn.
+For non-zero operational `CallOptions.Reasoning` other than `ReasoningNone` on adaptive-capable models, the provider SHALL set adaptive thinking and effort: minimal/low→low, medium→medium, high→high, xhigh→xhigh if supported else high, max→max. Each changed name (minimal→low, xhigh→high) SHALL emit a `compatibility` warning with feature `reasoning` identifying the requested level and the mapped effort; unchanged levels SHALL NOT warn.
 
 #### Scenario: Reasoning high on adaptive model
 - **WHEN** `CallOptions.Reasoning` is `"high"` and the model is `claude-sonnet-4-6`
 - **THEN** the request SHALL contain `thinking.type` set to `"adaptive"` AND `output_config.effort` set to `"high"`
 - **AND** no compatibility warning SHALL be emitted
 
-#### Scenario: Reasoning xhigh on adaptive model
-- **WHEN** `CallOptions.Reasoning` is `"xhigh"` and the model is `claude-sonnet-4-6`
-- **THEN** the request SHALL contain `thinking.type` set to `"adaptive"` AND `output_config.effort` set to `"max"`
+#### Scenario: Reasoning xhigh on adaptive models without xhigh effort
+- **WHEN** `CallOptions.Reasoning` is `"xhigh"` and the model is `claude-sonnet-4-6` or `claude-opus-4-6`
+- **THEN** the request SHALL contain `thinking.type` set to `"adaptive"` AND `output_config.effort` set to `"high"`
 - **AND** a `compatibility` warning SHALL be emitted with feature `"reasoning"` and details indicating the mapping
 
 #### Scenario: Reasoning xhigh on xhigh-capable adaptive model
@@ -138,20 +138,25 @@ For non-zero operational `CallOptions.Reasoning` other than `ReasoningNone` on n
 - **WHEN** `CallOptions.Reasoning` is `"minimal"` and a model has `maxOutputTokens: 4096`
 - **THEN** `budget_tokens` SHALL be `1024` (clamp minimum), not `82` (round(4096 * 0.02))
 
-### Requirement: Reasoning none disables thinking
-When `CallOptions.Reasoning` is `"none"`, the Anthropic provider SHALL set `thinking: disabled`, except on models that support `between_tools` thinking. Those models reject disabled thinking, so the provider SHALL set `thinking: between_tools`, their lowest setting, without a warning, as `@ai-sdk/anthropic` 4.0.67 does. No `output_config.effort` SHALL be set in either case.
+### Requirement: Reasoning none uses the lowest supported thinking setting
+When `CallOptions.Reasoning` is `"none"`, the Anthropic provider SHALL derive disabled thinking when supported. Otherwise it SHALL derive `between_tools` thinking if supported, or effort `low` without deriving a thinking object if the model always uses adaptive thinking. Either substitution SHALL emit a `compatibility` warning with feature `reasoning` that identifies the model and the fallback. Explicit provider options retain their precedence.
 
-#### Scenario: Reasoning none on any model
-- **WHEN** `CallOptions.Reasoning` is `"none"` and the model does not support `between_tools` thinking
+#### Scenario: Reasoning none on a model that accepts disabled thinking
+- **WHEN** `CallOptions.Reasoning` is `"none"` without explicit thinking or effort and the model accepts disabled thinking (for example, `claude-haiku-5-5`)
 - **THEN** the request SHALL contain `thinking.type` set to `"disabled"`
-- **AND** no `output_config.effort` SHALL be present
-- **AND** no effort beta header SHALL be added
+- **AND** no `output_config.effort` or effort beta header SHALL be present
+- **AND** no reasoning warning SHALL be emitted
 
 #### Scenario: Reasoning none on Sonnet 5.5
-- **WHEN** `CallOptions.Reasoning` is `"none"` and the model is `claude-sonnet-5-5`
+- **WHEN** `CallOptions.Reasoning` is `"none"` without explicit thinking or effort and the model is `claude-sonnet-5-5`
 - **THEN** the request SHALL contain `thinking.type` set to `"between_tools"`
 - **AND** no `output_config.effort` SHALL be present
-- **AND** no warning SHALL be emitted
+- **AND** a `compatibility` warning with feature `reasoning` SHALL say that thinking cannot be disabled and `between_tools` is the lowest thinking setting
+
+#### Scenario: Reasoning none on base Fable 5
+- **WHEN** `CallOptions.Reasoning` is `"none"` without explicit thinking or effort and the model is base `claude-fable-5`
+- **THEN** the request SHALL omit `thinking` and set `output_config.effort` to `"low"`
+- **AND** a `compatibility` warning with feature `reasoning` SHALL say that the model always uses adaptive thinking and effort `low` is used to minimize thinking
 
 ### Requirement: Reasoning nil and provider-default are no-ops
 When `CallOptions.Reasoning` is the zero-valued `ReasoningProviderDefault`, the Anthropic provider SHALL NOT set any thinking or effort configuration from the reasoning field. A strict wire adapter receiving explicit `"provider-default"` SHALL normalize it to the same zero value. Existing provider-option-based configuration is unaffected.
@@ -284,7 +289,7 @@ Before sending, `taskBudget` SHALL meet upstream Zod constraints: non-empty type
 
 ### Requirement: Portable maximum reasoning
 
-The portable reasoning contract and Gateway SHALL accept maximum reasoning. Anthropic and Anthropic Converse adaptive thinking SHALL map it to native maximum effort; budget-based models SHALL map it to a 95 percent reasoning budget under existing bounds. OpenAI and compatible adapters SHALL retain their existing provider-specific capability gates. Nova 2 Lite SHALL map maximum and extra-high portable effort to high with a compatibility warning.
+The portable reasoning contract and Gateway SHALL accept maximum reasoning. Anthropic and Anthropic Converse adaptive thinking SHALL map it to native maximum effort; budget-based models SHALL map it to a 95 percent reasoning budget under existing bounds. OpenAI and compatible adapters SHALL retain their existing provider-specific capability gates. Bedrock Converse SHALL map maximum and extra-high portable effort to high with a compatibility warning on Nova 2 Lite and OpenAI gpt-oss.
 
 #### Scenario: Adaptive and budget maximum
 - **WHEN** maximum reasoning is supplied to an adaptive Anthropic model or a budget-based Anthropic model

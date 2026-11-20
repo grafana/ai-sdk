@@ -18,7 +18,11 @@ manifest: {
 		"aigateway:catalogwriter": {
 			title:       "Model catalog writer"
 			description: "Create, update and delete AI Gateway model catalogs"
-			kinds: [{kind: "ModelCatalog", permissionSet: "editor"}]
+			kinds: [
+				{kind: "ModelCatalog", permissionSet: "editor"},
+				{kind: "ModelCatalog/health", verbs: ["get"]},
+				{kind: "ModelCatalog/available-models", verbs: ["get"]},
+			]
 		}
 		"aigateway:modelinvoker": {
 			title:       "Model invoker"
@@ -26,6 +30,7 @@ manifest: {
 			kinds: [
 				{kind: "ModelCatalog", verbs: ["get"]},
 				{kind: "ModelCatalog/language-model", verbs: ["get"]},
+				{kind: "ModelCatalog/messages", verbs: ["get"]},
 				{kind: "ModelCatalog/config", verbs: ["get"]},
 			]
 		}
@@ -59,6 +64,10 @@ v1alpha1: {
 			operationId: "createChatCompletion"
 			responses: default: description: "OpenAI Chat Completions response"
 		}
+		"/namespaces/{namespace}/v1/messages": post: {
+			operationId: "createAnthropicMessage"
+			responses: default: description: "Anthropic Messages response"
+		}
 		"/namespaces/{namespace}/language-model": post: {
 			operationId: "createLanguageModel"
 			responses: default: description: "ProviderWire language-model response"
@@ -69,6 +78,34 @@ v1alpha1: {
 			"x-grafana-declared-authz-subresource": "config"
 			"x-grafana-declared-authz-verb":        "get"
 			responses: default: description: "ProviderWire discovery response for the catalog"
+		}
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages": post: {
+			operationId:                            "createModelCatalogAnthropicMessage"
+			"x-grafana-declared-authz-resource":    "modelcatalogs"
+			"x-grafana-declared-authz-subresource": "messages"
+			"x-grafana-declared-authz-verb":        "get"
+			responses: default: description: "Anthropic Messages response for the catalog"
+		}
+		"/namespaces/{namespace}/modelcatalogs/{name}/available-models": post: {
+			operationId:                            "listModelCatalogProviderModels"
+			"x-grafana-declared-authz-resource":    "modelcatalogs"
+			"x-grafana-declared-authz-subresource": "available-models"
+			"x-grafana-declared-authz-verb":        "get"
+			parameters: [{
+				name:        "provider"
+				in:          "query"
+				required:    true
+				description: "Name of a saved provider instance"
+				schema:      {type: "string", maxLength: 63}
+			}]
+			responses: default: description: "Bounded model listing for one saved provider"
+		}
+		"/namespaces/{namespace}/modelcatalogs/{name}/health": post: {
+			operationId:                            "checkModelCatalogHealth"
+			"x-grafana-declared-authz-resource":    "modelcatalogs"
+			"x-grafana-declared-authz-subresource": "health"
+			"x-grafana-declared-authz-verb":        "get"
+			responses: default: description: "Provider and model listing outcomes for the catalog"
 		}
 		"/namespaces/{namespace}/modelcatalogs/{name}/language-model": post: {
 			operationId:                            "createModelCatalogLanguageModel"

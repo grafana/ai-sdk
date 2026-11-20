@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define provider-tool validation and bounded Go Gateway client decoding independently of Gateway service activation.
+Define native provider tool behavior and validation, and bounded Go Gateway client decoding independently of Gateway service activation.
 
 ## Requirements
 
@@ -56,6 +56,18 @@ Declared first-party requirements SHALL equal the version manifest and SHALL res
 #### Scenario: Publication uses merged pins and standalone checks
 - **WHEN** a module or plugin package is prepared for publication
 - **THEN** its first-party requirements SHALL equal the manifest versions being released or already tagged, and published library versions SHALL be verified as external consumers after tagging
+
+### Requirement: OpenAI-compatible function arguments from assistant history
+
+The OpenAI-compatible provider SHALL send a string-valued assistant function input as the unchanged `function.arguments` text when it is JSON accepted by the registered upstream parser. Otherwise it SHALL keep the JSON-encoded string. Inputs provided as objects SHALL retain their existing encoding.
+
+#### Scenario: Assistant function call contains already serialized arguments
+- **WHEN** a string-valued assistant function input contains a JSON object, array, scalar, or null accepted by the parser
+- **THEN** the native Chat request SHALL send the inner JSON text unchanged as `function.arguments`, without an extra layer of quoting
+
+#### Scenario: Assistant function call contains rejected argument text
+- **WHEN** a string-valued assistant function input contains malformed or rejected JSON text
+- **THEN** the request SHALL send its existing JSON encoding as `function.arguments`
 
 ### Requirement: Text-encoded partial tool input survives the complete transport path
 

@@ -3,11 +3,25 @@ package aisdk
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func assembleResponseMessage(chunks []UIMessageChunk) (UIMessage, error) {
+	return assembleResponseMessageWithInitial("msg-1", chunks, nil)
+}
+
+func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
+	assembly := newUIMessageStreamAssembly(messageID, initial)
+	for _, chunk := range chunks {
+		assembly.apply(chunk)
+	}
+	return assembly.snapshot()
+}
 
 func TestUIMessageStreamWriter(t *testing.T) {
 	t.Run("write and close", func(t *testing.T) {
@@ -51,6 +65,160 @@ func TestUIMessageStreamWriter(t *testing.T) {
 		}
 		assert.Len(t, chunks, 3)
 	})
+}
+
+func TestCreateUIMessageStream_StepEndBeforeForwarding(t *testing.T) {
+	synctest.Test(t, testCreateUIMessageStreamStepEndBeforeForwarding)
+}
+
+func testCreateUIMessageStreamStepEndBeforeForwarding(t *testing.T) {
+	original := UIMessage{ID: "user", Role: RoleUser}
+	prefix := []UIMessageChunk{
+		{Type: ChunkStart},
+		TextDeltaChunk("orphan", "ignored"),
+		TextStartChunk("t1"),
+		TextDeltaChunk("t1", "hello"),
+		TextEndChunk("t1"),
+		{Type: ChunkMessageMetadata, MessageMetadata: json.RawMessage(`{"step":1}`)},
+	}
+	started := make(chan UIMessageStreamOnStepEndState, 1)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	defer release()
+	var calls int
+
+	stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+		OriginalMessages: []UIMessage{original},
+		GenerateID:       func() string { return "generated" },
+		Execute: func(w *UIMessageStreamWriter) error {
+			if err := w.Write(prefix[0]); err != nil {
+				return err
+			}
+			return w.Merge(chunks(append(prefix[1:], UIMessageChunk{Type: ChunkFinishStep})...))
+		},
+		OnStepEnd: func(s UIMessageStreamOnStepEndState) {
+			calls++
+			if calls == 1 {
+				started <- s
+			}
+			<-gate
+		},
+	})
+
+	for _, want := range prefix {
+		if want.Type == ChunkStart {
+			want.MessageID = "generated"
+		}
+		got, ok := <-stream
+		require.True(t, ok)
+		assert.Equal(t, want, got)
+	}
+	select {
+	case state := <-started:
+		assert.False(t, state.IsContinuation)
+		assert.Equal(t, "generated", state.ResponseMessage.ID)
+		assert.Equal(t, []UIMessage{original, state.ResponseMessage}, state.Messages)
+		assert.Equal(t, []Part{TextPart{Text: "hello", State: "done"}}, state.ResponseMessage.Parts)
+		assert.JSONEq(t, `{"step":1}`, string(state.ResponseMessage.Metadata))
+		require.ErrorContains(t, state.AssemblyError, "orphan")
+	case chunk := <-stream:
+		require.FailNow(t, "stream advanced before callback started", "got %v", chunk.Type)
+	}
+	synctest.Wait()
+	select {
+	case chunk := <-stream:
+		require.FailNow(t, "stream advanced while callback was blocked", "got %v", chunk.Type)
+	default:
+	}
+	release()
+	assert.Equal(t, []UIMessageChunk{{Type: ChunkFinishStep}}, collectUIChunks(stream))
+	synctest.Wait()
+	assert.Equal(t, 1, calls)
+}
+
+func TestCreateUIMessageStream_CallbacksUseInitialHistory(t *testing.T) {
+	original := []UIMessage{{ID: "assistant", Role: RoleAssistant, Parts: []Part{TextPart{Text: "original"}}}}
+	var step UIMessageStreamOnStepEndState
+	var finish UIMessageStreamOnFinishState
+	stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+		OriginalMessages: original,
+		Execute: func(w *UIMessageStreamWriter) error {
+			original[0] = UIMessage{ID: "different", Role: RoleAssistant, Parts: []Part{TextPart{Text: "replacement"}}}
+			if err := w.Write(UIMessageChunk{Type: ChunkStart}); err != nil {
+				return err
+			}
+			return w.Write(UIMessageChunk{Type: ChunkFinishStep})
+		},
+		OnStepEnd: func(s UIMessageStreamOnStepEndState) { step = s },
+		OnFinish:  func(s UIMessageStreamOnFinishState) { finish = s },
+	})
+	assert.Equal(t, []UIMessageChunk{{Type: ChunkStart, MessageID: "assistant"}, {Type: ChunkFinishStep}}, collectUIChunks(stream))
+	want := UIMessage{ID: "assistant", Role: RoleAssistant, Parts: []Part{TextPart{Text: "original"}}}
+	assert.True(t, step.IsContinuation)
+	assert.True(t, finish.IsContinuation)
+	assert.Equal(t, want, step.ResponseMessage)
+	assert.Equal(t, []UIMessage{want}, step.Messages)
+	assert.Equal(t, step.ResponseMessage, finish.ResponseMessage)
+	assert.Equal(t, step.Messages, finish.Messages)
+}
+
+func TestCreateUIMessageStream_StepSnapshotClonesOpaqueParts(t *testing.T) {
+	var original UIMessage
+	const partJSON = `{"type":"future-part","value":"preserved"}`
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"assistant","role":"assistant","parts":[`+partJSON+`]}`), &original))
+	var states []UIMessageStreamOnStepEndState
+	var finish UIMessageStreamOnFinishState
+	boundary := UIMessageChunk{Type: ChunkFinishStep}
+	stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+		OriginalMessages: []UIMessage{original},
+		Execute: func(w *UIMessageStreamWriter) error {
+			return w.Merge(chunks(boundary, boundary))
+		},
+		OnStepEnd: func(s UIMessageStreamOnStepEndState) {
+			if len(states) == 0 {
+				switch p := s.ResponseMessage.Parts[0].(type) {
+				case rawPart:
+					p.Raw[0] = '!'
+				}
+			}
+			states = append(states, s)
+		},
+		OnFinish: func(s UIMessageStreamOnFinishState) { finish = s },
+	})
+	assert.Equal(t, []UIMessageChunk{boundary, boundary}, collectUIChunks(stream))
+	require.Len(t, states, 2)
+	for _, message := range []UIMessage{original, states[0].Messages[0], states[1].ResponseMessage, finish.ResponseMessage} {
+		p, ok := message.Parts[0].(rawPart)
+		require.True(t, ok)
+		assert.JSONEq(t, partJSON, string(p.Raw))
+	}
+}
+
+func TestCreateUIMessageStream_StepCallbackPanicDoesNotInterruptStream(t *testing.T) {
+	failure := errors.New("persistence failed")
+	var reported []error
+	var calls, finished int
+	boundary := UIMessageChunk{Type: ChunkFinishStep}
+	finish := UIMessageChunk{Type: ChunkFinish}
+	stream := CreateUIMessageStream(CreateUIMessageStreamParams{
+		Execute:  func(w *UIMessageStreamWriter) error { return w.Merge(chunks(boundary, boundary, finish)) },
+		OnFinish: func(UIMessageStreamOnFinishState) { finished++ },
+		OnStepEnd: func(UIMessageStreamOnStepEndState) {
+			calls++
+			if calls == 1 {
+				panic(failure)
+			}
+		},
+		OnError: func(err error) string {
+			reported = append(reported, err)
+			return "not emitted"
+		},
+	})
+	assert.Equal(t, []UIMessageChunk{boundary, boundary, finish}, collectUIChunks(stream))
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, 1, finished)
+	require.Len(t, reported, 1)
+	assert.ErrorIs(t, reported[0], failure)
 }
 
 func TestCreateUIMessageStream(t *testing.T) {
@@ -361,7 +529,7 @@ func TestCreateUIMessageStream(t *testing.T) {
 }
 
 func TestAssembleResponseMessageReportsEveryApplyFailure(t *testing.T) {
-	msg, err := assembleResponseMessage("msg-1", []UIMessageChunk{
+	msg, err := assembleResponseMessage([]UIMessageChunk{
 		TextStartChunk("ok"),
 		TextDeltaChunk("ok", "kept"),
 		TextDeltaChunk("first-missing", "a"),
@@ -508,7 +676,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t2"},
 		}
 
-		msg, err := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage(chunks)
 		require.NoError(t, err)
 		require.Len(t, msg.Parts, 2)
 
@@ -534,7 +702,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 			{Type: ChunkTextEnd, ID: "t1"},
 		}
 
-		msg, err := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage(chunks)
 		require.NoError(t, err)
 		require.Len(t, msg.Parts, 3)
 
@@ -555,7 +723,7 @@ func TestAssembleResponseMessage(t *testing.T) {
 		chunks := []UIMessageChunk{
 			{Type: ChunkToolInputError, ToolCallID: "c1", ToolName: "calc", Input: json.RawMessage(`{"x":1}`), ErrorText: "invalid input"},
 		}
-		msg, err := assembleResponseMessage("msg-1", chunks)
+		msg, err := assembleResponseMessage(chunks)
 		require.NoError(t, err)
 		require.Len(t, msg.Parts, 1)
 

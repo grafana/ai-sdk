@@ -46,7 +46,8 @@ client.
 4. Restart Grafana and enable **AI Gateway** under
    **Administration > Plugins and data > Plugins**.
 
-The app's overview page shows the Gateway URL that applications use.
+The app's overview page shows the Gateway URL that applications use, and the
+URL of each stored model catalog.
 
 ## Configure models
 
@@ -194,6 +195,19 @@ A stack can also store its own model catalogs in Grafana as `ModelCatalog`
 resources, with each provider's API key held as a Grafana secure value, and
 call their models through the catalog's own routes.
 
+Admins manage catalogs on the app's **Model catalogs** page. A catalog's page
+shows each connected provider with the models it serves. Connecting a provider
+takes its type and API key, and adding a model takes only the provider's model
+ID, which applications then request it by; a model's details, such as another
+ID, a display name, aliases and fallbacks, are edited from the model. Each
+change is saved when you confirm it. A key you enter is sent once and never
+shown again: the page only shows that a provider has one, and an edit that
+doesn't replace a key keeps the stored one. When Grafana or the Gateway refuses
+a change, the page shows the message it returns. Viewers and Editors see
+catalogs read-only. The page follows each user's Grafana permissions, so
+granting or removing `aigateway:catalogwriter` changes what it offers them.
+You can also write catalogs through the API, for example:
+
 ```yaml
 apiVersion: aigateway.ext.grafana.app/v1alpha1
 kind: ModelCatalog
@@ -227,10 +241,11 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 
 ### Call a stored catalog
 
-Use the catalog's URL as the client's base URL, for example
+With a service account or caller-managed access token, use the catalog's URL
+as the client's base URL, for example
 `https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/default`.
-Clients append `/config` and `/language-model` as they do for the Gateway URL,
-so they need no other change.
+With Go token exchange, keep the Gateway API root and select the catalog with
+`WithCatalog`. See the [authentication guide](../docs/guides/gateway-authentication.md#call-a-stored-stack-catalog).
 
 - Editors and Admins can list and call catalog models (`aigateway:modelinvoker`).
   Viewers can read catalogs but not call them, and anonymous access can't
@@ -245,6 +260,11 @@ so they need no other change.
 - An edit applies on the next call. A key rotated outside the catalog, without
   changing the resource, can take up to a minute to apply, because Grafana
   caches decrypted keys for that long.
+- Removing a role, or revoking a token or access policy, can take longer to
+  apply, because Grafana and Grafana Cloud cache permissions and tokens. The
+  catalog page picks up changed permissions on a later reload, once Grafana's
+  permission cache refreshes, and Grafana refuses writes the user can no longer
+  make.
 - Grafana itself answers `403` when the caller can't call the catalog and `404`
   when the catalog doesn't exist. These are Kubernetes `Status` documents, not
   Gateway error documents; both clients report them as errors with that status.
@@ -329,6 +349,10 @@ pnpm --filter ./ai-gateway server
 Grafana runs the nightly image that the end-to-end tests use, pinned by digest
 in `docker-compose.yaml`, because the plugin needs features that only recent
 nightlies have. Set `GRAFANA_VERSION` to another tag to try it.
+
+Any Anthropic API key works. Create one with your own Anthropic account or
+organization; this repository does not provide one. The automated tests use a
+deterministic stand-in for Anthropic and need no key.
 
 Then work from `ai-gateway/`:
 

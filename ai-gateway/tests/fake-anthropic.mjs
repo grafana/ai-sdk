@@ -89,6 +89,19 @@ function stream(response, text) {
 }
 
 createServer((request, response) => {
+  if (request.method === 'GET' && request.url?.split('?')[0] === '/v1/models') {
+    const key = String(request.headers['x-api-key'] ?? '');
+    const accepted = key === 'e2e-health-accepted-key' && request.headers['anthropic-version'] === '2023-06-01';
+    response.writeHead(accepted ? 200 : 401, { 'Content-Type': 'application/json' });
+    response.end(
+      JSON.stringify(
+        accepted
+          ? { data: [{ id: 'claude-sonnet-4-6' }], has_more: false }
+          : { error: { message: `e2e-health-provider-error ${key}` } }
+      )
+    );
+    return;
+  }
   if (request.method !== 'POST' || !request.url?.endsWith('/v1/messages')) {
     response.writeHead(404).end();
     return;

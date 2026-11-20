@@ -15,7 +15,7 @@ import (
 // signatures used by Anthropic extended thinking), and routes tool results
 // the same way upstream does:
 //
-//   - text: assistant text part (empty text is skipped)
+//   - text: assistant text part (empty text without provider options is skipped)
 //   - reasoning: assistant reasoning part with [provider.ContentPart.ProviderOptions]
 //     copied from the input (this preserves Anthropic's "signature")
 //   - reasoning-file: assistant reasoning-file part (passthrough)
@@ -74,7 +74,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 
 		switch p.Type {
 		case provider.ContentPartTypeText:
-			if p.Text == "" {
+			if p.Text == "" && p.ProviderOptions == nil {
 				continue
 			}
 			assistantContent = append(assistantContent, provider.ContentPart{

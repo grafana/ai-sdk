@@ -108,19 +108,36 @@ type CreateUIMessageStreamParams struct {
 	// OnError maps a stream failure to the text of the emitted error chunk. It
 	// receives the error Execute returns, ErrExecuteRequired when Execute is nil,
 	// and a panic recovered from Execute. That text reaches the client, so return
-	// err.Error() only when every one of those sources is safe to disclose. The
-	// default masks them all as "An error occurred." and discards the detail, so
-	// log it here when an operator needs it.
+	// err.Error() only when every one of those sources is safe to disclose.
+	// It also receives panics recovered from OnStepEnd, but its returned text
+	// for those panics is not sent to the client.
 	OnError func(error) string
 	// OriginalMessages is the prior conversation. It supplies the continuation
-	// message ID and the OnFinish history; it is not a persistence mode switch.
+	// message ID and history for callbacks; it is not a persistence mode switch.
+	// When a stream callback is configured, the history is copied before Execute.
 	OriginalMessages []UIMessage
+	// OnStepEnd runs after each finish-step chunk is applied and before it is
+	// forwarded, including for chunks from a merged stream.
+	OnStepEnd func(UIMessageStreamOnStepEndState)
 	// OnFinish runs once the stream ends, whether or not OriginalMessages is set.
 	OnFinish func(UIMessageStreamOnFinishState)
 	// GenerateID mints the response message ID. It defaults to the package-level
 	// GenerateID and is called at most once per stream: a continued assistant
 	// message supplies its own ID instead, and GenerateID is not called.
 	GenerateID func() string
+}
+
+// UIMessageStreamOnStepEndState contains the cumulative response at a step
+// boundary. Messages replaces the last original assistant message when
+// IsContinuation is true and appends the response otherwise. The message
+// snapshots are isolated from the stream and from each other.
+type UIMessageStreamOnStepEndState struct {
+	Messages        []UIMessage
+	IsContinuation  bool
+	ResponseMessage UIMessage
+	// AssemblyError reports assembly errors up to and including this step.
+	// A non-nil value means the snapshot may be missing content the client saw.
+	AssemblyError error
 }
 
 // UIMessageStreamOnFinishState is passed to the OnFinish callback.
@@ -145,36 +162,31 @@ type UIMessageStreamOnFinishState struct {
 // the last OriginalMessages entry's ID when that entry is an assistant message,
 // which continues it, and otherwise a generated ID. A start chunk that carries
 // its own ID keeps it, which lets a caller supply a request-scoped ID. Without
-// a start chunk, GenerateID and OriginalMessages reach only OnFinish, and the
-// same holds when Execute merges a stream that stamps its own start chunk,
-// since that ID wins.
+// a start chunk, GenerateID and OriginalMessages affect only callback state.
+// When Execute merges a stream that stamps its own start chunk, that ID wins.
 //
 // A nil Execute, or a panic inside it, ends the stream with an error chunk
-// rather than a crash. A chunk that cannot be applied while assembling the
-// OnFinish message leaves the wire untouched and is reported through
-// UIMessageStreamOnFinishState.AssemblyError.
+// rather than a crash. A chunk that cannot be applied while assembling a
+// callback snapshot leaves the wire untouched and is reported through the
+// callback state's AssemblyError.
 func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageChunk {
 	out := make(chan UIMessageChunk, defaultWriterBuffer)
+	cfg := uiMessageStreamConfig{
+		originalMessages:    params.OriginalMessages,
+		hasOriginalMessages: true,
+		generateMessageID:   params.GenerateID,
+		onStepEnd:           params.OnStepEnd,
+		onFinish:            params.OnFinish,
+		onError:             params.OnError,
+	}
+	cfg = cfg.withCallbackHistorySnapshot()
 
 	go func() {
 		defer close(out)
 
 		writer := newUIMessageStreamWriter(defaultWriterBuffer)
-
-		// Like upstream createUIMessageStream, emit no start or finish chunk of
-		// our own. Start chunks without a message ID get the response ID, which
-		// continues the last original message when it is an assistant message.
-		cfg := uiMessageStreamConfig{
-			originalMessages:    params.OriginalMessages,
-			hasOriginalMessages: true,
-			generateMessageID:   params.GenerateID,
-			onError:             params.OnError,
-		}
 		messageID := responseUIMessageID(cfg)
-
-		var chunks []UIMessageChunk
-		var finishReason provider.FinishReason
-		var isAborted bool
+		assembly := cfg.newCallbackAssembly(messageID)
 
 		// Run execute in a goroutine, forward writer output to out
 		done := make(chan error, 1)
@@ -184,19 +196,10 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 		}()
 
 		for chunk := range writer.output() {
-			switch chunk.Type {
-			case ChunkStart:
-				if chunk.MessageID == "" {
-					chunk.MessageID = messageID
-				}
-			case ChunkFinish:
-				if chunk.FinishReason != "" {
-					finishReason = provider.FinishReason{Unified: provider.UnifiedFinishReason(chunk.FinishReason)}
-				}
-			case ChunkAbort:
-				isAborted = true
+			if chunk.Type == ChunkStart && chunk.MessageID == "" {
+				chunk.MessageID = messageID
 			}
-			chunks = append(chunks, chunk)
+			assembly.beforeForward(chunk, cfg)
 			out <- chunk
 		}
 
@@ -204,40 +207,138 @@ func CreateUIMessageStream(params CreateUIMessageStreamParams) <-chan UIMessageC
 			out <- UIMessageChunk{Type: ChunkError, ErrorText: errorText(execErr, cfg)}
 		}
 
-		if params.OnFinish != nil {
-			params.OnFinish(buildUIMessageStreamFinishState(messageID, chunks, cfg, finishReason, isAborted))
-		}
+		assembly.finish(cfg)
 	}()
 
 	return out
 }
 
-func assembleResponseMessage(messageID string, chunks []UIMessageChunk) (UIMessage, error) {
-	return assembleResponseMessageWithInitial(messageID, chunks, nil)
+type uiMessageStreamAssembly struct {
+	reader       *uiMessageReaderState
+	initErr      error
+	applyErrs    []error
+	finishReason provider.FinishReason
+	isAborted    bool
 }
 
-func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
+func newUIMessageStreamAssembly(messageID string, initial *UIMessage) *uiMessageStreamAssembly {
 	cfg := uiMessageReaderConfig{generateID: func() string { return messageID }}
 	if initial != nil && initial.Role == RoleAssistant {
 		cfg.initialMessage = initial
 	}
-	state, err := newUIMessageReaderState(cfg)
-	if err != nil {
-		return UIMessage{}, err
+	reader, err := newUIMessageReaderState(cfg)
+	if err == nil && reader.message.ID == "" {
+		reader.message.ID = messageID
 	}
-	if state.message.ID == "" {
-		state.message.ID = messageID
-	}
-	var applyErrs []error
-	for _, chunk := range chunks {
-		if chunk.Type == ChunkError {
-			continue
-		}
-		if _, err := state.apply(chunk); err != nil {
-			applyErrs = append(applyErrs, err)
+	return &uiMessageStreamAssembly{reader: reader, initErr: err}
+}
+
+func (cfg uiMessageStreamConfig) withCallbackHistorySnapshot() uiMessageStreamConfig {
+	if cfg.onStepEnd != nil || cfg.onFinish != nil {
+		cfg.originalMessages = cloneUIMessages(cfg.originalMessages)
+		for i := range cfg.originalMessages {
+			cfg.originalMessages[i] = cloneUIMessage(cfg.originalMessages[i])
 		}
 	}
-	return state.finalMessage(), errors.Join(applyErrs...)
+	return cfg
+}
+
+func (cfg uiMessageStreamConfig) newCallbackAssembly(messageID string) *uiMessageStreamAssembly {
+	if cfg.onStepEnd == nil && cfg.onFinish == nil {
+		return nil
+	}
+	return newUIMessageStreamAssembly(messageID, lastOriginalAssistantMessage(cfg))
+}
+
+func (a *uiMessageStreamAssembly) apply(chunk UIMessageChunk) {
+	switch chunk.Type {
+	case ChunkError:
+		return
+	case ChunkFinish:
+		if chunk.FinishReason != "" {
+			a.finishReason = provider.FinishReason{Unified: provider.UnifiedFinishReason(chunk.FinishReason)}
+		}
+	case ChunkAbort:
+		a.isAborted = true
+	}
+	if a.reader != nil {
+		if _, err := a.reader.apply(chunk); err != nil {
+			a.applyErrs = append(a.applyErrs, err)
+		}
+	}
+}
+
+func (a *uiMessageStreamAssembly) snapshot() (UIMessage, error) {
+	if a.initErr != nil {
+		return UIMessage{}, a.initErr
+	}
+	return a.reader.finalMessage(), errors.Join(a.applyErrs...)
+}
+
+func (a *uiMessageStreamAssembly) beforeForward(chunk UIMessageChunk, cfg uiMessageStreamConfig) {
+	if a == nil {
+		return
+	}
+	a.apply(chunk)
+	if chunk.Type == ChunkFinishStep && cfg.onStepEnd != nil {
+		response, err := a.snapshot()
+		messages, isContinuation := cfg.historyWithResponse(response)
+		for i := range messages {
+			messages[i] = cloneUIMessage(messages[i])
+		}
+		callbackErr := runUIStepEnd(cfg.onStepEnd, UIMessageStreamOnStepEndState{
+			Messages:        messages,
+			IsContinuation:  isContinuation,
+			ResponseMessage: response,
+			AssemblyError:   err,
+		})
+		if callbackErr != nil && cfg.onError != nil {
+			cfg.onError(callbackErr)
+		}
+	}
+}
+
+func runUIStepEnd(fn func(UIMessageStreamOnStepEndState), state UIMessageStreamOnStepEndState) (err error) {
+	defer func() {
+		switch r := recover().(type) {
+		case nil:
+		case error:
+			err = fmt.Errorf("aisdk: panic in UI stream step-end callback: %w", r)
+		default:
+			err = fmt.Errorf("aisdk: panic in UI stream step-end callback: %v", r)
+		}
+	}()
+	fn(state)
+	return nil
+}
+
+func (a *uiMessageStreamAssembly) finish(cfg uiMessageStreamConfig) {
+	if cfg.onFinish == nil {
+		return
+	}
+	response, err := a.snapshot()
+	messages, isContinuation := cfg.historyWithResponse(response)
+	cfg.onFinish(UIMessageStreamOnFinishState{
+		Messages:        messages,
+		IsContinuation:  isContinuation,
+		IsAborted:       a.isAborted,
+		ResponseMessage: response,
+		FinishReason:    a.finishReason,
+		AssemblyError:   err,
+	})
+}
+
+func (cfg uiMessageStreamConfig) historyWithResponse(response UIMessage) ([]UIMessage, bool) {
+	last := lastOriginalAssistantMessage(cfg)
+	isContinuation := last != nil && response.ID == last.ID
+	original := cfg.originalMessages
+	if isContinuation {
+		original = original[:len(original)-1]
+	}
+	messages := make([]UIMessage, len(original)+1)
+	copy(messages, original)
+	messages[len(original)] = response
+	return messages, isContinuation
 }
 
 type uiMessageStreamConfig struct {
@@ -245,6 +346,7 @@ type uiMessageStreamConfig struct {
 	originalMessages    []UIMessage
 	hasOriginalMessages bool
 	generateMessageID   func() string
+	onStepEnd           func(UIMessageStreamOnStepEndState)
 	onFinish            func(UIMessageStreamOnFinishState)
 	messageMetadata     func(part TextStreamPart) json.RawMessage
 	sendReasoning       *bool
@@ -267,7 +369,7 @@ func (f uiMessageStreamOptionFunc) applyUIMessageStream(cfg *uiMessageStreamConf
 func (uiMessageStreamOptionFunc) uiMessageStreamOption()                            {}
 
 // WithUIMessageStreamOriginalMessages configures the original messages used
-// for continuation IDs and finish callbacks. Calling this option, even with no
+// for continuation IDs and message snapshots. Calling this option, even with no
 // messages, marks original messages as explicitly present.
 func WithUIMessageStreamOriginalMessages(messages ...UIMessage) UIMessageStreamOption {
 	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
@@ -280,6 +382,16 @@ func WithUIMessageStreamOriginalMessages(messages ...UIMessage) UIMessageStreamO
 func WithUIMessageStreamGenerateID(fn func() string) UIMessageStreamOption {
 	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
 		cfg.generateMessageID = fn
+	})
+}
+
+// OnUIMessageStreamStepEnd configures a synchronous callback for each emitted
+// finish-step. The callback receives the assembled snapshot before the
+// boundary is forwarded to the consumer. It is separate from OnStepEnd, which
+// observes model generation rather than UI messages.
+func OnUIMessageStreamStepEnd(fn func(UIMessageStreamOnStepEndState)) UIMessageStreamOption {
+	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
+		cfg.onStepEnd = fn
 	})
 }
 
@@ -327,6 +439,8 @@ func WithUIMessageStreamStart(send bool) UIMessageStreamOption {
 }
 
 // OnUIMessageStreamError configures error-to-text conversion for UI streams.
+// It also receives panics recovered from the step-end callback, without
+// emitting the returned text.
 func OnUIMessageStreamError(fn func(error) string) UIMessageStreamOption {
 	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
 		cfg.onError = fn

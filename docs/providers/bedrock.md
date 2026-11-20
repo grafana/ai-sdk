@@ -140,10 +140,22 @@ supported by one family and ignored with a warning by another.
 When portable reasoning and an explicit Bedrock reasoning configuration are both
 supplied, explicit effort or budget takes precedence. Only missing values are
 derived, so warnings describe the settings actually used. Explicit disabled
-thinking suppresses portable reasoning and removes its budget and effort;
-provider-default reasoning leaves explicit controls as supplied. Request
-preparation preserves caller configuration for reuse across calls. Both the
-`amazonBedrock` namespace and legacy `bedrock` namespace follow these rules.
+thinking suppresses portable reasoning; on provider-default calls, explicit
+effort still applies unless the model requires a cap. Both the `amazonBedrock`
+namespace and legacy `bedrock` namespace follow these rules without mutating
+the caller's options.
+
+For Claude models that accept it, portable `none` or explicit disabled thinking
+sends `thinking: {type: "disabled"}`. Claude 3.5 and earlier omit the field.
+Models that reject disabled thinking use a supported mode instead: Sonnet 5.5
+uses `between_tools`, and base Fable 5 uses adaptive thinking. Fable 5.1,
+Fable 5.2 and Opus 5.5 still omit the generated field. The substitution warns
+`compatibility` for portable `none` and `unsupported` for explicit disabled
+thinking. Only portable `none` defaults adaptive effort to `low` when no
+explicit effort is available.
+
+On gpt-oss, portable `none` maps to `low` with a warning. Other OpenAI models
+receive `none` unchanged. Nova 2 Lite adds no effort for portable `none`.
 
 Cache points can be set on a message or on a single content part, and remain
 attached only when that message or part contributes content to the Converse
@@ -153,10 +165,8 @@ become empty; the result includes a `toolContent` warning. Approval bookkeeping
 and unsigned reasoning also cannot create cache-only messages. A synthetic JSON
 response tool counts as an active tool.
 
-Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
-`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking
-and explicit disabled thinking is normalized to the same minimum with an unsupported warning. Provider-default calls preserve explicit effort capped at high; custom portable reasoning clears budget and effort before normalization. For this model,
-a `required` or named tool choice is sent as `auto` with a warning, and a JSON
+Claude Sonnet 5.5 also rejects forced tool use. A `required` or named tool
+choice is sent as `auto` with a warning, and a JSON
 schema response that native output cannot represent, or that selects the JSON
 tool, uses a system-prompt instruction instead of the forced JSON tool.
 

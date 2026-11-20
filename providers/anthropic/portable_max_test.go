@@ -10,11 +10,11 @@ import (
 
 func TestPortableReasoningMax(t *testing.T) {
 	var warnings []provider.Warning
-	adaptive := resolveReasoningConfig(provider.ReasoningMax, getModelCapabilities("claude-sonnet-4-6"), &warnings)
+	adaptive := resolveReasoningConfig("claude-sonnet-4-6", provider.ReasoningMax, getModelCapabilities("claude-sonnet-4-6"), &warnings)
 	require.NotNil(t, adaptive)
 	assert.Equal(t, "max", adaptive.effort)
 	assert.Empty(t, warnings)
-	budget := resolveReasoningConfig(provider.ReasoningMax, getModelCapabilities("claude-sonnet-4-5"), &warnings)
+	budget := resolveReasoningConfig("claude-sonnet-4-5", provider.ReasoningMax, getModelCapabilities("claude-sonnet-4-5"), &warnings)
 	require.NotNil(t, budget)
 	require.NotNil(t, budget.thinking)
 	assert.EqualValues(t, 60800, budget.thinking.BudgetTokens)
