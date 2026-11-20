@@ -70,6 +70,39 @@ func checkActiveToolsLateProviderResult(t *testing.T, routes ToolRoutes) {
 	}
 }
 
+func TestActiveToolsRejectInactiveCall_StreamingInputCallbacks(t *testing.T) {
+	var starts, deltas []string
+	streamedTool := Tool{
+		OnInputStart: func(opts ToolExecutionOptions) {
+			starts = append(starts, opts.ToolCallID)
+		},
+		OnInputDelta: func(delta string, opts ToolExecutionOptions) {
+			deltas = append(deltas, opts.ToolCallID+":"+delta)
+		},
+	}
+	model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+		assert.Equal(t, []string{"a"}, toolNames(opts.Tools))
+		var parts []provider.StreamPart
+		for _, name := range []string{"a", "b"} {
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolInputStart, ID: name, ToolName: name},
+				provider.StreamPart{Type: provider.PartToolInputDelta, ID: name, Delta: `{"value":`},
+				provider.StreamPart{Type: provider.PartToolInputDelta, ID: name, Delta: `1}`},
+				provider.StreamPart{Type: provider.PartToolInputEnd, ID: name},
+				discoveryCall(name, name, `{"value":1}`),
+			)
+		}
+		return &provider.StreamResult{Stream: discoveryParts(parts...)}, nil
+	}}
+	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("go")),
+		WithTools(ToolSet{"a": streamedTool, "b": streamedTool}), WithActiveTools("a"))
+	for range result.FullStream() {
+	}
+	require.NoError(t, result.Err())
+	assert.Equal(t, []string{"a"}, starts)
+	assert.Equal(t, []string{`a:{"value":`, `a:1}`}, deltas)
+}
+
 func TestActiveToolsRejectInactiveCall(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
