@@ -17,7 +17,7 @@ type eventWriter struct {
 	flush func()
 }
 
-func (e eventWriter) event(name string, value any) {
+func (e eventWriter) event(name eventType, value any) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return
@@ -28,7 +28,7 @@ func (e eventWriter) event(name string, value any) {
 
 func (e eventWriter) errorEvent(status int) {
 	typ, message := errorType(status)
-	e.event("error", errorEnvelope{Type: "error", Error: apiError{Type: typ, Message: message}})
+	e.event(eventError, errorEnvelope{Type: envelopeError, Error: apiError{Type: typ, Message: message}})
 }
 
 type toolBlock struct {
@@ -53,8 +53,8 @@ func (s *streamState) start() {
 		return
 	}
 	s.started = true
-	s.events.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{
-		ID: s.id, Type: "message", Role: "assistant", Model: s.model, Content: []map[string]any{}, Usage: s.usage,
+	s.events.event(eventMessageStart, map[string]any{"type": eventMessageStart, "message": messageResponse{
+		ID: s.id, Type: envelopeMessage, Role: provider.RoleAssistant, Model: s.model, Content: []map[string]any{}, Usage: s.usage,
 	}})
 }
 
@@ -62,7 +62,7 @@ func (s *streamState) closeText() {
 	if !s.textOpen {
 		return
 	}
-	s.events.event("content_block_stop", map[string]any{"type": "content_block_stop", "index": s.textIndex})
+	s.events.event(eventContentBlockStop, map[string]any{"type": eventContentBlockStop, "index": s.textIndex})
 	s.textOpen = false
 }
 
@@ -71,17 +71,17 @@ func (s *streamState) open(content map[string]any) int {
 	s.closeText()
 	index := s.next
 	s.next++
-	s.events.event("content_block_start", map[string]any{"type": "content_block_start", "index": index, "content_block": content})
+	s.events.event(eventContentBlockStart, map[string]any{"type": eventContentBlockStart, "index": index, "content_block": content})
 	return index
 }
 
 func (s *streamState) openText() {
-	s.textIndex = s.open(map[string]any{"type": "text", "text": ""})
+	s.textIndex = s.open(map[string]any{"type": contentBlockText, "text": ""})
 	s.textOpen = true
 }
 
 func (s *streamState) openTool(id, name string) *toolBlock {
-	tool := &toolBlock{index: s.open(map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}})}
+	tool := &toolBlock{index: s.open(map[string]any{"type": contentBlockToolUse, "id": id, "name": name, "input": map[string]any{}})}
 	s.tools[id] = tool
 	return tool
 }
@@ -90,12 +90,12 @@ func (s *streamState) closeTool(tool *toolBlock) {
 	if tool.closed {
 		return
 	}
-	s.events.event("content_block_stop", map[string]any{"type": "content_block_stop", "index": tool.index})
+	s.events.event(eventContentBlockStop, map[string]any{"type": eventContentBlockStop, "index": tool.index})
 	tool.closed = true
 }
 
-func (s *streamState) delta(index int, kind string, key, value string) {
-	s.events.event("content_block_delta", map[string]any{"type": "content_block_delta", "index": index, "delta": map[string]string{"type": kind, key: value}})
+func (s *streamState) delta(index int, kind deltaType, key, value string) {
+	s.events.event(eventContentBlockDelta, map[string]any{"type": eventContentBlockDelta, "index": index, "delta": map[string]any{"type": kind, key: value}})
 }
 
 // consume applies one provider part and reports whether it broke the
@@ -118,7 +118,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 		if !s.textOpen {
 			s.openText()
 		}
-		s.delta(s.textIndex, "text_delta", "text", part.Delta)
+		s.delta(s.textIndex, deltaText, "text", part.Delta)
 	case provider.PartTextEnd:
 		if s.textOpen {
 			s.closeText()
@@ -133,7 +133,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 		if tool == nil || tool.closed {
 			return false
 		}
-		s.delta(tool.index, "input_json_delta", "partial_json", part.Delta)
+		s.delta(tool.index, deltaInputJSON, "partial_json", part.Delta)
 	case provider.PartToolInputEnd:
 		tool := s.tools[part.ID]
 		if tool == nil {
@@ -146,7 +146,7 @@ func (s *streamState) consume(part provider.StreamPart, finish *provider.FinishR
 				return false
 			}
 			tool := s.openTool(part.ToolCallID, part.ToolName)
-			s.delta(tool.index, "input_json_delta", "partial_json", part.Input)
+			s.delta(tool.index, deltaInputJSON, "partial_json", part.Input)
 			s.closeTool(tool)
 		}
 	case provider.PartFinish:
@@ -216,6 +216,6 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	}
 	state.start()
 	state.closeText()
-	state.events.event("message_delta", map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": state.usage})
-	state.events.event("message_stop", map[string]string{"type": "message_stop"})
+	state.events.event(eventMessageDelta, map[string]any{"type": eventMessageDelta, "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": state.usage})
+	state.events.event(eventMessageStop, map[string]any{"type": eventMessageStop})
 }

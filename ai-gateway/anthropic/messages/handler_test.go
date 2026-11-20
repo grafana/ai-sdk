@@ -162,35 +162,6 @@ func TestHandler_OfficialSDK(t *testing.T) {
 	})
 }
 
-// A Claude Code request carries cache_control, metadata, a thinking
-// configuration, beta headers, a beta query and a system-role message after
-// the first user message. The adapter accepts all of them.
-func TestHandler_ClaudeCodeShapedRequest(t *testing.T) {
-	var seen provider.CallOptions
-	h := testHandler(t, &fakeModel{generate: func(_ context.Context, o provider.CallOptions) (*provider.GenerateResult, error) {
-		seen = o
-		return textResult(), nil
-	}})
-	body := `{"model":"alias","max_tokens":64000,"stream":false,
-		"system":[{"type":"text","text":"You are Claude Code.","cache_control":{"type":"ephemeral"}}],
-		"metadata":{"user_id":"u"},
-		"thinking":{"type":"enabled","budget_tokens":1024},
-		"messages":[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]},
-			{"role":"system","content":[{"type":"text","text":"reminder","cache_control":{"type":"ephemeral"}}]}],
-		"tools":[{"name":"Read","description":"read","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral"}}]}`
-	req := httptest.NewRequest("POST", Path+"?beta=true", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Anthropic-Version", "2023-06-01")
-	req.Header.Set("Anthropic-Beta", "claude-code-20250219,interleaved-thinking-2025-05-14")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	require.Equal(t, 200, w.Code, w.Body.String())
-	require.Len(t, seen.Prompt, 3)
-	assert.Equal(t, provider.RoleSystem, seen.Prompt[0].Role)
-	assert.Equal(t, provider.RoleSystem, seen.Prompt[2].Role)
-	require.Len(t, seen.Tools, 1)
-}
-
 func TestHandler_RequestBoundary(t *testing.T) {
 	const basic = `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}`
 	for _, tc := range []struct {
@@ -204,6 +175,9 @@ func TestHandler_RequestBoundary(t *testing.T) {
 		{"no max_tokens", "POST", Path, "application/json", `{"model":"alias","messages":[{"role":"user","content":"hi"}]}`, 400},
 		{"image block", "POST", Path, "application/json", `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":[{"type":"image"}]}]}`, 400},
 		{"server tool", "POST", Path, "application/json", `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":"hi"}],"tools":[{"type":"web_search_20250305","name":"web_search"}]}`, 400},
+		{"tool choice without name", "POST", Path, "application/json", `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":"hi"}],"tool_choice":{"type":"tool"}}`, 400},
+		{"unknown tool choice", "POST", Path, "application/json", `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":"hi"}],"tool_choice":{"type":"unknown"}}`, 400},
+		{"case-sensitive block type", "POST", Path, "application/json", `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":[{"type":"Text","text":"hi"}]}]}`, 400},
 		{"orphan tool result", "POST", Path, "application/json", `{"model":"alias","max_tokens":8,"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"r"}]}]}`, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -218,7 +192,7 @@ func TestHandler_RequestBoundary(t *testing.T) {
 			assert.Equal(t, tc.status, w.Code)
 			var envelope errorEnvelope
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
-			assert.Equal(t, "error", envelope.Type)
+			assert.Equal(t, envelopeError, envelope.Type)
 		})
 	}
 }

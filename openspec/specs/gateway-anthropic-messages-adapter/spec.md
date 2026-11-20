@@ -69,7 +69,8 @@ require `model`, a positive `max_tokens` and at least one message. It SHALL map
 system text given as a string or text blocks, user and assistant turns given as
 a string or content blocks, `text`, `tool_use` and `tool_result` blocks, client
 function tools, tool choice, `stop_sequences`, `temperature`, `top_p`, `top_k`
-and `stream`. A `system`-role message after the first message SHALL be mapped to
+and `stream`. The adapter SHALL apply `output_config.effort` as described below.
+A `system`-role message after the first message SHALL be mapped to
 a system message at that position. A tool declaration without an input schema
 SHALL get an empty object schema. Unsupported requested semantics SHALL fail
 with a fixed invalid-request error before model resolution.
@@ -107,19 +108,51 @@ with a fixed invalid-request error before model resolution.
 - **WHEN** `model`, `max_tokens` or `messages` is missing or invalid, or the body is not valid UTF-8 JSON
 - **THEN** the request fails with a fixed invalid-request error
 
+### Requirement: Output effort
+
+The adapter SHALL accept `output_config.effort` values `low`, `medium`, `high`,
+`xhigh` and `max`. Only Anthropic candidates SHALL receive the value unchanged
+as the `effort` provider option, including fallback attempts. OpenAI Responses
+and OpenAI-compatible candidates SHALL ignore inbound effort and preserve their
+existing provider effort options. A non-retryable provider HTTP 400 SHALL stop fallback.
+
+#### Scenario: Effort on a mixed fallback chain
+- **WHEN** a request sets `output_config.effort` to `high` and falls back from Anthropic to OpenAI Responses or OpenAI-compatible
+- **THEN** the Anthropic attempt receives `effort: high`, while the next candidate receives no effort derived from the request and does not inherit the previous attempt's translated options
+
+#### Scenario: Effort on a non-Anthropic target
+- **WHEN** a valid request supplies effort to an OpenAI Responses or OpenAI-compatible target
+- **THEN** the adapter ignores inbound effort, preserves any existing provider effort option, and still translates explicit parallel-tool settings
+
+#### Scenario: Anthropic rejects effort
+- **WHEN** an Anthropic target rejects an effort level, which the adapter does not validate per model or clamp, with a non-retryable HTTP 400
+- **THEN** the Gateway reports the failure without trying the next candidate
+
+#### Scenario: Effort preserves other settings
+- **WHEN** a request supplies effort alongside existing provider options and explicit parallel-tool settings
+- **THEN** translation preserves those options without mutating shared candidate state, enabling Anthropic thinking, or changing the requested output-token limit
+
+#### Scenario: Effort omitted or null
+- **WHEN** effort is omitted or null
+- **THEN** translation leaves any existing effort option unchanged
+
+#### Scenario: Invalid effort
+- **WHEN** a request supplies an empty, unknown, differently cased or non-string effort value
+- **THEN** the adapter returns HTTP 400 with its fixed invalid-request error before model resolution or provider execution
+
 ### Requirement: Accepted fields that are not applied
 
 The adapter SHALL accept `cache_control` on the request, system blocks, content
-blocks and tools; `metadata`; `thinking`; `context_management`; `output_config`;
-`service_tier`; and `thinking` and `redacted_thinking` blocks in history. It
-SHALL NOT apply them to the provider call, and SHALL drop thinking blocks from
-history. Documentation SHALL list each of these as a known limitation, and the Gateway
-SHALL NOT claim Claude Code compatibility, cache-control preservation or
-thinking round trips on the strength of this requirement.
+blocks and tools; `metadata`; `thinking`; `context_management`; `output_config`
+fields other than `effort`; `service_tier`; and `thinking` and `redacted_thinking`
+blocks in history. It SHALL NOT apply them to the provider call, and SHALL drop
+thinking blocks from history. Documentation SHALL list each as a known limitation.
+The Gateway SHALL NOT claim Claude Code compatibility, cache-control preservation
+or thinking round trips on the strength of this requirement.
 
 #### Scenario: Claude Code request shape
-- **WHEN** a request carries cache-control markers, metadata, a thinking configuration, context management, an output effort and beta headers
-- **THEN** the adapter serves it and the provider call carries none of those fields
+- **WHEN** a request carries cache-control markers, metadata, a thinking configuration, context management, a supported output effort and beta headers
+- **THEN** the adapter serves it and applies effort only for an Anthropic target, while the other listed fields remain unapplied
 
 #### Scenario: Limitations are documented
 - **WHEN** a reader consults the client guide

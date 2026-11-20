@@ -79,17 +79,18 @@ func TestHandler_ParallelToolStreams(t *testing.T) {
 
 func TestStopReason_Mapping(t *testing.T) {
 	for _, tc := range []struct {
-		unified   provider.UnifiedFinishReason
-		raw, want string
-		ok        bool
+		unified provider.UnifiedFinishReason
+		raw     string
+		want    stopReasonType
+		ok      bool
 	}{
-		{provider.FinishReasonStop, "end_turn", "end_turn", true},
-		{provider.FinishReasonStop, "pause_turn", "pause_turn", true},
-		{provider.FinishReasonStop, "stop_sequence", "stop_sequence", true},
-		{provider.FinishReasonLength, "max_tokens", "max_tokens", true},
-		{provider.FinishReasonToolCalls, "tool_calls", "tool_use", true},
-		{provider.FinishReasonContentFilter, "refusal", "refusal", true},
-		{provider.FinishReasonContentFilter, "content_filter", "refusal", true},
+		{provider.FinishReasonStop, "end_turn", stopReasonEndTurn, true},
+		{provider.FinishReasonStop, "pause_turn", stopReasonPauseTurn, true},
+		{provider.FinishReasonStop, "stop_sequence", stopReasonStopSequence, true},
+		{provider.FinishReasonLength, "max_tokens", stopReasonMaxTokens, true},
+		{provider.FinishReasonToolCalls, "tool_calls", stopReasonToolUse, true},
+		{provider.FinishReasonContentFilter, "refusal", stopReasonRefusal, true},
+		{provider.FinishReasonContentFilter, "content_filter", stopReasonRefusal, true},
 		{provider.FinishReasonOther, "compaction", "", false},
 		{provider.FinishReasonError, "error", "", false},
 	} {

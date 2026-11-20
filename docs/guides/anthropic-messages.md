@@ -90,6 +90,14 @@ configured fallback attempts.
 - `disable_parallel_tool_use`, applied per target: Anthropic's own option, and the
   inverse of `parallelToolCalls` or `parallel_tool_calls` for OpenAI and
   OpenAI-compatible targets.
+- `output_config.effort` (`low`, `medium`, `high`, `xhigh`, `max`), forwarded
+  unchanged only to Anthropic targets. It does not enable thinking. OpenAI
+  Responses and OpenAI-compatible targets ignore this inbound field and retain
+  any existing provider effort option, including on fallback attempts.
+  Anthropic models can reject unsupported effort levels with HTTP 400; that
+  non-retryable error stops fallback. Choose a model that supports the requested
+  level. Cross-provider effort handling is deferred to
+  [#427](https://github.com/grafana/ai-sdk/issues/427).
 - Unary messages and SSE with text and tool-use blocks, stop reasons and
   provider-reported usage, including cache read and creation tokens. Parallel
   tool inputs keep separate block indexes, including interleaved arguments.
@@ -112,7 +120,7 @@ provider call does not carry them:
 - `thinking`: ignored. The model is not asked to think.
 - `thinking` and `redacted_thinking` blocks in history: dropped.
 - `context_management`: ignored.
-- `output_config`, including `effort`: ignored.
+- `output_config` fields other than `effort`: ignored.
 - `metadata`, including `user_id`, and `service_tier`: ignored.
 - `anthropic-beta`, `anthropic-version` and `?beta=true`: accepted, no effect.
 

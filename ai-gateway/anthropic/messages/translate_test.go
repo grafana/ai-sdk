@@ -3,6 +3,7 @@ package messages
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -90,30 +91,50 @@ func TestHandler_ClaudeCodeRequestFixture(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(body), "You are Claude Code")
 
-	var seen provider.CallOptions
-	h := testHandler(t, &fakeModel{stream: func(_ context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
-		seen = o
-		return streamOf(
-			provider.StreamPart{Type: provider.PartTextStart, ID: "t"},
-			provider.StreamPart{Type: provider.PartTextDelta, ID: "t", Delta: "ok"},
-			provider.StreamPart{Type: provider.PartTextEnd, ID: "t"},
-			finish(provider.FinishReasonStop),
-		), nil
-	}})
-	req := httptest.NewRequest("POST", Path+"?beta=true", strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Anthropic-Beta", "claude-code-20250219,interleaved-thinking-2025-05-14")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	require.Equal(t, 200, w.Code, w.Body.String())
-	assert.Contains(t, w.Body.String(), "event: message_stop")
-
-	// Each of the three system blocks and the in-conversation reminder keeps
-	// its own message; thinking history is dropped.
-	require.Len(t, seen.Prompt, 7)
-	assert.Equal(t, []provider.Role{provider.RoleSystem, provider.RoleSystem, provider.RoleSystem, provider.RoleUser, provider.RoleSystem, provider.RoleAssistant, provider.RoleTool}, roles(seen.Prompt))
-	require.Len(t, seen.Tools, 2)
-	assert.Empty(t, seen.ProviderOptions)
+	var input map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &input))
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
+			input["stream"], err = json.Marshal(streaming)
+			require.NoError(t, err)
+			payload, err := json.Marshal(input)
+			require.NoError(t, err)
+			var seen provider.CallOptions
+			h := testHandler(t, &fakeModel{
+				generate: func(_ context.Context, o provider.CallOptions) (*provider.GenerateResult, error) {
+					seen = o
+					return textResult(), nil
+				},
+				stream: func(_ context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
+					seen = o
+					return streamOf(
+						provider.StreamPart{Type: provider.PartTextStart, ID: "t"},
+						provider.StreamPart{Type: provider.PartTextDelta, ID: "t", Delta: "ok"},
+						provider.StreamPart{Type: provider.PartTextEnd, ID: "t"},
+						finish(provider.FinishReasonStop),
+					), nil
+				},
+			})
+			req := httptest.NewRequest("POST", Path+"?beta=true", strings.NewReader(string(payload)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Anthropic-Version", "2023-06-01")
+			req.Header.Set("Anthropic-Beta", "claude-code-20250219,interleaved-thinking-2025-05-14")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code, w.Body.String())
+			if streaming {
+				assert.Contains(t, w.Body.String(), "event: message_stop")
+			} else {
+				var response messageResponse
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+				assert.Equal(t, "canonical", response.Model)
+			}
+			require.Len(t, seen.Prompt, 7)
+			assert.Equal(t, []provider.Role{provider.RoleSystem, provider.RoleSystem, provider.RoleSystem, provider.RoleUser, provider.RoleSystem, provider.RoleAssistant, provider.RoleTool}, roles(seen.Prompt))
+			require.Len(t, seen.Tools, 2)
+			assert.Equal(t, map[string]any{"effort": "medium"}, rawOption(t, seen, "anthropic"))
+		})
+	}
 }
 
 func roles(messages []provider.Message) []provider.Role {

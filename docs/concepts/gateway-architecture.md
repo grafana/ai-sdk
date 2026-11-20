@@ -163,10 +163,12 @@ cancellation and stream cleanup use the shared runtime and host contract.
 The [Anthropic Messages adapter](../guides/anthropic-messages.md) is built the
 same way: it maps a text and client-tool subset into the shared runtime and
 supplies its own response, stream and error documents. Its translator applies
-`disable_parallel_tool_use` per native candidate. It accepts but does not yet
-apply the fields that tune only the Anthropic wire, such as thinking and cache
-control; the guide lists them. A session of Claude Code has completed against it,
-but the adapter is not yet claimed as Claude Code compatible.
+`disable_parallel_tool_use` per native candidate and `output_config.effort` only
+to Anthropic candidates. Other targets retain their configured effort options.
+It accepts but does not yet apply the fields that tune only the Anthropic wire,
+such as thinking and cache control; the guide lists them. A session of Claude
+Code has completed against it, but the adapter is not yet claimed as Claude Code
+compatible.
 
 `/v1/responses` is not a registered inbound route. An outbound Responses
 provider does not establish Codex support; that client needs its own compatible

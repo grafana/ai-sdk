@@ -57,7 +57,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, 400)
 		return
 	}
-	call, err := h.runtime.Call(req.Context(), in.Model, options, execution.WithTranslator(messagesTranslator(in.disableParallelToolUse())))
+	call, err := h.runtime.Call(req.Context(), in.Model, options, execution.WithTranslator(messagesTranslator(in)))
 	if err != nil {
 		if errors.Is(req.Context().Err(), context.Canceled) {
 			return
@@ -128,11 +128,11 @@ func (u *usage) update(value provider.Usage) {
 
 type messageResponse struct {
 	ID           string           `json:"id"`
-	Type         string           `json:"type"`
-	Role         string           `json:"role"`
+	Type         envelopeType     `json:"type"`
+	Role         provider.Role    `json:"role"`
 	Model        string           `json:"model"`
 	Content      []map[string]any `json:"content"`
-	StopReason   *string          `json:"stop_reason"`
+	StopReason   *stopReasonType  `json:"stop_reason"`
 	StopSequence *string          `json:"stop_sequence"`
 	Usage        usage            `json:"usage"`
 }
@@ -142,12 +142,12 @@ func mapGenerate(result *provider.GenerateResult, model string) (messageResponse
 	for _, part := range result.Content {
 		switch part.Type {
 		case provider.ContentText:
-			content = append(content, map[string]any{"type": "text", "text": part.Text})
+			content = append(content, map[string]any{"type": contentBlockText, "text": part.Text})
 		case provider.ContentToolCall:
 			if part.ToolCallID == "" || part.ToolName == "" || !isObject(json.RawMessage(part.Input)) {
 				return messageResponse{}, false
 			}
-			content = append(content, map[string]any{"type": "tool_use", "id": part.ToolCallID, "name": part.ToolName, "input": json.RawMessage(part.Input)})
+			content = append(content, map[string]any{"type": contentBlockToolUse, "id": part.ToolCallID, "name": part.ToolName, "input": json.RawMessage(part.Input)})
 		case provider.ContentReasoning:
 		default:
 			return messageResponse{}, false
@@ -161,25 +161,25 @@ func mapGenerate(result *provider.GenerateResult, model string) (messageResponse
 	if result.Response != nil && result.Response.ID != "" {
 		id = result.Response.ID
 	}
-	out := messageResponse{ID: id, Type: "message", Role: "assistant", Model: model, Content: content, StopReason: &reason}
+	out := messageResponse{ID: id, Type: envelopeMessage, Role: provider.RoleAssistant, Model: model, Content: content, StopReason: &reason}
 	out.Usage.update(result.Usage)
 	return out, true
 }
 
-func stopReason(reason provider.FinishReason) (string, bool) {
+func stopReason(reason provider.FinishReason) (stopReasonType, bool) {
 	switch reason.Unified {
 	case provider.FinishReasonToolCalls:
-		return "tool_use", true
+		return stopReasonToolUse, true
 	case provider.FinishReasonContentFilter:
-		return "refusal", true
+		return stopReasonRefusal, true
 	case provider.FinishReasonLength:
-		return "max_tokens", true
+		return stopReasonMaxTokens, true
 	case provider.FinishReasonStop:
-		switch reason.Raw {
-		case "pause_turn", "stop_sequence":
-			return reason.Raw, true
+		switch stopReasonType(reason.Raw) {
+		case stopReasonPauseTurn, stopReasonStopSequence:
+			return stopReasonType(reason.Raw), true
 		}
-		return "end_turn", true
+		return stopReasonEndTurn, true
 	default:
 		return "", false
 	}

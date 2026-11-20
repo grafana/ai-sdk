@@ -9,39 +9,78 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// messagesTranslator applies the Gateway storage policy and parallel tool
-// choice in each target's option namespace.
-func messagesTranslator(disableParallel *bool) execution.Translator {
+func messagesTranslator(in request) execution.Translator {
 	return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
-		namespace := target.ProviderName
-		values := map[string]any{}
+		var effort *provider.ReasoningEffort
+		if target.Type == execution.TargetAnthropic && in.OutputConfig != nil {
+			effort = in.OutputConfig.Effort
+		}
+		var disabled *bool
+		if in.ToolChoice != nil {
+			disabled = in.ToolChoice.DisableParallelToolUse
+		}
+		disableStorage := target.Type == execution.TargetOpenAI || target.Type == execution.TargetOpenAICompatible
+		if effort == nil && disabled == nil && !disableStorage {
+			return options, nil
+		}
+
+		namespace, parallelKey := "anthropic", "disableParallelToolUse"
+		invertParallel := false
 		switch target.Type {
 		case execution.TargetAnthropic:
-			namespace = "anthropic"
-			if disableParallel != nil {
-				values["disableParallelToolUse"] = *disableParallel
-			}
 		case execution.TargetOpenAI:
-			namespace = "openai"
-			values["store"] = false
-			if disableParallel != nil {
-				values["parallelToolCalls"] = !*disableParallel
-			}
+			namespace, parallelKey = "openai", "parallelToolCalls"
+			invertParallel = true
 		case execution.TargetOpenAICompatible:
-			namespace, _, _ = strings.Cut(namespace, ".")
+			namespace, _, _ = strings.Cut(target.ProviderName, ".")
 			namespace = strings.TrimSpace(namespace)
 			if namespace == "" {
 				namespace = "openai-compatible"
 			}
-			values["store"] = false
-			if disableParallel != nil {
-				values["parallel_tool_calls"] = !*disableParallel
-			}
+			parallelKey = "parallel_tool_calls"
+			invertParallel = true
 		default:
-			return provider.CallOptions{}, execution.ErrTranslation
+			return options, execution.ErrTranslation
 		}
-		if len(values) == 0 {
-			return options, nil
+
+		values := map[string]json.RawMessage{}
+		if existing := options.ProviderOptions[namespace]; existing != nil {
+			var raw []byte
+			switch value := existing.(type) {
+			case provider.RawProviderOption:
+				raw = value.Raw
+			default:
+				var err error
+				raw, err = json.Marshal(value)
+				if err != nil {
+					return options, err
+				}
+			}
+			if len(raw) != 0 {
+				if err := json.Unmarshal(raw, &values); err != nil {
+					return options, err
+				}
+			}
+		}
+		if values == nil {
+			values = map[string]json.RawMessage{}
+		}
+		if disableStorage {
+			values["store"] = json.RawMessage(`false`)
+		}
+		if effort != nil {
+			encoded, err := json.Marshal(*effort)
+			if err != nil {
+				return options, err
+			}
+			values["effort"] = encoded
+		}
+		if disabled != nil {
+			encoded, err := json.Marshal(*disabled != invertParallel)
+			if err != nil {
+				return options, err
+			}
+			values[parallelKey] = encoded
 		}
 		raw, err := json.Marshal(values)
 		if err != nil {
@@ -54,12 +93,4 @@ func messagesTranslator(disableParallel *bool) execution.Translator {
 		options.ProviderOptions[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
 		return options, nil
 	}
-}
-
-// disableParallelToolUse returns the flag from the request's tool choice.
-func (r request) disableParallelToolUse() *bool {
-	if r.ToolChoice == nil {
-		return nil
-	}
-	return r.ToolChoice.DisableParallelToolUse
 }
