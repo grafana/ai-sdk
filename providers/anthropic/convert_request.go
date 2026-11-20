@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -102,10 +103,10 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 
 	var warnings []provider.Warning
 	// The JSON response tool relies on forced tool use, which some models
-	// reject. Fall back to native structured outputs when the model supports
-	// them. Mirrors upstream anthropic-language-model.ts (@ai-sdk/anthropic
-	// 4.0.67).
-	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput {
+	// reject. Fall back to native structured output only if it can represent
+	// the original schema.
+	if !useStructuredOutput && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
+		anthropicschema.SupportsNativeStructuredOutput(schemaMap) {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
 			Feature: "providerOptions.anthropic.structuredOutputMode",

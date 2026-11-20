@@ -28,7 +28,8 @@ provider.
 ## Get started
 
 1. Open **AI Gateway** in Grafana. Its overview page shows your stack's
-   Gateway URL and a quick start for Go and TypeScript.
+   Gateway URL, the URL of each stored model catalog, and a quick start for Go
+   and TypeScript.
 2. [Create a service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/)
    for your application and add a token to it.
 3. Call the Gateway from your server with the token and your provider key.
@@ -53,6 +54,13 @@ Grafana 13.3 or later and the feature toggles listed in the
 [requirements](https://github.com/grafana/ai-sdk/blob/main/ai-gateway/README.md#requirements).
 The [Gateway guide](https://github.com/grafana/ai-sdk/blob/main/ai-gateway/README.md)
 explains how to install it, configure models and choose who can use it.
+
+## Model catalogs
+
+On the **Model catalogs** page, Admins store catalogs with their own provider
+keys: connect Anthropic or OpenAI accounts and choose the models each one
+serves. Applications call a catalog at its own URL. See
+[Store model catalogs in Grafana](https://github.com/grafana/ai-sdk/blob/main/ai-gateway/README.md#store-model-catalogs-in-grafana).
 
 ## Documentation
 

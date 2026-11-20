@@ -3935,6 +3935,35 @@ func TestBuildParams_UnsupportedContentWarnings(t *testing.T) {
 	})
 }
 
+func TestBuildParams_NativeOutputRetainsRootRefDefinitions(t *testing.T) {
+	for _, key := range []string{"definitions", "$defs"} {
+		t.Run(key, func(t *testing.T) {
+			raw := fmt.Sprintf(`{
+				"$ref": "#/%[1]s/Answer",
+				"title": "discarded",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value", "title": "discarded"}}},
+					"Value": {"type": "string", "minLength": 2}
+				}
+			}`, key)
+			p, _, _, br, err := buildParams("claude-sonnet-4-5", provider.CallOptions{
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(raw)},
+			}, false)
+			require.NoError(t, err)
+			assert.False(t, br.usesJsonResponseTool)
+			format, err := json.Marshal(p.OutputConfig.Format)
+			require.NoError(t, err)
+			assert.JSONEq(t, fmt.Sprintf(`{"type":"json_schema","schema":{
+				"$ref": "#/%[1]s/Answer",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value"}}, "additionalProperties": false},
+					"Value": {"type": "string", "description": "min length: 2."}
+				}
+			}}`, key), string(format))
+		})
+	}
+}
+
 func TestBuildParams_StructuredOutput(t *testing.T) {
 	testSchema := json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name","age"]}`)
 

@@ -266,3 +266,65 @@ func TestGeneratedFileDownload_StreamAndGenerate(t *testing.T) {
 	require.Len(t, generated.Files, 1)
 	assert.Equal(t, "Hello", string(generated.Files[0].Data))
 }
+
+func TestGeneratedFileDownload_RedirectSchemes(t *testing.T) {
+	const (
+		httpStart  = "http://files.example.invalid/start"
+		httpsStart = "https://files.example.invalid/start"
+		httpFile   = "http://files.example.invalid/file"
+		httpsFile  = "https://files.example.invalid/file"
+	)
+	for _, tc := range []struct {
+		name           string
+		urls           []string
+		redirectStatus int
+		blocked        bool
+	}{
+		{"301 downgrade", []string{httpsStart, httpFile}, http.StatusMovedPermanently, true},
+		{"302 downgrade", []string{httpsStart, httpFile}, http.StatusFound, true},
+		{"303 downgrade", []string{httpsStart, httpFile}, http.StatusSeeOther, true},
+		{"307 downgrade", []string{httpsStart, httpFile}, http.StatusTemporaryRedirect, true},
+		{"308 downgrade", []string{httpsStart, httpFile}, http.StatusPermanentRedirect, true},
+		{"downgrade after upgrade", []string{httpStart, httpsStart, httpFile}, http.StatusFound, true},
+		{"direct HTTP", []string{httpFile}, 0, false},
+		{"HTTP to HTTP", []string{httpStart, httpFile}, http.StatusFound, false},
+		{"HTTP to HTTPS", []string{httpStart, httpsFile}, http.StatusFound, false},
+		{"HTTPS to HTTPS", []string{httpsStart, httpsFile}, http.StatusFound, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requested []string
+			client := newGeneratedFileClient(nil, nil)
+			client.Transport = generatedFileRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				requested = append(requested, req.URL.String())
+				if next := len(requested); next < len(tc.urls) {
+					return &http.Response{
+						StatusCode: tc.redirectStatus,
+						Header:     http.Header{"Location": {tc.urls[next]}},
+						Body:       http.NoBody,
+					}, nil
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("file bytes"))}, nil
+			})
+
+			data, err := downloadGeneratedFileWithClient(context.Background(), tc.urls[0], client)
+			if tc.blocked {
+				assert.Equal(t, tc.urls[:len(tc.urls)-1], requested)
+				require.ErrorContains(t, err, "generated file redirect from HTTPS to HTTP was blocked")
+				var redirectErr *url.Error
+				assert.ErrorAs(t, err, &redirectErr)
+				assert.ErrorContains(t, err, "fetching generated file:")
+				assert.Nil(t, data)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.urls, requested)
+			assert.Equal(t, "file bytes", string(data))
+		})
+	}
+}
+
+type generatedFileRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f generatedFileRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}

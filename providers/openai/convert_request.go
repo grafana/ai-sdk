@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -95,14 +96,8 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		Model: shared.ResponsesModel(modelID),
 	}
 
-	resolvedEffort := popts.ReasoningEffort
-	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
-		resolvedEffort = string(opts.Reasoning)
-	}
-	if reason := unsupportedReasoningEffortReason(modelID, caps, resolvedEffort); reason != "" {
-		warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: reason})
-		resolvedEffort = ""
-	}
+	resolvedEffort, effortWarnings := resolveReasoningEffort(popts.ReasoningEffort, opts.Reasoning, caps.supportedReasoningEfforts)
+	warnings = append(warnings, effortWarnings...)
 
 	// Input conversion.
 	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
@@ -124,7 +119,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	body.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: input}
 
 	restrictSampling := isReasoning && (effectiveReasoningEffort(input, resolvedEffort) != "none" || !caps.supportsNonReasoningParameters)
-	restrictLogprobs := restrictSampling && caps.supportedReasoningEfforts != nil
+	restrictLogprobs := restrictSampling && caps.logprobsRequireNonReasoning
 
 	// Scalar params + unsupported-param warnings.
 	warnings = append(warnings, applyScalarParams(&body, opts, restrictSampling)...)
@@ -150,6 +145,49 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, restrictLogprobs, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, &br)...)
 
 	return body, warnings, br, nil
+}
+
+var positiveReasoningLevels = [...]string{
+	string(provider.ReasoningMinimal), string(provider.ReasoningLow), string(provider.ReasoningMedium),
+	string(provider.ReasoningHigh), string(provider.ReasoningXHigh), string(provider.ReasoningMax),
+}
+
+func resolveReasoningEffort(override string, reasoning provider.ReasoningEffort, supported []string) (string, []provider.Warning) {
+	if override != "" {
+		return override, nil
+	}
+	effort := string(reasoning)
+	if reasoning == provider.ReasoningProviderDefault || supported == nil || slices.Contains(supported, effort) {
+		return effort, nil
+	}
+
+	levels := positiveReasoningLevels[:]
+	index := slices.Index(levels, effort)
+	var mapped string
+	for _, candidate := range slices.Backward(levels[:max(index, 0)]) {
+		if slices.Contains(supported, candidate) {
+			mapped = candidate
+			break
+		}
+	}
+	if mapped == "" {
+		for _, candidate := range levels[index+1:] {
+			if slices.Contains(supported, candidate) {
+				mapped = candidate
+				break
+			}
+		}
+	}
+	if mapped == "" {
+		return "", []provider.Warning{{
+			Type: provider.WarnUnsupported, Feature: "reasoning",
+			Details: fmt.Sprintf("reasoning %q is not supported by this model.", reasoning),
+		}}
+	}
+	return mapped, []provider.Warning{{
+		Type: provider.WarnCompatibility, Feature: "reasoning",
+		Details: fmt.Sprintf("reasoning %q is not directly supported by this model. mapped to effort %q.", reasoning, mapped),
+	}}
 }
 
 func approvalRequestToolCallIDMapping(prompt []provider.Message, providerOptionsName string) map[string]string {
