@@ -64,19 +64,19 @@ The Anthropic provider SHALL support TTL configuration on cache_control annotati
 - **THEN** the resulting Anthropic API block SHALL include `cache_control: {"type": "ephemeral"}` without a `ttl` field
 
 ### Requirement: Breakpoint limit enforcement
-The Anthropic provider SHALL enforce a maximum of 4 cache breakpoints per request across all block types (system messages, content parts, tool definitions). When more than 4 cache_control annotations are present, excess annotations SHALL be dropped and a warning SHALL be emitted.
+After filtering empty assistant text, the cache validator SHALL accept at most 4 eligible `cache_control` annotations per request across system messages, content parts, and tool definitions. It SHALL reject each excess annotation with a breakpoint-limit warning. Only wire blocks that support `cache_control` SHALL carry an accepted annotation.
 
 #### Scenario: exactly 4 breakpoints
-- **WHEN** a request contains exactly 4 elements with `cache_control` set
-- **THEN** all 4 cache_control annotations SHALL be included in the API request and no warning SHALL be emitted
+- **WHEN** the validator receives exactly 4 eligible `cache_control` annotations
+- **THEN** it SHALL accept all 4 and SHALL NOT emit a breakpoint-limit warning
 
 #### Scenario: more than 4 breakpoints
-- **WHEN** a request contains 6 elements with `cache_control` set
-- **THEN** the first 4 cache_control annotations (in processing order) SHALL be included, the remaining 2 SHALL be dropped, and a warning SHALL be emitted indicating the breakpoint limit was exceeded
+- **WHEN** the validator receives 6 eligible `cache_control` annotations
+- **THEN** it SHALL accept the first 4 in processing order and reject the remaining 2 with breakpoint-limit warnings
 
 #### Scenario: breakpoints counted across tools and messages
-- **WHEN** 2 tool definitions and 3 content parts have `cache_control` set (5 total)
-- **THEN** the first 4 encountered in processing order SHALL be included and the 5th SHALL be dropped with a warning
+- **WHEN** 2 tool definitions and 3 retained content parts each supply an eligible `cache_control` annotation to the validator
+- **THEN** the validator SHALL accept the first 4 in processing order and reject the fifth with a breakpoint-limit warning
 
 ### Requirement: Non-cacheable context handling
 The Anthropic provider SHALL prevent `cache_control` from being applied to content types that Anthropic does not support caching on. When `cache_control` is set on a non-cacheable context, the annotation SHALL be dropped and a warning SHALL be emitted.
@@ -86,11 +86,11 @@ The Anthropic provider SHALL prevent `cache_control` from being applied to conte
 - **THEN** the resulting Anthropic API thinking block SHALL NOT include `cache_control` and a warning SHALL be emitted
 
 #### Scenario: cache_control on a text block (cacheable)
-- **WHEN** a `TextContentPart` has `ProviderOptions["anthropic"]` containing cache control
+- **WHEN** a retained `TextContentPart` has `ProviderOptions["anthropic"]` containing cache control
 - **THEN** the resulting Anthropic API text block SHALL include `cache_control` (cacheable context)
 
 ### Requirement: Last-part cascade fallback
-When the last content part in a message does not have its own `cache_control` annotation, the provider SHALL fall back to the message-level `cache_control` from the parent message's `ProviderOptions`. This cascade SHALL only apply to the last part in a message, not to earlier parts.
+When the last content part in a message does not have its own `cache_control` annotation, the provider SHALL fall back to the message-level `cache_control` from the parent message's `ProviderOptions`. This cascade SHALL only apply to the last part in each source message, after filtering exactly empty assistant text.
 
 #### Scenario: last part inherits message-level cache_control
 - **WHEN** a `UserMessage` has `ProviderOptions["anthropic"]` containing cache control type `"ephemeral"` and its last `TextContentPart` has no cache control in its own `ProviderOptions`
@@ -105,8 +105,9 @@ When the last content part in a message does not have its own `cache_control` an
 - **THEN** the last block SHALL use the part-level value (`ttl: "5m"`)
 
 #### Scenario: cascade applies to assistant messages
-- **WHEN** an `AssistantMessage` has message-level cache control and the last content part has no part-level cache control
-- **THEN** the block converted from the last content part SHALL include the message-level cache control, even when client tool-use normalization changes its position
+- **WHEN** an `AssistantMessage` has message-level cache control and the last content part remaining after empty text is removed has no part-level cache control and can carry a breakpoint
+- **THEN** the block converted from that part SHALL include the message-level cache control, even when client tool-use normalization changes its position
+- **AND** removed text parts SHALL neither emit nor consume a breakpoint
 
 #### Scenario: cascade applies to tool messages
 - **WHEN** a `ToolMessage` has message-level cache control and the last `ToolResultContentPart` has no part-level cache control

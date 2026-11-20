@@ -479,12 +479,13 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseFunctionWebSearch:
 		delete(a.ongoingToolCalls, e.OutputIndex)
-		name := a.br.webSearchCustomToolName()
+		result, isError := webSearchResult(v)
 		ch <- provider.StreamPart{
 			Type:       provider.PartToolResult,
 			ToolCallID: v.ID,
-			ToolName:   name,
-			Result:     webSearchOutput(v.Action),
+			ToolName:   a.br.webSearchCustomToolName(),
+			Result:     result,
+			IsError:    isError,
 		}
 		sources := webSearchSources(v.Action, a.generateID)
 		a.hasWebSearchSources = a.hasWebSearchSources || len(sources) > 0

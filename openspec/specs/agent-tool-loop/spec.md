@@ -224,6 +224,11 @@ The root package SHALL provide an Agent UI stream helper equivalent in intent to
 - **WHEN** the Agent UI stream helper is called with UI message history
 - **THEN** the resulting UI stream SHALL use its isolated validated/normalized history as original messages for message ID and response assembly behavior in the same manner as `ToUIMessageStream`
 
+#### Scenario: UI step-end callback observes the assembled response
+- **WHEN** the Agent UI stream helper receives `OnUIMessageStreamStepEnd`
+- **THEN** it forwards the option to `ToUIMessageStream`, using the normalized UI history for the callback just as it does for stream finish
+- **AND** the UI callback does not replace or reconfigure the Agent's generation step callback
+
 ### Requirement: Agent tool identity validation
 
 Before streaming, the helper SHALL reject unknown tool states, final-state parts missing ToolCallID, tool name or state-required fields, and static ToolInvocationPart names empty or absent from Agent tools in nonterminal states. State and schema checks SHALL run before Agent.Stream; failures SHALL NOT invoke a provider.

@@ -3002,6 +3002,103 @@ func TestStreamTextToUIMessageStream(t *testing.T) {
 	assert.Contains(t, chunkTypes, ChunkTextDelta)
 }
 
+func TestStreamTextToUIMessageStreamFinishStepMetadata(t *testing.T) {
+	model := &mockModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: textStreamParts("hello")}, nil
+		},
+	}
+	result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hi")))
+	metadata := json.RawMessage(`{"saved":true}`)
+	chunks := collectUIChunks(result.ToUIMessageStream(WithUIMessageStreamMessageMetadata(func(part TextStreamPart) json.RawMessage {
+		switch part.(type) {
+		case StreamFinishStep:
+			return metadata
+		default:
+			return nil
+		}
+	})))
+
+	require.GreaterOrEqual(t, len(chunks), 4)
+	tail := chunks[len(chunks)-4:]
+	assert.Equal(t, []ChunkType{ChunkTextEnd, ChunkMessageMetadata, ChunkFinishStep, ChunkFinish},
+		[]ChunkType{tail[0].Type, tail[1].Type, tail[2].Type, tail[3].Type})
+	assert.JSONEq(t, string(metadata), string(tail[1].MessageMetadata))
+}
+
+func TestStreamTextToUIMessageStreamStepEnd(t *testing.T) {
+	step := 0
+	model := &mockModel{
+		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			step++
+			if step == 1 {
+				return &provider.StreamResult{Stream: toolCallStreamParts("calc", `{"x":2}`)}, nil
+			}
+			return &provider.StreamResult{Stream: textStreamParts("result is 4")}, nil
+		},
+	}
+	result := StreamText(t.Context(), model,
+		WithModelMessages(provider.UserText("2*2")),
+		WithTools(ToolSet{"calc": Tool{
+			Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+				return json.RawMessage(`{"result":4}`), nil
+			},
+		}}),
+		WithStopWhen(StepCountIs(2)),
+	)
+
+	user := UIMessage{ID: "user", Role: RoleUser, Parts: []Part{TextPart{Text: "2*2"}}}
+	assistant := UIMessage{ID: "continued", Role: RoleAssistant, Parts: []Part{TextPart{Text: "Let me check.", State: "done"}}}
+	var states []UIMessageStreamOnStepEndState
+	var finish UIMessageStreamOnFinishState
+	boundary := 0
+	for chunk := range result.ToUIMessageStream(
+		WithUIMessageStreamOriginalMessages(user, assistant),
+		WithUIMessageStreamMessageMetadata(func(part TextStreamPart) json.RawMessage {
+			switch p := part.(type) {
+			case StreamFinishStep:
+				if p.FinishReason.Unified == provider.FinishReasonToolCalls {
+					return json.RawMessage(`{"step":1}`)
+				}
+				return json.RawMessage(`{"step":2}`)
+			default:
+				return nil
+			}
+		}),
+		OnUIMessageStreamStepEnd(func(s UIMessageStreamOnStepEndState) {
+			states = append(states, s)
+		}),
+		OnUIMessageStreamFinish(func(s UIMessageStreamOnFinishState) { finish = s }),
+	) {
+		if chunk.Type == ChunkFinishStep {
+			boundary++
+		}
+	}
+
+	require.Len(t, states, 2)
+	assert.Equal(t, 2, boundary)
+	for _, state := range states {
+		require.NoError(t, state.AssemblyError)
+		assert.True(t, state.IsContinuation)
+		assert.Equal(t, assistant.ID, state.ResponseMessage.ID)
+		assert.Equal(t, []UIMessage{user, state.ResponseMessage}, state.Messages)
+		assert.Equal(t, assistant.Parts[0], state.ResponseMessage.Parts[0])
+	}
+	assert.JSONEq(t, `{"step":1}`, string(states[0].ResponseMessage.Metadata))
+	assert.NotContains(t, states[0].ResponseMessage.Parts, TextPart{Text: "result is 4", State: "done"})
+	assert.JSONEq(t, `{"step":2}`, string(states[1].ResponseMessage.Metadata))
+	assert.Contains(t, states[1].ResponseMessage.Parts, TextPart{Text: "result is 4", State: "done"})
+	assert.Equal(t, states[1].ResponseMessage, finish.ResponseMessage)
+	assert.Equal(t, states[1].Messages, finish.Messages)
+
+	states[1].ResponseMessage.Metadata[0] = '!'
+	states[1].Messages[0].Parts[0] = TextPart{Text: "mutated"}
+	assert.JSONEq(t, `{"step":2}`, string(states[1].Messages[1].Metadata))
+	assert.JSONEq(t, `{"step":2}`, string(finish.ResponseMessage.Metadata))
+	assert.Equal(t, TextPart{Text: "2*2"}, user.Parts[0])
+	assert.Equal(t, user, states[0].Messages[0])
+}
+
 func TestStreamTextToolCallBecomesToolInputAvailable(t *testing.T) {
 	model := &mockModel{
 		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
