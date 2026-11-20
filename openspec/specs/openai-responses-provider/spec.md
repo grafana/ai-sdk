@@ -730,6 +730,10 @@ Before DoGenerate/DoStream, the provider SHALL normalize JSON response and funct
 - **WHEN** a JSON response or function-tool schema contains `propertyNames: null`, including in a nested schema
 - **THEN** the request omits that `propertyNames` keyword without a normalization compatibility warning and the caller's schema remains unchanged
 
+#### Scenario: Untyped property names are treated as string schemas
+- **WHEN** a JSON response or function-tool schema contains an object `propertyNames` schema without a `type`, including in a nested schema
+- **THEN** the request omits that `propertyNames` keyword and returns the single `compatibility` warning for that schema
+
 #### Scenario: Unsupported property name schemas fail locally
 - **WHEN** a JSON response schema or regular or namespaced function input or optional output schema contains a boolean or non-string-schema, non-null `propertyNames` value, including in a nested schema
 - **THEN** request preparation returns an error identifying unsupported `propertyNames` and sends no HTTP request
