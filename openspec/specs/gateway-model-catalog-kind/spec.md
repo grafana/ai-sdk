@@ -125,7 +125,7 @@ Admission SHALL review `CREATE` and `UPDATE` only. Deletes SHALL NOT be reviewed
 - **THEN** the plugin SHALL receive no admission request
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model` and `ModelCatalog/config`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
+The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model`, `ModelCatalog/config` and `ModelCatalog/messages`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace
@@ -136,8 +136,16 @@ The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `
 - **THEN** authorization SHALL allow the request, subject to admission
 
 #### Scenario: Invoker
-- **WHEN** an Editor or Admin calls either catalog route of a catalog in their namespace
+- **WHEN** an Editor or Admin calls `language-model`, `config` or `v1/messages` on a catalog in their namespace
 - **THEN** Grafana's declared check SHALL allow it, and a Viewer's call SHALL be refused with `403` before the plugin is called
+
+#### Scenario: Authorized health check
+- **WHEN** a caller has access to the parent and `get` on `modelcatalogs/health`
+- **THEN** Grafana's declared check SHALL allow the health action regardless of the caller's org role, subject to the plugin's catalog caller and parent checks
+
+#### Scenario: Reader or invoker without health access
+- **WHEN** a caller can read the parent catalog but does not have `get` on `modelcatalogs/health`
+- **THEN** Grafana SHALL return `403` before decrypting the parent's keys or calling the plugin
 
 ### Requirement: Catalog platform requirements
 Operator documentation SHALL state the minimum self-hosted Grafana version and feature toggles that store plugin kinds with secure values and register manifest roles, and that Grafana Cloud does not yet store secure values for plugin kinds.
@@ -159,3 +167,14 @@ A stored `ModelCatalog` SHALL be discoverable and invocable only through its own
 #### Scenario: Catalog stored next to the operator catalog
 - **WHEN** a namespace holds a valid catalog
 - **THEN** its namespace routes SHALL list and invoke the operator catalog exactly as without it, and the catalog's routes SHALL list and invoke only the catalog
+
+### Requirement: Catalog management documentation
+Operator documentation SHALL explain managing catalogs from the app, which roles read, write and call catalogs, and when changes take effect: catalog edits apply on the next call, while removed roles and revoked tokens can take longer because of platform caches. The catalog package guide SHALL distinguish stack catalogs from the Go catalog package.
+
+#### Scenario: Operator reads how changes take effect
+- **WHEN** an operator reads the stored catalog documentation
+- **THEN** they SHALL find the catalog page, the three roles, and that catalog edits apply on the next call while role and token removals can take longer
+
+#### Scenario: Developer reads the catalog package guide
+- **WHEN** a developer reads the catalog package guide
+- **THEN** it SHALL say that stack catalogs are stored `ModelCatalog` resources the Gateway serves, and link to their documentation

@@ -108,6 +108,14 @@ describe("candidate-source workflow gates", () => {
     assert.match(commands("race"), /mise run test-race/);
   });
 
+  it("requires the installed-package provider shape check in the parity job", () => {
+    const shape = steps("parity-baseline").find((step) => step.run === "mise run parity-provider-shape");
+    assert.ok(shape);
+    assert.equal(shape.if, "${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}");
+    assert.notEqual(shape["continue-on-error"], true);
+    assert.equal(shape.env?.AI_SDK_UPSTREAM_ROOT, undefined);
+  });
+
   it("keeps command coverage required and repeats it only for retained plugin packages", () => {
     const integration = steps("integration-test").find((step) => step.run === "mise run test-integration");
     assert.ok(integration);

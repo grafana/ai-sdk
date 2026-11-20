@@ -22,6 +22,12 @@ type blockState struct {
 	firstDelta       bool
 	providerToolName string
 	citations        []json.RawMessage
+	heldBackText     *strings.Builder
+}
+
+type heldBackTextBlock struct {
+	index int64
+	state *blockState
 }
 
 type mcpToolCallInfo struct {
@@ -36,6 +42,7 @@ type streamAdapter struct {
 	mcpToolCalls           map[string]mcpToolCallInfo
 	usesJsonResponseTool   bool
 	isJsonResponseFromTool bool
+	heldBackText           []heldBackTextBlock
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
 	finishReason           provider.FinishReason
@@ -202,6 +209,9 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 	case anthropic.BetaRawContentBlockStartEvent:
 		idx := e.Index
 		cb := e.ContentBlock
+		if a.usesJsonResponseTool && cb.Type != "fallback" && !isTextOrThinkingBlock(cb.Type) {
+			a.heldBackText = nil
+		}
 		switch cb.Type {
 		case "fallback":
 			metadata, err := marshalFallbackMetadata(cb.AsFallback())
@@ -210,11 +220,17 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			}
 			ch <- provider.StreamPart{Type: provider.PartCustom, Kind: anthropicFallbackKind, ProviderMetadata: metadata}
 		case "text":
-			if a.usesJsonResponseTool {
+			if a.isJsonResponseFromTool {
 				return nil
 			}
-			a.blocks[idx] = &blockState{blockType: "text"}
-			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: blockID(idx)}
+			bs := &blockState{blockType: "text"}
+			a.blocks[idx] = bs
+			if a.usesJsonResponseTool {
+				bs.heldBackText = &strings.Builder{}
+				a.heldBackText = append(a.heldBackText, heldBackTextBlock{index: idx, state: bs})
+			} else {
+				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: blockID(idx)}
+			}
 		case "thinking":
 			a.blocks[idx] = &blockState{blockType: "thinking"}
 			ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: blockID(idx)}
@@ -388,7 +404,8 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		}
 		switch delta.Type {
 		case "text_delta":
-			if a.usesJsonResponseTool {
+			if bs.heldBackText != nil {
+				bs.heldBackText.WriteString(delta.Text)
 				return nil
 			}
 			ch <- provider.StreamPart{
@@ -465,11 +482,13 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		}
 		switch bs.blockType {
 		case "text":
-			citations, metadata, err := textCitations(bs.citations, a.citationDocuments)
-			if err != nil {
-				return err
+			if bs.heldBackText == nil {
+				end, err := a.textEnd(idx, bs)
+				if err != nil {
+					return err
+				}
+				ch <- end
 			}
-			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: blockID(idx), Citations: citations, ProviderMetadata: metadata}
 		case "thinking", "reasoning":
 			ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: blockID(idx)}
 		case "json_response":
@@ -566,6 +585,21 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			}
 		}
 		a.fallbackWebCitations = nil
+		if !isContinuationStopReason(fr.Raw) && !a.isJsonResponseFromTool {
+			for _, block := range a.heldBackText {
+				if block.state.heldBackText.Len() == 0 {
+					continue
+				}
+				end, err := a.textEnd(block.index, block.state)
+				if err != nil {
+					return err
+				}
+				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: end.ID}
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: end.ID, Delta: block.state.heldBackText.String()}
+				ch <- end
+			}
+		}
+		a.heldBackText = nil
 		ch <- provider.StreamPart{
 			Type:             provider.PartFinish,
 			FinishReason:     &fr,
@@ -574,6 +608,14 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		}
 	}
 	return nil
+}
+
+func (a *streamAdapter) textEnd(idx int64, bs *blockState) (provider.StreamPart, error) {
+	citations, metadata, err := textCitations(bs.citations, a.citationDocuments)
+	if err != nil {
+		return provider.StreamPart{}, err
+	}
+	return provider.StreamPart{Type: provider.PartTextEnd, ID: blockID(idx), Citations: citations, ProviderMetadata: metadata}, nil
 }
 
 // carryMessageStartMetadata applies what upstream reads from message_start

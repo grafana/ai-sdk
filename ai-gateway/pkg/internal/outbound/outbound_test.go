@@ -53,6 +53,37 @@ func TestValidateEndpoint(t *testing.T) {
 	}
 }
 
+func TestNewProbeTransport_UsesFreshHTTP1Connections(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "HTTP/1.1", r.Proto)
+		assert.True(t, r.Close)
+		if requests.Add(1) == 1 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if assert.NoError(t, err) {
+			_ = conn.Close()
+		}
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	transport := NewProbeTransport(time.Second)
+	transport.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	resp, err := transport.RoundTrip(request)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp, err = transport.RoundTrip(request.Clone(t.Context()))
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.EqualValues(t, 2, requests.Load(), "one successful probe and one failed probe, without a replay")
+}
+
 func TestNewClients_IndependentExactTransports(t *testing.T) {
 	first, err := NewModelClient(5*time.Second, 1024)
 	require.NoError(t, err)

@@ -19,8 +19,9 @@ follows the Gateway plugin backend in `ai-gateway/pkg`. For setup, see
 ## The pieces and their boundaries
 
 The shipped plugin backend accepts **ProviderWire V4**, used by the Go Grafana provider
-and server-side Vercel Gateway client, and a **Chat Completions subset** for
-official OpenAI clients. These are separate adapters over one execution runtime.
+and server-side Vercel Gateway client, a **Chat Completions subset** for
+official OpenAI clients, and an **Anthropic Messages subset** for official
+Anthropic clients and Claude Code. These are separate adapters over one execution runtime.
 Neither is the
 browser UI message stream protocol. A Go application can consume Gateway output
 and then produce a separate [UI message stream](wire-protocol.md) for React.
@@ -34,12 +35,16 @@ flowchart LR
     go[Go Grafana provider]
     ts[Vercel Gateway client]
     chatclient[Official OpenAI clients]
+    msgclient[Anthropic clients and Claude Code]
   end
+  admin[Grafana catalog page]
   subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
+    health[Stored catalog health check]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
       chat[Chat Completions decoder and response encoder]
+      messages[Anthropic Messages decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
       runtime[Execution runtime]
@@ -64,8 +69,14 @@ flowchart LR
   go --> host
   ts --> host
   chatclient --> host
+  msgclient --> host
+  admin -->|Check health| host
+  host --> health
+  health -->|shared catalog checks| stack
+  health -->|model listings only| apis
   host --> pw
   host --> chat --> runtime
+  host --> messages --> runtime
   pw --> runtime -->|first selects| select
   select -->|private| catalog
   catalog -->|no routing controls| routing
@@ -94,21 +105,26 @@ a telemetry label, the adapter's handler and the adapter's host-error writer.
 Every entry gets the same access decision and request telemetry, and a refused
 caller gets that adapter's permission document without its body being read. The
 production table matches the committed manifest: `GET {prefix}/config` and
-`POST {prefix}/language-model`, and `POST {prefix}/v1/chat/completions`. A request that matches no entry does no access,
+`POST {prefix}/language-model`, `POST {prefix}/v1/chat/completions` and
+`POST {prefix}/v1/messages`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. Each catalog
-also has two routes, `GET .../modelcatalogs/{name}/config` and
-`POST .../modelcatalogs/{name}/language-model`, in the same route table.
-Grafana reads the catalog as the caller, runs the route's declared access check
-(`get` on the route's own subresource, which `aigateway:modelinvoker` grants),
-and only then decrypts the catalog's keys and passes the object, its resource
+also has four routes in the same table: `GET .../modelcatalogs/{name}/config`,
+`POST .../modelcatalogs/{name}/language-model`, `POST .../modelcatalogs/{name}/v1/messages`,
+and `POST .../modelcatalogs/{name}/health`. Grafana reads the catalog as the
+caller, runs the route's declared `get` access check (`aigateway:modelinvoker`
+grants discovery and invocation; `aigateway:catalogwriter` grants health), and
+only then decrypts the catalog's keys and passes the object, its resource
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
-and discovery lists it without building models. Without the `model_catalog`
+and discovery lists it without building models. The health action uses the
+same catalog checks and saved keys but queries provider model listings with
+bounded concurrency and deadlines, outside the model execution pipeline.
+Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
 one typed member per public tenant type in the `tenanttype` registry, and its
@@ -153,10 +169,19 @@ Self-hosted users/service accounts and allowlisted internal services use the
 configured catalog. Chat parses its own request body; selection, execution,
 cancellation and stream cleanup use the shared runtime and host contract.
 
-`/v1/messages` and `/v1/responses` are not registered inbound routes. An outbound
-Anthropic provider does not establish Claude Code support, and an outbound
-Responses provider does not establish Codex support. Those clients need their
-own compatible ingress and end-to-end evidence.
+The [Anthropic Messages adapter](../guides/anthropic-messages.md) is built the
+same way: it maps a text and client-tool subset into the shared runtime and
+supplies its own response, stream and error documents. Its translator applies
+`disable_parallel_tool_use` per native candidate and `output_config.effort` only
+to Anthropic candidates. Other targets retain their configured effort options.
+It accepts but does not yet apply the fields that tune only the Anthropic wire,
+such as thinking and cache control; the guide lists them. A session of Claude
+Code has completed against it, but the adapter is not yet claimed as Claude Code
+compatible.
+
+`/v1/responses` is not a registered inbound route. An outbound Responses
+provider does not establish Codex support; that client needs its own compatible
+ingress and end-to-end evidence.
 
 ## Follow one request
 
@@ -433,10 +458,8 @@ and [stream lifecycle tests](../../ai-gateway/providerwire/v4/stream_test.go).
 The [parity coverage map](../../test/conformance/PARITY.md) distinguishes client
 protocol evidence, synthetic native-provider tests, and live-provider evidence.
 
-The registered upstream reference is recorded in
-[upstream.yaml](../../test/conformance/upstream.yaml), including
-`@ai-sdk/gateway` 4.0.116 and `@ai-sdk/provider` 4.0.29. The corresponding
-[upstream Gateway client](https://github.com/vercel/ai/blob/b7f6255acaae7724adc0fd37aac3dae3f3466578/packages/gateway/src/gateway-language-model.ts)
+The [registered upstream baseline](../../test/conformance/upstream.yaml) pins
+the Vercel AI SDK Gateway client and provider contract. The upstream client
 serializes model calls, forwards `providerOptions.gateway` routing controls
 unchanged, and reads JSON or SSE. It establishes the client-facing protocol,
 not Vercel's private hosted-service implementation or Grafana's routing policy.

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/mediatype"
+	"github.com/grafana/ai-sdk/internal/toolhistory"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -324,7 +325,7 @@ func serializeToolCallArguments(input []byte) string {
 	if len(input) == 0 || string(input) == "null" {
 		return "{}"
 	}
-	return string(input)
+	return toolhistory.Arguments(string(input))
 }
 
 // toolResultOutputString renders a tool result output to its string form.
