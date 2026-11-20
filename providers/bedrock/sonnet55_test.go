@@ -20,16 +20,18 @@ func TestSonnet55ReasoningNoneUsesBetweenTools(t *testing.T) {
 		Prompt:    []provider.Message{provider.UserText("x")},
 		Reasoning: provider.ReasoningNone,
 	})
-	assert.Empty(t, warnings)
+	require.Len(t, warnings, 1)
+	assert.Equal(t, provider.WarnCompatibility, warnings[0].Type)
+	assert.Equal(t, "reasoning", warnings[0].Feature)
 	assert.Equal(t, map[string]any{"type": "between_tools"}, req.AdditionalModelRequestFields["thinking"])
 	assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
 
-	// Sonnet 5 keeps the upstream behavior: disabled omits the thinking field.
-	req, _, _ = mustBuildRequest(t, "global.anthropic.claude-sonnet-5", provider.CallOptions{
+	req, warnings, _ = mustBuildRequest(t, "global.anthropic.claude-sonnet-5", provider.CallOptions{
 		Prompt:    []provider.Message{provider.UserText("x")},
 		Reasoning: provider.ReasoningNone,
 	})
-	assert.NotContains(t, req.AdditionalModelRequestFields, "thinking")
+	assert.Empty(t, warnings)
+	assert.Equal(t, map[string]any{"type": "disabled"}, req.AdditionalModelRequestFields["thinking"])
 }
 
 func TestSonnet55ReasoningEffortUsesAdaptive(t *testing.T) {

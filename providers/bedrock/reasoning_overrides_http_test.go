@@ -23,7 +23,7 @@ func TestConverseParity_ReasoningOverridesRequestCapture(t *testing.T) {
 				config  string
 				want    string
 			}{
-				{"disabled", "anthropic.claude-sonnet-4-6-v1:0", `{"type":"disabled","budgetTokens":5000,"maxReasoningEffort":"low"}`, ""},
+				{"disabled", "anthropic.claude-sonnet-4-6-v1:0", `{"type":"disabled","budgetTokens":5000,"maxReasoningEffort":"low"}`, `{"thinking":{"type":"disabled"}}`},
 				{"adaptive", "anthropic.claude-sonnet-4-6-v1:0", `{"maxReasoningEffort":"low"}`, `{"thinking":{"type":"adaptive"},"output_config":{"effort":"low"}}`},
 				{"zero budget", testAnthropicModel, `{"budgetTokens":0}`, `{"thinking":{"type":"enabled","budget_tokens":0}}`},
 				{"Nova", "us.amazon.nova-2-lite-v1:0", `{"maxReasoningEffort":"low"}`, `{"reasoningConfig":{"type":"enabled","maxReasoningEffort":"low"}}`},
@@ -84,11 +84,7 @@ func TestConverseParity_ReasoningOverridesRequestCapture(t *testing.T) {
 					}
 					body := <-requests
 					assert.JSONEq(t, `{"maxTokens":1024}`, string(body["inferenceConfig"]))
-					if tc.want == "" {
-						assert.NotContains(t, body, "additionalModelRequestFields")
-					} else {
-						assert.JSONEq(t, tc.want, string(body["additionalModelRequestFields"]))
-					}
+					assert.JSONEq(t, tc.want, string(body["additionalModelRequestFields"]))
 				})
 			}
 		}

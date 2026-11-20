@@ -399,7 +399,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			}),
 		})
 		assert.Empty(t, warnings)
-		assert.NotContains(t, req.AdditionalModelRequestFields, "thinking")
+		assert.Equal(t, map[string]any{"type": "disabled"}, req.AdditionalModelRequestFields["thinking"])
 		assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
 	})
 
@@ -434,7 +434,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			}),
 		})
 		assert.Empty(t, warnings)
-		assert.NotContains(t, req.AdditionalModelRequestFields, "thinking")
+		assert.Equal(t, map[string]any{"type": "disabled"}, req.AdditionalModelRequestFields["thinking"])
 		assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
 		assert.Nil(t, req.InferenceConfig)
 	})
@@ -679,11 +679,11 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicCompatibilityWarnings(t *test
 			wantEffort: "high",
 		},
 		{
-			name:          "xhigh maps to max with warning",
+			name:          "xhigh maps to high with warning",
 			reasoning:     provider.ReasoningXHigh,
-			wantEffort:    "max",
+			wantEffort:    "high",
 			wantWarning:   true,
-			wantInDetails: `reasoning "xhigh" is not directly supported by this model. mapped to effort "max".`,
+			wantInDetails: `reasoning "xhigh" is not directly supported by this model. mapped to effort "high".`,
 		},
 	}
 	for _, tc := range tests {

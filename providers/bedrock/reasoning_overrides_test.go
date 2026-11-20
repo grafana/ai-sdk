@@ -60,7 +60,11 @@ func TestBuildRequest_ExplicitDisabledReasoning(t *testing.T) {
 						Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: reasoning, MaxOutputTokens: &maxTokens,
 						ProviderOptions: provider.ProviderOptions{namespace: BedrockOptions{ReasoningConfig: &config}},
 					})
-					assert.Empty(t, req.AdditionalModelRequestFields)
+					if isAnthropicModel(modelID) {
+						assert.Equal(t, map[string]any{"thinking": map[string]any{"type": "disabled"}}, req.AdditionalModelRequestFields)
+					} else {
+						assert.Empty(t, req.AdditionalModelRequestFields)
+					}
 					require.NotNil(t, req.InferenceConfig)
 					assert.Equal(t, 1024, *req.InferenceConfig.MaxTokens)
 					assert.Empty(t, warnings)
@@ -144,8 +148,8 @@ func TestBuildRequest_ReasoningDefaultControls(t *testing.T) {
 	}{
 		{"omitted", provider.ReasoningProviderDefault, nil, `null`},
 		{"default preserves explicit effort", provider.ReasoningProviderDefault, &ReasoningConfig{MaxReasoningEffort: "low"}, `{"output_config":{"effort":"low"}}`},
-		{"default disabled leaves explicit effort", provider.ReasoningProviderDefault, &ReasoningConfig{Type: "disabled", BudgetTokens: 5000, MaxReasoningEffort: "low"}, `{"output_config":{"effort":"low"}}`},
-		{"none removes partial controls", provider.ReasoningNone, &ReasoningConfig{BudgetTokens: 5000, MaxReasoningEffort: "low"}, `null`},
+		{"default disabled leaves explicit effort", provider.ReasoningProviderDefault, &ReasoningConfig{Type: "disabled", BudgetTokens: 5000, MaxReasoningEffort: "low"}, `{"thinking":{"type":"disabled"},"output_config":{"effort":"low"}}`},
+		{"none removes partial controls", provider.ReasoningNone, &ReasoningConfig{BudgetTokens: 5000, MaxReasoningEffort: "low"}, `{"thinking":{"type":"disabled"}}`},
 		{"typed zero derives budget", provider.ReasoningHigh, &ReasoningConfig{}, `{"thinking":{"type":"enabled","budget_tokens":38400}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
