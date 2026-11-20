@@ -295,6 +295,17 @@ func WithNamespace(ctx context.Context, namespace string) context.Context {
 	return context.WithValue(ctx, namespaceKey{}, namespace)
 }
 
+type catalogKey struct{}
+
+// WithCatalog selects the stored ModelCatalog for discovery and model calls in
+// ctx. It applies only to token-exchange clients and does not select a
+// namespace. Calls with an empty name, a dot segment (. or ..), a slash in the
+// name, or a client that does not exchange tokens fail before any network
+// request. Pass the raw name; the client escapes it as a path segment.
+func WithCatalog(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, catalogKey{}, name)
+}
+
 // resolveNamespaces returns the route and exchange namespaces of a call. Flows
 // other than token exchange route to their configured URL and return none.
 func (p *Provider) resolveNamespaces(ctx context.Context) (route, exchange string, err error) {
@@ -342,6 +353,15 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	routeNamespace, exchangeNamespace, err := p.resolveNamespaces(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if catalog, selected := ctx.Value(catalogKey{}).(string); selected {
+		switch {
+		case !p.tokenExchange:
+			return nil, errors.New("grafana: call catalog requires token exchange")
+		case catalog == "" || catalog == "." || catalog == ".." || strings.Contains(catalog, "/"):
+			return nil, errors.New("grafana: invalid catalog name")
+		}
+		route = "/modelcatalogs/" + url.PathEscape(catalog) + route
 	}
 	subject, onBehalfOf := ctx.Value(onBehalfOfKey{}).(string)
 	if onBehalfOf {

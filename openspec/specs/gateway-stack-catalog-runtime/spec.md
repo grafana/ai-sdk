@@ -108,3 +108,109 @@ A catalog route's `language-model` call SHALL select from its parent catalog as 
 #### Scenario: Unary and streaming calls
 - **WHEN** a registered client calls a catalog route with the catalog as its base URL, unary or streaming
 - **THEN** the response SHALL use the same ProviderWire format as a namespace route call
+
+### Requirement: Health checks use only a saved catalog
+The health action SHALL accept no body or query parameters. It SHALL use only the checked parent catalog's spec and decrypted keys, applying the same stored-catalog checks, endpoint policy and resolved destinations as selection before any probe. It SHALL NOT run on save, use caller-supplied credentials, or consult another catalog or ambient credentials.
+
+#### Scenario: Invalid stored catalog
+- **WHEN** the saved catalog fails shape, endpoint policy or decrypted key checks
+- **THEN** the whole check SHALL return a fixed catalog configuration error (`424`) with no provider requests
+
+#### Scenario: User supplies a draft
+- **WHEN** a valid caller submits a body or query parameters to the health action
+- **THEN** the request SHALL fail with a fixed `400` before any provider requests
+
+### Requirement: Health checks use provider model listings
+The action SHALL use read-only provider model listings, not inference. A valid listing response SHALL confirm that the listing request was accepted, and only an exact match on the configured backend model ID SHALL count as listed. A match SHALL NOT attest to inference, quota, billing, or capability support.
+
+#### Scenario: Catalog has primary and fallback models
+- **WHEN** a catalog has primary and fallback targets sharing a provider
+- **THEN** both SHALL be evaluated independently using the same listing traversal for that provider, not a call per model
+
+### Requirement: Closed health results for the saved catalog
+On an accepted check the response SHALL be non-cacheable `200` JSON with `providers` mapping provider names to statuses, and `models` mapping canonical model IDs to a `primary` status and ordered `fallback` statuses. Statuses SHALL use only `ok`, `invalidKey`, `unknownModel`, `unreachable`, `refused`, and `notChecked`. Aliases SHALL NOT produce separate model entries.
+
+#### Scenario: Accepted native listing
+- **WHEN** the official endpoint returns a valid model listing
+- **THEN** its provider status SHALL be `ok` and listed targets SHALL be `ok`
+- **AND** unmatched targets SHALL be `unknownModel` only if the listing is complete, otherwise `notChecked`
+
+#### Scenario: Accepted listing on a custom endpoint
+- **WHEN** an allowed custom endpoint returns a valid listing
+- **THEN** its provider and listed targets SHALL be `ok`, but unmatched targets SHALL be `notChecked` because completeness is not assured
+
+#### Scenario: Listing fails before any valid page
+- **WHEN** the provider returns `401`, denies or throttles the request, or fails at the transport level or with an upstream server error
+- **THEN** the provider status SHALL be `invalidKey`, `refused`, or `unreachable` respectively, and the corresponding targets SHALL be `notChecked`
+
+#### Scenario: Custom endpoint does not implement listing
+- **WHEN** an allowed custom endpoint responds with `404`, `405`, or `501` to its listing request
+- **THEN** its provider and all corresponding targets SHALL be `notChecked`
+
+#### Scenario: Later page fails
+- **WHEN** listing fails after at least one valid page
+- **THEN** the provider and the already observed targets SHALL remain `ok` and unobserved targets SHALL be `notChecked`
+
+### Requirement: Health is bounded and secret-safe
+The action SHALL limit providers, pages, decoded bytes, concurrency, and elapsed time, including response reads, and apply per-catalog and process-wide admission limits. It SHALL NOT follow redirects, retry failed probes, or queue refused runs. Health responses and telemetry SHALL NOT include key material, outbound URLs, or upstream bodies, headers, or error text.
+
+#### Scenario: Work exceeds the check budget
+- **WHEN** a provider cannot start within the probe count or time budget
+- **THEN** it and all corresponding targets SHALL be `notChecked`; completed results SHALL still be returned
+
+#### Scenario: Too many health requests
+- **WHEN** the catalog already has a check running or the applicable admission budget is exhausted
+- **THEN** the action SHALL return a fixed `429` with zero provider requests for that check
+
+#### Scenario: Provider echoes a secret
+- **WHEN** an upstream error or response with a malformed listing contains a secret in its text
+- **THEN** neither that text nor the secret SHALL appear in any health response, log, metric or trace
+
+### Requirement: List one saved provider's models
+The `available-models` action SHALL accept exactly one `provider` query parameter naming a provider in the checked parent catalog and no body. It SHALL run the same stored-catalog preflight as selection and health before serving a listing, use only the named provider's saved key and validated destination, and never accept draft configuration or credentials. The action SHALL NOT run inference or modify the catalog.
+
+#### Scenario: List one of two accounts of the same type
+- **WHEN** a valid caller asks for one named provider in a saved catalog
+- **THEN** the action SHALL use that provider's account only and SHALL NOT substitute another provider's key or ambient credentials
+
+#### Scenario: Invalid input
+- **WHEN** the action receives a body, a missing or invalid selector, duplicate selectors, or extra parameters
+- **THEN** it SHALL return a fixed `400` with no provider request
+
+#### Scenario: Unknown provider
+- **WHEN** the selector is valid but absent from an otherwise valid catalog
+- **THEN** the action SHALL return a fixed `404` with no provider request
+
+#### Scenario: Invalid stored configuration
+- **WHEN** the saved catalog fails shared shape, endpoint or key checks
+- **THEN** the action SHALL return a fixed `424` without contacting the provider
+
+### Requirement: Return bounded listing outcomes
+An accepted listing request SHALL return `200` JSON with `status` and `modelIds`. Status SHALL be one of `ok`, `partial`, `invalidKey`, `unreachable`, `refused`, or `notChecked`. `modelIds` SHALL be a bounded, sorted array of exact, distinct IDs from valid pages, with no upstream metadata. `ok` and `partial` describe the listing only and SHALL NOT attest to inference. Other statuses SHALL return an empty array.
+
+#### Scenario: Complete empty listing
+- **WHEN** a provider returns a valid empty list and no further page is indicated
+- **THEN** the action SHALL return `ok` with `modelIds: []`
+
+#### Scenario: Incomplete listing
+- **WHEN** at least one valid page is read but a later page fails, traversal reaches a bound before completion, or an ID cannot safely be returned
+- **THEN** the action SHALL return `partial` with only the safe IDs observed
+
+#### Scenario: Failure before any valid page
+- **WHEN** the provider rejects the key, is unreachable, refuses the request, or cannot be checked within the response bound
+- **THEN** the action SHALL use the same failure classifications as health for `status` without forwarding the upstream error
+
+### Requirement: Bound and protect provider listing work
+Inventory and health SHALL share endpoint validation and the bounded listing operation, with deadlines, response size and page limits, no redirects or request retries, and shared per-catalog and per-process admission for probes. The inventory route SHALL return fixed `429` on admission refusal. Gateway responses and telemetry SHALL NOT expose keys or serialize upstream URLs, cursors, headers, raw bodies or errors.
+
+#### Scenario: Provider echoes the key in a successful listing
+- **WHEN** a provider returns any saved key from the parent or its HTTP header wire form in an ID or continuation cursor
+- **THEN** the ID SHALL NOT be returned, and the cursor SHALL NOT be followed
+- **AND** the key SHALL NOT appear in logs, metrics or traces
+
+### Requirement: Do not cache provider inventory
+Each admitted, valid request SHALL query the provider using the current checked parent. The Gateway SHALL NOT cache inventory, and Gateway-produced action responses SHALL use `Cache-Control: no-store`.
+
+#### Scenario: A writer replaces a provider key
+- **WHEN** an authorized caller requests a listing after key replacement
+- **THEN** the action SHALL query the provider using the newly saved key rather than reuse the earlier listing

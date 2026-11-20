@@ -121,7 +121,7 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 
 - **WHEN** a provider emits a text start and end without a text delta
 - **THEN** `StepResult.Content` SHALL retain the empty text part in its recorded position
-- **AND** response-message content SHALL omit the empty text part
+- **AND** response-message content SHALL retain it in that position if provider metadata was supplied for the part, and omit it otherwise
 
 #### Scenario: Local tool content follows recorded content
 
@@ -170,12 +170,12 @@ OnFinishState SHALL mirror the upstream end event. Its embedded StepResult SHALL
 Local executable tools SHALL dispatch only after stop/tool-calls without an effective tool-choice violation. Except for events withheld under none, other finish reasons SHALL retain call visibility and approval processing. Completed choice violations SHALL bypass all new local approval/execution. Continuation SHALL require matching result/denial for every client call, not merely a callback, and SHALL never follow a choice violation.
 
 #### Scenario: Recovered calls follow a malformed provider event
-- **WHEN** malformed provider data and otherwise valid tool calls result in an error finish without a completed tool-choice violation
+- **WHEN** malformed provider data and otherwise valid, non-withheld tool calls result in an error finish without a completed tool-choice violation
 - **THEN** the calls remain visible without invoking executable callbacks
 - **AND** unresolved calls prevent a subsequent model request
 
 #### Scenario: Approval observations precede dispatch eligibility
-- **WHEN** a disallowed finish contains calls requiring approval or automatic decisions without a completed tool-choice violation
+- **WHEN** a disallowed finish contains non-withheld calls requiring approval or automatic decisions without a completed tool-choice violation
 - **THEN** approval requests and decisions remain observable
 - **AND** approved calls are not executed under that finish
 - **AND** matching denials may satisfy continuation without executing a tool
@@ -192,10 +192,11 @@ Local executable tools SHALL dispatch only after stop/tool-calls without an effe
 
 ### Requirement: None withholds tool events from the current model call
 
-Under effective none, StreamText SHALL withhold normalized tool input, calls, results (including provider failures and preliminary results) and provider approval requests from the full and UI streams, OnChunk and recorded step/response content. Withheld events SHALL NOT run tool input callbacks or trigger input errors or partial-step retention. Opt-in raw chunks are not normalized tool events and retain their existing handling.
+Under effective none, StreamText SHALL withhold normalized tool input, calls, results (including provider failures and preliminary results) and provider approval requests from the full and UI streams, OnChunk and recorded step/response content. Withheld events SHALL NOT run tool input callbacks, trigger input errors or partial-step retention, satisfy the first-chunk deadline, or reset the chunk timeout. Opt-in raw chunks are not normalized tool events and retain their existing handling.
 
 #### Scenario: Local and provider tool events with none
 - **WHEN** a model call under none emits text and structured tool calls with input events, provider results or approval requests
+- **AND** the provider stream finishes without cancellation or a provider error
 - **THEN** full and schema-parsed UI streams SHALL retain the text and carry one terminal semantic error without any of those tool events
 - **AND** assembled UI messages and recorded response content SHALL have no tool parts from the call
 

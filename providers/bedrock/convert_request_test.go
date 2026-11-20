@@ -171,33 +171,30 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 	cases := []struct {
 		name         string
 		toolChoice   provider.ToolChoice
-		assertChoice func(t *testing.T, c *toolChoiceUnion)
+		assertChoice func(t *testing.T, req *converseInput)
 	}{
 		{
 			name:       "auto",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceAuto},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				assert.NotNil(t, c.Auto)
-				assert.Nil(t, c.Any)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Equal(t, &toolChoiceUnion{Auto: &struct{}{}}, req.ToolConfig.ToolChoice)
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
 			},
 		},
 		{
 			name:       "required",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceRequired},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				assert.NotNil(t, c.Any)
-				assert.Nil(t, c.Auto)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Equal(t, &toolChoiceUnion{Any: &struct{}{}}, req.ToolConfig.ToolChoice)
+				assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
 			},
 		},
 		{
 			name:       "specific tool",
 			toolChoice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"},
-			assertChoice: func(t *testing.T, c *toolChoiceUnion) {
-				require.NotNil(t, c)
-				require.NotNil(t, c.Tool)
-				assert.Equal(t, "weather", c.Tool.Name)
+			assertChoice: func(t *testing.T, req *converseInput) {
+				assert.Nil(t, req.ToolConfig.ToolChoice)
+				assert.Equal(t, map[string]any{"type": "tool", "name": "weather", "disable_parallel_tool_use": true}, req.AdditionalModelRequestFields["tool_choice"])
 			},
 		},
 	}
@@ -214,7 +211,7 @@ func TestBuildRequest_ToolsAndToolChoice(t *testing.T) {
 			require.Len(t, req.ToolConfig.Tools, 1)
 			require.NotNil(t, req.ToolConfig.Tools[0].ToolSpec)
 			assert.Equal(t, "weather", req.ToolConfig.Tools[0].ToolSpec.Name)
-			tc.assertChoice(t, req.ToolConfig.ToolChoice)
+			tc.assertChoice(t, req)
 		})
 	}
 }
@@ -402,7 +399,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			}),
 		})
 		assert.Empty(t, warnings)
-		assert.NotContains(t, req.AdditionalModelRequestFields, "thinking")
+		assert.Equal(t, map[string]any{"type": "disabled"}, req.AdditionalModelRequestFields["thinking"])
 		assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
 	})
 
@@ -437,7 +434,7 @@ func TestBuildRequest_TopLevelReasoningMergesProviderConfig(t *testing.T) {
 			}),
 		})
 		assert.Empty(t, warnings)
-		assert.NotContains(t, req.AdditionalModelRequestFields, "thinking")
+		assert.Equal(t, map[string]any{"type": "disabled"}, req.AdditionalModelRequestFields["thinking"])
 		assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
 		assert.Nil(t, req.InferenceConfig)
 	})
@@ -682,11 +679,11 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicCompatibilityWarnings(t *test
 			wantEffort: "high",
 		},
 		{
-			name:          "xhigh maps to max with warning",
+			name:          "xhigh maps to high with warning",
 			reasoning:     provider.ReasoningXHigh,
-			wantEffort:    "max",
+			wantEffort:    "high",
 			wantWarning:   true,
-			wantInDetails: `reasoning "xhigh" is not directly supported by this model. mapped to effort "max".`,
+			wantInDetails: `reasoning "xhigh" is not directly supported by this model. mapped to effort "high".`,
 		},
 	}
 	for _, tc := range tests {
@@ -798,6 +795,35 @@ func TestBuildRequest_NativeStructuredOutputForSupportedAnthropic(t *testing.T) 
 	fmt2, _ := oc["format"].(map[string]any)
 	require.NotNil(t, fmt2)
 	assert.Equal(t, "json_schema", fmt2["type"])
+}
+
+func TestBuildRequest_NativeOutputRetainsRootRefDefinitions(t *testing.T) {
+	for _, key := range []string{"definitions", "$defs"} {
+		t.Run(key, func(t *testing.T) {
+			raw := fmt.Sprintf(`{
+				"$ref": "#/%[1]s/Answer",
+				"title": "discarded",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value", "title": "discarded"}}},
+					"Value": {"type": "string", "minLength": 2}
+				}
+			}`, key)
+			req, _, meta := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt:         []provider.Message{provider.UserText("x")},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(raw)},
+			})
+			assert.False(t, meta.usesJSONResponseTool)
+			assert.False(t, meta.usesJSONInstruction)
+			fields := marshalRequestBody(t, req)
+			assert.JSONEq(t, fmt.Sprintf(`{"output_config":{"format":{"type":"json_schema","schema":{
+				"$ref": "#/%[1]s/Answer",
+				"%[1]s": {
+					"Answer": {"type": "object", "properties": {"value": {"$ref": "#/%[1]s/Value"}}, "additionalProperties": false},
+					"Value": {"type": "string", "description": "min length: 2."}
+				}
+			}}}}`, key), string(fields["additionalModelRequestFields"]))
+		})
+	}
 }
 
 func TestBuildRequest_NativeStructuredOutputSanitizesUnsupportedConstraints(t *testing.T) {
@@ -1639,6 +1665,111 @@ func TestBuildRequest_TrimsOnlyFinalAssistantPrefillText(t *testing.T) {
 	assert.Equal(t, "earlier in final assistant block  \n", req.Messages[3].Content[0].Text)
 	assert.Equal(t, "preserved assistant part  \n", req.Messages[3].Content[1].Text)
 	assert.Equal(t, "final prefill", req.Messages[3].Content[2].Text)
+}
+
+func TestBuildRequest_FiltersForeignEmptyAssistantText(t *testing.T) {
+	foreign := provider.TextPart("")
+	foreign.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"opaque"}`)})
+	reasoning := provider.ReasoningPart(" signed \n")
+	reasoning.ProviderOptions = provider.BuildProviderOptions(ReasoningMetadata{Signature: "sig"})
+	result := provider.ToolResultPart("c1", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "ok"})
+	nullNative := provider.TextPart("")
+	nullNative.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "bedrock", Raw: json.RawMessage(`null`)})
+	typedNilNative := provider.TextPart("")
+	typedNilNative.ProviderOptions = provider.ProviderOptions{"amazonBedrock": (*TextPartOptions)(nil)}
+	for _, tc := range []struct {
+		name   string
+		prompt []provider.Message
+		want   string
+	}{
+		{
+			name:   "prefill",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), foreign)},
+			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+		{
+			name:   "null native namespace does not preserve empty text",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), nullNative)},
+			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+		{
+			name:   "typed nil native namespace does not preserve empty text",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), typedNilNative)},
+			want:   `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+		{
+			name:   "text without options keeps its existing position",
+			prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("  Answer  "), provider.TextPart(""))},
+			want:   `[{"role":"assistant","content":[{"text":"  Answer  "}]}]`,
+		},
+		{
+			name:   "signed reasoning does not preserve foreign text",
+			prompt: []provider.Message{provider.NewAssistantMessage(reasoning, provider.TextPart("A"), foreign, provider.TextPart("B"))},
+			want:   `[{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":" signed \n","signature":"sig"}}},{"text":"A"},{"text":"B"}]}]`,
+		},
+		{
+			name:   "tool result retains its source cache point",
+			prompt: []provider.Message{cachedMessage(provider.RoleAssistant, result, foreign)},
+			want:   `[{"role":"user","content":[{"toolResult":{"toolUseId":"c1","content":[{"text":"ok"}]}},{"cachePoint":{"type":"default","ttl":"5m"}}]}]`,
+		},
+		{
+			name: "empty source cannot borrow content from previous source",
+			prompt: []provider.Message{
+				provider.NewAssistantMessage(provider.TextPart("Answer")),
+				cachedMessage(provider.RoleAssistant, foreign),
+			},
+			want: `[{"role":"assistant","content":[{"text":"Answer"}]}]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, err := json.Marshal(tc.prompt)
+			require.NoError(t, err)
+			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt: tc.prompt,
+				Tools:  []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{}`)}},
+			})
+			assert.Empty(t, warnings)
+			got, err := json.Marshal(req.Messages)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(got))
+			after, err := json.Marshal(tc.prompt)
+			require.NoError(t, err)
+			assert.Equal(t, string(before), string(after))
+		})
+	}
+}
+
+func TestBuildRequest_PreservesNativeEmptyTextWithSignedReasoning(t *testing.T) {
+	for _, namespace := range []string{"amazonBedrock", "bedrock"} {
+		t.Run(namespace, func(t *testing.T) {
+			partOptions := provider.BuildProviderOptions(provider.RawProviderOption{Key: namespace, Raw: json.RawMessage(`{"signature":"sig"}`)})
+			reasoning := provider.ReasoningPart(" signed \n")
+			reasoning.ProviderOptions = partOptions
+			empty := provider.TextPart("")
+			empty.ProviderOptions = provider.ProviderOptions{namespace: partOptions[namespace]}
+			if namespace == "bedrock" {
+				empty.ProviderOptions["amazonBedrock"] = (*TextPartOptions)(nil)
+			}
+			req, warnings, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
+				Prompt: []provider.Message{provider.NewAssistantMessage(reasoning, empty, provider.TextPart("Answer"))},
+			})
+			assert.Empty(t, warnings)
+			got, err := json.Marshal(req.Messages)
+			require.NoError(t, err)
+			assert.JSONEq(t, `[{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":" signed \n","signature":"sig"}}},{},{"text":"Answer"}]}]`, string(got))
+		})
+	}
+}
+
+func TestBuildRequest_ValidatesCachePointOnRetainedEmptyAssistantText(t *testing.T) {
+	empty := provider.TextPart("")
+	empty.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "amazonBedrock", Raw: json.RawMessage(`{"cachePoint":false}`)})
+	reasoning := provider.ReasoningPart("signed")
+	reasoning.ProviderOptions = provider.BuildProviderOptions(ReasoningMetadata{Signature: "sig"})
+	_, _, _, err := buildRequest(testAnthropicModel, provider.CallOptions{
+		Prompt: []provider.Message{provider.NewAssistantMessage(reasoning, empty)},
+	})
+	require.ErrorContains(t, err, `invalid provider options for "amazonBedrock"`)
 }
 
 func TestBuildRequest_AssistantWhitespaceMatchesECMAScript(t *testing.T) {

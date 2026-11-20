@@ -135,11 +135,13 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 		case responses.ResponseFunctionWebSearch:
 			toolName := br.webSearchCustomToolName()
 			content = append(content, providerExecutedCall(v.ID, toolName, "{}")...)
+			result, isError := webSearchResult(v)
 			content = append(content, provider.GenerateContentPart{
 				Type:       provider.ContentToolResult,
 				ToolCallID: v.ID,
 				ToolName:   toolName,
-				Result:     webSearchOutput(v.Action),
+				Result:     result,
+				IsError:    isError,
 			})
 			content = append(content, webSearchSources(v.Action, generateID)...)
 
@@ -793,6 +795,14 @@ func fileSearchOutput(queries []string, results []responses.ResponseFileSearchTo
 	}
 	b, _ := json.Marshal(map[string]any{"queries": queries, "results": normalizedResults})
 	return b
+}
+
+func webSearchResult(call responses.ResponseFunctionWebSearch) (result json.RawMessage, isError bool) {
+	if call.Status != responses.ResponseFunctionWebSearchStatusCompleted {
+		result, _ = json.Marshal(map[string]responses.ResponseFunctionWebSearchStatus{"status": call.Status})
+		return result, true
+	}
+	return webSearchOutput(call.Action), false
 }
 
 func webSearchOutput(action responses.ResponseFunctionWebSearchActionUnion) json.RawMessage {

@@ -49,8 +49,8 @@ var descriptionConstraintKeys = []string{
 // node. Removed numeric, string, array, and object cardinality constraints,
 // the `not` keyword, and unsupported `format` values are reflected as
 // human-readable text appended to each node's `description`. `oneOf` is
-// rewritten as `anyOf`, `$ref` nodes short-circuit (siblings dropped), and
-// object nodes always emit `additionalProperties: false`.
+// rewritten as `anyOf`, `$ref` nodes retain only the reference and sanitized
+// `definitions` and `$defs`, and object nodes emit `additionalProperties: false`.
 //
 // The full original schema remains available for orchestration-layer result
 // validation; this only relaxes the payload sent to Anthropic. The input map
@@ -65,6 +65,11 @@ func sanitizeSchemaNode(schema map[string]any) map[string]any {
 	}
 	result := make(map[string]any)
 
+	for _, key := range []string{"definitions", "$defs"} {
+		if v := schema[key]; v != nil {
+			result[key] = sanitizeDefinitionMap(v)
+		}
+	}
 	if ref, ok := schema["$ref"]; ok && ref != nil {
 		result["$ref"] = ref
 		return result
@@ -102,13 +107,6 @@ func sanitizeSchemaNode(schema map[string]any) map[string]any {
 	}
 	if v, ok := schema["allOf"]; ok && v != nil {
 		result["allOf"] = sanitizeDefinitionList(v)
-	}
-
-	if v, ok := schema["definitions"]; ok && v != nil {
-		result["definitions"] = sanitizeDefinitionMap(v)
-	}
-	if v, ok := schema["$defs"]; ok && v != nil {
-		result["$defs"] = sanitizeDefinitionMap(v)
 	}
 
 	typeIsObject := false

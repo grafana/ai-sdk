@@ -111,6 +111,62 @@ func TestModel_TransportContext(t *testing.T) {
 	}
 }
 
+func TestModel_FiltersEmptyAssistantText(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
+			var captured struct {
+				Messages json.RawMessage `json:"messages"`
+			}
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+					return nil, err
+				}
+				return transportResponse(r, streaming), nil
+			})}
+			m := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+			empty := provider.TextPart("")
+			empty.ProviderOptions = provider.BuildProviderOptions(provider.RawProviderOption{Key: "google", Raw: json.RawMessage(`{"thoughtSignature":"opaque"}`)})
+			prefill := provider.NewAssistantMessage(provider.TextPart("  Answer  "), empty)
+			cacheOpts := provider.BuildProviderOptions(CacheControl("ephemeral"))
+			prefill.ProviderOptions = cacheOpts
+			cachedText := func(s string) provider.ContentPart {
+				part := provider.TextPart(s)
+				part.ProviderOptions = cacheOpts
+				return part
+			}
+			opts := provider.CallOptions{MaxOutputTokens: new(64), Prompt: []provider.Message{
+				provider.UserText("question"),
+				provider.NewAssistantMessage(cachedText("First"), cachedText(""), cachedText("Second"), provider.TextPart(""), cachedText("Earlier  ")),
+				prefill,
+			}}
+			if streaming {
+				result, err := m.DoStream(t.Context(), opts)
+				require.NoError(t, err)
+				for part := range result.Stream {
+					assert.NotEqual(t, provider.PartError, part.Type, "%+v", part)
+					if part.Type == provider.PartStreamStart {
+						assert.Empty(t, part.Warnings)
+					}
+				}
+			} else {
+				result, err := m.DoGenerate(t.Context(), opts)
+				require.NoError(t, err)
+				assert.Empty(t, result.Warnings)
+			}
+			assert.JSONEq(t, `[
+				{"role":"user","content":[{"type":"text","text":"question"}]},
+				{"role":"assistant","content":[
+					{"type":"text","text":"First","cache_control":{"type":"ephemeral"}},
+					{"type":"text","text":"Second","cache_control":{"type":"ephemeral"}},
+					{"type":"text","text":"Earlier  ","cache_control":{"type":"ephemeral"}},
+					{"type":"text","text":"Answer","cache_control":{"type":"ephemeral"}}
+				]}
+			]`, string(captured.Messages))
+			assert.Equal(t, empty, prefill.Content[1])
+		})
+	}
+}
+
 func TestModel_EmptyBetaTokens(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, feature := range []bool{false, true} {

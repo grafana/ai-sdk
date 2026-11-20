@@ -47,6 +47,7 @@ func isMistralModel(modelID string) bool {
 }
 
 var legacyClaudeModelPattern = regexp.MustCompile(`claude-(instant($|-)|v?2($|[-.:])|3($|[-.]))`)
+var claudeRejectsThinkingFieldPattern = regexp.MustCompile(`claude-(?:instant|v?2|3-(?:5-)?(?:haiku|sonnet|opus))(?:[-.:]|$)`)
 var olderClaude4ModelPattern = regexp.MustCompile(`claude-(sonnet|opus)-4(-|@)`)
 
 func supportsStructuredOutputCapability(modelID string) bool {
@@ -171,27 +172,45 @@ func rejectsForcedToolUse(modelID string) bool {
 	return strings.Contains(modelID, "claude-sonnet-5-5")
 }
 
-// supportsBetweenToolsThinking reports Anthropic models that accept thinking
-// type "between_tools", their lowest thinking setting. These models reject
-// thinking type "disabled".
-func supportsBetweenToolsThinking(modelID string) bool {
-	return strings.Contains(modelID, "claude-sonnet-5-5")
-}
+var claude5ReasoningModelPattern = regexp.MustCompile(`(?:^|[./])(claude-(?:fable-5(?:-[12])?|opus-5(?:-5)?))(?:-\d{8})?(?:-v\d+)?(?::\d+)?$`)
 
 type anthropicReasoningCapabilities struct {
-	maxOutputTokens          int
-	supportsAdaptiveThinking bool
+	maxOutputTokens                        int
+	supportsAdaptiveThinking               bool
+	disabledThinkingFallback               string
+	supportsXHighEffort                    bool
+	rejectsThinkingDisabledAboveHighEffort bool
+	preserveLegacyReasoning                bool
 }
 
 func getAnthropicReasoningCapabilities(modelID string) anthropicReasoningCapabilities {
+	if model := claude5ReasoningModelPattern.FindStringSubmatch(modelID); model != nil {
+		switch model[1] {
+		case "claude-fable-5":
+			return anthropicReasoningCapabilities{
+				maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true, disabledThinkingFallback: "adaptive",
+			}
+		case "claude-opus-5":
+			return anthropicReasoningCapabilities{
+				maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true,
+			}
+		default:
+			return anthropicReasoningCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, preserveLegacyReasoning: true}
+		}
+	}
 	switch {
-	case strings.Contains(modelID, "claude-opus-5"),
-		strings.Contains(modelID, "claude-opus-4-8"),
-		strings.Contains(modelID, "claude-opus-4-7"),
-		strings.Contains(modelID, "claude-fable-5"),
-		strings.Contains(modelID, "claude-sonnet-5"),
-		strings.Contains(modelID, "claude-sonnet-4-6"),
-		strings.Contains(modelID, "claude-opus-4-6"):
+	case strings.Contains(modelID, "claude-sonnet-5-5"):
+		return anthropicReasoningCapabilities{
+			maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true,
+			disabledThinkingFallback: reasoningTypeBetweenTools,
+		}
+	case strings.Contains(modelID, "claude-haiku-5-5"):
+		return anthropicReasoningCapabilities{
+			maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true,
+		}
+	case strings.Contains(modelID, "claude-opus-4-8"), strings.Contains(modelID, "claude-opus-4-7"), strings.Contains(modelID, "claude-sonnet-5"):
+		return anthropicReasoningCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true}
+	case strings.Contains(modelID, "claude-sonnet-4-6"), strings.Contains(modelID, "claude-opus-4-6"):
 		return anthropicReasoningCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true}
 	case strings.Contains(modelID, "claude-sonnet-4-5"),
 		strings.Contains(modelID, "claude-opus-4-5"),
@@ -206,7 +225,9 @@ func getAnthropicReasoningCapabilities(modelID string) anthropicReasoningCapabil
 	case legacyClaudeModelPattern.MatchString(modelID):
 		return anthropicReasoningCapabilities{maxOutputTokens: 4096}
 	case strings.Contains(modelID, "claude-"):
-		return anthropicReasoningCapabilities{maxOutputTokens: 128000, supportsAdaptiveThinking: true}
+		return anthropicReasoningCapabilities{
+			maxOutputTokens: 128000, supportsAdaptiveThinking: true, supportsXHighEffort: true, rejectsThinkingDisabledAboveHighEffort: true,
+		}
 	default:
 		return anthropicReasoningCapabilities{maxOutputTokens: 4096}
 	}

@@ -6,31 +6,50 @@ Define Anthropic structured-output request conversion, transport capability gati
 
 ### Requirement: Native JSON schema mode
 
-When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and both the model and provider transport support native structured output, `buildParams` SHALL set `OutputConfig.Format` to a `BetaJSONOutputFormatParam` with the sanitized schema from `ResponseFormat.Schema`. No tool injection or tool choice modification SHALL occur.
+For a JSON response schema in `auto` (the default), `buildParams` SHALL select native mode if and only if the model and transport support it and the original schema is representable. Explicit `outputFormat` SHALL bypass the representability check. When native mode is selected, `buildParams` SHALL set `OutputConfig.Format` to a `BetaJSONOutputFormatParam` with the sanitized schema and SHALL NOT inject a JSON response tool or override tool choice for structured output.
 
 #### Scenario: Native mode on a supported direct Anthropic model
 
-- **WHEN** the direct Anthropic provider calls `buildParams` with `ResponseFormat` having `Type: "json"` and a valid JSON schema, and the model ID is `claude-sonnet-4-5`
+- **WHEN** the direct Anthropic provider receives a representable JSON response schema in `auto` mode on `claude-sonnet-4-5`
 - **THEN** the returned `BetaMessageNewParams.OutputConfig.Format` SHALL be set to a `BetaJSONOutputFormatParam` with the sanitized schema
 - **AND** no synthetic tool SHALL be appended to the tools list
 - **AND** `ToolChoice` SHALL remain unchanged from the caller's setting
 
 #### Scenario: Native mode preserves existing OutputConfig.Effort
 
-- **WHEN** `buildParams` is called with both `ResponseFormat` (json + schema) and provider options that set `effort`
+- **WHEN** `buildParams` selects native mode and provider options set `effort`
 - **THEN** `OutputConfig` SHALL include both `Effort` and `Format` fields
 
 #### Scenario: Native Vertex output without forced tool choice
 
-- **WHEN** the Vertex provider receives a JSON-schema response format on a native-capable model, including `claude-sonnet-5-5`, for generation or streaming
+- **WHEN** the Vertex provider receives a representable JSON response schema in `auto` mode on a native-capable model, including `claude-sonnet-5-5`, for generation or streaming
 - **THEN** `OutputConfig.Format` SHALL contain the sanitized JSON schema
 - **AND** no synthetic tool or forced tool choice SHALL be introduced
 - **AND** existing user tools SHALL be preserved
 - **AND** the automatic `structured-outputs-2025-11-13` beta SHALL NOT be added
 
+#### Scenario: Explicit outputFormat bypasses the automatic schema check
+
+- **WHEN** direct Anthropic or Vertex receives an open object schema with `structuredOutputMode: outputFormat`
+- **THEN** the request SHALL use the sanitized schema in `OutputConfig.Format` and SHALL NOT add a `json` tool
+
+### Requirement: Native output schema representability
+
+The representability check SHALL classify the original schema as unrepresentable if it has any of:
+
+- a circular local `$ref` reachable from the root;
+- an open object (`additionalProperties` true or a schema, non-empty `patternProperties`, or object type with neither `properties` nor `additionalProperties: false`);
+- more than ten optional properties across subschemas, counting each use of a referenced definition.
+
+#### Scenario: Automatic fallback for an unrepresentable schema
+
+- **WHEN** direct Anthropic or Vertex receives an unrepresentable schema in `auto` mode on a native-capable model, for generation or streaming
+- **THEN** `buildParams` SHALL select JSON-tool fallback and leave `OutputConfig.Format` unset
+- **AND** input from a `json` tool call SHALL be returned as text, not exposed as a tool call
+
 ### Requirement: Tool-based JSON fallback
 
-When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and either the model or provider transport does not support native structured output, `buildParams` SHALL synthesize a tool named `"json"` with `description: "Respond with a JSON object."` and the `ResponseFormat.Schema` as `inputSchema`. The tool SHALL be appended to the existing tools list (after any user-defined tools).
+When JSON-tool fallback is selected for a JSON response with a schema, `buildParams` SHALL synthesize a tool named `"json"` with `description: "Respond with a JSON object."` and the original `ResponseFormat.Schema` as `inputSchema`. The tool SHALL be appended after any retained user tools.
 
 #### Scenario: Tool injection on an older model
 
@@ -45,23 +64,28 @@ When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and
 
 ### Requirement: Tool choice override in fallback mode
 
-JSON-tool fallback SHALL override caller choice to required (OfAny) with `DisableParallelToolUse:true`. Models rejecting forced tools SHALL instead use auto (OfAuto), parallel-disabled, with one unsupported `toolChoice` warning for required, as in `@ai-sdk/anthropic` 4.0.67. Caller none SHALL send only json; other caller choices SHALL neither filter tools nor add warnings.
+JSON-tool fallback SHALL use `any` with parallel tool use disabled. If the model rejects forced tool use or the resolved thinking type is `enabled`, the request SHALL instead use `auto` with parallel tool use disabled and one unsupported `toolChoice` warning for required choice. Adaptive thinking alone SHALL NOT cause a downgrade. Caller `none` SHALL send only `json`; other caller choices SHALL NOT filter tools or add warnings.
 
 #### Scenario: Tool choice forced to required
 
-- **WHEN** the tool-based fallback is active and the caller set `ToolChoice` to `auto`
+- **WHEN** the tool-based fallback is active on a model that accepts forced tool use, the resolved thinking type is not `enabled`, and the caller set `ToolChoice` to `auto`
 - **THEN** `ToolChoice` SHALL be overridden to `OfAny` with `DisableParallelToolUse: true`
 
 #### Scenario: Tool choice override when caller set none
 
 - **WHEN** the tool-based fallback is active and the caller set `ToolChoice` to `none` with caller tools
-- **THEN** `ToolChoice` SHALL be overridden to `OfAny` with `DisableParallelToolUse: true`
-- **AND** the tools list SHALL contain only the `json` tool
+- **THEN** the tools list SHALL contain only the `json` tool
+- **AND** `ToolChoice` SHALL be `OfAuto` if the model rejects forced tool use or the resolved thinking type is `enabled`; otherwise it SHALL be `OfAny`. Parallel tool use SHALL be disabled in both cases.
 
 #### Scenario: Tool choice auto on a model that rejects forced tool use
-- **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` on a provider transport without native structured output
+- **WHEN** the tool-based fallback is active for `claude-sonnet-5-5`
 - **THEN** `ToolChoice` SHALL be `OfAuto` with `DisableParallelToolUse: true`
 - **AND** one unsupported warning with feature `toolChoice` SHALL be emitted
+
+#### Scenario: Budget-based thinking with the JSON response tool
+- **WHEN** direct Anthropic or Vertex selects JSON-tool fallback with resolved `thinking.type: enabled`
+- **THEN** the request SHALL include the `json` tool and `tool_choice: {type: "auto", disable_parallel_tool_use: true}`
+- **AND** one unsupported `toolChoice` warning for required choice SHALL be emitted
 
 #### Scenario: Caller forced choice with the fallback on Sonnet 5.5
 - **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` and the caller set `ToolChoice` to `tool` for one of several tools
@@ -74,7 +98,7 @@ Direct Anthropic SHALL enable native structured output and strict function tools
 
 #### Scenario: Direct function tools preserve strict and add the beta
 
-- **WHEN** the direct Anthropic provider uses a native-capable model with function tools whose `Strict` values are absent, `false`, and `true`
+- **WHEN** the direct Anthropic provider uses a native-capable model with function tools whose `Strict` values are absent, `false`, and `true`, without JSON-tool fallback
 - **THEN** absent strict SHALL remain omitted and explicit `false` and `true` SHALL be sent unchanged
 - **AND** the automatic `structured-outputs-2025-11-13` beta SHALL be added for every case
 
@@ -93,7 +117,7 @@ Direct Anthropic SHALL enable native structured output and strict function tools
 
 #### Scenario: Direct native JSON with a function tool adds the beta
 
-- **WHEN** the direct Anthropic provider uses a native-capable model with JSON schema response format and a function tool
+- **WHEN** the direct Anthropic provider selects native output for a JSON response schema on a native-capable model with a function tool
 - **THEN** native `OutputConfig.Format` SHALL be used
 - **AND** the automatic `structured-outputs-2025-11-13` beta SHALL be added
 
@@ -127,17 +151,32 @@ When the json response tool was injected (tool-based fallback), the `streamAdapt
 
 ### Requirement: Finish reason remapping for JSON response tool
 
-When the json response tool was injected and the model's stop reason is `tool_use`, the stream adapter SHALL remap the finish reason to `stop` so the orchestration layer treats it as a completed text response.
+When the model calls the synthetic `json` tool and stops with `tool_use`, unary and streaming conversion SHALL remap the unified finish reason to `stop` and retain `tool_use` as the raw reason. A call to another tool without a `json` call SHALL NOT cause this remapping.
 
 #### Scenario: Stop reason remapped from tool_use to stop
 
-- **WHEN** the json response tool is active and the model finishes with `stop_reason: tool_use`
-- **THEN** the stream adapter SHALL emit `PartFinish` with `FinishReason: "stop"`
+- **WHEN** the model calls the synthetic `json` tool and finishes with `stop_reason: tool_use`
+- **THEN** generate and stream SHALL report a unified finish reason of `stop`
 
 #### Scenario: Stop reason preserved when not tool_use
 
 - **WHEN** the json response tool is active and the model finishes with `stop_reason: end_turn`
 - **THEN** the stream adapter SHALL emit `PartFinish` with the original finish reason
+
+### Requirement: Final text without a JSON response tool call
+
+When the synthetic `json` tool is present but never called, direct Anthropic and Vertex SHALL return plain text blocks after the last tool call or result, except when the raw stop reason is `tool_use` or `pause_turn`. Thinking blocks SHALL NOT discard pending text. Calling the synthetic tool SHALL suppress all plain text; its input remains the text answer. Eligible plain text SHALL retain its citations and their provider metadata.
+
+#### Scenario: Text answer follows a tool result
+- **WHEN** the model emits a text preamble, a tool call or result, and final cited text, then stops with `end_turn` without calling `json`
+- **THEN** generate SHALL return only the final text as text content, with its citations
+- **AND** stream SHALL emit that text at `message_stop` as start, delta, and end parts, with citations on the end part
+- **AND** non-text content and retrieval sources SHALL continue through their own conversion paths
+
+#### Scenario: Text does not carry into a continuation
+- **WHEN** a message in a stream stops with `tool_use` or `pause_turn`
+- **THEN** the stream SHALL discard that message's pending text and SHALL NOT emit it in a later message
+- **AND** unary conversion SHALL omit pending text for either stop reason
 
 ### Requirement: JSON response tool state passing
 
@@ -180,8 +219,8 @@ Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Sch
 
 #### Scenario: Numeric constraints stripped and summarized
 
-- **WHEN** `applyResponseFormat` runs on a native-capable model with a schema
-  whose `properties.recurringIntervalMinutes` is `{type: "number", minimum: 1,
+- **WHEN** `applyResponseFormat` selects native output for a schema whose
+  `properties.recurringIntervalMinutes` is `{type: "number", minimum: 1,
   maximum: 60, exclusiveMinimum: 0, exclusiveMaximum: 120}`
 - **THEN** the schema written to `OutputConfig.Format` SHALL omit `minimum`,
   `maximum`, `exclusiveMinimum`, `exclusiveMaximum` on
@@ -206,16 +245,17 @@ Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Sch
 - **THEN** the sanitized schema SHALL contain `anyOf` (not `oneOf`) with each
   branch sanitized
 
-#### Scenario: $ref short-circuits
+#### Scenario: $ref preserves its definitions
 
-- **WHEN** a node is `{$ref: "#/$defs/Foo", minLength: 1}`
-- **THEN** the sanitized node SHALL be `{$ref: "#/$defs/Foo"}` with all
-  sibling keywords dropped
+- **WHEN** a node has a `$ref` alongside `definitions` or `$defs`
+- **THEN** the sanitized node SHALL keep the reference and recursively
+  sanitize each sibling definition map
+- **AND** it SHALL drop all other sibling keywords
 
 #### Scenario: Object nodes get additionalProperties: false
 
-- **WHEN** the sanitizer visits a node whose `type` is `"object"` or that has
-  a non-nil `properties`
+- **WHEN** the sanitizer visits a node without a `$ref` whose `type` is
+  `"object"` or that has a non-nil `properties`
 - **THEN** the sanitized node SHALL set `additionalProperties` to `false`,
   including when the input did not specify it
 
@@ -231,8 +271,7 @@ Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Sch
 
 #### Scenario: Tool-fallback path is not sanitized
 
-- **WHEN** `applyResponseFormat` falls back to injecting the `"json"` tool
-  because the model does not support native structured output
+- **WHEN** `applyResponseFormat` selects JSON-tool fallback
 - **THEN** the schema set on the synthetic tool's `InputSchema` SHALL be the
   unsanitized schema (matching upstream's behavior)
 
@@ -249,16 +288,20 @@ Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Sch
   result validation) SHALL be byte-identical to what it was before the call
 
 ### Requirement: JSON tool mode on models that reject forced tool use
-When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use while the model and provider transport both support native structured output, `buildParams` SHALL use native JSON schema mode instead, as `@ai-sdk/anthropic` 4.0.67 does. It SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.structuredOutputMode` and details `structuredOutputMode 'jsonTool' is not supported by <modelID> because it rejects forced tool use. Using 'outputFormat' instead.`
+When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use, `buildParams` SHALL switch to native JSON schema mode only if the model and transport support native output and it can represent the original schema. When switching modes, it SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.structuredOutputMode`.
 
-#### Scenario: jsonTool mode on direct Sonnet 5.5
-- **WHEN** the direct Anthropic provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
+#### Scenario: jsonTool mode with a representable schema
+
+- **WHEN** direct Anthropic or Vertex calls `claude-sonnet-5-5` with `structuredOutputMode: jsonTool` and a schema that passes the native representability check, such as a small, non-recursive closed object schema
 - **THEN** `OutputConfig.Format` SHALL contain the sanitized schema and no `json` tool SHALL be added
-- **AND** the warning SHALL name `claude-sonnet-5-5`
+- **AND** the mode-switch warning SHALL say `structuredOutputMode 'jsonTool' is not supported by claude-sonnet-5-5 because it rejects forced tool use. Using 'outputFormat' instead.`
 
-#### Scenario: jsonTool mode on Vertex Sonnet 5.5
-- **WHEN** the Vertex provider calls `claude-sonnet-5-5` with a JSON schema response and `structuredOutputMode: jsonTool`
-- **THEN** `OutputConfig.Format` SHALL contain the sanitized schema, no `json` tool SHALL be added, and the same warning SHALL be emitted
+#### Scenario: jsonTool mode with an unrepresentable schema
+
+- **WHEN** direct Anthropic or Vertex calls `claude-sonnet-5-5` with `structuredOutputMode: jsonTool` and an unrepresentable schema
+- **THEN** `OutputConfig.Format` SHALL be absent and the `json` tool SHALL use the original schema
+- **AND** the tool choice SHALL be `auto` with parallel tool use disabled
+- **AND** the unsupported `toolChoice` warning SHALL be emitted without a mode-switch warning
 
 #### Scenario: jsonTool mode without native transport support
 - **WHEN** a provider transport without native structured output calls `claude-sonnet-5-5` with a JSON schema response
@@ -302,7 +345,7 @@ False boolean constraint values SHALL NOT be reported. Names SHALL be space-sepa
 
 ### Requirement: Anthropic recursive schema transformation
 
-The sanitizer SHALL recurse into anyOf/oneOf/allOf, items, properties, definitions and $defs; oneOf SHALL become anyOf. A $ref node SHALL short-circuit to only {"$ref":<value>}, dropping siblings. Object nodes (type object or non-nil properties) SHALL receive additionalProperties:false regardless of input.
+The sanitizer SHALL recurse into `anyOf`/`oneOf`/`allOf`, `items`, `properties`, `definitions`, and `$defs`; `oneOf` SHALL become `anyOf`. A `$ref` node SHALL retain the reference and any recursively sanitized `definitions` and `$defs`, dropping other siblings. Object nodes without a `$ref` (type object or non-nil properties) SHALL receive `additionalProperties: false` regardless of input.
 
 #### Scenario: Anthropic recursive schema transformation
 

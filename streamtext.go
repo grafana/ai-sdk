@@ -195,15 +195,13 @@ func (r *StreamTextResult) Stream() <-chan TextStreamPart {
 func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-chan UIMessageChunk {
 	cfg := buildUIMessageStreamConfig(opts)
 	cfg.toolTypes = r.toolTypes
+	cfg = cfg.withCallbackHistorySnapshot()
 	out := make(chan UIMessageChunk, defaultStreamBuffer)
 	go func() {
 		defer close(out)
 
 		messageID := responseUIMessageID(cfg)
-
-		var assembledChunks []UIMessageChunk
-		var finishReason provider.FinishReason
-		var isAborted bool
+		assembly := cfg.newCallbackAssembly(messageID)
 		invalidToolCallIDs := make(map[string]struct{})
 		for part := range r.consumeStream() {
 			metadata := messageMetadataForPart(part, cfg)
@@ -212,7 +210,13 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 				chunks = translateToChunksWithMetadata(part, cfg, metadata)
 			}
 			if metadata != nil && !isStreamMessageMetadataCarrier(part) {
-				chunks = append(chunks, UIMessageChunk{Type: ChunkMessageMetadata, MessageMetadata: metadata})
+				metadataChunk := UIMessageChunk{Type: ChunkMessageMetadata, MessageMetadata: metadata}
+				switch part.(type) {
+				case StreamFinishStep:
+					chunks = append([]UIMessageChunk{metadataChunk}, chunks...)
+				default:
+					chunks = append(chunks, metadataChunk)
+				}
 			}
 			for _, chunk := range chunks {
 				if chunk.Type == ChunkStart && messageID != "" && chunk.MessageID == "" {
@@ -221,19 +225,11 @@ func (r *StreamTextResult) ToUIMessageStream(opts ...UIMessageStreamOption) <-ch
 				if !shouldSendChunk(chunk, cfg) {
 					continue
 				}
-				if chunk.Type == ChunkFinish && chunk.FinishReason != "" {
-					finishReason = provider.FinishReason{Unified: provider.UnifiedFinishReason(chunk.FinishReason)}
-				}
-				if chunk.Type == ChunkAbort {
-					isAborted = true
-				}
-				assembledChunks = append(assembledChunks, chunk)
+				assembly.beforeForward(chunk, cfg)
 				out <- chunk
 			}
 		}
-		if cfg.onFinish != nil {
-			cfg.onFinish(buildUIMessageStreamFinishState(messageID, assembledChunks, cfg, finishReason, isAborted))
-		}
+		assembly.finish(cfg)
 	}()
 	return out
 }
@@ -264,39 +260,6 @@ func lastOriginalAssistantMessage(cfg uiMessageStreamConfig) *UIMessage {
 		return nil
 	}
 	return &last
-}
-
-func assembleResponseMessageForFinish(messageID string, chunks []UIMessageChunk, cfg uiMessageStreamConfig) (UIMessage, error) {
-	if last := lastOriginalAssistantMessage(cfg); last != nil {
-		return assembleResponseMessageWithInitial(messageID, chunks, last)
-	}
-	return assembleResponseMessage(messageID, chunks)
-}
-
-// buildUIMessageStreamFinishState assembles the OnFinish state for a UI message
-// stream, replacing the last original message when the response continues it.
-func buildUIMessageStreamFinishState(messageID string, chunks []UIMessageChunk, cfg uiMessageStreamConfig, finishReason provider.FinishReason, isAborted bool) UIMessageStreamOnFinishState {
-	respMsg, assembleErr := assembleResponseMessageForFinish(messageID, chunks, cfg)
-	isContinuation := false
-	if last := lastOriginalAssistantMessage(cfg); last != nil {
-		isContinuation = respMsg.ID == last.ID
-	}
-	messages := append([]UIMessage{}, cfg.originalMessages...)
-	// A continuation implies a last original assistant message, so messages is
-	// never empty here.
-	if isContinuation {
-		messages = append(messages[:len(messages)-1], respMsg)
-	} else {
-		messages = append(messages, respMsg)
-	}
-	return UIMessageStreamOnFinishState{
-		Messages:        messages,
-		IsContinuation:  isContinuation,
-		IsAborted:       isAborted,
-		ResponseMessage: respMsg,
-		FinishReason:    finishReason,
-		AssemblyError:   assembleErr,
-	}
 }
 
 func messageMetadataForPart(part TextStreamPart, cfg uiMessageStreamConfig) json.RawMessage {
@@ -1001,19 +964,6 @@ loop:
 			if ctx.Err() != nil {
 				break loop
 			}
-			if isSemanticOutputStreamPart(part) {
-				if firstChunkTimer != nil {
-					firstChunkTimer.Stop()
-					firstChunkTimer = nil
-				}
-				if chunkTimeout > 0 {
-					if chunkTimer == nil {
-						chunkTimer = time.AfterFunc(chunkTimeout, opCancel)
-					} else {
-						chunkTimer.Reset(chunkTimeout)
-					}
-				}
-			}
 		case <-ctx.Done():
 			break loop
 		}
@@ -1031,6 +981,17 @@ loop:
 
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
+			if firstChunkTimer != nil {
+				firstChunkTimer.Stop()
+				firstChunkTimer = nil
+			}
+			if chunkTimeout > 0 {
+				if chunkTimer == nil {
+					chunkTimer = time.AfterFunc(chunkTimeout, opCancel)
+				} else {
+					chunkTimer.Reset(chunkTimeout)
+				}
+			}
 		}
 
 		switch part.Type {

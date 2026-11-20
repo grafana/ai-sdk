@@ -194,11 +194,22 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 }
 
 func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, []provider.Warning, error) {
-	if executionDeniedOutput(part.Output) || ctx.hasConversation {
+	if ctx.hasConversation {
 		return nil, nil, nil
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
+	if !ctx.store && (toolName == "web_search" || toolName == "web_search_preview") {
+		item, denied := webSearchHistoryItem(part, ctx.providerOptionsName)
+		if item == nil && !denied {
+			return nil, unsentAssistantToolResultWarning(part.ToolName), nil
+		}
+		return item, nil, nil
+	}
+	if executionDeniedOutput(part.Output) {
+		return nil, nil, nil
+	}
+
 	if toolName == "tool_search" {
 		itemID := ctx.partOptions(part).ItemID
 		if itemID == "" {
@@ -245,10 +256,14 @@ func convertAssistantToolResult(part provider.ContentPart, ctx inputConversionCo
 		return &item, nil, nil
 	}
 
-	return nil, []provider.Warning{{
+	return nil, unsentAssistantToolResultWarning(part.ToolName), nil
+}
+
+func unsentAssistantToolResultWarning(toolName string) []provider.Warning {
+	return []provider.Warning{{
 		Type:    provider.WarnOther,
-		Message: fmt.Sprintf("Results for OpenAI tool %s are not sent to the API when store is false", part.ToolName),
-	}}, nil
+		Message: fmt.Sprintf("Results for OpenAI tool %s are not sent to the API when store is false", toolName),
+	}}
 }
 
 func convertProviderToolResult(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, []provider.Warning, error) {

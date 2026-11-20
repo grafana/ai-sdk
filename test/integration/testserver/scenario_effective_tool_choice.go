@@ -50,30 +50,42 @@ func (effectiveToolChoiceModel) DoGenerate(context.Context, provider.CallOptions
 	return nil, nil
 }
 func (m effectiveToolChoiceModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-	stream := make(chan provider.StreamPart, 10)
+	var parts []provider.StreamPart
 	if m.callName == "" {
-		stream <- provider.StreamPart{Type: provider.PartReasoningStart, ID: "r1"}
-		stream <- provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r1", Delta: "thinking"}
-		stream <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r1"}
+		parts = append(parts,
+			provider.StreamPart{Type: provider.PartReasoningStart, ID: "r1"},
+			provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r1", Delta: "thinking"},
+			provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r1"},
+		)
 	}
 	if m.callName == "" || m.withToolLifecycle {
-		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "response"}
-		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+		parts = append(parts,
+			provider.StreamPart{Type: provider.PartTextStart, ID: "t1"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "response"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"},
+		)
 	}
 	if m.callName != "" {
 		if m.withToolLifecycle {
-			stream <- provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-1", ToolName: m.callName}
-			stream <- provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-1", Delta: `{}`}
-			stream <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call-1"}
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolInputStart, ID: "call-1", ToolName: m.callName},
+				provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call-1", Delta: `{}`},
+				provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call-1"},
+			)
 		}
-		stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: m.callName, Input: `{}`}
+		parts = append(parts, provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: m.callName, Input: `{}`})
 		if m.withToolLifecycle {
-			stream <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "hosted", ToolName: "remote", Input: `{}`, ProviderExecuted: true}
-			stream <- provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "hosted", ToolName: "remote", Result: json.RawMessage(`"hosted output"`)}
+			parts = append(parts,
+				provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "hosted", ToolName: "remote", Input: `{}`, ProviderExecuted: true},
+				provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "hosted", ToolName: "remote", Result: json.RawMessage(`"hosted output"`)},
+			)
 		}
 	}
-	stream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_calls"}}
+	parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls, Raw: "tool_calls"}})
+	stream := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		stream <- part
+	}
 	close(stream)
 	return &provider.StreamResult{Stream: stream}, nil
 }
