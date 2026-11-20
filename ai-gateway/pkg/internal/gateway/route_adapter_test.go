@@ -91,7 +91,7 @@ func newAdapterHarness(t *testing.T) *adapterHarness {
 }
 
 func (h *adapterHarness) serve(caller bodyTestCaller, model string, body io.Reader) *httptest.ResponseRecorder {
-	request := callerRequest(caller, testAdapterPath, body)
+	request := callerRequest(caller, http.MethodPost, testAdapterPath, body)
 	request.Header.Set(testadapter.HeaderModel, model)
 	response := httptest.NewRecorder()
 	h.handler.ServeHTTP(response, request)

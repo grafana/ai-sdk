@@ -110,7 +110,7 @@ func TestCatalogAvailableModels_ParentAndConfiguration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			info := testCatalogInfo(tc.parent)
 			info.DecryptedSecureValues = tc.keys
-			request := callerRequest(bodyBYOKCaller, "/modelcatalogs/"+testCatalogName+"/available-models?provider=claude", nil)
+			request := callerRequest(bodyBYOKCaller, http.MethodPost, "/modelcatalogs/"+testCatalogName+"/available-models?provider=claude", nil)
 			request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), info))
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
