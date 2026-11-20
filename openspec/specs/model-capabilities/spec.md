@@ -276,7 +276,7 @@ For `rejectsBudgetThinking` models, explicit budget-based thinking SHALL become 
 
 ### Requirement: Forced tool choice fallback
 
-For `rejectsForcedToolUse` models without a JSON response tool, required choice SHALL become auto; named choice SHALL become auto with only that tool, matched after name mapping to keep renamed provider tools. As in `@ai-sdk/anthropic` 4.0.67 `prepareTools`, each fallback SHALL warn unsupported `toolChoice`, telling callers to instruct the model in the prompt and verify the call.
+For direct Anthropic and Vertex without a JSON response tool, the provider SHALL downgrade forced choices if the model rejects them or the resolved thinking type is `enabled`. Required choice SHALL become `auto`; named choice SHALL become `auto` with only the named tool, matched after name mapping. Each downgrade SHALL emit one unsupported `toolChoice` warning advising callers to instruct the model in the prompt and verify the call.
 
 #### Scenario: Required tool choice on Sonnet 5.5
 - **WHEN** `claude-sonnet-5-5` is called with two function tools and tool choice `required`
@@ -287,6 +287,15 @@ For `rejectsForcedToolUse` models without a JSON response tool, required choice 
 - **WHEN** `claude-sonnet-5-5` is called with tools `weather` and `search` and tool choice `tool` named `search`
 - **THEN** the request SHALL contain `tool_choice: {type: "auto"}` and only the `search` tool
 - **AND** one unsupported `toolChoice` warning SHALL name `search`
+
+#### Scenario: Required or named choice with budget-based thinking
+- **WHEN** a model accepts forced choices but explicit thinking or portable reasoning resolves to `thinking.type: enabled`
+- **THEN** a required choice SHALL become `auto` with all tools, and a named choice SHALL become `auto` with only the selected tool
+- **AND** one unsupported `toolChoice` warning SHALL be emitted
+
+#### Scenario: Adaptive thinking does not downgrade a forced choice
+- **WHEN** a model accepts forced choices and the effective thinking type is `adaptive`, whether requested explicitly or normalized from budget-based thinking
+- **THEN** required and named choices SHALL stay forced and SHALL NOT emit a `toolChoice` warning
 
 #### Scenario: Forced caller choice with the JSON response tool
 - **WHEN** `claude-sonnet-5-5` is called through a transport without native structured output, with tools, a JSON schema response and tool choice `required` or `tool`

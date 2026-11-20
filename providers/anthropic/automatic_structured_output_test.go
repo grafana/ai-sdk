@@ -20,15 +20,17 @@ import (
 
 func TestModel_AutomaticStructuredOutput(t *testing.T) {
 	const openObject = `{"type":"object","additionalProperties":true}`
+	const closedObject = `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`
+	manualThinking := &ThinkingConfig{Type: ThinkingEnabled, BudgetTokens: 1024}
 	cases := []struct {
 		name, schema, output, toolChoice string
 		mode                             StructuredOutputMode
 		modelID                          string
+		thinking                         *ThinkingConfig
+		textFallback                     bool
 	}{
 		{
-			name:   "closed",
-			schema: `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`,
-			output: `{"answer":"42"}`,
+			name: "closed", schema: closedObject, output: `{"answer":"42"}`,
 		},
 		{
 			name: "open", schema: openObject, output: `{"answer":42}`, toolChoice: "any",
@@ -54,6 +56,21 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 		},
 		{
 			name: "explicit_output_format", schema: openObject, output: `{}`, mode: StructuredOutputFormat,
+		},
+		{
+			name: "manual_thinking_text_fallback", modelID: "claude-3-haiku", textFallback: true,
+			schema: closedObject, output: `{"answer":"42"}`, toolChoice: "auto", thinking: manualThinking,
+		},
+		{
+			name: "manual_thinking_keeps_native", schema: closedObject, output: `{"answer":"42"}`, thinking: manualThinking,
+		},
+		{
+			name: "manual_thinking_keeps_explicit_json_tool", schema: closedObject, output: `{"answer":"42"}`,
+			mode: StructuredOutputJSONTool, toolChoice: "auto", thinking: manualThinking,
+		},
+		{
+			name: "adaptive_thinking_keeps_any", modelID: "claude-sonnet-4-6", schema: openObject,
+			output: `{"answer":42}`, toolChoice: "any", thinking: &ThinkingConfig{Type: ThinkingAdaptive},
 		},
 	}
 
@@ -83,7 +100,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
 						return nil, err
 					}
-					return structuredOutputResponse(r, modelID, tc.output, tc.toolChoice != "", route.stream), nil
+					return structuredOutputResponse(r, modelID, tc.output, tc.toolChoice != "" && !tc.textFallback, route.stream), nil
 				})}
 				requestOptions := WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0))
 				var m provider.LanguageModel
@@ -99,7 +116,7 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					MaxOutputTokens: new(64),
 					Prompt:          []provider.Message{provider.UserText("Return JSON.")},
 					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(tc.schema)},
-					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: tc.mode}),
+					ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{StructuredOutputMode: tc.mode, Thinking: tc.thinking}),
 				}
 				var output string
 				var finish provider.UnifiedFinishReason
@@ -157,6 +174,12 @@ func TestModel_AutomaticStructuredOutput(t *testing.T) {
 					require.Len(t, warnings, 1)
 					assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
 					assert.Equal(t, "toolChoice", warnings[0].Feature)
+					assert.Contains(t, warnings[0].Details, "'required' is not supported with this model or thinking configuration")
+				} else {
+					assert.Empty(t, warnings)
+				}
+				if tc.thinking != nil && tc.thinking.Type == ThinkingEnabled {
+					assert.JSONEq(t, `{"type":"enabled","budget_tokens":1024}`, string(wire["thinking"]))
 				}
 				assert.Equal(t, provider.FinishReasonStop, finish)
 				assert.JSONEq(t, tc.output, output)

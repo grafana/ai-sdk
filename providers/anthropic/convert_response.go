@@ -14,6 +14,10 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	mcpToolCalls := make(map[string]mcpToolCallInfo)
 
 	var isJsonResponseFromTool bool
+	textStart := 0
+	if usesJsonResponseTool {
+		textStart = jsonResponseToolFallbackTextStart(msg)
+	}
 	hasWebSearchResults := false
 	for _, block := range msg.Content {
 		if block.Type == "web_search_tool_result" && len(block.AsWebSearchToolResult().Content.OfBetaWebSearchResultBlockArray) > 0 {
@@ -22,7 +26,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 		}
 	}
 
-	for _, block := range msg.Content {
+	for i, block := range msg.Content {
 		callerMetadata, err := marshalCallerMetadata(block.Caller.Type, block.Caller.ToolID)
 		if err != nil {
 			return nil, err
@@ -47,7 +51,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				Type: provider.ContentCustom, Kind: anthropicContainerUploadKind, ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata},
 			})
 		case "text":
-			if !usesJsonResponseTool {
+			if i >= textStart {
 				var rawCitations []json.RawMessage
 				for _, citation := range block.Citations {
 					rawCitations = append(rawCitations, json.RawMessage(citation.RawJSON()))
@@ -510,6 +514,30 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			},
 		},
 	}, nil
+}
+
+func jsonResponseToolFallbackTextStart(msg *anthropic.BetaMessage) int {
+	if isContinuationStopReason(string(msg.StopReason)) {
+		return len(msg.Content)
+	}
+	start := 0
+	for i, block := range msg.Content {
+		if block.Type == "tool_use" && block.Name == jsonResponseToolName {
+			return len(msg.Content)
+		}
+		if !isTextOrThinkingBlock(block.Type) {
+			start = i + 1
+		}
+	}
+	return start
+}
+
+func isTextOrThinkingBlock(blockType string) bool {
+	return blockType == "text" || blockType == "thinking" || blockType == "redacted_thinking"
+}
+
+func isContinuationStopReason(reason string) bool {
+	return reason == string(anthropic.BetaStopReasonToolUse) || reason == string(anthropic.BetaStopReasonPauseTurn)
 }
 
 func marshalCallerMetadata(callerType, callerToolID string) (provider.ProviderMetadata, error) {
