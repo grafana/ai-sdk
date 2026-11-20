@@ -6,11 +6,11 @@ Define Anthropic structured-output request conversion, transport capability gati
 
 ### Requirement: Native JSON schema mode
 
-When native structured output is selected for a JSON response with a schema, `buildParams` SHALL set `OutputConfig.Format` to a `BetaJSONOutputFormatParam` with the sanitized schema from `ResponseFormat.Schema`. Native mode SHALL NOT inject a JSON response tool or override tool choice for structured output.
+For a JSON response schema in `auto` (the default), `buildParams` SHALL select native mode if and only if the model and transport support it and the original schema is representable. Explicit `outputFormat` SHALL bypass the representability check. When native mode is selected, `buildParams` SHALL set `OutputConfig.Format` to a `BetaJSONOutputFormatParam` with the sanitized schema and SHALL NOT inject a JSON response tool or override tool choice for structured output.
 
 #### Scenario: Native mode on a supported direct Anthropic model
 
-- **WHEN** the direct Anthropic provider selects native mode for a valid JSON response schema on `claude-sonnet-4-5`
+- **WHEN** the direct Anthropic provider receives a representable JSON response schema in `auto` mode on `claude-sonnet-4-5`
 - **THEN** the returned `BetaMessageNewParams.OutputConfig.Format` SHALL be set to a `BetaJSONOutputFormatParam` with the sanitized schema
 - **AND** no synthetic tool SHALL be appended to the tools list
 - **AND** `ToolChoice` SHALL remain unchanged from the caller's setting
@@ -22,11 +22,30 @@ When native structured output is selected for a JSON response with a schema, `bu
 
 #### Scenario: Native Vertex output without forced tool choice
 
-- **WHEN** the Vertex provider selects native mode for a JSON response schema on a native-capable model, including `claude-sonnet-5-5`, for generation or streaming
+- **WHEN** the Vertex provider receives a representable JSON response schema in `auto` mode on a native-capable model, including `claude-sonnet-5-5`, for generation or streaming
 - **THEN** `OutputConfig.Format` SHALL contain the sanitized JSON schema
 - **AND** no synthetic tool or forced tool choice SHALL be introduced
 - **AND** existing user tools SHALL be preserved
 - **AND** the automatic `structured-outputs-2025-11-13` beta SHALL NOT be added
+
+#### Scenario: Explicit outputFormat bypasses the automatic schema check
+
+- **WHEN** direct Anthropic or Vertex receives an open object schema with `structuredOutputMode: outputFormat`
+- **THEN** the request SHALL use the sanitized schema in `OutputConfig.Format` and SHALL NOT add a `json` tool
+
+### Requirement: Native output schema representability
+
+The representability check SHALL classify the original schema as unrepresentable if it has any of:
+
+- a circular local `$ref` reachable from the root;
+- an open object (`additionalProperties` true or a schema, non-empty `patternProperties`, or object type with neither `properties` nor `additionalProperties: false`);
+- more than ten optional properties across subschemas, counting each use of a referenced definition.
+
+#### Scenario: Automatic fallback for an unrepresentable schema
+
+- **WHEN** direct Anthropic or Vertex receives an unrepresentable schema in `auto` mode on a native-capable model, for generation or streaming
+- **THEN** `buildParams` SHALL select JSON-tool fallback and leave `OutputConfig.Format` unset
+- **AND** input from a `json` tool call SHALL be returned as text, not exposed as a tool call
 
 ### Requirement: Tool-based JSON fallback
 
@@ -259,10 +278,7 @@ When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use,
 
 #### Scenario: jsonTool mode with an unrepresentable schema
 
-- **WHEN** direct Anthropic or Vertex calls `claude-sonnet-5-5` with `structuredOutputMode: jsonTool` and the schema has any of:
-  - a circular local `$ref` reachable from the root
-  - an open object (`additionalProperties` true or a schema, non-empty `patternProperties`, or object type with neither `properties` nor `additionalProperties: false`)
-  - more than ten optional properties across subschemas, counting each use of a referenced definition
+- **WHEN** direct Anthropic or Vertex calls `claude-sonnet-5-5` with `structuredOutputMode: jsonTool` and an unrepresentable schema
 - **THEN** `OutputConfig.Format` SHALL be absent and the `json` tool SHALL use the original schema
 - **AND** the tool choice SHALL be `auto` with parallel tool use disabled
 - **AND** the unsupported `toolChoice` warning SHALL be emitted without a mode-switch warning
