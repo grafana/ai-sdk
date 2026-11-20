@@ -84,6 +84,25 @@ func TestParseModelCatalog_StrictBoundedDocument(t *testing.T) {
 	}
 }
 
+func TestParseModelCatalog_SyntaxErrorNamesPosition(t *testing.T) {
+	const secret = "secret-catalog-value"
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{name: "unclosed flow sequence", yaml: minimalConfigYAML + "  - id: broken\n   name: [" + secret + "\n", want: "config: invalid YAML document at line 14, column 3"},
+		{name: "unknown anchor", yaml: "providers: *" + secret + "\n", want: "config: invalid YAML document at line 1, column 12"},
+		{name: "trailing document", yaml: minimalConfigYAML + "---\n[" + secret + "\n", want: "config: invalid trailing YAML document at line 16, column 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseModelCatalog(tc.yaml)
+			require.EqualError(t, err, tc.want)
+			assert.NotContains(t, err.Error(), secret)
+		})
+	}
+}
+
 func TestParseModelCatalog_RejectsLegacyAuthenticationBlocks(t *testing.T) {
 	for name, block := range map[string]string{
 		"jwt auth":        "auth:\n  type: jwt\n  jwt:\n    jwksURL: https://private-jwks.example/keys\n",
