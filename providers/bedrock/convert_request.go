@@ -146,14 +146,16 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 
 	// Native structured output goes through additionalModelRequestFields.
 	if useNativeStructuredOutput {
-		schema, err := jsonschema.DecodeObject(opts.ResponseFormat.Schema)
+		// SanitizeJSON keeps property order, which sets the order the model
+		// writes the answer's fields in.
+		schema, err := anthropicschema.SanitizeJSON(opts.ResponseFormat.Schema)
 		if err != nil {
 			return nil, warnings, meta, fmt.Errorf("bedrock: parsing response format schema: %w", err)
 		}
 
 		ensureMap(addRequestFields, "output_config")["format"] = map[string]any{
 			"type":   "json_schema",
-			"schema": anthropicschema.Sanitize(schema),
+			"schema": schema,
 		}
 	}
 
