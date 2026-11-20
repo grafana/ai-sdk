@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/provideroptions"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -588,7 +589,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					currentMsgs = result.Messages
 				}
 				if result.ProviderOptions != nil {
-					providerOpts, err = mergeStepProviderOptions(providerOpts, result.ProviderOptions)
+					providerOpts, err = provideroptions.MergeRaw(providerOpts, result.ProviderOptions)
 					if err != nil {
 						r.emitError(fmt.Errorf("aisdk: merging prepareStep provider options: %w", err), cfg.onError)
 						return
@@ -2541,7 +2542,7 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 			previous := &result[len(result)-1]
 			if len(previous.Content) > 0 && previous.ProviderOptions != nil {
 				last := &previous.Content[len(previous.Content)-1]
-				merged, err := mergeStepProviderOptions(previous.ProviderOptions, last.ProviderOptions)
+				merged, err := provideroptions.MergeRaw(previous.ProviderOptions, last.ProviderOptions)
 				if err != nil {
 					return nil, fmt.Errorf("aisdk: merging tool message provider options: %w", err)
 				}
