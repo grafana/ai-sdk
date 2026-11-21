@@ -3,7 +3,8 @@ module github.com/grafana/ai-sdk/test/conformance
 go 1.27.3
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/anthropics/anthropic-sdk-go v1.84.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.11.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.10
 	github.com/grafana/ai-sdk v0.1.0-alpha.5
 	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.3
@@ -47,7 +48,7 @@ require (
 	github.com/pb33f/go-yaml v0.1.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.2 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
-	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
+	github.com/standard-webhooks/standard-webhooks/libraries v1.3.0 // indirect
 	github.com/tidwall/gjson v1.20.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.2 // indirect
