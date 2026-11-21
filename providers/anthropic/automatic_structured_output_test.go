@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
-	vertexsdk "github.com/anthropics/anthropic-sdk-go/vertex"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
+	vertexsdk "github.com/anthropics/anthropic-sdk-go/v2/vertex"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
