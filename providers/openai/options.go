@@ -219,10 +219,23 @@ type ContextManagementEntry struct {
 	CompactThreshold *int64 `json:"compactThreshold,omitempty"`
 }
 
+// PromptCacheTTL specifies the minimum prompt cache lifetime.
+type PromptCacheTTL string
+
+const (
+	// PromptCacheTTL30m keeps the prompt cached for at least 30 minutes.
+	PromptCacheTTL30m PromptCacheTTL = "30m"
+	// PromptCacheTTL12h keeps the prompt cached for at least 12 hours.
+	PromptCacheTTL12h PromptCacheTTL = "12h"
+)
+
 // PromptCacheOptions controls GPT-5.6+ prompt cache behavior.
 type PromptCacheOptions struct {
 	Mode string `json:"mode,omitempty"`
-	TTL  string `json:"ttl,omitempty"`
+	// TTL sets the minimum cache lifetime. Empty uses the provider default.
+	TTL PromptCacheTTL `json:"ttl,omitempty"`
+	// Prewarm caches the prompt without generating output. Nil omits the option.
+	Prewarm *bool `json:"prewarm,omitempty"`
 }
 
 // OpenAIAllowedCaller identifies a function-tool invocation context.
@@ -313,4 +326,6 @@ func (OpenAIPartOptions) ProviderKey() string { return "openai" }
 // PromptCacheBreakpoint marks a message/content part as an explicit cache breakpoint.
 type PromptCacheBreakpoint struct {
 	Mode string `json:"mode"`
+	// TTL sets the minimum cache lifetime for this breakpoint. Empty omits it.
+	TTL PromptCacheTTL `json:"ttl,omitempty"`
 }
