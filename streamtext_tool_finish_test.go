@@ -36,7 +36,7 @@ func TestStreamText_ToolExecutionFinishReason(t *testing.T) {
 					decisions.Add(1)
 					return ToolApprovalDecision{Status: approval}, nil
 				})))
-				var calls, approvalRequests, approvalResponses int
+				var calls, approvalRequests, approvalResponses, outputDenied int
 				for part := range result.FullStream() {
 					switch part.(type) {
 					case StreamToolCall:
@@ -45,6 +45,8 @@ func TestStreamText_ToolExecutionFinishReason(t *testing.T) {
 						approvalRequests++
 					case StreamToolApprovalResponse:
 						approvalResponses++
+					case StreamToolOutputDenied:
+						outputDenied++
 					}
 				}
 				require.NoError(t, result.Err())
@@ -54,13 +56,22 @@ func TestStreamText_ToolExecutionFinishReason(t *testing.T) {
 					wantExecutions = 1
 				}
 				wantRequests := int32(1)
-				if reason != provider.FinishReasonInterrupted && (wantExecutions == 1 || approval == ToolApprovalDenied) {
+				if allowed && (wantExecutions == 1 || approval == ToolApprovalDenied) {
 					wantRequests = 2
 				}
 				assert.Equal(t, wantExecutions, executions.Load())
 				assert.Equal(t, wantRequests, requests.Load())
 				assert.Equal(t, int32(1), decisions.Load())
 				assert.Equal(t, 1, calls)
+				if !allowed && (approval == ToolApprovalNotApplicable || approval == ToolApprovalApproved) {
+					assert.Equal(t, 1, outputDenied)
+					steps := result.Steps()
+					require.Len(t, steps, 1)
+					require.Len(t, steps[0].ToolResults, 1)
+					assert.Equal(t, provider.ToolOutputExecutionDenied, steps[0].ToolResults[0].ModelOutput.Type)
+				} else {
+					assert.Zero(t, outputDenied)
+				}
 				if approval == ToolApprovalNotApplicable {
 					assert.Zero(t, approvalRequests)
 				} else {

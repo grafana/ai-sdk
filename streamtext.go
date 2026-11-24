@@ -792,7 +792,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		interrupted := step.FinishReason.Unified == provider.FinishReasonInterrupted
-		if interrupted || outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
+		executionAllowed := step.FinishReason.Unified == provider.FinishReasonStop || step.FinishReason.Unified == provider.FinishReasonToolCalls
+		if interrupted || !executionAllowed || outcome.toolChoiceViolated || !hasClientToolCalls || stopped || hasUnresolvedClientToolCalls {
 			if cfg.output != nil && (cfg.parseOutputOnAllFinishes || step.FinishReason.Unified == provider.FinishReasonStop ||
 				(step.FinishReason.Unified != provider.FinishReasonToolCalls && step.Text != "")) {
 				outputVal, outputErr := cfg.output.ParseComplete(step.Text)
@@ -1838,7 +1839,18 @@ func (r *StreamTextResult) executeTools(
 	}
 
 	executionAllowed := step.FinishReason.Unified == provider.FinishReasonStop || step.FinishReason.Unified == provider.FinishReasonToolCalls
-	if len(executable) == 0 || !executionAllowed {
+	if len(executable) == 0 {
+		return nil
+	}
+	if !executionAllowed {
+		reason := fmt.Sprintf("not run: the response ended with finish reason %s", step.FinishReason.Unified)
+		for _, et := range executable {
+			tc := et.tc
+			step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: &reason}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
+			deniedEvent := StreamToolOutputDenied{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName}
+			r.emit(deniedEvent)
+			r.callOnChunk(cfg, deniedEvent)
+		}
 		return nil
 	}
 
