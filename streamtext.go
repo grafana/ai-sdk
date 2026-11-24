@@ -1608,7 +1608,7 @@ func (r *StreamTextResult) handleToolResult(
 	tsp := StreamToolResult{
 		ToolCallID: part.ToolCallID, ToolName: part.ToolName,
 		Input: input, Output: part.Result, ProviderExecuted: true,
-		Dynamic: dynamic, ProviderMetadata: part.ProviderMetadata,
+		Dynamic: dynamic, Preliminary: preliminary, ProviderMetadata: part.ProviderMetadata,
 	}
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
