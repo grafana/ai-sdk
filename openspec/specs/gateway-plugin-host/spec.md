@@ -400,8 +400,9 @@ Before using a catalog route's decrypted values, the Gateway SHALL check that th
 - **THEN** the response SHALL be the internal host error
 
 #### Scenario: Parent whose spec does not decode
-- **WHEN** the parent names the route's catalog but its spec does not decode as a `ModelCatalog` spec
-- **THEN** language-model SHALL fail with the catalog configuration document and `config` with the catalog configuration host error
+- **WHEN** an authorized, otherwise valid request carries a matching parent whose spec does not decode or whose required maps are absent or null
+- **THEN** each catalog route SHALL return its fixed catalog configuration error (`424`) with no provider requests
+- **AND** the Gateway SHALL NOT use partially decoded configuration or decrypted values
 
 #### Scenario: Parent whose identity does not decode
 - **WHEN** the parent is not JSON, or its API version, kind, namespace or name cannot be read

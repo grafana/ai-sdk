@@ -61,6 +61,10 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 - **WHEN** a call requests an ID that is neither a model nor an alias in the catalog
 - **THEN** the call SHALL fail with the model not found category, with zero provider requests
 
+#### Scenario: No configured models
+- **WHEN** a valid catalog call requests a model from a checked catalog with no models
+- **THEN** the call SHALL fail with the existing model not found category (`404 model_not_found`), without constructing a candidate, using another catalog, or contacting a provider
+
 #### Scenario: Unknown models entry
 - **WHEN** a `gateway.models` entry names no model or alias in the catalog
 - **THEN** the call SHALL fail with model not found and the fallback-model reason, with zero provider requests
@@ -138,6 +142,14 @@ The action SHALL use read-only provider model listings, not inference. A valid l
 ### Requirement: Closed health results for the saved catalog
 On an accepted check the response SHALL be non-cacheable `200` JSON with `providers` mapping provider names to statuses, and `models` mapping canonical model IDs to a `primary` status and ordered `fallback` statuses. Statuses SHALL use only `ok`, `invalidKey`, `unknownModel`, `unreachable`, `refused`, and `notChecked`. Aliases SHALL NOT produce separate model entries.
 
+#### Scenario: Catalog without providers
+- **WHEN** a health check targets a stored catalog that has no providers
+- **THEN** it SHALL return the fixed catalog configuration error (`424`) without contacting any provider
+
+#### Scenario: Provider with no configured targets
+- **WHEN** a health check probes a connected provider that is neither a primary nor a fallback of any configured model
+- **THEN** it SHALL check the first listing page with the same provider outcomes as other providers, SHALL NOT request another page, and SHALL NOT emit any target statuses for that provider
+
 #### Scenario: Accepted native listing
 - **WHEN** the official endpoint returns a valid model listing
 - **THEN** its provider status SHALL be `ok` and listed targets SHALL be `ok`
@@ -180,6 +192,10 @@ The `available-models` action SHALL accept exactly one `provider` query paramete
 #### Scenario: List one of two accounts of the same type
 - **WHEN** a valid caller asks for one named provider in a saved catalog
 - **THEN** the action SHALL use that provider's account only and SHALL NOT substitute another provider's key or ambient credentials
+
+#### Scenario: Browse before adding any models
+- **WHEN** a valid caller asks for a saved provider in a catalog that has no configured models
+- **THEN** the action SHALL list that provider's inventory using the usual listing rules
 
 #### Scenario: Invalid input
 - **WHEN** the action receives a body, a missing or invalid selector, duplicate selectors, or extra parameters

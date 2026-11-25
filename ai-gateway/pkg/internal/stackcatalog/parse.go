@@ -32,6 +32,9 @@ func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints
 	if err := file.ValidateShape(); err != nil {
 		return config.File{}, err
 	}
+	if spec.Models == nil {
+		return config.File{}, fmt.Errorf("modelcatalog: spec.models must be a map")
+	}
 	if err := checkEndpoints(file, endpoints); err != nil {
 		return config.File{}, err
 	}

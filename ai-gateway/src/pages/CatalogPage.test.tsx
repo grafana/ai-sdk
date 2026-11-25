@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -88,13 +88,33 @@ function updated(catalog: ModelCatalog, spec: Spec, secure: SecureChanges): Mode
   return { ...catalog, metadata: { ...catalog.metadata, resourceVersion: '8' }, spec, secure: names };
 }
 
-function renderPage(withNavigation = false) {
+function BackButton() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      Back
+    </button>
+  );
+}
+
+function renderPage(withNavigation = false, arrival?: 'create' | 'reload') {
   return render(
-    <MemoryRouter initialEntries={[`${APP}/catalogs/edit/team`]}>
+    <MemoryRouter
+      initialEntries={[
+        {
+          pathname: arrival === 'create' ? `${APP}/catalogs` : `${APP}/catalogs/edit/team`,
+          state: arrival === 'reload' ? { checkHealthAfterCreate: true } : null,
+        },
+      ]}
+    >
       {withNavigation && (
         <>
           <Link to={`${APP}/catalogs`}>Catalog list</Link>
           <Link to={`${APP}/catalogs/edit/team`}>Team catalog</Link>
+          <Link to={`${APP}/catalogs/edit/team`} state={{ checkHealthAfterCreate: true }}>
+            Create arrival
+          </Link>
+          <BackButton />
         </>
       )}
       <Routes>
@@ -322,6 +342,94 @@ describe('pages/CatalogPage', () => {
       'false'
     );
     expect(screen.queryByRole('option', { name: 'claude-custom-stale' })).not.toBeInTheDocument();
+  });
+
+  test('checks health once on create arrival and offers browsing before the first model', async () => {
+    jest.mocked(getModelCatalog).mockResolvedValue({ ...stored, spec: { ...stored.spec, models: {} } });
+    jest.mocked(checkModelCatalogHealth).mockResolvedValue({
+      providers: { anthropic: 'ok', openai: 'ok', spare: 'ok' },
+      models: {},
+    });
+    signInAs(OrgRole.Admin, ALL);
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
+
+    const provider = within(await screen.findByRole('region', { name: 'anthropic' }));
+    expect(await screen.findByText('No problems found')).toBeInTheDocument();
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+    expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
+    expect(provider.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+    const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
+    fireEvent.focus(field);
+    expect(listProviderModels).not.toHaveBeenCalled();
+    fireEvent.click(field);
+    expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
+    expect(listProviderModels).toHaveBeenCalledWith('team', 'anthropic');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('region', { name: 'anthropic' });
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
+  });
+
+  test('does not run arrival health without its permission', async () => {
+    signInAs(
+      OrgRole.Admin,
+      ALL.filter((action) => action !== CatalogActions.CheckHealth)
+    );
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
+    await screen.findByRole('listitem', { name: 'balanced' });
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+  });
+
+  test('does not run arrival health from a refreshed history entry', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage(false, 'reload');
+    await screen.findByRole('listitem', { name: 'balanced' });
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+  });
+
+  test('does not replay a create arrival left before the catalog loaded', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let finish!: (catalog: ModelCatalog) => void;
+    jest.mocked(getModelCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
+    expect(getModelCatalog).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('listitem', { name: 'balanced' });
+    await act(() => finish(stored));
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+  });
+
+  test('no health action is offered for an invalid catalog missing providers', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    jest.mocked(getModelCatalog).mockResolvedValue({ ...stored, spec: { providers: {}, models: {} } });
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
+    await screen.findByRole('button', { name: 'Connect a provider' });
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+  });
+
+  test('connecting another provider does not reuse a key after switching types', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect a provider' }));
+    fireEvent.click(dialog().getByRole('radio', { name: 'Anthropic' }));
+    type(dialog().getByLabelText(/^API key/), TYPED_KEY);
+    fireEvent.click(dialog().getByRole('radio', { name: 'OpenAI' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Connect' }));
+    expect(await dialog().findByText('Enter the API key.')).toBeInTheDocument();
+    expect(updateModelCatalog).not.toHaveBeenCalled();
   });
 
   test('checks only on request and shows badges only for listing problems', async () => {
@@ -589,17 +697,26 @@ describe('pages/CatalogPage', () => {
     expect(updateModelCatalog).not.toHaveBeenCalled();
   });
 
-  test('replaces a key and sends only that key', async () => {
+  test.each([
+    [undefined, "Anthropic's native endpoint"],
+    ['https://gateway.example/team', 'https://gateway.example/team'],
+  ])('shows the destination %s and sends only the replacement key', async (baseURL, destination) => {
+    const catalog = {
+      ...stored,
+      spec: { ...stored.spec, providers: { ...stored.spec.providers, anthropic: { type: 'anthropic', baseURL } } },
+    };
+    jest.mocked(getModelCatalog).mockResolvedValue(catalog);
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Replace key' }));
+    expect(dialog().getByText(`Use a key for ${destination}.`, { exact: false })).toBeInTheDocument();
     type(dialog().getByLabelText(/^New API key/), TYPED_KEY);
     fireEvent.click(dialog().getByRole('button', { name: 'Save key' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     const [, spec, secure] = lastUpdate();
-    expect(spec).toEqual(stored.spec);
+    expect(spec).toEqual(catalog.spec);
     expect(secure).toEqual({ anthropic: { create: TYPED_KEY } });
   });
 
@@ -621,6 +738,29 @@ describe('pages/CatalogPage', () => {
       models: { 'gpt-5': stored.spec.models['gpt-5'] },
     });
     expect(secure).toEqual({ anthropic: { remove: true } });
+  });
+
+  test('closes the key dialog if a pending removal deletes its provider', async () => {
+    let finish!: (catalog: ModelCatalog) => void;
+    jest.mocked(updateModelCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+
+    fireEvent.click(card('spare').getByRole('button', { name: 'Remove spare' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(updateModelCatalog).toHaveBeenCalledTimes(1));
+    fireEvent.click(card('spare').getByRole('button', { name: 'Replace key' }));
+    expect(dialog().getByLabelText(/^New API key/)).toBeInTheDocument();
+
+    const [catalog, spec, secure] = lastUpdate();
+    await act(() => finish(updated(catalog, spec, secure)));
+    expect(screen.queryByRole('region', { name: 'spare' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'balanced' })).toBeInTheDocument();
   });
 
   test('renames a model and edits its details in the drawer, keeping fields the page does not edit', async () => {
@@ -693,16 +833,49 @@ describe('pages/CatalogPage', () => {
     expect(dialog().getByText(/Use up to 128 letters/)).toBeInTheDocument();
   });
 
-  test('removes a model after confirming, but not the last one', async () => {
+  test('removes the last model but disables removal of the last provider', async () => {
+    const single = {
+      ...stored,
+      spec: {
+        providers: { openai: stored.spec.providers.openai },
+        models: { 'gpt-5': stored.spec.models['gpt-5'] },
+      },
+      secure: { openai: { name: 'inline-openai' } },
+    };
+    jest.mocked(getModelCatalog).mockResolvedValue(single);
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+    await screen.findByRole('listitem', { name: 'gpt-5' });
+
+    fireEvent.click(card('openai').getByRole('button', { name: 'Remove gpt-5' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    expect(await card('openai').findByText('No models yet.')).toBeInTheDocument();
+    expect(lastUpdate()).toEqual([single, { providers: single.spec.providers, models: {} }, {}]);
+    expect(card('openai').queryByText('No key')).not.toBeInTheDocument();
+    expect(card('openai').queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
+
+    expect(
+      card('openai').getByRole('button', { name: 'Delete the catalog to remove its last provider.' })
+    ).toBeDisabled();
+    expect(updateModelCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  test('removes the provider of the last model without promoting its fallback', async () => {
+    const lastModel = { ...stored, spec: { ...stored.spec, models: { balanced: stored.spec.models.balanced } } };
+    jest.mocked(getModelCatalog).mockResolvedValue(lastModel);
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
-    fireEvent.click(card('openai').getByRole('button', { name: 'Remove gpt-5' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-
-    await waitFor(() => expect(screen.queryByRole('listitem', { name: 'gpt-5' })).not.toBeInTheDocument());
-    expect(Object.keys(lastUpdate()[1].models)).toEqual(['balanced']);
-    expect(card('anthropic').getByRole('button', { name: 'A catalog needs at least one model' })).toBeDisabled();
+    fireEvent.click(card('anthropic').getByRole('button', { name: 'Remove anthropic' }));
+    expect(dialog().getByText(/its models are removed: balanced/)).toBeInTheDocument();
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'anthropic' })).not.toBeInTheDocument());
+    expect(lastUpdate()).toEqual([
+      lastModel,
+      { providers: { openai: stored.spec.providers.openai, spare: stored.spec.providers.spare }, models: {} },
+      { anthropic: { remove: true } },
+    ]);
+    expect(card('openai').queryByText('No key')).not.toBeInTheDocument();
   });
 
   test('shows a refused change as returned in its drawer and keeps the input', async () => {

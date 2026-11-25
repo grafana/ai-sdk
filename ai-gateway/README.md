@@ -195,14 +195,17 @@ A stack can also store its own model catalogs in Grafana as `ModelCatalog`
 resources, with each provider's API key held as a Grafana secure value, and
 call their models through the catalog's own routes.
 
-Admins manage catalogs on the app's **Model catalogs** page. A catalog's page
-shows each connected provider with the models it serves. Connecting a provider
-takes its type and API key, and adding a model takes only the provider's model
+Admins manage catalogs on the app's **Model catalogs** page. Create a catalog
+with a name and its first provider. Enter the provider type and API key, and
+a [custom endpoint](#custom-endpoints) if needed. The app saves the catalog
+without models, opens its page, and checks provider health once using the
+saved key if you have permission. You can then connect more providers and add
+models. You can remove the last model, but to remove the last provider you
+must delete the catalog. Adding a model takes only the provider's model
 ID, which applications then request it by; a model's details, such as another
 ID, a display name, aliases and fallbacks, are edited from the model. Each
 change is saved when you confirm it. A key you enter is sent once and never
-shown again: the page only shows that a provider has one, and an edit that
-doesn't replace a key keeps the stored one. When Grafana or the Gateway refuses
+shown again. An edit that doesn't replace a key keeps the stored one. When Grafana or the Gateway refuses
 a change, the page shows the message it returns. Viewers and Editors see
 catalogs read-only. The page follows each user's Grafana permissions, so
 granting or removing `aigateway:catalogwriter` changes what it offers them.
@@ -231,6 +234,10 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 - `spec` uses the catalog format above without `apiKeyEnv`. Providers are
   named with lowercase letters, digits and `-`, and a custom `baseURL` must be
   [listed](#custom-endpoints).
+- `spec.providers` must contain at least one provider. `spec.models` can be an
+  empty map: discovery then returns `{"models":[]}` and calls return the
+  unknown-model error. The operator `model_catalog` setting still requires at
+  least one provider and one model when set.
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.
