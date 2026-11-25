@@ -36,11 +36,11 @@ Admission SHALL accept only provider types `anthropic`, `openai` and `openai-com
 - **THEN** the write SHALL be refused
 
 ### Requirement: Shared catalog shape validation
-A stack catalog SHALL require `spec.providers` and `spec.models` maps, which MAY be empty. Admission SHALL apply the shared checks to entries that are present: provider shape, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds. The operator catalog SHALL still require at least one provider and one model and SHALL retain its credential checks.
+A stack catalog SHALL require `spec.providers` and `spec.models` maps with at least one provider. The model map MAY be empty. Admission SHALL apply the shared checks to entries that are present: provider shape, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds. The operator catalog SHALL still require at least one provider and one model and SHALL retain its credential checks.
 
 #### Scenario: No providers or models
-- **WHEN** a writer creates or updates a stack catalog with both maps empty and no resulting secure keys
-- **THEN** admission SHALL accept the write
+- **WHEN** a writer creates or updates a stack catalog without providers, even if it has no resulting secure keys
+- **THEN** admission SHALL refuse the write
 
 #### Scenario: Missing or null map
 - **WHEN** a write omits a required map or sends it as null

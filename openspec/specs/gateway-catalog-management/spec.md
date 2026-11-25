@@ -21,15 +21,15 @@ The app SHALL have a model catalogs page that lists the request namespace's `Mod
 - **THEN** the page SHALL say so, and SHALL offer to create one only to a user who may create catalogs
 
 ### Requirement: Catalog writes from the page
-A user who may create catalogs SHALL be able to create one by name alone. The app SHALL send one create with empty provider and model maps and no secure values, then open the saved catalog's page on success. On a stored catalog, a writer SHALL be able to connect and remove providers of type `anthropic` or `openai`, replace keys, add, edit and remove models, and delete the catalog from its page after confirming. Each change to the stored catalog SHALL be saved when the writer confirms it, as one update that keeps the loaded object's metadata, including its resource version, and the page SHALL continue from the object the update returns. Removing a provider SHALL remove its key and the models whose primary it is after confirmation, but SHALL NOT be offered while any model that would remain falls back to it.
+A user who may create catalogs SHALL be able to create one with a name and one provider, its key and an operator-allowed endpoint where applicable, then open the saved catalog's page on success. On a stored catalog, a writer SHALL be able to connect and remove providers, replace keys, add, edit and remove models, and delete the catalog from its page after confirming. Each change to the stored catalog SHALL be saved when the writer confirms it, as one update that keeps the loaded object's metadata, including its resource version, and the page SHALL continue from the object the update returns. Removing a provider SHALL remove its key and the models whose primary it is after confirmation, but SHALL be disabled if this would remove the last provider or a surviving model falls back to it.
 
 #### Scenario: Admin creates a catalog
-- **WHEN** an Admin enters a valid name and creates a catalog
-- **THEN** the page SHALL send one create with empty provider and model maps and no secure values, then open the saved catalog's page
+- **WHEN** an Admin enters a valid name and provider details and creates a catalog
+- **THEN** the page SHALL send one create with the provider and its secure key and an empty model map, then open the saved catalog's page
 
 #### Scenario: Admin connects the first provider
-- **WHEN** an Admin connects a provider with its API key to an empty catalog
-- **THEN** the app SHALL save the provider and its key without requiring a model, and display its provider card with controls for adding models
+- **WHEN** an Admin starts a new catalog, or connects another provider from its saved page
+- **THEN** the app SHALL use the same provider fields for both flows, with a required endpoint for OpenAI-compatible, an optional endpoint for native providers, and no model input on create
 
 #### Scenario: Admin changes a catalog
 - **WHEN** an Admin connects or removes a provider, replaces a key, or adds, edits or removes a model, and confirms
@@ -45,8 +45,8 @@ A user who may create catalogs SHALL be able to create one by name alone. The ap
 - **AND** it SHALL identify the models to be removed before confirmation, without promoting fallbacks or rewriting surviving models
 
 #### Scenario: Admin removes the last provider
-- **WHEN** an Admin confirms removing the last provider
-- **THEN** the page SHALL save the catalog without providers, models or stored keys
+- **WHEN** an Admin views a catalog with only one provider
+- **THEN** the provider's remove action SHALL be disabled and SHALL suggest deleting the catalog instead
 
 #### Scenario: Provider used as a fallback
 - **WHEN** another provider's model falls back to a provider
@@ -99,8 +99,8 @@ A key entered on the page SHALL be sent only as `secure.<provider>.create` for t
 - **AND** no response the page fetches and no browser console message SHALL contain the key
 
 #### Scenario: Key on create
-- **WHEN** a writer creates a catalog by name
-- **THEN** the create SHALL NOT carry a `secure` member
+- **WHEN** a writer creates a catalog with its first provider
+- **THEN** the create SHALL carry the key only as `secure.<provider>.create`
 
 #### Scenario: Key on connect
 - **WHEN** a writer connects a provider with a key
@@ -159,7 +159,7 @@ Jest tests SHALL cover the request bodies, the defaults, the permission matrix, 
 - **THEN** it SHALL exercise the catalog page in a browser as Admin, Editor and Viewer
 
 ### Requirement: Check the saved catalog from its page
-The saved catalog page SHALL offer an explicit **Check health** action only when the catalog has a connected provider and the caller may read the catalog and has the `modelcatalogs/health` `get` permission. The page SHALL NOT check as part of loading, saving or creation, or from the list or overview. It SHALL prevent duplicate submissions while checking and report route failures separately from probe results.
+The saved catalog page SHALL offer an explicit **Check health** action only when the catalog has a connected provider and the caller may read the catalog and has the `modelcatalogs/health` `get` permission. After a successful create, the saved page SHALL check once if the caller has both permissions. It SHALL NOT check on refresh, ordinary arrival, other saves, or from the list or overview. It SHALL prevent duplicate submissions while checking and report route failures separately from probe results.
 
 #### Scenario: Writer checks a catalog
 - **WHEN** a caller with both permissions clicks **Check health** on a saved catalog with at least one provider
@@ -170,8 +170,13 @@ The saved catalog page SHALL offer an explicit **Check health** action only when
 - **THEN** the page SHALL neither show the control nor request health results
 
 #### Scenario: A saved catalog has no providers
-- **WHEN** a caller opens a saved catalog without providers
-- **THEN** the page SHALL show its empty state without offering **Check health**
+- **WHEN** a writer tries to create a catalog without a provider
+- **THEN** the catalog SHALL NOT be saved and the page SHALL NOT check health
+
+#### Scenario: A writer arrives after creating a catalog
+- **WHEN** a writer with health permission arrives from a successful catalog create
+- **THEN** the page SHALL run one check using the saved catalog and show the usual result
+- **AND** refreshing or returning to that page SHALL NOT start another check
 
 ### Requirement: Show results until the catalog is edited or left
 The saved catalog page SHALL show only non-`ok` outcomes as fixed warning or error badges on provider cards, model rows and fallbacks in model details. It SHALL summarize results beside **Providers** in a polite live region without adding content beside the page actions. It SHALL explain that the check uses model listings, not inference. It SHALL clear results on a new check, successful save, or navigation and disregard stale results.
@@ -205,7 +210,7 @@ A writer with read, update, and `modelcatalogs/available-models:get` access SHAL
 - **THEN** the model ID field SHALL offer suggestions even if the provider has no configured models
 
 #### Scenario: Create flow or listing permission absent
-- **WHEN** a writer opens the name-only create form or adds a model to a saved provider without listing permission
+- **WHEN** a writer opens the create form or adds a model to a saved provider without listing permission
 - **THEN** the page SHALL NOT offer browsing or call the listing action
 - **AND** the writer adding a model SHALL be able to enter its ID manually
 

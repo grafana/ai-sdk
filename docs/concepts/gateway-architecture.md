@@ -70,7 +70,7 @@ flowchart LR
   ts --> host
   chatclient --> host
   msgclient --> host
-  admin -->|Check health or open model suggestions| host
+  admin -->|Check health after create or on request; open model suggestions| host
   host --> health
   health -->|shared catalog checks| stack
   health -->|model listings only| apis

@@ -245,5 +245,5 @@ A catalog route's `config` SHALL list the parent catalog's models with the confi
 - **THEN** its candidate SHALL list provider instance `local` and provider `acme`, as namespace route discovery does for an operator provider
 
 #### Scenario: No configured models
-- **WHEN** a caller with catalog access requests `config` for a valid catalog with no models, with or without connected providers
+- **WHEN** a caller with catalog access requests `config` for a valid catalog with no models
 - **THEN** the response SHALL be `200` with `{"models":[]}`, with no provider requests

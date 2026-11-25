@@ -62,7 +62,7 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 - **THEN** the call SHALL fail with the model not found category, with zero provider requests
 
 #### Scenario: No configured models
-- **WHEN** a valid catalog call requests a model from a checked catalog with no models, with or without connected providers
+- **WHEN** a valid catalog call requests a model from a checked catalog with no models
 - **THEN** the call SHALL fail with the existing model not found category (`404 model_not_found`), without constructing a candidate, using another catalog, or contacting a provider
 
 #### Scenario: Unknown models entry
@@ -143,8 +143,8 @@ The action SHALL use read-only provider model listings, not inference. A valid l
 On an accepted check the response SHALL be non-cacheable `200` JSON with `providers` mapping provider names to statuses, and `models` mapping canonical model IDs to a `primary` status and ordered `fallback` statuses. Statuses SHALL use only `ok`, `invalidKey`, `unknownModel`, `unreachable`, `refused`, and `notChecked`. Aliases SHALL NOT produce separate model entries.
 
 #### Scenario: Catalog without providers
-- **WHEN** a health check is admitted for a valid catalog without providers
-- **THEN** it SHALL return `200` with `{"providers":{},"models":{}}` and make no provider requests
+- **WHEN** a health check targets a stored catalog that has no providers
+- **THEN** it SHALL return the fixed catalog configuration error (`424`) without contacting any provider
 
 #### Scenario: Provider with no configured targets
 - **WHEN** a health check probes a connected provider that is neither a primary nor a fallback of any configured model
@@ -202,7 +202,7 @@ The `available-models` action SHALL accept exactly one `provider` query paramete
 - **THEN** it SHALL return a fixed `400` with no provider request
 
 #### Scenario: Unknown provider
-- **WHEN** the selector is valid but absent from an otherwise valid catalog, including one with no providers
+- **WHEN** the selector is valid but absent from an otherwise valid catalog
 - **THEN** the action SHALL return a fixed `404` with no provider request
 
 #### Scenario: Invalid stored configuration
