@@ -1,3 +1,5 @@
+//go:build !ci_separate_chat_completions_contract
+
 // Package chatcompletionsadapter_test exercises the real command with the official Go SDK.
 // The upstream below is a deterministic synthetic test server, not a recording.
 package chatcompletionsadapter_test
@@ -129,29 +131,58 @@ func (u *upstream) count() int { u.mu.Lock(); defer u.mu.Unlock(); return len(u.
 // the HTTP drain budget alone. The production shutdown budgets remain unchanged.
 const commandShutdownTimeout = 10 * time.Second
 
+var localCommandDir string
+
+var commandBinaries = sync.OnceValues(func() (string, error) {
+	if dir, ok := os.LookupEnv("AI_SDK_CHAT_CONTRACT_BIN_DIR"); ok {
+		return dir, nil
+	}
+	dir, err := os.MkdirTemp("", "chat-completions-contract-")
+	if err != nil {
+		return "", err
+	}
+	localCommandDir = dir
+	build := exec.Command("bash", "../../scripts/build-command-contract.sh", dir)
+	if output, err := build.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("build command-contract executables: %w\n%s", err, output)
+	}
+	return dir, nil
+})
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if localCommandDir != "" {
+		if err := os.RemoveAll(localCommandDir); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			code = 1
+		}
+	}
+	os.Exit(code)
+}
+
 func startCommand(t *testing.T, backend, topology string, customConfig ...string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := commandBinaries()
+	require.NoError(t, err)
+	require.True(t, filepath.IsAbs(dir), "command-contract binary directory must be absolute")
 	binary := filepath.Join(dir, "gateway")
 	hostBinary := filepath.Join(dir, "plugin-host")
-	for _, target := range []struct{ binary, source string }{{binary, "../../pkg"}, {hostBinary, "../platformhost/cmd/plugin-host"}} {
-		build := exec.Command("go", "build", "-race", "-mod=readonly", "-o", target.binary, target.source)
-		build.Env = append(os.Environ(), "GOWORK=off")
-		output, err := build.CombinedOutput()
-		require.NoError(t, err, string(output))
-	}
+	require.FileExists(t, binary)
+	require.FileExists(t, hostBinary)
 	config := fmt.Sprintf("providers:\n  test:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_TEST_KEY\n    baseURL: %s/v1\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: test\n      model: gpt-4.1\n    aliases: [chat]\n  public/reasoning:\n    name: Reasoning\n    primary:\n      provider: test\n      model: o3-mini\n", backend)
 	if len(customConfig) > 0 {
 		config = customConfig[0]
 	}
+	raceDir := t.TempDir()
+	const raceReport = "race-report"
 	cmd := exec.Command(hostBinary, "--plugin", binary, "--topology", topology, "--namespace", "stacks-1", "--service-account-token", testToken, "--route-deadline", "10s")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if !strings.HasPrefix(name, "GF_PLUGIN_") && !strings.HasPrefix(name, "GRAFANA_") && !strings.HasPrefix(name, "SIGIL_") && !strings.HasPrefix(name, "AGENTO11Y_") {
+		if name != "GORACE" && !strings.HasPrefix(name, "GF_PLUGIN_") && !strings.HasPrefix(name, "GRAFANA_") && !strings.HasPrefix(name, "SIGIL_") && !strings.HasPrefix(name, "AGENTO11Y_") {
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
-	cmd.Env = append(cmd.Env, "CHAT_COMPLETIONS_ADAPTER_TEST_KEY=fake-backend-key", "GF_PLUGIN_MODEL_CATALOG="+config, "GF_PLUGIN_ACCESS_MODE="+topology)
+	cmd.Env = append(cmd.Env, "CHAT_COMPLETIONS_ADAPTER_TEST_KEY=fake-backend-key", "GF_PLUGIN_MODEL_CATALOG="+config, "GF_PLUGIN_ACCESS_MODE="+topology, "GORACE=log_path='"+filepath.Join(raceDir, raceReport)+"'")
 	if topology == "cloud" {
 		cmd.Env = append(cmd.Env, "GF_PLUGIN_ACCESS_INTERNAL_SERVICES=integration")
 	}
@@ -176,6 +207,15 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 				t.Errorf("platform host shutdown exceeded composed budget %s (elapsed %s); stderr: %s", commandShutdownTimeout, time.Since(started), stderr.String())
 			}
 			assert.NotContains(t, stderr.String(), "fake-backend-key")
+			reports, err := os.ReadDir(raceDir)
+			require.NoError(t, err)
+			for _, report := range reports {
+				if strings.HasPrefix(report.Name(), raceReport+".") {
+					body, err := os.ReadFile(filepath.Join(raceDir, report.Name()))
+					require.NoError(t, err)
+					t.Errorf("command contract subprocess race report %s:\n%s", report.Name(), body)
+				}
+			}
 		})
 	}
 	t.Cleanup(stop)

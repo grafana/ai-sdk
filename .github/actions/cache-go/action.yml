@@ -1,35 +1,62 @@
-name: Cache Go
-description: Cache module downloads and refresh each job's compiled packages per revision
+name: Restore Go caches
+description: Restore shared Go modules and compatible compiled build results
 inputs:
-  lookup-only:
-    description: Check for cache entries without restoring them
-    default: "false"
+  build-flavor:
+    description: Compatible Go build workload (native, race, or plugin)
+    default: native
+outputs:
+  module-key:
+    description: Exact Go module cache key
+    value: ${{ steps.paths.outputs.module-key }}
+  module-path:
+    description: Go module cache directory
+    value: ${{ steps.paths.outputs.module-path }}
+  module-hit:
+    description: Whether the exact Go module seed was restored
+    value: ${{ steps.modules.outputs.cache-hit }}
+  build-key:
+    description: Current Go build seed key
+    value: ${{ steps.paths.outputs.build-key }}
+  build-prefix:
+    description: Compatible Go build key prefix without its rolling bucket
+    value: ${{ steps.paths.outputs.build-prefix }}
+  build-path:
+    description: Go build cache directory
+    value: ${{ steps.paths.outputs.build-path }}
+  build-hit:
+    description: Whether the current build seed was restored
+    value: ${{ steps.build.outputs.cache-hit }}
 runs:
   using: composite
   steps:
-    - name: Resolve Go cache paths
+    - name: Resolve Go cache paths and keys
       id: paths
       shell: bash
+      env:
+        RUNNER_SCOPE: ${{ runner.os }}-${{ runner.arch }}
+        MODULE_INPUTS: ${{ hashFiles('**/go.mod', '**/go.sum') }}
+        BUILD_FLAVOR: ${{ inputs.build-flavor }}
       run: |
-        echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-        echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-        echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+        : "${MODULE_INPUTS:?missing Go manifest hash}"
+        scope="$RUNNER_SCOPE-$(go env GOVERSION)"
+        build_prefix="$scope-${ImageOS:-local}-build-v3-$BUILD_FLAVOR-"
+        echo "module-path=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "module-key=$scope-modules-v3-$MODULE_INPUTS" >> "$GITHUB_OUTPUT"
+        echo "build-path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "build-prefix=$build_prefix" >> "$GITHUB_OUTPUT"
+        echo "build-key=$build_prefix$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
-    - name: Cache Go modules
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+    - name: Restore Go modules
+      id: modules
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
-        lookup-only: ${{ inputs.lookup-only }}
-        path: ${{ steps.paths.outputs.modules }}
-        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-
+        path: ${{ steps.paths.outputs.module-path }}
+        key: ${{ steps.paths.outputs.module-key }}
 
-    - name: Cache Go build results
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+    - name: Restore Go build results
+      id: build
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
-        lookup-only: ${{ inputs.lookup-only }}
-        path: ${{ steps.paths.outputs.build }}
-        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
-          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-
+        path: ${{ steps.paths.outputs.build-path }}
+        key: ${{ steps.paths.outputs.build-key }}
+        restore-keys: ${{ steps.paths.outputs.build-prefix }}

@@ -498,7 +498,11 @@ mise run verify-ai-gateway-boundary
 description = "Verify Chat Completions with official OpenAI Go and TypeScript clients"
 run = """
 mise deps install --only test
-(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race ./test/openai-chat-completions-adapter)
+AI_SDK_CHAT_CONTRACT_BIN_DIR=$(mktemp -d)
+export AI_SDK_CHAT_CONTRACT_BIN_DIR
+trap 'rm -rf "$AI_SDK_CHAT_CONTRACT_BIN_DIR"' EXIT
+bash ai-gateway/scripts/build-command-contract.sh "$AI_SDK_CHAT_CONTRACT_BIN_DIR"
+(cd ai-gateway && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -v -race -count=1 ./test/openai-chat-completions-adapter)
 pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract typecheck
 pnpm --filter @ai-sdk/openai-chat-completions-adapter-contract test
 """

@@ -565,6 +565,18 @@ SDK's Go module dependency graph.
   explicit activation under #245. `MODULE=providers/anthropic mise run verify-module`
   downloads, verifies, builds and tests one module; `mise run verify-modules` runs
   every module.
+- **Narrative-only pull requests:** The fast path keeps documentation lint and
+  the Gateway overview and plugin README link checks. It accepts root narrative
+  paths, the reviewed Gateway guides in the docs classifier, and content edits
+  to `ai-gateway/README.md`. Changes to the packaging README at
+  `ai-gateway/src/README.md`, fallback README additions/removals, and mixed or
+  uncertain changes run source checks.
+- **CI caches:** Source lanes can restore a shared Go dependency archive keyed
+  by module inputs. On canonical `main`, module resolution seeds that archive
+  after its checks; platform-compatible native, race and plugin build archives
+  and the lint analysis archive refresh on a weekly key. Pull requests do not
+  write these Go caches or wait for producers. A miss runs the same checks;
+  Gateway tag builds neither restore nor save workflow caches.
 - **Gateway plugin:** Gateway builds the plugin backend in `ai-gateway/pkg`, the
   standard plugin backend root, from same-revision SDK source through the
   replacements in `ai-gateway/go.mod`. `mage -v buildPlugin` builds the Linux
@@ -577,7 +589,10 @@ SDK's Go module dependency graph.
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
   revision, as a workflow artifact. Full Gateway Go source tests run in parallel
-  with the plugin build and checks. The `Validate AI Gateway plugin` check waits
+  with the plugin build and checks. The required `race` job runs the official
+  OpenAI Go and TypeScript Chat Completions contracts once using the same two
+  race-enabled candidate executables; run them locally with
+  `mise run test-openai-chat-completions-adapter`. The `Validate AI Gateway plugin` check waits
   for both jobs to succeed before retaining the validated package; the build
   job hands off a separate, short-lived candidate artifact. Gateway is not published
   as a standalone Go module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
