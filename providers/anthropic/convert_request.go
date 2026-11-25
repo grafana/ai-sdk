@@ -572,6 +572,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
 	applyProviderOptions(&p, anthropicOpts, hasAnthropicOpts, opts.Tools, &warnings)
+	// When a fallback widens a restricted choice, disable connectors on this
+	// request so they cannot reintroduce unselected tools. Leave caller
+	// allowlists unchanged.
 	if tc := opts.ToolChoice; tc != nil &&
 		((tc.Type == provider.ToolChoiceTool && p.ToolChoice.OfAuto != nil) ||
 			(br.usesJsonResponseTool && (tc.Type == provider.ToolChoiceTool || tc.Type == provider.ToolChoiceNone))) {
