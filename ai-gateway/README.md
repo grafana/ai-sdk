@@ -258,8 +258,10 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 
 ### Serve every model of a provider
 
-Providers serve only listed models by default. On a saved provider card,
-turn on **Serve every model** to allow unlisted models immediately. The picker
+Providers connected in the app start with **Serve every model** on, including
+the first provider in a new catalog. You can change the mode on the provider
+card. This does not change existing providers: an omitted `serveAllModels`
+field still means listed models only. In **Serve every model** mode, the picker
 switches to **Blocked model IDs**; adding or removing an ID saves immediately.
 To set exclusions before enabling, select **Edit blocked IDs** while the
 switch is off. Existing listed models stay visible and editable. With the API,

@@ -824,7 +824,10 @@ describe('pages/CatalogPage', () => {
 
     expect(await screen.findByRole('region', { name: 'openai-2' })).toBeInTheDocument();
     const [, spec, secure] = lastUpdate();
-    expect(spec.providers['openai-2']).toEqual({ type: 'openai' });
+    expect(spec.providers).toEqual({ ...stored.spec.providers, 'openai-2': { type: 'openai', serveAllModels: true } });
+    expect(spec.models).toEqual(stored.spec.models);
+    expect(card('openai-2').getByRole('switch', { name: 'Serve every model' })).toBeChecked();
+    expect(card('openai').getByRole('switch', { name: 'Serve every model' })).not.toBeChecked();
     expect(secure).toEqual({ 'openai-2': { create: TYPED_KEY } });
     expect(card('openai-2').getByRole('button', { name: 'Replace key' })).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain(TYPED_KEY);
