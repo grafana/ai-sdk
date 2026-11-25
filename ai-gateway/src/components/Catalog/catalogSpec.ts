@@ -5,12 +5,14 @@ import { Model, Provider, Spec, Target } from '../../generated/modelcatalog/v1al
 export enum ProviderType {
   Anthropic = 'anthropic',
   OpenAI = 'openai',
+  OpenAICompatible = 'openai-compatible',
 }
 
 /** PROVIDER_TYPES are the provider types a writer can connect, with their labels. */
 export const PROVIDER_TYPES: Array<{ label: string; value: ProviderType }> = [
   { label: 'Anthropic', value: ProviderType.Anthropic },
   { label: 'OpenAI', value: ProviderType.OpenAI },
+  { label: 'OpenAI-compatible', value: ProviderType.OpenAICompatible },
 ];
 
 /** MAX_FALLBACKS is the most fallbacks a model can have: the Gateway tries at most eight providers per call. */

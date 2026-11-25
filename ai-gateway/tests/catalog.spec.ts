@@ -119,6 +119,27 @@ test.describe('ModelCatalog', () => {
     }
   });
 
+  test('refuses creating or updating a catalog without providers', async ({ accounts }) => {
+    await expectRefused(await create(accounts.Admin, catalog(uniqueName(), {})), 'at least one provider is required');
+
+    const name = uniqueName();
+    const single = { anthropic: twoProviders.anthropic };
+    const saved = await create(accounts.Admin, {
+      ...catalog(name, single, createKeys(single)),
+      spec: { providers: single, models: {} },
+    });
+    expect(saved.status(), await saved.text()).toBe(201);
+    const object = await saved.json();
+    const refused = await update(accounts.Admin, name, {
+      ...catalog(name, {}, { anthropic: { remove: true } }),
+      metadata: object.metadata,
+    });
+    await expectRefused(refused, 'at least one provider is required');
+    const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
+    expect(stored.spec).toEqual(object.spec);
+    expect(stored.secure).toEqual(object.secure);
+  });
+
   test('secure.create stores a secret and reads return names only', async ({ accounts }) => {
     const { name, object } = await createStored(accounts.Admin);
     for (const provider of Object.keys(twoProviders)) {

@@ -6,12 +6,13 @@ import { config, PluginPage } from '@grafana/runtime';
 import { Alert, Button, Field, Input, LinkButton, Stack, Text, useStyles2 } from '@grafana/ui';
 import { createModelCatalog } from '../api/modelCatalogs';
 import { useWrite, WriteError } from '../components/Catalog/FormModal';
-import { catalogNameError } from '../components/Catalog/catalogSpec';
+import { catalogNameError, keyChange } from '../components/Catalog/catalogSpec';
+import { useProviderFields } from '../components/Catalog/useProviderFields';
 import { NoCatalogAccess } from '../components/NoCatalogAccess/NoCatalogAccess';
 import { catalogBaseURL, catalogPageURL, gatewayEndpoint, prefixRoute, ROUTES } from '../constants';
 import { catalogPermissions } from '../permissions';
 
-/** NewCatalog creates an empty catalog and opens its saved page. */
+/** NewCatalog saves the first provider and opens the catalog's page. */
 function NewCatalog() {
   const s = useStyles2(getStyles);
   const permissions = catalogPermissions();
@@ -19,14 +20,20 @@ function NewCatalog() {
   const [name, setName] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
+  const provider = useProviderFields({});
   const invalidName = catalogNameError(name);
   const nameError = name !== '' || submitted ? invalidName : undefined;
 
   const { saving, error, submit } = useWrite(async () => {
     setSubmitted(true);
-    if (!invalidName) {
-      await createModelCatalog(name);
-      navigate(catalogPageURL(name));
+    const account = provider.submit();
+    if (!invalidName && account) {
+      await createModelCatalog(
+        name,
+        { providers: { [account.name]: account.provider }, models: {} },
+        keyChange(account.name, account.key)
+      );
+      navigate(catalogPageURL(name), { state: { checkHealthAfterCreate: true } });
     }
   });
 
@@ -49,7 +56,7 @@ function NewCatalog() {
         }}
       >
         <Stack direction="column" gap={2}>
-          <Text color="secondary">After creating the catalog, you can connect providers and add models.</Text>
+          <Text color="secondary">Connect your first provider now. You can add models after creating the catalog.</Text>
           <Field
             label="Catalog name"
             description="It becomes part of the catalog's URL and can't be changed later. Letters, digits and '-', '_', '.' or ':'."
@@ -67,6 +74,7 @@ function NewCatalog() {
               <span className={s.url}>{catalogBaseURL(endpoint, name)}</span>
             </Stack>
           )}
+          {provider.fields}
           <WriteError error={error} />
           <Stack gap={1}>
             <Button type="submit" disabled={saving}>

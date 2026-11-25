@@ -1,5 +1,5 @@
 import React from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -23,12 +23,16 @@ const APP = '/a/grafana-aigateway-app';
 const URL = 'https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs';
 const ALL = Object.values(CatalogActions);
 
+function Arrival() {
+  return <div>{useLocation().state?.checkHealthAfterCreate ? 'catalog page after create' : 'catalog page'}</div>;
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`${APP}/catalogs/new`]}>
       <Routes>
         <Route path={`${APP}/catalogs/new`} element={<NewCatalog />} />
-        <Route path={`${APP}/catalogs/edit/:name`} element={<div>catalog page</div>} />
+        <Route path={`${APP}/catalogs/edit/:name`} element={<Arrival />} />
       </Routes>
     </MemoryRouter>
   );
@@ -46,7 +50,7 @@ describe('pages/NewCatalog', () => {
       .mockResolvedValue({} as never);
   });
 
-  test('creates a catalog by name, then opens it', async () => {
+  test('creates one provider with no models, then opens the catalog for a health check', async () => {
     signInAs(OrgRole.Admin, ALL);
     renderPage();
 
@@ -54,13 +58,21 @@ describe('pages/NewCatalog', () => {
     type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
     expect(screen.getByText(`${URL}/ops`)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect a provider' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add model' })).not.toBeInTheDocument();
+    type(screen.getByLabelText(/^API key/), 'typed-key');
     expect(createModelCatalog).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
-    expect(await screen.findByText('catalog page')).toBeInTheDocument();
+    expect(await screen.findByText('catalog page after create')).toBeInTheDocument();
     expect(createModelCatalog).toHaveBeenCalledTimes(1);
-    expect(createModelCatalog).toHaveBeenCalledWith('ops');
+    expect(createModelCatalog).toHaveBeenCalledWith(
+      'ops',
+      {
+        providers: { anthropic: { type: 'anthropic' } },
+        models: {},
+      },
+      { anthropic: { create: 'typed-key' } }
+    );
   });
 
   test('checks the name as it is typed and shows the URL only for a valid one', () => {
@@ -81,7 +93,31 @@ describe('pages/NewCatalog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
     expect(await screen.findByText('Enter a name.')).toBeInTheDocument();
+    expect(screen.getByText('Enter the API key.')).toBeInTheDocument();
     expect(createModelCatalog).not.toHaveBeenCalled();
+  });
+
+  test('requires a custom endpoint for OpenAI-compatible', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+    type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'local');
+    fireEvent.click(screen.getByRole('radio', { name: 'OpenAI-compatible' }));
+    type(screen.getByLabelText(/^API key/), 'typed-key');
+    fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
+    expect(await screen.findByText('Enter the provider endpoint.')).toBeInTheDocument();
+    expect(createModelCatalog).not.toHaveBeenCalled();
+
+    type(screen.getByRole('textbox', { name: /^Provider endpoint/ }), 'https://gateway.example/v1');
+    fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
+    expect(await screen.findByText('catalog page after create')).toBeInTheDocument();
+    expect(createModelCatalog).toHaveBeenCalledWith(
+      'local',
+      {
+        providers: { 'openai-compatible': { type: 'openai-compatible', baseURL: 'https://gateway.example/v1' } },
+        models: {},
+      },
+      { 'openai-compatible': { create: 'typed-key' } }
+    );
   });
 
   test('shows a refused create as returned and keeps the input', async () => {
@@ -91,11 +127,12 @@ describe('pages/NewCatalog', () => {
     renderPage();
 
     type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
+    type(screen.getByLabelText(/^API key/), 'typed-key');
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /^Catalog name/ })).toHaveValue('ops');
-    expect(screen.queryByText('catalog page')).not.toBeInTheDocument();
+    expect(screen.queryByText(/catalog page/)).not.toBeInTheDocument();
   });
 
   test('offers no catalog creation without the create action', () => {

@@ -83,22 +83,15 @@ function isCatalogWrite(method: string, name?: string) {
   return (request: Request) => request.method() === method && new URL(request.url()).pathname.endsWith(path);
 }
 
-async function createEmptyCatalog(page: Page, name: string) {
+async function createCatalog(page: Page, name: string, key: string) {
   await page.getByRole('textbox', { name: /^Catalog name/ }).fill(name);
+  await page.getByLabel(/^API key/).fill(key);
   const created = page.waitForResponse((response) => isCatalogWrite('POST')(response.request()));
   await page.getByRole('button', { name: 'Create catalog' }).click();
   const response = await created;
   expect(response.status(), await response.text()).toBe(201);
   await expect(page).toHaveURL(new RegExp(`${catalogPageURL(name)}$`));
   return response;
-}
-
-async function connectAnthropic(page: Page, key: string) {
-  await page.getByRole('button', { name: 'Connect a provider' }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByLabel(/^API key/).fill(key);
-  await dialog.getByRole('button', { name: 'Connect' }).click();
-  await expect(card(page, 'anthropic').getByText('No models yet.')).toBeVisible();
 }
 
 async function addModel(page: Page, provider: string, providerModel: string) {
@@ -122,41 +115,27 @@ test.describe('model catalog page', () => {
     }
   });
 
-  test('an Admin creates by name, connects a provider, and can return to an empty catalog', async ({
+  test('an Admin creates with a provider and can remove the last model but not that provider', async ({
     gotoPage,
     page,
     accounts,
   }) => {
     const name = uniqueName();
-    const key = sentinelKey('connect');
+    const key = sentinelKey('create');
     await gotoPage(`/${ROUTES.Catalogs}`);
     await page.getByRole('link', { name: 'New catalog' }).click();
-    await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
-    const created = await createEmptyCatalog(page, name);
-    const createBody = created.request().postDataJSON();
-    expect(createBody.spec).toEqual({ providers: {}, models: {} });
-    expect(createBody).not.toHaveProperty('secure');
-
-    const stored = async () => {
-      const response = await accounts.Admin.get(`${CATALOGS}/${name}`);
-      expect(response.ok(), await response.text()).toBe(true);
-      return response.json();
-    };
-    const empty = await stored();
-    expect(empty.spec).toEqual({ providers: {}, models: {} });
-    await expect(page.getByRole('button', { name: 'Connect a provider' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add model' })).toHaveCount(0);
     const watch = keyWatch(page);
+    const created = await createCatalog(page, name, key);
+    const createBody = created.request().postDataJSON();
+    expect(createBody.spec).toEqual({ providers: { anthropic: { type: 'anthropic' } }, models: {} });
+    expect(createBody.secure).toEqual({ anthropic: { create: key } });
 
-    const connected = page.waitForRequest(isCatalogWrite('PUT', name));
-    await connectAnthropic(page, key);
-    const connectBody = (await connected).postDataJSON();
-    expect(connectBody.metadata.resourceVersion).toBe(empty.metadata.resourceVersion);
-    expect(connectBody.spec.models).toEqual({});
-    expect(connectBody.secure).toEqual({ anthropic: { create: key } });
     const provider = card(page, 'anthropic');
     await expect(provider.getByText('No models yet.')).toBeVisible();
-    expect(Object.keys((await stored()).secure.anthropic)).toEqual(['name']);
+    await expect(provider.getByText('Key rejected')).toBeVisible();
+    const lastProvider = provider.getByRole('button', { name: 'Delete the catalog to remove its last provider.' });
+    await expect(lastProvider).toBeDisabled();
     const model = 'claude-sonnet-4-6';
     await addModel(page, 'anthropic', model);
 
@@ -165,25 +144,10 @@ test.describe('model catalog page', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
     await expect(provider.getByText('No models yet.')).toBeVisible();
     expect((await removedModel).postDataJSON()).not.toHaveProperty('secure');
-    expect(Object.keys((await stored()).secure.anthropic)).toEqual(['name']);
-    await expect(provider.getByText(SUCCESS_BADGES)).toHaveCount(0);
-
-    await addModel(page, 'anthropic', model);
-    const beforeRemoval = await stored();
-    const removedProvider = page.waitForRequest(isCatalogWrite('PUT', name));
-    await provider.getByRole('button', { name: 'Remove anthropic' }).click();
-    const removal = page.getByRole('dialog');
-    await expect(removal.getByText(`its models are removed: ${model}`, { exact: false })).toBeVisible();
-    await removal.getByRole('button', { name: 'Remove' }).click();
-    await expect(provider).toHaveCount(0);
-    const removeBody = (await removedProvider).postDataJSON();
-    expect(removeBody.metadata.resourceVersion).toBe(beforeRemoval.metadata.resourceVersion);
-    expect(removeBody.spec).toEqual({ providers: {}, models: {} });
-    expect(removeBody.secure).toEqual({ anthropic: { remove: true } });
-    const cleared = await stored();
-    expect(cleared.spec).toEqual({ providers: {}, models: {} });
-    expect(Object.keys(cleared.secure ?? {})).toEqual([]);
-    await expect(page.getByRole('button', { name: 'Check health' })).toHaveCount(0);
+    const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
+    expect(stored.spec).toEqual(createBody.spec);
+    expect(Object.keys(stored.secure.anthropic)).toEqual(['name']);
+    await expect(lastProvider).toBeDisabled();
     await watch.nowhere(key);
   });
 
@@ -399,13 +363,17 @@ test.describe('model catalog page', () => {
     await expect(page.getByRole('textbox', { name: /^Catalog name/ })).toBeVisible();
     const watch = keyWatch(page);
     await expect(page.getByRole('combobox', { name: 'Add a model to anthropic' })).toHaveCount(0);
-    await createEmptyCatalog(page, name);
-    await connectAnthropic(page, accepted);
+    const healthRequests: Request[] = [];
+    page.on('request', (request) => {
+      if (isCatalogWrite('POST', `${name}/health`)(request)) {
+        healthRequests.push(request);
+      }
+    });
+    const health = page.waitForResponse((response) => isCatalogWrite('POST', `${name}/health`)(response.request()));
+    await createCatalog(page, name, accepted);
 
     const provider = card(page, 'anthropic');
     await expect(provider.getByText('No models yet.')).toBeVisible();
-    const health = page.waitForResponse((response) => isCatalogWrite('POST', `${name}/health`)(response.request()));
-    await page.getByRole('button', { name: 'Check health' }).click();
     expect(await (await health).json()).toEqual({ providers: { anthropic: 'ok' }, models: {} });
     await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('No problems found');
     await expect(provider.getByText(SUCCESS_BADGES)).toHaveCount(0);
@@ -444,6 +412,12 @@ test.describe('model catalog page', () => {
     await watch.nowhere(accepted);
     await watch.nowhere(rejected);
     await watch.nowhere('e2e-health-provider-error');
+    expect(healthRequests).toHaveLength(1);
+
+    await page.reload();
+    await expect(provider.getByRole('listitem', { name: 'manual-with-rejected-key' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check health' })).toBeVisible();
+    expect(healthRequests).toHaveLength(1);
   });
 
   for (const role of BROWSER_ROLES) {

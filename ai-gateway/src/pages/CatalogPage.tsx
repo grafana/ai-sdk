@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
@@ -42,6 +42,7 @@ function CatalogView({ name }: Props) {
   const s = useStyles2(getStyles);
   const permissions = catalogPermissions();
   const navigate = useNavigate();
+  const location = useLocation();
   const [stored, setStored] = useState<ModelCatalog>();
   const [error, setError] = useState<string>();
   const [deleting, setDeleting] = useState(false);
@@ -50,8 +51,8 @@ function CatalogView({ name }: Props) {
   const [checking, setChecking] = useState(false);
   const healthGeneration = useRef(0);
   const inFlight = useRef(false);
-  const canCheckHealth =
-    permissions.read && permissions.checkHealth && !!stored && Object.keys(stored.spec.providers).length > 0;
+  const consumedArrival = useRef(false);
+  const canCheckHealth = permissions.read && permissions.checkHealth && !!stored;
   const problems = canCheckHealth && health ? countHealthProblems(health) : undefined;
 
   useEffect(() => {
@@ -79,7 +80,7 @@ function CatalogView({ name }: Props) {
     }
   };
 
-  const checkHealth = async () => {
+  const checkHealth = useCallback(async () => {
     if (inFlight.current) {
       return;
     }
@@ -103,7 +104,21 @@ function CatalogView({ name }: Props) {
         setChecking(false);
       }
     }
-  };
+  }, [name]);
+
+  useEffect(() => {
+    if (!location.state?.checkHealthAfterCreate || consumedArrival.current || (permissions.read && !stored && !error)) {
+      return;
+    }
+    consumedArrival.current = true;
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: null }
+    );
+    if (canCheckHealth) {
+      queueMicrotask(() => void checkHealth());
+    }
+  }, [canCheckHealth, checkHealth, error, location, navigate, permissions.read, stored]);
 
   const remove = async () => {
     setDeleting(false);

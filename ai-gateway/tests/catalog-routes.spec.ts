@@ -87,14 +87,17 @@ test.describe('ModelCatalog routes', () => {
     }
   });
 
-  test('a saved empty catalog lists no models and rejects calls as unknown model', async ({ accounts }) => {
+  test('a catalog with a provider but no models lists none and rejects calls as unknown model', async ({
+    accounts,
+  }) => {
     const name = uniqueName();
     const response = await accounts.Admin.post(CATALOGS, {
       data: {
         apiVersion: `${API_GROUP}/${API_VERSION}`,
         kind: 'ModelCatalog',
         metadata: { name },
-        spec: { providers: {}, models: {} },
+        spec: { providers: { claude: { type: 'anthropic' } }, models: {} },
+        secure: { claude: { create: SENTINEL } },
       },
     });
     expect(response.status(), await response.text()).toBe(201);
@@ -106,10 +109,7 @@ test.describe('ModelCatalog routes', () => {
       expect(invocation.status(), await invocation.text()).toBe(404);
       expect((await invocation.json()).error.code).toBe('model_not_found');
     }
-    const health = await accounts.Admin.post(`${CATALOGS}/${name}/health`);
-    expect(health.status(), await health.text()).toBe(200);
-    expect(await health.json()).toEqual({ providers: {}, models: {} });
-    const unknown = await accounts.Admin.post(`${CATALOGS}/${name}/available-models?provider=claude`);
+    const unknown = await accounts.Admin.post(`${CATALOGS}/${name}/available-models?provider=absent`);
     expect(unknown.status(), await unknown.text()).toBe(404);
     expect(await unknown.json()).toEqual({ message: 'provider not found in stored catalog' });
   });

@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, Button, ConfirmModal, Stack, Text } from '@grafana/ui';
+import { Alert, Button, ConfirmModal, Stack } from '@grafana/ui';
 import { CatalogHealth, errorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 import { ConnectProviderModal } from './ConnectProviderModal';
 import { ModelDrawer } from './ModelDrawer';
@@ -38,7 +38,7 @@ interface Props {
 /**
  * CatalogEditor shows a catalog's providers, each with the models it serves,
  * and applies each change a writer confirms through onChange. A provider
- * can't be removed while another provider's model falls back to it.
+ * can't be removed if it is the last provider or another provider's model falls back to it.
  */
 export function CatalogEditor({ spec, keys, health, readOnly, listingRevision, listModels, onChange }: Props) {
   const [dialog, setDialog] = useState<Dialog>();
@@ -86,6 +86,9 @@ export function CatalogEditor({ spec, keys, health, readOnly, listingRevision, l
   };
 
   const removeBlocked = (provider: string): string | undefined => {
+    if (providers.length === 1) {
+      return 'Delete the catalog to remove its last provider.';
+    }
     const users = fallbackUsers(spec, provider);
     return users.length > 0
       ? `${provider} can't be removed while ${users.join(', ')} ${users.length === 1 ? 'falls' : 'fall'} back to it`
@@ -122,9 +125,6 @@ export function CatalogEditor({ spec, keys, health, readOnly, listingRevision, l
         <Alert severity="error" title="The change wasn't saved" onRemove={() => setError(undefined)}>
           {error}
         </Alert>
-      )}
-      {providers.length === 0 && (
-        <Text color="secondary">Connect a provider with its API key, then add the models applications can use.</Text>
       )}
       {providers.map(([name, provider]) => (
         <ProviderCard

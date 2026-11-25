@@ -92,15 +92,18 @@ describe('api/modelCatalogs', () => {
     );
   });
 
-  test('creates a catalog by name with explicit empty maps and no secure values', async () => {
-    await createModelCatalog('team');
+  test('creates a catalog with its first provider and key, but no models', async () => {
+    const initial = { providers: spec.providers, models: {} };
+    const secure = { anthropic: { create: 'typed-key' } };
+    await createModelCatalog('team', initial, secure);
     expect(backendSrv.post).toHaveBeenCalledWith(
       CATALOGS,
       {
         apiVersion: 'aigateway.ext.grafana.app/v1alpha1',
         kind: 'ModelCatalog',
         metadata: { name: 'team' },
-        spec: { providers: {}, models: {} },
+        spec: initial,
+        secure,
       },
       OPTIONS
     );

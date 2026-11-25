@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -88,13 +88,30 @@ function updated(catalog: ModelCatalog, spec: Spec, secure: SecureChanges): Mode
   return { ...catalog, metadata: { ...catalog.metadata, resourceVersion: '8' }, spec, secure: names };
 }
 
-function renderPage(withNavigation = false) {
+function BackButton() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      Back
+    </button>
+  );
+}
+
+function renderPage(withNavigation = false, fromCreate = false) {
   return render(
-    <MemoryRouter initialEntries={[`${APP}/catalogs/edit/team`]}>
+    <MemoryRouter
+      initialEntries={[
+        {
+          pathname: `${APP}/catalogs/edit/team`,
+          state: fromCreate ? { checkHealthAfterCreate: true } : null,
+        },
+      ]}
+    >
       {withNavigation && (
         <>
           <Link to={`${APP}/catalogs`}>Catalog list</Link>
           <Link to={`${APP}/catalogs/edit/team`}>Team catalog</Link>
+          <BackButton />
         </>
       )}
       <Routes>
@@ -324,33 +341,19 @@ describe('pages/CatalogPage', () => {
     expect(screen.queryByRole('option', { name: 'claude-custom-stale' })).not.toBeInTheDocument();
   });
 
-  test('connects a provider to an empty catalog, then offers health and browse before adding models', async () => {
-    const empty = { ...stored, spec: { providers: {}, models: {} }, secure: undefined };
-    jest.mocked(getModelCatalog).mockResolvedValue(empty);
-    jest.mocked(checkModelCatalogHealth).mockResolvedValue({ providers: { anthropic: 'ok' }, models: {} });
+  test('checks health once on create arrival and offers browsing before the first model', async () => {
+    jest.mocked(getModelCatalog).mockResolvedValue({ ...stored, spec: { ...stored.spec, models: {} } });
+    jest.mocked(checkModelCatalogHealth).mockResolvedValue({
+      providers: { anthropic: 'ok', openai: 'ok', spare: 'ok' },
+      models: {},
+    });
     signInAs(OrgRole.Admin, ALL);
-    renderPage();
+    renderPage(true, true);
 
-    const connect = await screen.findByRole('button', { name: 'Connect a provider' });
-    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Add a model to anthropic' })).not.toBeInTheDocument();
-    fireEvent.click(connect);
-    type(dialog().getByLabelText(/^API key/), TYPED_KEY);
-    fireEvent.click(dialog().getByRole('button', { name: 'Connect' }));
-    await screen.findByText('No models yet.');
-    expect(lastUpdate()).toEqual([
-      empty,
-      { providers: { anthropic: { type: 'anthropic' } }, models: {} },
-      { anthropic: { create: TYPED_KEY } },
-    ]);
-    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
-    expect(listProviderModels).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Check health' }));
-    const provider = card('anthropic');
-    expect(
-      await within(screen.getByRole('region', { name: 'Providers' })).findByText('No problems found')
-    ).toBeInTheDocument();
+    const provider = within(await screen.findByRole('region', { name: 'anthropic' }));
+    expect(await screen.findByText('No problems found')).toBeInTheDocument();
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+    expect(checkModelCatalogHealth).toHaveBeenCalledWith('team');
     expect(provider.queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
     const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
     fireEvent.focus(field);
@@ -358,6 +361,23 @@ describe('pages/CatalogPage', () => {
     fireEvent.click(field);
     expect(await provider.findByRole('option', { name: 'claude-listed' })).toBeInTheDocument();
     expect(listProviderModels).toHaveBeenCalledWith('team', 'anthropic');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('region', { name: 'anthropic' });
+    expect(checkModelCatalogHealth).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('No problems found')).not.toBeInTheDocument();
+  });
+
+  test('does not run arrival health without its permission', async () => {
+    signInAs(
+      OrgRole.Admin,
+      ALL.filter((action) => action !== CatalogActions.CheckHealth)
+    );
+    renderPage(false, true);
+    await screen.findByRole('listitem', { name: 'balanced' });
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
   });
 
   test('checks only on request and shows badges only for listing problems', async () => {
@@ -729,7 +749,7 @@ describe('pages/CatalogPage', () => {
     expect(dialog().getByText(/Use up to 128 letters/)).toBeInTheDocument();
   });
 
-  test('removes the last model, then the last provider and key in separate saves', async () => {
+  test('removes the last model but disables removal of the last provider', async () => {
     const single = {
       ...stored,
       spec: {
@@ -750,15 +770,10 @@ describe('pages/CatalogPage', () => {
     expect(card('openai').queryByText('No key')).not.toBeInTheDocument();
     expect(card('openai').queryByText(SUCCESS_BADGES)).not.toBeInTheDocument();
 
-    fireEvent.click(card('openai').getByRole('button', { name: 'Remove openai' }));
-    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
-    await screen.findByText(/Connect a provider with its API key/);
-    expect(lastUpdate()).toEqual([
-      updated(single, { providers: single.spec.providers, models: {} }, {}),
-      { providers: {}, models: {} },
-      { openai: { remove: true } },
-    ]);
-    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+    expect(
+      card('openai').getByRole('button', { name: 'Delete the catalog to remove its last provider.' })
+    ).toBeDisabled();
+    expect(updateModelCatalog).toHaveBeenCalledTimes(1);
   });
 
   test('removes the provider of the last model without promoting its fallback', async () => {
