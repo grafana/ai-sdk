@@ -280,6 +280,7 @@ description = "Lint documentation structure and markdown style"
 run = """
 python3 scripts/lint-docs.py
 markdownlint-cli2
+node --test ai-gateway/scripts/doc-links.test.mjs
 """
 
 [tasks.update-openspec]
