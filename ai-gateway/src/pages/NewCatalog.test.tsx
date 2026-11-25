@@ -109,6 +109,10 @@ describe('pages/NewCatalog', () => {
 
     type(screen.getByRole('textbox', { name: /^Provider endpoint/ }), 'https://gateway.example/v1');
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
+    expect(screen.getByText('Enter the API key.')).toBeInTheDocument();
+    expect(createModelCatalog).not.toHaveBeenCalled();
+    type(screen.getByLabelText(/^API key/), 'typed-key');
+    fireEvent.click(await screen.findByRole('button', { name: 'Create catalog' }));
     expect(await screen.findByText('catalog page after create')).toBeInTheDocument();
     expect(createModelCatalog).toHaveBeenCalledWith(
       'local',
@@ -118,6 +122,17 @@ describe('pages/NewCatalog', () => {
       },
       { 'openai-compatible': { create: 'typed-key' } }
     );
+  });
+
+  test('a provider type change clears the key before saving', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+    type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
+    type(screen.getByLabelText(/^API key/), 'previous-provider-key');
+    fireEvent.click(screen.getByRole('radio', { name: 'OpenAI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
+    expect(await screen.findByText('Enter the API key.')).toBeInTheDocument();
+    expect(createModelCatalog).not.toHaveBeenCalled();
   });
 
   test('shows a refused create as returned and keeps the input', async () => {

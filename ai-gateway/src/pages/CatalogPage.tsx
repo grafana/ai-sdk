@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { NavigationType, useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
@@ -26,6 +26,10 @@ interface Props {
   name: string;
 }
 
+function hasProviders(catalog?: ModelCatalog): boolean {
+  return !!catalog && Object.keys(catalog.spec.providers).length > 0;
+}
+
 function countHealthProblems(health: CatalogHealth): number {
   return [
     ...Object.values(health.providers),
@@ -43,6 +47,7 @@ function CatalogView({ name }: Props) {
   const permissions = catalogPermissions();
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const [stored, setStored] = useState<ModelCatalog>();
   const [error, setError] = useState<string>();
   const [deleting, setDeleting] = useState(false);
@@ -51,23 +56,9 @@ function CatalogView({ name }: Props) {
   const [checking, setChecking] = useState(false);
   const healthGeneration = useRef(0);
   const inFlight = useRef(false);
-  const consumedArrival = useRef(false);
-  const canCheckHealth = permissions.read && permissions.checkHealth && !!stored;
+  const checkOnArrival = useRef(false);
+  const canCheckHealth = permissions.read && permissions.checkHealth && hasProviders(stored);
   const problems = canCheckHealth && health ? countHealthProblems(health) : undefined;
-
-  useEffect(() => {
-    if (!permissions.read) {
-      return;
-    }
-    let current = true;
-    getModelCatalog(name).then(
-      (catalog) => current && setStored(catalog),
-      (err) => current && setError(errorMessage(err))
-    );
-    return () => {
-      current = false;
-    };
-  }, [name, permissions.read]);
 
   const save = async ({ spec, secure }: CatalogChange) => {
     if (stored) {
@@ -107,18 +98,41 @@ function CatalogView({ name }: Props) {
   }, [name]);
 
   useEffect(() => {
-    if (!location.state?.checkHealthAfterCreate || consumedArrival.current || (permissions.read && !stored && !error)) {
+    if (location.state?.checkHealthAfterCreate !== true) {
       return;
     }
-    consumedArrival.current = true;
+    if (navigationType === NavigationType.Push) {
+      checkOnArrival.current = permissions.read && permissions.checkHealth;
+    }
     navigate(
       { pathname: location.pathname, search: location.search, hash: location.hash },
       { replace: true, state: null }
     );
-    if (canCheckHealth) {
-      queueMicrotask(() => void checkHealth());
+  }, [location, navigate, navigationType, permissions.checkHealth, permissions.read]);
+
+  useEffect(() => {
+    if (!permissions.read) {
+      return;
     }
-  }, [canCheckHealth, checkHealth, error, location, navigate, permissions.read, stored]);
+    let current = true;
+    getModelCatalog(name).then(
+      (catalog) => {
+        if (!current) {
+          return;
+        }
+        const autoCheck = checkOnArrival.current;
+        checkOnArrival.current = false;
+        setStored(catalog);
+        if (autoCheck && permissions.checkHealth && hasProviders(catalog)) {
+          void checkHealth();
+        }
+      },
+      (err) => current && setError(errorMessage(err))
+    );
+    return () => {
+      current = false;
+    };
+  }, [checkHealth, name, permissions.checkHealth, permissions.read]);
 
   const remove = async () => {
     setDeleting(false);

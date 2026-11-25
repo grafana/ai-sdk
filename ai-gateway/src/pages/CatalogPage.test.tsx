@@ -97,13 +97,13 @@ function BackButton() {
   );
 }
 
-function renderPage(withNavigation = false, fromCreate = false) {
+function renderPage(withNavigation = false, arrival?: 'create' | 'reload') {
   return render(
     <MemoryRouter
       initialEntries={[
         {
-          pathname: `${APP}/catalogs/edit/team`,
-          state: fromCreate ? { checkHealthAfterCreate: true } : null,
+          pathname: arrival === 'create' ? `${APP}/catalogs` : `${APP}/catalogs/edit/team`,
+          state: arrival === 'reload' ? { checkHealthAfterCreate: true } : null,
         },
       ]}
     >
@@ -111,6 +111,9 @@ function renderPage(withNavigation = false, fromCreate = false) {
         <>
           <Link to={`${APP}/catalogs`}>Catalog list</Link>
           <Link to={`${APP}/catalogs/edit/team`}>Team catalog</Link>
+          <Link to={`${APP}/catalogs/edit/team`} state={{ checkHealthAfterCreate: true }}>
+            Create arrival
+          </Link>
           <BackButton />
         </>
       )}
@@ -348,7 +351,8 @@ describe('pages/CatalogPage', () => {
       models: {},
     });
     signInAs(OrgRole.Admin, ALL);
-    renderPage(true, true);
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
 
     const provider = within(await screen.findByRole('region', { name: 'anthropic' }));
     expect(await screen.findByText('No problems found')).toBeInTheDocument();
@@ -374,10 +378,58 @@ describe('pages/CatalogPage', () => {
       OrgRole.Admin,
       ALL.filter((action) => action !== CatalogActions.CheckHealth)
     );
-    renderPage(false, true);
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
     await screen.findByRole('listitem', { name: 'balanced' });
     expect(checkModelCatalogHealth).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+  });
+
+  test('does not run arrival health from a refreshed history entry', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage(false, 'reload');
+    await screen.findByRole('listitem', { name: 'balanced' });
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+  });
+
+  test('does not replay a create arrival left before the catalog loaded', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    let finish!: (catalog: ModelCatalog) => void;
+    jest.mocked(getModelCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
+    expect(getModelCatalog).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('link', { name: 'Catalog list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('listitem', { name: 'balanced' });
+    await act(() => finish(stored));
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+  });
+
+  test('no health action is offered for an invalid catalog missing providers', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    jest.mocked(getModelCatalog).mockResolvedValue({ ...stored, spec: { providers: {}, models: {} } });
+    renderPage(true, 'create');
+    fireEvent.click(screen.getByRole('link', { name: 'Create arrival' }));
+    await screen.findByRole('button', { name: 'Connect a provider' });
+    expect(checkModelCatalogHealth).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Check health' })).not.toBeInTheDocument();
+  });
+
+  test('connecting another provider does not reuse a key after switching types', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect a provider' }));
+    fireEvent.click(dialog().getByRole('radio', { name: 'Anthropic' }));
+    type(dialog().getByLabelText(/^API key/), TYPED_KEY);
+    fireEvent.click(dialog().getByRole('radio', { name: 'OpenAI' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Connect' }));
+    expect(await dialog().findByText('Enter the API key.')).toBeInTheDocument();
+    expect(updateModelCatalog).not.toHaveBeenCalled();
   });
 
   test('checks only on request and shows badges only for listing problems', async () => {

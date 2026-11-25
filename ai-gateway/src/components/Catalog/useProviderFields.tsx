@@ -52,9 +52,12 @@ export function useProviderFields(providers: Spec['providers']) {
           options={PROVIDER_TYPES}
           value={type}
           onChange={(next) => {
-            setType(next);
-            setCustomName(undefined);
-            setEndpoint('');
+            if (next !== type) {
+              setType(next);
+              setCustomName(undefined);
+              setEndpoint('');
+              setKey('');
+            }
           }}
         />
       </Field>
@@ -86,13 +89,23 @@ export function useProviderFields(providers: Spec['providers']) {
         <Input
           id="provider-endpoint"
           value={endpoint}
-          onChange={(event) => setEndpoint(event.currentTarget.value)}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            if (next.trim() !== endpoint.trim()) {
+              setKey('');
+            }
+            setEndpoint(next);
+          }}
           onBlur={() => checks.leave('endpoint')}
         />
       </Field>
       <Field
         label="API key"
-        description="Stored as a Grafana secret. It can't be viewed after saving."
+        description={
+          endpoint.trim() || type === ProviderType.OpenAICompatible
+            ? "Use a key for the custom endpoint above. Grafana stores it as a secret and doesn't show it after saving."
+            : `Use a key for ${providerTypeLabel(type)}'s native endpoint. Grafana stores it as a secret and doesn't show it after saving.`
+        }
         invalid={errors.key !== undefined}
         error={errors.key}
       >
