@@ -22,10 +22,14 @@ func TestStreamTextAbortUIConformance(t *testing.T) {
 		waitForDelta    bool
 		pendingAtCancel bool
 	}{
-		{name: "no-output"},
+		{
+			name:          "no-output",
+			providerParts: []provider.StreamPart{{Type: provider.PartStreamStart}},
+		},
 		{
 			name: "partial-output",
 			providerParts: []provider.StreamPart{
+				{Type: provider.PartStreamStart},
 				{Type: provider.PartTextStart, ID: "t1"},
 				{Type: provider.PartTextDelta, ID: "t1", Delta: "partial"},
 			},
@@ -34,6 +38,7 @@ func TestStreamTextAbortUIConformance(t *testing.T) {
 		{
 			name: "pending-output",
 			providerParts: []provider.StreamPart{
+				{Type: provider.PartStreamStart},
 				{Type: provider.PartTextStart, ID: "t1"},
 				{Type: provider.PartTextDelta, ID: "t1", Delta: "discarded"},
 			},

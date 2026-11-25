@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 func listingResponse(code int, body string) *http.Response {
@@ -61,7 +62,7 @@ func TestCatalogHealthChecker_Check(t *testing.T) {
 		default:
 			return nil, errors.New("unexpected destination")
 		}
-	}))
+	}), outbound.CustomEndpoints{})
 	got, err := checker.Check(t.Context(), "stack", stack)
 	require.NoError(t, err)
 	assert.EqualValues(t, 4, calls.Load())
@@ -74,14 +75,14 @@ func TestCatalogHealthChecker_Preflight(t *testing.T) {
 	checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 		t.Error("invalid catalog attempted a provider request")
 		return nil, errors.New("unexpected provider request")
-	}))
+	}), outbound.CustomEndpoints{})
 	for _, tc := range []struct {
 		name   string
 		mutate func(StackCatalog)
 	}{
 		{"missing key", func(stack StackCatalog) { delete(stack.Keys, "claude") }},
 		{"invalid shape", func(stack StackCatalog) { clear(stack.Spec.Models) }},
-		{"endpoint override", func(stack StackCatalog) {
+		{"unlisted endpoint", func(stack StackCatalog) {
 			stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", BaseURL: new("https://example.invalid")}
 		}},
 		{"compatible type", func(stack StackCatalog) { stack.Spec.Providers["gpt"] = v1alpha1.Provider{Type: "openai-compatible"} }},
@@ -142,7 +143,7 @@ func TestCatalogHealthChecker_ListingOutcomes(t *testing.T) {
 				}
 				resp.Header = http.Header{"Content-Type": {"text/event-stream"}}
 				return resp, nil
-			}))
+			}), outbound.CustomEndpoints{})
 			got := checker.list(t.Context(), p, map[string]struct{}{"listed": {}, "missing": {}}, listingKeyMatcher([]string{p.APIKey}))
 			assert.Equal(t, len(tc.replies), calls)
 			assert.Equal(t, tc.status, got.status)
@@ -164,7 +165,7 @@ func TestCatalogHealthChecker_Bounds(t *testing.T) {
 			checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 				<-r.Context().Done()
 				return nil, r.Context().Err()
-			}))
+			}), outbound.CustomEndpoints{})
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			for i := range healthMaxRuns {
@@ -195,7 +196,7 @@ func TestCatalogHealthChecker_Bounds(t *testing.T) {
 				}
 				<-r.Context().Done()
 				return nil, r.Context().Err()
-			}))
+			}), outbound.CustomEndpoints{})
 			stack := testStackCatalog()
 			for i := range 10 {
 				name := fmt.Sprintf("extra-%02d", i)
@@ -213,4 +214,29 @@ func TestCatalogHealthChecker_Bounds(t *testing.T) {
 			assert.Equal(t, ModelHealth{Primary: HealthNotChecked, Fallback: []HealthStatus{HealthNotChecked}}, got.Models["balanced"])
 		})
 	})
+}
+
+func TestCatalogHealthChecker_ListedCustomEndpoint(t *testing.T) {
+	endpoints, err := outbound.ParseCustomEndpoints("https://anthropic-proxy.example.com/team")
+	require.NoError(t, err)
+	var paths []string
+	checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "anthropic-proxy.example.com" {
+			paths = append(paths, r.URL.Path)
+			return listingResponse(200, `{"data":[{"id":"claude-sonnet"}],"has_more":false}`), nil
+		}
+		return listingResponse(200, `{"data":[{"id":"gpt-large"},{"id":"gpt-small"}]}`), nil
+	}), endpoints)
+	stack := testStackCatalog()
+	stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", BaseURL: new("https://anthropic-proxy.example.com/team")}
+	got, err := checker.Check(t.Context(), "stack", stack)
+	require.NoError(t, err)
+	assert.Equal(t, HealthOK, got.Providers["claude"])
+	assert.Equal(t, []string{"/team/v1/models"}, paths)
+
+	_, err = NewCatalogHealthChecker(selectionTransport(func(*http.Request) (*http.Response, error) {
+		t.Error("an unlisted endpoint attempted a provider request")
+		return nil, errors.New("unexpected provider request")
+	}), outbound.CustomEndpoints{}).Check(t.Context(), "stack", stack)
+	require.ErrorIs(t, err, execution.ErrCatalogConfiguration)
 }

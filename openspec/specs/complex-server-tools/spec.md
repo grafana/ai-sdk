@@ -173,23 +173,22 @@ When `convertResponse` encounters a `server_tool_use` block with wire name `bash
 
 ### Requirement: Dynamic flag for implicit code execution
 
-After tool preparation, markCodeExecutionDynamic SHALL be true when tools contain type web_fetch_20260209 or web_search_20260209 and none has name code_execution. When true, server_tool_use wire name code_execution SHALL emit Dynamic:true in streaming PartToolInputStart/PartToolCall and unary GenerateContentPart.
+The adapter SHALL derive the dynamic flag from the prepared request tools, regardless of response format. It SHALL be true for any `web_fetch` or `web_search` tool dated `20260209` or `20260318` unless a prepared tool has type `code_execution_20250522`, `code_execution_20250825`, or `code_execution_20260120`.
 
-#### Scenario: Dynamic flag set when web_search_20260209 without code_execution
+#### Scenario: Implicit code execution from a dynamic web tool
 
-- **WHEN** the prepared tools contain a tool with `type: "web_search_20260209"` and no tool has `name: "code_execution"`
-- **THEN** `markCodeExecutionDynamic` is `true`
-- **AND** `server_tool_use` blocks with name `code_execution` are emitted with `Dynamic: true`
+- **WHEN** an ordinary or JSON-tool fallback request retains a February or March dynamic web tool and no explicit code-execution provider tool
+- **THEN** a `server_tool_use` block for `code_execution` SHALL emit `Dynamic: true` in streaming tool-input-start and tool-call parts and in the unary tool-call part
 
-#### Scenario: Dynamic flag not set when code_execution present
+#### Scenario: Dynamic flag not set when explicit code execution is retained
 
-- **WHEN** the prepared tools contain both a tool with `type: "web_search_20260209"` and a tool with `name: "code_execution"`
-- **THEN** `markCodeExecutionDynamic` is `false`
+- **WHEN** the prepared tools contain a dynamic web tool and an explicit code-execution provider tool
+- **THEN** code-execution call parts SHALL NOT be marked dynamic by the web-tool rule
 
-#### Scenario: Dynamic flag not set without web 20260209 tools
+#### Scenario: Older web tool alone does not set the flag
 
-- **WHEN** the prepared tools contain only `web_search_20250305` and no 20260209 web tools
-- **THEN** `markCodeExecutionDynamic` is `false`
+- **WHEN** the prepared tools contain only `web_search_20250305`
+- **THEN** code-execution call parts SHALL NOT be marked dynamic by the web-tool rule
 
 ### Requirement: Code execution result block handling
 

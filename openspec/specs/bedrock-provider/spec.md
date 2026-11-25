@@ -539,6 +539,21 @@ For JSON schemas, the provider SHALL select native output, a JSON tool or a JSON
 - **WHEN** a model that would use native output in `auto` receives an open-object, self-referencing, or more-than-ten-optional-property schema
 - **THEN** `output_config.format` is absent; a model that accepts forced tool use receives the synthetic `json` tool with required choice, and a model that rejects it receives the JSON schema instruction
 
+### Requirement: Caller tools in the JSON-tool fallback
+
+When Converse selects the JSON-tool fallback, it SHALL filter caller function and provider tools before appending `json` and applying the effective `required` choice. It SHALL drop all caller tools for `none`, retain only tools whose SDK name matches a named `tool` choice, and retain all for `auto`, `required`, or an omitted choice. Normal provider support checks and choice placement SHALL apply to the retained tools.
+
+#### Scenario: Restricted caller choice on an open schema
+
+- **WHEN** Converse selects the JSON-tool fallback with caller tools `lookup` and `unused` and no retained provider tools or explicit parallel disabling
+- **THEN** `toolConfig.tools` SHALL contain only `json` for `none`, or `lookup` followed by `json` for a named choice of `lookup`
+- **AND** the request SHALL use `toolConfig.toolChoice.any`
+
+#### Scenario: Unrestricted caller choice on an open schema
+
+- **WHEN** Converse selects the JSON-tool fallback with supported caller tools and the caller chooses `auto` or `required`
+- **THEN** the request SHALL retain those tools and append `json`, using the effective required choice
+
 ### Requirement: Native output schema representability
 
 A schema SHALL be representable for automatic native output unless it has a circular local `$ref` reachable from the root, an open object (`additionalProperties` true or a schema, non-empty `patternProperties`, or object type without `properties` and without `additionalProperties:false`), or more than ten optional properties counted across nested subschemas and at every use of a referenced definition. Unrepresentable schemas SHALL use the route the model takes without native support.
@@ -632,12 +647,12 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: None choice with function-only tools
 
-- **WHEN** choice is `none` with only function tools
+- **WHEN** choice is `none` with only function tools, outside the JSON-tool fallback
 - **THEN** no parallel-disabling choice, Converse tool choice, or tool definitions are sent
 
 #### Scenario: None choice with Anthropic provider tools
 
-- **WHEN** choice is `none` and supported Anthropic provider tools are present, with or without function tools
+- **WHEN** choice is `none` outside the JSON-tool fallback and supported Anthropic provider tools are present, with or without function tools
 - **THEN** the supported provider-tool definitions and any accompanying function-tool definitions remain in `toolConfig.tools` with their required betas, but neither `additionalModelRequestFields.tool_choice` nor `toolConfig.toolChoice` is sent
 
 #### Scenario: All tools filtered out
@@ -647,8 +662,8 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: JSON response tool and Anthropic provider tools
 
-- **WHEN** JSON-tool fallback is selected with caller tools, including Anthropic provider tools, and parallel disabling is requested
-- **THEN** the `json` function tool is appended, the effective choice is required, and exactly one compatible choice location is emitted; supported provider tools keep their pinned schema and required beta flags
+- **WHEN** JSON-tool fallback retains an Anthropic provider tool after applying caller choice
+- **THEN** the retained provider tool keeps its pinned schema and required beta flags, and the effective required choice is emitted in `additionalModelRequestFields.tool_choice`, not `toolConfig.toolChoice`
 
 ### Requirement: Converse OpenAI effort routing
 
