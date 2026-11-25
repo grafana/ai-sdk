@@ -697,17 +697,26 @@ describe('pages/CatalogPage', () => {
     expect(updateModelCatalog).not.toHaveBeenCalled();
   });
 
-  test('replaces a key and sends only that key', async () => {
+  test.each([
+    [undefined, "Anthropic's native endpoint"],
+    ['https://gateway.example/team', 'https://gateway.example/team'],
+  ])('shows the destination %s and sends only the replacement key', async (baseURL, destination) => {
+    const catalog = {
+      ...stored,
+      spec: { ...stored.spec, providers: { ...stored.spec.providers, anthropic: { type: 'anthropic', baseURL } } },
+    };
+    jest.mocked(getModelCatalog).mockResolvedValue(catalog);
     signInAs(OrgRole.Admin, ALL);
     await openPage();
 
     fireEvent.click(card('anthropic').getByRole('button', { name: 'Replace key' }));
+    expect(dialog().getByText(`Use a key for ${destination}.`, { exact: false })).toBeInTheDocument();
     type(dialog().getByLabelText(/^New API key/), TYPED_KEY);
     fireEvent.click(dialog().getByRole('button', { name: 'Save key' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     const [, spec, secure] = lastUpdate();
-    expect(spec).toEqual(stored.spec);
+    expect(spec).toEqual(catalog.spec);
     expect(secure).toEqual({ anthropic: { create: TYPED_KEY } });
   });
 

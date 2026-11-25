@@ -91,7 +91,7 @@ The page SHALL decide each control from the signed-in user's Grafana permissions
 - **THEN** the matching control SHALL follow the permission
 
 ### Requirement: Write-only provider keys
-A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. The page SHALL NOT show a saved-key badge. A writer SHALL have a control to replace a provider's key.
+A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. The page SHALL NOT show a saved-key badge. A writer SHALL have a control to replace a provider's key. The replacement dialog SHALL identify the saved custom endpoint or the native destination.
 
 #### Scenario: Key after saving
 - **WHEN** a provider is saved with a key, the catalog is reopened, or the list is shown

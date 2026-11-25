@@ -41,7 +41,7 @@ A user who may create catalogs SHALL be able to create one with a name and one p
 - **THEN** the page SHALL show the platform's conflict error and SHALL NOT overwrite the other change
 
 ### Requirement: Write-only provider keys
-A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. The page SHALL NOT show a saved-key badge. A writer SHALL have a control to replace a provider's key.
+A key entered on the page SHALL be sent only as `secure.<provider>.create` for that provider. The page SHALL never display a stored key or request one. The page SHALL NOT show a saved-key badge. A writer SHALL have a control to replace a provider's key. The replacement dialog SHALL identify the saved custom endpoint or the native destination.
 
 #### Scenario: Key after saving
 - **WHEN** a provider is saved with a key, the catalog is reopened, or the list is shown
