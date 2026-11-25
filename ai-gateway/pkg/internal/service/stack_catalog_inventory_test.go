@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +10,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 func TestAvailableModels_ListsAllPagesRatherThanOnlyHealthTargets(t *testing.T) {
@@ -22,7 +27,7 @@ func TestAvailableModels_ListsAllPagesRatherThanOnlyHealthTargets(t *testing.T) 
 		}
 		assert.Equal(t, "cursor&literal", r.URL.Query().Get("after_id"))
 		return listingResponse(200, `{"data":[{"id":"Z"},{"id":"a/B"}],"has_more":false}`), nil
-	}))
+	}), outbound.CustomEndpoints{})
 	for range 2 {
 		result, err := checker.AvailableModels(t.Context(), "stack", testStackCatalog(), "claude")
 		require.NoError(t, err)
@@ -56,7 +61,7 @@ func TestAvailableModels_CompletionAndSecretHandling(t *testing.T) {
 				require.Equal(t, 1, calls)
 				assert.Empty(t, r.URL.Query().Get("after_id"))
 				return listingResponse(tc.code, tc.body), nil
-			}))
+			}), outbound.CustomEndpoints{})
 			result, err := checker.AvailableModels(t.Context(), "stack", testStackCatalog(), "claude")
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, result)
@@ -80,7 +85,7 @@ func TestAvailableModels_ProtectsSavedKeysInIDsAndCursors(t *testing.T) {
 				assert.Empty(t, r.URL.Query().Get("after_id"))
 				body := fmt.Sprintf(`{"data":[{"id":"id-selected-key"},{"id":"id-other-key"},{"id":"listed"}],"has_more":true,"last_id":%s}`, encodedCursor)
 				return listingResponse(200, body), nil
-			}))
+			}), outbound.CustomEndpoints{})
 			result, err := checker.AvailableModels(t.Context(), "stack", stack, "claude")
 			require.NoError(t, err)
 			assert.Equal(t, CatalogProviderModels{ListingPartial, []string{"listed"}}, result)
@@ -99,11 +104,40 @@ func TestAvailableModels_CapsInventory(t *testing.T) {
 	checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, "Bearer gpt-catalog-key", r.Header.Get("Authorization"))
 		return listingResponse(200, string(body)), nil
-	}))
+	}), outbound.CustomEndpoints{})
 	result, err := checker.AvailableModels(t.Context(), "stack", testStackCatalog(), "gpt")
 	require.NoError(t, err)
 	assert.Equal(t, ListingPartial, result.Status)
 	require.Len(t, result.ModelIDs, maxListedModelIDs)
 	assert.Equal(t, "model-0000", result.ModelIDs[0])
 	assert.Equal(t, "model-0511", result.ModelIDs[maxListedModelIDs-1])
+}
+
+func TestCatalogHealthChecker_AvailableModelsHonorsTheEndpointList(t *testing.T) {
+	stack := testStackCatalog()
+	stack.Spec.Providers["claude"] = v1alpha1.Provider{Type: "anthropic", BaseURL: new("https://anthropic-proxy.example.com/team")}
+	t.Run("a listed endpoint is listed", func(t *testing.T) {
+		endpoints, err := outbound.ParseCustomEndpoints("https://anthropic-proxy.example.com/team")
+		require.NoError(t, err)
+		var urls []string
+		checker := NewCatalogHealthChecker(selectionTransport(func(r *http.Request) (*http.Response, error) {
+			urls = append(urls, r.URL.Scheme+"://"+r.URL.Host+r.URL.Path)
+			return listingResponse(200, `{"data":[{"id":"claude-sonnet"}],"has_more":false}`), nil
+		}), endpoints)
+		result, err := checker.AvailableModels(t.Context(), "stack", stack, "claude")
+		require.NoError(t, err)
+		assert.Equal(t, ListingOK, result.Status)
+		assert.Equal(t, []string{"claude-sonnet"}, result.ModelIDs)
+		assert.Equal(t, []string{"https://anthropic-proxy.example.com/team/v1/models"}, urls)
+	})
+	t.Run("an unlisted endpoint is refused before any request", func(t *testing.T) {
+		checker := NewCatalogHealthChecker(selectionTransport(func(*http.Request) (*http.Response, error) {
+			t.Error("an unlisted endpoint attempted a provider request")
+			return nil, errors.New("unexpected provider request")
+		}), outbound.CustomEndpoints{})
+		for _, provider := range []string{"claude", "gpt"} {
+			_, err := checker.AvailableModels(t.Context(), "stack", stack, provider)
+			require.ErrorIs(t, err, execution.ErrCatalogConfiguration, provider)
+		}
+	})
 }

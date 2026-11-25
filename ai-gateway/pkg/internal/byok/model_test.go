@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,9 +27,9 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return fn(r) }
 
-func newTestModel(t *testing.T, selector string, controls json.RawMessage, approvals map[Provider][]string, client *http.Client) provider.LanguageModel {
+func newTestModel(t *testing.T, selector string, controls json.RawMessage, client *http.Client) provider.LanguageModel {
 	t.Helper()
-	request, err := decodeGateway(selector, controls, approvals)
+	request, err := decodeGateway(selector, controls)
 	require.NoError(t, err)
 	model, err := newAll(request, client)
 	require.NoError(t, err)
@@ -108,7 +109,7 @@ func TestNew_RequestOnlyAccountsAndDefaultFallback(t *testing.T) {
 					other = OpenAI
 				}
 				controls := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}],"%s":[{"apiKey":"unused-key"}]}}`, name, other)
-				model := newTestModel(t, string(name)+"/native-model", json.RawMessage(controls), nil, client)
+				model := newTestModel(t, string(name)+"/native-model", json.RawMessage(controls), client)
 				result, err := model.DoGenerate(context.Background(), provider.CallOptions{
 					Prompt: []provider.Message{provider.UserText("hello"), provider.AssistantText("previous reply"), provider.NewUserMessage(provider.TextPart("continue"), provider.FilePart("image/png", provider.DataContent{URL: "https://assets.invalid/example.png"}))},
 					Tools:  []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)}},
@@ -147,7 +148,7 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 			{name: "standard field matching", account: `{"APIKEY":"dummy-key","BaseURL":"https://api.openai.com/v1","Organization":"org-customer","Project":"proj-customer"}`, organization: "org-customer", project: "proj-customer"},
 		} {
 			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
-				request, err := decodeGateway("openai/native-model", json.RawMessage(`{"byok":{"openai":[`+tc.account+`]}}`), nil)
+				request, err := decodeGateway("openai/native-model", json.RawMessage(`{"byok":{"openai":[`+tc.account+`]}}`))
 				require.NoError(t, err)
 				calls := 0
 				client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -176,7 +177,7 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 	}
 }
 
-func TestNew_ApprovedAccountOverrides(t *testing.T) {
+func TestNew_CustomAccountEndpoints(t *testing.T) {
 	for _, name := range []Provider{Anthropic, OpenAI} {
 		for _, streaming := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/stream=%t", name, streaming), func(t *testing.T) {
@@ -187,11 +188,11 @@ func TestNew_ApprovedAccountOverrides(t *testing.T) {
 					extraFirst = `,"organization":"org-first","project":"proj-first"`
 					extraSecond = `,"organization":"org-second","project":"proj-second"`
 				}
-				raw := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first","baseURL":%q%s},{"apiKey":"dummy-second","baseURL":%q%s}]}}`, name, first, extraFirst, second, extraSecond)
-				approval := map[Provider][]string{name: {first, second}}
-				request, err := decodeGateway(string(name)+"/native-model", json.RawMessage(raw), approval)
+				raw := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"%s}]}}`, name, extraFirst, extraSecond)
+				request, err := decodeGateway(string(name)+"/native-model", json.RawMessage(raw))
 				require.NoError(t, err)
-				delete(approval, name)
+				request.Destinations[0].Accounts[0].BaseURL = first
+				request.Destinations[0].Accounts[1].BaseURL = second
 				calls := 0
 				client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					calls++
@@ -237,27 +238,40 @@ func TestNew_ApprovedAccountOverrides(t *testing.T) {
 }
 
 func TestDecodeRequest_AccountPolicy(t *testing.T) {
-	const approved = "https://approved.example/v1"
+	endpoints, err := outbound.ParseCustomEndpoints("https://llm.example.com/v1,http://10.20.0.5:8080")
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name, selector, raw string
-		approvals           map[Provider][]string
 		allowed             bool
+		endpoint            string
 		want                error
 	}{
-		{name: "approved endpoint", selector: "openai/model", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}, allowed: true},
-		{name: "unapproved endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`},
-		{name: "unapproved endpoint with secret", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://dummy-secret@approved.example/v1"}]}}`},
-		{name: "wrong provider approval", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`, approvals: map[Provider][]string{Anthropic: {approved}}},
-		{name: "approval is not a request control", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]},"approvedBaseURLs":["https://approved.example/v1"]}`, want: execution.ErrUnsupportedGatewayControl},
-		{name: "approval does not supply defaults", raw: `{"byok":{"openai":[{"apiKey":"key"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}, allowed: true},
-		{name: "unused unapproved endpoint", raw: `{"byok":{"openai":[{"apiKey":"key"}],"anthropic":[{"apiKey":"unused","baseURL":"https://approved.example/v1"}]}}`},
-		{name: "native endpoint with changed path", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com/other"}]}}`},
-		{name: "native endpoint with added port", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com:443/v1"}]}}`},
-		{name: "approved prefix is not approved URL", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1/other"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}},
+		{name: "listed endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com/v1"}]}}`, allowed: true, endpoint: "https://llm.example.com/v1"},
+		{name: "listed endpoint is normalized", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"HTTPS://llm.example.com/v1/team"}]}}`, allowed: true, endpoint: "https://llm.example.com/v1/team"},
+		{name: "listed plain HTTP endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"http://10.20.0.5:8080/v1"}]}}`, allowed: true, endpoint: "http://10.20.0.5:8080/v1"},
+		{name: "path outside the listed prefix", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com/v10"}]}}`},
+		{name: "listed host on another port", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com:8443/v1"}]}}`},
+		{name: "listed endpoint with a dot segment", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com/v1/../admin"}]}}`},
+		{name: "unlisted endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://other.example.com/v1"}]}}`},
+		{name: "native endpoint counts as unset", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com/v1"}]}}`, allowed: true},
+		{name: "native endpoint with a trailing slash counts as unset", selector: "anthropic/model", raw: `{"byok":{"anthropic":[{"apiKey":"key","baseURL":"https://API.anthropic.com/"}]}}`, allowed: true},
+		{name: "native host with changed path is custom", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com/other"}]}}`},
+		{name: "native host with added port is custom", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com:443/v1"}]}}`},
+		{name: "case variant field is still checked", raw: `{"byok":{"openai":[{"apiKey":"key","BaseURL":"https://other.example.com/v1"}]}}`},
+		{name: "unused provider with a listed endpoint", raw: `{"byok":{"openai":[{"apiKey":"key"}],"anthropic":[{"apiKey":"unused","baseURL":"https://llm.example.com/v1"}]}}`, allowed: true},
+		{name: "plain HTTP endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"http://llm.example.com/v1"}]}}`},
+		{name: "endpoint with credentials", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://dummy-secret@llm.example.com/v1"}]}}`},
+		{name: "endpoint with a query", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com/v1?dummy-secret=1"}]}}`},
+		{name: "loopback literal", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://127.0.0.1/v1"}]}}`},
+		{name: "metadata literal", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://169.254.169.254/v1"}]}}`},
+		{name: "mapped private literal", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://[::ffff:10.0.0.1]/v1"}]}}`},
+		{name: "numeric host form", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://2130706433/v1"}]}}`},
+		{name: "listed host as another name", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com./v1"}]}}`},
+		{name: "unused provider with an unlisted endpoint", raw: `{"byok":{"openai":[{"apiKey":"key"}],"anthropic":[{"apiKey":"unused","baseURL":"https://127.0.0.1"}]}}`},
+		{name: "unused provider with a malformed endpoint", raw: `{"byok":{"openai":[{"apiKey":"key"}],"anthropic":[{"apiKey":"unused","baseURL":"https://dummy-secret@llm.example.com/v1"}]}}`},
+		{name: "approval is not a request control", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://llm.example.com/v1"}]},"approvedBaseURLs":["https://llm.example.com/v1"]}`, want: execution.ErrUnsupportedGatewayControl},
 		{name: "null endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":null}]}}`, allowed: true},
 		{name: "null organization", raw: `{"byok":{"openai":[{"apiKey":"key","organization":null}]}}`, allowed: true},
-		{name: "case variant endpoint still requires approval", raw: `{"byok":{"openai":[{"apiKey":"key","BaseURL":"https://approved.example/v1"}]}}`},
-		{name: "host owns endpoint syntax", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"http://approved.example/v1"}]}}`, approvals: map[Provider][]string{OpenAI: {"http://approved.example/v1"}}, allowed: true},
 		{name: "additive account field", raw: `{"byok":{"openai":[{"apiKey":"key","maxRetries":2}]}}`, allowed: true},
 		{name: "inactive null mappings", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":null}]}}`, allowed: true},
 		{name: "inactive empty mappings", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":[]}]}}`, allowed: true},
@@ -278,23 +292,22 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 			if selector == "" {
 				selector = "openai/model"
 			}
-			got, err := decodeGateway(selector, json.RawMessage(tc.raw), tc.approvals)
+			got, err := decodeListed(selector, json.RawMessage(tc.raw), endpoints)
 			if tc.allowed {
 				require.NoError(t, err)
-				if tc.name == "approval does not supply defaults" {
-					assert.Empty(t, got.Destinations[0].Accounts[0].BaseURL)
-				}
-			} else {
-				if tc.want == nil {
-					tc.want = ErrInvalidRequest
-				}
-				require.ErrorIs(t, err, tc.want)
-				assert.Empty(t, got)
-				assert.NotContains(t, err.Error(), "approved.example")
-				assert.NotContains(t, err.Error(), "dummy-secret")
-				if tc.name == "meaningful unsupported mappings" {
-					assert.Contains(t, err.Error(), "modelMappings is not supported")
-				}
+				assert.Equal(t, tc.endpoint, got.Destinations[0].Accounts[0].BaseURL)
+				return
+			}
+			if tc.want == nil {
+				tc.want = ErrInvalidRequest
+			}
+			require.ErrorIs(t, err, tc.want)
+			assert.Empty(t, got)
+			for _, private := range []string{"example.com", "127.0.0.1", "169.254", "2130706433", "10.20.0.5", "dummy-secret"} {
+				assert.NotContains(t, err.Error(), private)
+			}
+			if tc.name == "meaningful unsupported mappings" {
+				assert.Contains(t, err.Error(), "modelMappings is not supported")
 			}
 		})
 	}
@@ -320,7 +333,7 @@ func TestDecodeRequest(t *testing.T) {
 		{"unrelated additive account fields", "openai/model", `{"byok":{"openai":[{"apiKey":"valid","dummy-secret-field":true,"headers":{"Authorization":"dummy-secret"},"future":{"nested":[null,false,42]}}]}}`, OpenAI, "model", []string{"valid"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := decodeGateway(tc.selector, json.RawMessage(tc.controls), nil)
+			got, err := decodeGateway(tc.selector, json.RawMessage(tc.controls))
 			require.NoError(t, err)
 			require.Len(t, got.Destinations, 1)
 			assert.Equal(t, tc.wantProvider, got.Destinations[0].Provider)
@@ -334,14 +347,14 @@ func TestDecodeRequest(t *testing.T) {
 	}
 	for _, selector := range []string{"", "alias", "/model", "openai/", "OpenAI/model", "bedrock/model", "openai/" + string([]byte{255})} {
 		t.Run("invalid selector/"+selector, func(t *testing.T) {
-			got, err := decodeGateway(selector, json.RawMessage(valid), nil)
+			got, err := decodeGateway(selector, json.RawMessage(valid))
 			require.ErrorIs(t, err, ErrInvalidRequest)
 			assert.Empty(t, got)
 		})
 	}
 	for _, raw := range []string{`{"BYOK":{"openai":[{"apiKey":"k"}]}}`, `{"byok":{"openai":[{"apiKey":"other"}]},"Byok":{"openai":[{"apiKey":"k"}]}}`} {
 		t.Run("case variant control/"+raw, func(t *testing.T) {
-			got, err := decodeGateway("openai/model", json.RawMessage(raw), nil)
+			got, err := decodeGateway("openai/model", json.RawMessage(raw))
 			require.NoError(t, err)
 			require.Len(t, got.Destinations, 1)
 			require.Len(t, got.Destinations[0].Accounts, 1)
@@ -359,7 +372,7 @@ func TestDecodeRequest(t *testing.T) {
 		{`{"byok":{"openai":[{"apiKey":"valid"}]},"sort":"cost"}`, execution.ErrUnsupportedGatewayControl},
 	} {
 		t.Run("refused controls/"+tc.raw, func(t *testing.T) {
-			got, err := decodeGateway("openai/model", json.RawMessage(tc.raw), nil)
+			got, err := decodeGateway("openai/model", json.RawMessage(tc.raw))
 			require.ErrorIs(t, err, tc.want)
 			assert.Empty(t, got)
 			assert.NotContains(t, err.Error(), "dummy-secret")
@@ -370,7 +383,7 @@ func TestDecodeRequest(t *testing.T) {
 		`{"byok":false,"byok":{"openai":[{"apiKey":"valid"}]}}`,
 	} {
 		t.Run("accepted controls/"+raw, func(t *testing.T) {
-			_, err := decodeGateway("openai/model", json.RawMessage(raw), nil)
+			_, err := decodeGateway("openai/model", json.RawMessage(raw))
 			require.NoError(t, err)
 		})
 	}
@@ -382,14 +395,14 @@ func TestDecodeRequest(t *testing.T) {
 		`{"byok":{"openai":[{"apiKey":12}]}}`, `{"byok":{"openai":[{"apiKey":""}]}}`,
 		`{"byok":{"openai":[{"apiKey":42,"apiKey":"valid"}]}}`,
 		`{"byok":{"openai":false,"openai":[{"apiKey":"valid"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid","baseURL":"https://dummy-secret.invalid"}]}}`,
+		`{"byok":{"openai":[{"apiKey":"valid","baseURL":"http://dummy-secret.invalid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"OpenAI":[{"apiKey":"dummy-secret"}]}}`,
 		`{"byok":{"dummy-secret-provider":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"anthropic":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"anthropic":[{}]}}`,
 	} {
 		t.Run("invalid controls/"+raw, func(t *testing.T) {
-			got, err := decodeGateway("openai/model", json.RawMessage(raw), nil)
+			got, err := decodeGateway("openai/model", json.RawMessage(raw))
 			require.ErrorIs(t, err, ErrInvalidRequest)
 			assert.Empty(t, got)
 			assert.NotContains(t, err.Error(), "dummy-secret")
@@ -416,7 +429,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 		})
 	}
 	t.Run("missing transport", func(t *testing.T) {
-		request, err := decodeGateway("openai/model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`), nil)
+		request, err := decodeGateway("openai/model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`))
 		require.NoError(t, err)
 		model, err := newAll(request, nil)
 		require.ErrorContains(t, err, "HTTP client is required")
@@ -424,7 +437,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 	})
 	t.Run("decoded request owns credentials", func(t *testing.T) {
 		raw := json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`)
-		request, err := decodeGateway("openai/model", raw, nil)
+		request, err := decodeGateway("openai/model", raw)
 		require.NoError(t, err)
 		clear(raw)
 		calls := 0
@@ -453,7 +466,7 @@ func TestDecodeRequest_AccountCount(t *testing.T) {
 				}
 				raw, err := json.Marshal(map[string]any{"byok": accounts})
 				require.NoError(t, err)
-				_, err = decodeGateway("openai/model", raw, nil)
+				_, err = decodeGateway("openai/model", raw)
 				selected := name == OpenAI
 				if count == 0 || (selected && count > config.MaxProviderAttempts) {
 					require.ErrorIs(t, err, ErrInvalidRequest)
@@ -467,14 +480,16 @@ func TestDecodeRequest_AccountCount(t *testing.T) {
 
 func TestDecodeRequest_NoSeparateByteLimits(t *testing.T) {
 	account := nativemodel.Config{
-		APIKey: strings.Repeat("k", 8192), BaseURL: "https://approved.example/" + strings.Repeat("p", 4096),
+		APIKey:       strings.Repeat("k", 8192),
 		Organization: strings.Repeat("o", 1024), Project: strings.Repeat("p", 1024),
 	}
 	raw, err := json.Marshal(map[string]any{"byok": map[Provider][]nativemodel.Config{OpenAI: {account}}})
 	require.NoError(t, err)
 	raw = append(raw[:len(raw)-1], []byte(strings.Repeat(" ", 70_000)+"}")...)
 	modelID := strings.Repeat("m", 4096)
-	request, err := decodeGateway("openai/"+modelID, raw, map[Provider][]string{OpenAI: {account.BaseURL}})
+	endpoints, err := outbound.ParseCustomEndpoints("https://approved.example")
+	require.NoError(t, err)
+	request, err := decodeListed("openai/"+modelID, raw, endpoints)
 	require.NoError(t, err)
 	assert.Equal(t, modelID, request.Destinations[0].Model)
 	assert.Equal(t, []nativemodel.Config{account}, request.Destinations[0].Accounts)
@@ -495,11 +510,14 @@ func TestNew_HTTPTransportRejectsInvalidHeaders(t *testing.T) {
 						w.WriteHeader(http.StatusNoContent)
 					}))
 					defer server.Close()
-					account := map[string]string{"apiKey": "key", "baseURL": server.URL}
+					account := map[string]string{"apiKey": "key"}
 					account[field] = "dummy-secret\r\nX-Test: value"
 					raw, err := json.Marshal(map[string]any{"byok": map[Provider][]map[string]string{name: {account}}})
 					require.NoError(t, err)
-					model := newTestModel(t, string(name)+"/model", raw, map[Provider][]string{name: {server.URL}}, server.Client())
+					request, err := decodeGateway(string(name)+"/model", raw)
+					require.NoError(t, err)
+					model, err := newAll(atEndpoint(request, server.URL), server.Client())
+					require.NoError(t, err)
 					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 					defer cancel()
 					options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
@@ -538,7 +556,7 @@ func TestNew_OpenAIStreamInitialEventsAndCommitment(t *testing.T) {
 				}
 				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})}
-			model := newTestModel(t, "openai/native-model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), nil, client)
+			model := newTestModel(t, "openai/native-model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), client)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			result, err := model.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
@@ -600,12 +618,12 @@ func TestNew_ConcurrentRequestIsolation(t *testing.T) {
 	results := make(chan error, count)
 	for i := range count {
 		go func() {
-			request, err := decodeGateway(fmt.Sprintf("openai/native-%d", i), json.RawMessage(fmt.Sprintf(`{"byok":{"openai":[{"apiKey":"dummy-%d","baseURL":"https://approved.example/v1","organization":"org-%d","project":"proj-%d"}]}}`, i, i, i)), map[Provider][]string{OpenAI: {"https://approved.example/v1"}})
+			request, err := decodeGateway(fmt.Sprintf("openai/native-%d", i), json.RawMessage(fmt.Sprintf(`{"byok":{"openai":[{"apiKey":"dummy-%d","organization":"org-%d","project":"proj-%d"}]}}`, i, i, i)))
 			if err != nil {
 				results <- err
 				return
 			}
-			model, err := newAll(request, client)
+			model, err := newAll(atEndpoint(request, "https://approved.example/v1"), client)
 			if err == nil {
 				_, err = model.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("ordinary input")}})
 			}
@@ -623,12 +641,8 @@ func TestNew_DoesNotFollowNativeRedirects(t *testing.T) {
 		for _, custom := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/custom=%t", name, custom), func(t *testing.T) {
 				host := "api." + string(name) + ".com"
-				accountFields := ""
-				var approvals map[Provider][]string
 				if custom {
 					host = "approved.example"
-					accountFields = `,"baseURL":"https://approved.example"`
-					approvals = map[Provider][]string{name: {"https://approved.example"}}
 				}
 				calls := 0
 				client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -636,8 +650,14 @@ func TestNew_DoesNotFollowNativeRedirects(t *testing.T) {
 					assert.Equal(t, host, r.URL.Host)
 					return &http.Response{StatusCode: 307, Header: http.Header{"Content-Type": {"application/json"}, "Location": {"https://redirect.invalid"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"redirect"}}`)), Request: r}, nil
 				})}
-				raw := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"%s}]}}`, name, accountFields, accountFields)
-				model := newTestModel(t, string(name)+"/native-model", json.RawMessage(raw), approvals, client)
+				raw := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`, name)
+				request, err := decodeGateway(string(name)+"/native-model", json.RawMessage(raw))
+				require.NoError(t, err)
+				if custom {
+					request = atEndpoint(request, "https://approved.example")
+				}
+				model, err := newAll(request, client)
+				require.NoError(t, err)
 				_, _ = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 				assert.Equal(t, 1, calls)
 				assert.Nil(t, client.CheckRedirect)
@@ -685,7 +705,7 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 					}
 					return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"authentication_error","message":"rejected"}}`)), Request: r}, nil
 				})}
-				model := newTestModel(t, "anthropic/native-model", json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), nil, client)
+				model := newTestModel(t, "anthropic/native-model", json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), client)
 				opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
 				require.NoError(t, json.Unmarshal([]byte(tc.options), &opts.ProviderOptions))
 				if tc.mcpHistory {
