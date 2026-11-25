@@ -54,6 +54,19 @@ calling endpoint's latency budget; the example values are illustrative.
 Always pass the caller's context. Its cancellation or deadline composes with
 SDK timeouts and interrupts retry waits.
 
+When `StreamText` handles cancellation during provider startup or streaming, or
+when `PrepareStep` returns an error after the operation context is canceled, it
+calls `OnAbort` and emits `StreamAbort` (UI `abort`). The abort does not call
+`OnError` or `OnFinish`. `Err()` reports the first recorded stream error, if any;
+it can be nil after an abort. Watch for `OnAbort` or the abort event rather than
+relying on `Err()` alone.
+
+`StreamAbort.Reason` describes the context cause, not which timer fired. In
+particular, `Step`, `FirstChunk`, and `Chunk` can all produce `context canceled`.
+`GenerateText` and `Agent.Generate` return an error instead: the first recorded
+stream error takes precedence, otherwise they return the error from the canceled
+startup or the context cause if cancellation occurred while streaming.
+
 ## Avoid stacked retries
 
 Provider clients may retry independently. The Anthropic Go client retries by
