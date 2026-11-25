@@ -50,11 +50,8 @@ type streamAdapter struct {
 	activeMessageID        string
 	invalidMessageSequence bool
 
-	// markCodeExecutionDynamic mirrors upstream
-	// hasWebTool20260209WithoutCodeExecution: when set, code_execution
-	// server_tool_use blocks are flagged with dynamic: true on the
-	// tool-input-start and tool-call events, so the strict tool-validation
-	// layer accepts them when a 20260209 web tool implicitly triggers them.
+	// markCodeExecutionDynamic marks implicit code_execution calls as
+	// dynamic on tool-input-start and tool-call events for tool validation.
 	markCodeExecutionDynamic bool
 
 	citationDocuments    []citationDocument
