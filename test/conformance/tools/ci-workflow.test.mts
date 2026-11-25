@@ -581,19 +581,25 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("does not exchange Go, mise, pnpm or browser caches on tag builds", () => {
-    const bypass = "!startsWith(github.ref, 'refs/tags/')";
+    const tag = "startsWith(github.ref, 'refs/tags/')";
+    const sourceWork = "github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true'";
+    const combined: string[] = [];
     for (const job of Object.keys(jobs)) {
       for (const step of steps(job)) {
         if (step.uses?.startsWith("jdx/mise-action@")) {
-          assert.equal(step.with?.cache, `\${{ ${bypass} }}`, job);
+          assert.equal(step.with?.cache, `\${{ !${tag} }}`, job);
         } else if (step.uses?.startsWith("actions/cache/save@")) {
           assert.match(step.if ?? "", /github\.ref == 'refs\/heads\/main'/, job);
         } else if (step.uses === "./.github/actions/cache-go" || /^actions\/cache(?:\/restore)?@/.test(step.uses ?? "")) {
-          assert.ok(step.if?.startsWith(`\${{ ${bypass} && (`), job);
-          assert.equal(step.with?.["lookup-only"], undefined, job);
+          assert.equal(normalize(step.if), `\${{ !${tag} && (${sourceWork}) }}`, job);
+          if (step.uses?.startsWith("actions/cache@")) {
+            combined.push(job);
+            assert.equal(step.with?.["lookup-only"], `\${{ ${tag} }}`, job);
+          }
         }
       }
     }
+    assert.deepEqual(combined, ["integration-test", "plugin-build", "plugin-build", "conformance-test"]);
   });
 
   it("runs both official Chat Completions client suites exactly once in the required race job", () => {
