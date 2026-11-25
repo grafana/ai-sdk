@@ -157,7 +157,7 @@ export function CatalogEditor({ spec, keys, health, readOnly, listingRevision, l
       )}
 
       {dialog?.kind === 'connect' && <ConnectProviderModal spec={spec} onSave={save} onDismiss={close} />}
-      {dialog?.kind === 'replaceKey' && (
+      {dialog?.kind === 'replaceKey' && Object.hasOwn(spec.providers, dialog.provider) && (
         <ReplaceKeyModal spec={spec} provider={dialog.provider} onSave={save} onDismiss={close} />
       )}
       {dialog?.kind === 'model' && (

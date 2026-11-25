@@ -740,6 +740,29 @@ describe('pages/CatalogPage', () => {
     expect(secure).toEqual({ anthropic: { remove: true } });
   });
 
+  test('closes the key dialog if a pending removal deletes its provider', async () => {
+    let finish!: (catalog: ModelCatalog) => void;
+    jest.mocked(updateModelCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    signInAs(OrgRole.Admin, ALL);
+    await openPage();
+
+    fireEvent.click(card('spare').getByRole('button', { name: 'Remove spare' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(updateModelCatalog).toHaveBeenCalledTimes(1));
+    fireEvent.click(card('spare').getByRole('button', { name: 'Replace key' }));
+    expect(dialog().getByLabelText(/^New API key/)).toBeInTheDocument();
+
+    const [catalog, spec, secure] = lastUpdate();
+    await act(() => finish(updated(catalog, spec, secure)));
+    expect(screen.queryByRole('region', { name: 'spare' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: 'balanced' })).toBeInTheDocument();
+  });
+
   test('renames a model and edits its details in the drawer, keeping fields the page does not edit', async () => {
     const withSkills = {
       ...stored,
