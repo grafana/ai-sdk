@@ -47,56 +47,44 @@ func trimECMAScriptWhitespace(s string) string {
 
 type buildResult struct {
 	usesJsonResponseTool bool
-	// markCodeExecutionDynamic mirrors upstream
-	// hasWebTool20260209WithoutCodeExecution
-	// (anthropic-language-model.ts:2639): when a web_fetch_20260209 or
-	// web_search_20260209 provider tool is configured without an explicit
-	// code_execution tool, downstream code_execution server_tool_use blocks
-	// must be flagged with dynamic: true so they bypass the strict tool
-	// validation layer.
+	// markCodeExecutionDynamic flags implicit code_execution calls from
+	// dynamic web tools so they bypass strict tool validation.
 	markCodeExecutionDynamic bool
-	warnings                 []provider.Warning
 	requestOptions           []option.RequestOption
 }
 
-func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *provider.ResponseFormat, caps modelCapabilities, defaultEagerInputStreaming bool, opts AnthropicOptions) buildResult {
+func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *provider.ResponseFormat, caps modelCapabilities, defaultEagerInputStreaming bool, mode StructuredOutputMode) (*anthropic.BetaToolParam, []provider.Warning) {
 	if rf.Type == provider.ResponseFormatText {
-		return buildResult{}
+		return nil, nil
 	}
 
 	if rf.Type == provider.ResponseFormatJSON && len(rf.Schema) == 0 {
-		return buildResult{
-			warnings: []provider.Warning{{
-				Type:    provider.WarnUnsupported,
-				Feature: "responseFormat",
-				Details: "Anthropic does not support schemaless JSON mode; provide a schema via output.Object, output.Array, or output.Choice",
-			}},
-		}
+		return nil, []provider.Warning{{
+			Type:    provider.WarnUnsupported,
+			Feature: "responseFormat",
+			Details: "Anthropic does not support schemaless JSON mode; provide a schema via output.Object, output.Array, or output.Choice",
+		}}
 	}
 
 	if rf.Type != provider.ResponseFormatJSON {
-		return buildResult{
-			warnings: []provider.Warning{{
-				Type:    provider.WarnUnsupported,
-				Feature: "responseFormat",
-				Details: fmt.Sprintf("unsupported response format type %q", rf.Type),
-			}},
-		}
+		return nil, []provider.Warning{{
+			Type:    provider.WarnUnsupported,
+			Feature: "responseFormat",
+			Details: fmt.Sprintf("unsupported response format type %q", rf.Type),
+		}}
 	}
 
 	schemaMap, err := jsonschema.DecodeObject(rf.Schema)
 	if err != nil {
-		return buildResult{
-			warnings: []provider.Warning{{
-				Type:    provider.WarnUnsupported,
-				Feature: "responseFormat",
-				Details: fmt.Sprintf("failed to parse response format schema: %v", err),
-			}},
-		}
+		return nil, []provider.Warning{{
+			Type:    provider.WarnUnsupported,
+			Feature: "responseFormat",
+			Details: fmt.Sprintf("failed to parse response format schema: %v", err),
+		}}
 	}
 
 	useStructuredOutput := caps.supportsStructuredOutput
-	switch opts.StructuredOutputMode {
+	switch mode {
 	case "", StructuredOutputAuto:
 		useStructuredOutput = useStructuredOutput && anthropicschema.SupportsNativeStructuredOutput(schemaMap)
 	case StructuredOutputFormat:
@@ -109,7 +97,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	// The JSON response tool relies on forced tool use, which some models
 	// reject. Fall back to native structured output only if it can represent
 	// the original schema.
-	if opts.StructuredOutputMode == StructuredOutputJSONTool && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
+	if mode == StructuredOutputJSONTool && caps.rejectsForcedToolUse && caps.supportsStructuredOutput &&
 		anthropicschema.SupportsNativeStructuredOutput(schemaMap) {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
@@ -131,7 +119,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		p.OutputConfig.Format = anthropic.BetaJSONOutputFormatParam{
 			Schema: sanitizeJSONSchema(schemaMap),
 		}
-		return buildResult{warnings: warnings}
+		return nil, warnings
 	}
 
 	jsonToolParam := &anthropic.BetaToolParam{
@@ -142,18 +130,21 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	// Mirror upstream behavior: when the JSON fallback tool is added on a
 	// streaming request, it participates in the model-level
 	// `eager_input_streaming` default just like any other function tool
-	// (anthropic-language-model.ts:519-545, prepareTools is called once with
-	// `[...tools, jsonResponseTool]`).
+	// (anthropic-language-model.ts:1323–1341).
 	if defaultEagerInputStreaming {
 		jsonToolParam.EagerInputStreaming = anthropic.Bool(true)
 	}
-	p.Tools = append(p.Tools, anthropic.BetaToolUnionParam{OfTool: jsonToolParam})
+	return jsonToolParam, warnings
+}
+
+func applyJSONToolChoice(p *anthropic.BetaMessageNewParams, rejectsForcedToolUse bool, disableParallelToolUse *bool) []provider.Warning {
+	var warnings []provider.Warning
 	// Override any user-set tool choice to required (OfAny). The json tool must
 	// be callable, and DisableParallelToolUse prevents multi-tool turns that
 	// would complicate response remapping. This matches upstream behavior.
 	// Models that reject forced tool use and budget-based thinking requests
 	// get auto instead, as upstream prepareTools does for required choice.
-	if caps.rejectsForcedToolUse || p.Thinking.OfEnabled != nil {
+	if rejectsForcedToolUse || p.Thinking.OfEnabled != nil {
 		warnings = append(warnings, forcedToolChoiceWarning(provider.ToolChoice{Type: provider.ToolChoiceRequired}))
 		p.ToolChoice = anthropic.BetaToolChoiceUnionParam{
 			OfAuto: &anthropic.BetaToolChoiceAutoParam{
@@ -167,14 +158,14 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 			},
 		}
 	}
-	if opts.DisableParallelToolUse != nil && !*opts.DisableParallelToolUse {
+	if disableParallelToolUse != nil && !*disableParallelToolUse {
 		warnings = append(warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
 			Feature: "providerOptions.anthropic.disableParallelToolUse",
 			Details: "`disableParallelToolUse: false` is ignored when using the JSON response tool. Parallel tool use is disabled to ensure a single coherent JSON tool call.",
 		})
 	}
-	return buildResult{usesJsonResponseTool: true, warnings: warnings}
+	return warnings
 }
 
 func rawToolInputSchema(schema map[string]any) anthropic.BetaToolInputSchemaParam {
@@ -261,13 +252,33 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	// upstream's `defaultEagerInputStreaming = stream && (toolStreaming ?? true)`.
 	defaultEagerInputStreaming := stream && resolveAnthropicToolStreaming(opts.ProviderOptions)
 
+	var jsonTool *anthropic.BetaToolParam
+	var formatWarnings []provider.Warning
+	if opts.ResponseFormat != nil {
+		responseFormatCaps := caps
+		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
+		jsonTool, formatWarnings = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts.StructuredOutputMode)
+	}
+
+	tools := opts.Tools
+	if tc := opts.ToolChoice; jsonTool != nil && tc != nil {
+		switch tc.Type {
+		case provider.ToolChoiceNone:
+			tools = nil
+		case provider.ToolChoiceTool:
+			tools = slices.DeleteFunc(slices.Clone(tools), func(tool provider.Tool) bool {
+				return tool.Name != tc.ToolName
+			})
+		}
+	}
+
 	var toolBetas []string
-	if len(opts.Tools) > 0 {
-		if err := validateProviderToolArgs(opts.Tools); err != nil {
+	if len(tools) > 0 {
+		if err := validateProviderToolArgs(tools); err != nil {
 			return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
 		}
 		var toolWarnings []provider.Warning
-		p.Tools, toolWarnings, toolBetas = convertToolsWithStrictTools(v, opts.Tools, defaultEagerInputStreaming, supportsStrictTools)
+		p.Tools, toolWarnings, toolBetas = convertToolsWithStrictTools(v, tools, defaultEagerInputStreaming, supportsStrictTools)
 		warnings = append(warnings, toolWarnings...)
 	}
 
@@ -526,20 +537,12 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 
 	applyThinkingOption(&p, anthropicOpts.Thinking)
-	var br buildResult
-	if opts.ResponseFormat != nil {
-		responseFormatCaps := caps
-		responseFormatCaps.supportsStructuredOutput = supportsNativeStructuredOutput
-		br = applyResponseFormat(&p, modelID, opts.ResponseFormat, responseFormatCaps, defaultEagerInputStreaming, anthropicOpts)
-		warnings = append(warnings, br.warnings...)
-	}
-	// The JSON response tool replaces caller tool choice. For none, keep only
-	// the synthetic tool, which was appended last (a caller tool may share its name).
-	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
-	if noneWithJSONTool {
-		p.Tools = p.Tools[len(p.Tools)-1:]
-	}
-	if !br.usesJsonResponseTool {
+	warnings = append(warnings, formatWarnings...)
+	br := buildResult{usesJsonResponseTool: jsonTool != nil}
+	if jsonTool != nil {
+		p.Tools = append(p.Tools, anthropic.BetaToolUnionParam{OfTool: jsonTool})
+		warnings = append(warnings, applyJSONToolChoice(&p, caps.rejectsForcedToolUse, anthropicOpts.DisableParallelToolUse)...)
+	} else {
 		if tc := opts.ToolChoice; tc != nil {
 			switch {
 			case tc.Type == provider.ToolChoiceNone:
@@ -562,9 +565,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 		applyDisableParallelToolUse(&p, anthropicOpts.DisableParallelToolUse, len(p.Tools) > 0)
 	}
-	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
-	if len(p.Tools) > 0 && !noneWithJSONTool {
-		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
+	br.markCodeExecutionDynamic = hasDynamicFilteringWebToolWithoutCodeExecution(p.Tools)
+	if len(p.Tools) > 0 {
+		br.requestOptions = append(br.requestOptions, webToolNumberOptions(tools, p.Tools)...)
 	}
 
 	applyFallbacks(&p, anthropicOpts.Fallbacks, providerCaps, &br, &warnings)
@@ -3380,30 +3383,18 @@ func hasFunctionTools(tools []provider.Tool) bool {
 	return false
 }
 
-// hasWebTool20260209WithoutCodeExecution reports whether the request
-// configures a web_fetch_20260209 or web_search_20260209 provider tool
-// without also configuring any code_execution provider tool. Mirrors
-// upstream anthropic-language-model.ts:2639. When true, callers must mark
-// implicit `code_execution` server_tool_use blocks as `dynamic: true` so the
-// strict tool-validation layer accepts them — the 20260209 web tools
-// internally trigger `code_execution` server-side, and would otherwise be
-// rejected because the caller never declared a `code_execution` tool.
-func hasWebTool20260209WithoutCodeExecution(tools []provider.Tool) bool {
-	var hasWebTool20260209, hasCodeExecutionTool bool
-	for _, t := range tools {
-		if t.Type != provider.ToolTypeProvider {
-			continue
-		}
-		switch t.ID {
-		case "anthropic.web_fetch_20260209", "anthropic.web_search_20260209":
-			hasWebTool20260209 = true
-		case "anthropic.code_execution_20250522",
-			"anthropic.code_execution_20250825",
-			"anthropic.code_execution_20260120":
-			hasCodeExecutionTool = true
+func hasDynamicFilteringWebToolWithoutCodeExecution(tools []anthropic.BetaToolUnionParam) bool {
+	hasDynamicWebTool := false
+	for _, tool := range tools {
+		switch {
+		case tool.OfCodeExecutionTool20250522 != nil, tool.OfCodeExecutionTool20250825 != nil, tool.OfCodeExecutionTool20260120 != nil:
+			return false
+		case tool.OfWebFetchTool20260209 != nil, tool.OfWebFetchTool20260318 != nil,
+			tool.OfWebSearchTool20260209 != nil, tool.OfWebSearchTool20260318 != nil:
+			hasDynamicWebTool = true
 		}
 	}
-	return hasWebTool20260209 && !hasCodeExecutionTool
+	return hasDynamicWebTool
 }
 
 // resolveAnthropicToolStreaming reads AnthropicOptions.ToolStreaming and

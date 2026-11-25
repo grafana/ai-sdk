@@ -298,8 +298,8 @@ For direct Anthropic and Vertex without a JSON response tool, the provider SHALL
 - **THEN** required and named choices SHALL stay forced and SHALL NOT emit a `toolChoice` warning
 
 #### Scenario: Forced caller choice with the JSON response tool
-- **WHEN** `claude-sonnet-5-5` is called through a transport without native structured output, with tools, a JSON schema response and tool choice `required` or `tool`
-- **THEN** every caller tool and the `json` tool SHALL be sent with `tool_choice: {type: "auto", disable_parallel_tool_use: true}`
+- **WHEN** `claude-sonnet-5-5` uses the JSON response tool with caller tools and tool choice `required` or `tool`
+- **THEN** the `json` tool SHALL follow all supported caller tools for `required`, or only the selected tool for `tool`, with `tool_choice: {type: "auto", disable_parallel_tool_use: true}`
 - **AND** exactly one unsupported `toolChoice` warning, for `required`, SHALL be emitted
 
 #### Scenario: Sonnet 5 keeps forced tool use
@@ -317,9 +317,19 @@ Capability metadata SHALL include `maxOutputTokens`, `supportsAdaptiveThinking`,
 
 ### Requirement: Anthropic JSON response tool replaces caller choice
 
-With a JSON response tool, that tool SHALL replace caller choice as specified by `anthropic-structured-output`; caller choice SHALL NOT filter tools or add its own warning.
+On the JSON-tool fallback route, the caller choice SHALL restrict caller tools as specified in [Anthropic structured output](../anthropic-structured-output/spec.md#requirement-tool-based-json-fallback). It SHALL NOT replace the fallback's effective choice or add a separate tool-choice warning. Outside that route, ordinary tool choice behavior SHALL be unchanged.
 
 #### Scenario: Anthropic JSON response tool replaces caller choice
 
 - **WHEN** Sonnet 5.5 uses a JSON fallback tool with several caller tools and a named choice
-- **THEN** all tools SHALL survive and only the fallback-required choice SHALL produce the unsupported toolChoice warning
+- **THEN** only the selected tool and `json` SHALL be sent, and only the fallback-required choice SHALL produce the unsupported `toolChoice` warning
+
+#### Scenario: Caller disables all tools with the JSON response tool
+
+- **WHEN** the JSON-tool fallback is active and the caller chooses `none`
+- **THEN** only the synthetic `json` tool SHALL be sent, with the fallback's effective choice
+
+#### Scenario: Caller disables tools without the JSON response tool
+
+- **WHEN** a direct Anthropic or Vertex request with caller tools chooses `none` outside the JSON-tool fallback
+- **THEN** the request SHALL retain the caller tool definitions for prompt caching and use `tool_choice: {type: "none"}`

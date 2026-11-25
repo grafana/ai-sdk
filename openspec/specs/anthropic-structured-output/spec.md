@@ -49,11 +49,11 @@ The representability check SHALL classify the original schema as unrepresentable
 
 ### Requirement: Tool-based JSON fallback
 
-When JSON-tool fallback is selected for a JSON response with a schema, `buildParams` SHALL synthesize a tool named `"json"` with `description: "Respond with a JSON object."` and the original `ResponseFormat.Schema` as `inputSchema`. The tool SHALL be appended after any retained user tools.
+On the JSON-tool fallback route, `buildParams` SHALL append a synthetic `json` tool with description `"Respond with a JSON object."` and the original `ResponseFormat.Schema` as `inputSchema`. Before converting caller function and provider tools, it SHALL retain none for `none`, only tools whose SDK name matches a named `tool` choice, and all for `auto`, `required`, or an omitted choice.
 
 #### Scenario: Tool injection on an older model
 
-- **WHEN** the direct Anthropic provider calls `buildParams` with `ResponseFormat` having `Type: "json"` and a valid JSON schema, and the model ID is `claude-3-haiku`
+- **WHEN** the direct Anthropic provider calls `buildParams` with `ResponseFormat` having `Type: "json"` and a valid JSON schema, the model ID is `claude-3-haiku`, and no tool choice is supplied
 - **THEN** the returned `BetaMessageNewParams.Tools` SHALL include the user's tools plus a synthetic tool with name `"json"`, description `"Respond with a JSON object."`, and `InputSchema` matching the provided schema
 - **AND** `OutputConfig.Format` SHALL NOT be set
 
@@ -64,18 +64,24 @@ When JSON-tool fallback is selected for a JSON response with a schema, `buildPar
 
 ### Requirement: Tool choice override in fallback mode
 
-JSON-tool fallback SHALL use `any` with parallel tool use disabled. If the model rejects forced tool use or the resolved thinking type is `enabled`, the request SHALL instead use `auto` with parallel tool use disabled and one unsupported `toolChoice` warning for required choice. Adaptive thinking alone SHALL NOT cause a downgrade. Caller `none` SHALL send only `json`; other caller choices SHALL NOT filter tools or add warnings.
+JSON-tool fallback SHALL use `any` with parallel tool use disabled. If the model rejects forced tool use or the resolved thinking type is `enabled`, the request SHALL instead use `auto` with parallel tool use disabled and one unsupported `toolChoice` warning for required choice. Adaptive thinking alone SHALL NOT cause a downgrade. The original caller choice SHALL restrict the tool list as specified above but SHALL NOT change the effective choice or add a separate tool-choice warning.
 
 #### Scenario: Tool choice forced to required
 
-- **WHEN** the tool-based fallback is active on a model that accepts forced tool use, the resolved thinking type is not `enabled`, and the caller set `ToolChoice` to `auto`
-- **THEN** `ToolChoice` SHALL be overridden to `OfAny` with `DisableParallelToolUse: true`
+- **WHEN** the tool-based fallback is active on a model that accepts forced tool use, the resolved thinking type is not `enabled`, and the caller sets `ToolChoice` to `auto` or `required`
+- **THEN** `ToolChoice` SHALL be `OfAny` with `DisableParallelToolUse: true`, and `json` SHALL follow all supported caller tools
 
 #### Scenario: Tool choice override when caller set none
 
 - **WHEN** the tool-based fallback is active and the caller set `ToolChoice` to `none` with caller tools
 - **THEN** the tools list SHALL contain only the `json` tool
 - **AND** `ToolChoice` SHALL be `OfAuto` if the model rejects forced tool use or the resolved thinking type is `enabled`; otherwise it SHALL be `OfAny`. Parallel tool use SHALL be disabled in both cases.
+
+#### Scenario: Named choice retains a provider tool by SDK name
+
+- **WHEN** the tool-based fallback is active on a model that accepts forced tool use, the resolved thinking type is not `enabled`, and the caller selects `search_web`, the SDK name of a provider tool that serializes as `web_search`
+- **THEN** the tools list SHALL contain `web_search` followed by `json`, even if the caller supplies other supported tools
+- **AND** `ToolChoice` SHALL be `OfAny` with `DisableParallelToolUse: true`
 
 #### Scenario: Tool choice auto on a model that rejects forced tool use
 - **WHEN** the tool-based fallback is active for `claude-sonnet-5-5`
@@ -89,7 +95,7 @@ JSON-tool fallback SHALL use `any` with parallel tool use disabled. If the model
 
 #### Scenario: Caller forced choice with the fallback on Sonnet 5.5
 - **WHEN** the tool-based fallback is active for `claude-sonnet-5-5` and the caller set `ToolChoice` to `tool` for one of several tools
-- **THEN** all caller tools and the `json` tool SHALL be sent
+- **THEN** only the selected caller tool and the `json` tool SHALL be sent, with `OfAuto` and `DisableParallelToolUse: true`
 - **AND** exactly one `toolChoice` warning, for `required`, SHALL be emitted
 
 ### Requirement: Provider transport capability gating

@@ -179,28 +179,8 @@ func TestConverseParity_OutputMode(t *testing.T) {
 	}
 }
 
-func TestConverseParity_JSONToolKeepsCallerTools(t *testing.T) {
+func TestConverseParity_JSONToolAndProviderTool(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)
-	for _, choice := range []provider.ToolChoice{{Type: provider.ToolChoiceNone}, {Type: provider.ToolChoiceTool, ToolName: "weather"}} {
-		t.Run(string(choice.Type), func(t *testing.T) {
-			req, _, meta := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
-				Prompt:          []provider.Message{provider.UserText("hi")},
-				ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeJSONTool}),
-				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
-				ToolChoice:      &choice,
-				Tools: []provider.Tool{
-					{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)},
-					{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)},
-				},
-			})
-			assert.True(t, meta.usesJSONResponseTool)
-			require.NotNil(t, req.ToolConfig)
-			require.Len(t, req.ToolConfig.Tools, 3)
-			assert.Equal(t, []string{"weather", "search", "json"}, []string{req.ToolConfig.Tools[0].ToolSpec.Name, req.ToolConfig.Tools[1].ToolSpec.Name, req.ToolConfig.Tools[2].ToolSpec.Name})
-			assert.Equal(t, &toolChoiceUnion{Any: &struct{}{}}, req.ToolConfig.ToolChoice)
-		})
-	}
-
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt:          []provider.Message{provider.UserText("hi")},
 		ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeJSONTool}),
