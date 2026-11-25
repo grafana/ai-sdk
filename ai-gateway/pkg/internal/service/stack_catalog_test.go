@@ -164,7 +164,7 @@ func TestSelectStackCatalog_UnlistedModels(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			builds := &stackBuilds{}
-			selected, err := selectStackCatalog(stack, tc.id, stackGateway(tc.gateway), builds.build)
+			selected, err := selectStackCatalog(stack, tc.id, stackGateway(tc.gateway), outbound.CustomEndpoints{}, builds.build)
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				assert.Empty(t, builds.built)
@@ -180,6 +180,27 @@ func TestSelectStackCatalog_UnlistedModels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSelectStackCatalog_UnlistedCustomEndpoint(t *testing.T) {
+	stack := customEndpointCatalog()
+	configured := stack.Spec.Providers["local"]
+	configured.ServeAllModels = new(true)
+	configured.ModelBlocklist = []string{"org/blocked"}
+	stack.Spec.Providers["local"] = configured
+
+	builds := &recordedConfigs{}
+	selected, err := selectStackCatalog(stack, "local/org/new", stackGateway(`{"only":["acme"]}`), listedEndpoints(t), builds.build)
+	require.NoError(t, err)
+	assert.Equal(t, "local/org/new", selected.ID)
+	assert.Equal(t, []config.ResolvedProvider{{Type: "openai-compatible", APIKey: "local-catalog-key", BaseURL: "https://llm.example.com/v1", ProviderName: "acme", SupportsStructuredOutputs: true}}, builds.configs)
+
+	builds = &recordedConfigs{}
+	_, err = selectStackCatalog(stack, "local/org/blocked", nil, listedEndpoints(t), builds.build)
+	require.ErrorIs(t, err, catalog.ErrUnknownModel)
+	_, err = selectStackCatalog(stack, "local/org/new", nil, outbound.CustomEndpoints{}, builds.build)
+	require.ErrorIs(t, err, execution.ErrCatalogConfiguration)
+	assert.Empty(t, builds.configs)
 }
 
 func TestSelectStackCatalog_UnlistedAnthropicRejectsNativeGrants(t *testing.T) {
