@@ -119,12 +119,12 @@ func (file File) Validate() error { return file.validate(true) }
 
 // ValidateShape validates provider types and fields, provider references,
 // model routes and their skills and server fallback policies, public IDs,
-// aliases and discovery bounds, without requiring entries or an apiKeyEnv
+// aliases and discovery bounds, without requiring models or an apiKeyEnv
 // reference.
 func (file File) ValidateShape() error { return file.validate(false) }
 
 func (file File) validate(operator bool) error {
-	if operator && len(file.Providers) == 0 {
+	if len(file.Providers) == 0 {
 		return fmt.Errorf("config: at least one provider is required")
 	}
 	for name, provider := range file.Providers {

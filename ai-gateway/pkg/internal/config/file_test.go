@@ -376,7 +376,7 @@ func TestFileValidateShape(t *testing.T) {
 		wantErr string
 	}{
 		{name: "no key reference", mutate: func(*File) {}},
-		{name: "no providers for a configured model", mutate: func(file *File) { file.Providers = nil }, wantErr: `config: models.canonical.primary.provider references unknown provider "provider"`},
+		{name: "no providers", mutate: func(file *File) { file.Providers = nil }, wantErr: "config: at least one provider is required"},
 		{name: "unsupported type", mutate: func(file *File) { file.Providers["provider"] = Provider{Type: "unsupported"} }, wantErr: `config: providers.provider.type "unsupported" is unsupported (want anthropic, openai or openai-compatible)`},
 		{name: "missing name", mutate: func(file *File) {
 			model := file.Models["canonical"]

@@ -65,14 +65,13 @@ func TestValidator_Validate(t *testing.T) {
 		old     resource.Object
 		wantErr string
 	}{
-		{name: "create empty", action: resource.AdmissionActionCreate, object: catalog(empty, nil)},
-		{name: "create without provider map", action: resource.AdmissionActionCreate, object: catalog(v1alpha1.Spec{Models: empty.Models}, nil), wantErr: "modelcatalog: spec.providers must be a map"},
+		{name: "create empty", action: resource.AdmissionActionCreate, object: catalog(empty, nil), wantErr: "config: at least one provider is required"},
+		{name: "create without provider map", action: resource.AdmissionActionCreate, object: catalog(v1alpha1.Spec{Models: empty.Models}, nil), wantErr: "config: at least one provider is required"},
 		{name: "update without model map", action: resource.AdmissionActionUpdate, object: catalog(v1alpha1.Spec{Providers: spec.Providers}, nil), old: storedCatalog(), wantErr: "modelcatalog: spec.models must be a map"},
 		{name: "create with providers only", action: resource.AdmissionActionCreate, object: catalog(providerOnly, keys)},
 		{name: "create provider without key or models", action: resource.AdmissionActionCreate, object: catalog(providerOnly, nil), wantErr: "modelcatalog: providers.anthropic requires the secure value secure.anthropic"},
 		{name: "update removing the last model", action: resource.AdmissionActionUpdate, object: catalog(providerOnly, nil), old: storedCatalog()},
-		{name: "update removing all providers and keys", action: resource.AdmissionActionUpdate, object: catalog(empty, resource.InlineSecureValues{"anthropic": removed(), "openai": removed()}), old: storedCatalog()},
-		{name: "update leaving an orphan key", action: resource.AdmissionActionUpdate, object: catalog(empty, resource.InlineSecureValues{"anthropic": removed()}), old: storedCatalog(), wantErr: "modelcatalog: secure.openai matches no provider"},
+		{name: "update removing the last provider and key", action: resource.AdmissionActionUpdate, object: catalog(empty, resource.InlineSecureValues{"anthropic": removed()}), old: catalog(v1alpha1.Spec{Providers: map[string]v1alpha1.Provider{"anthropic": {Type: "anthropic"}}, Models: empty.Models}, resource.InlineSecureValues{"anthropic": named("inline-anthropic")}), wantErr: "config: at least one provider is required"},
 		{name: "create with keys", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": created()})},
 		{name: "create without a key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created()}), wantErr: "modelcatalog: providers.openai requires the secure value secure.openai"},
 		{name: "create removing a key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": removed()}), wantErr: "modelcatalog: providers.openai requires the secure value secure.openai"},

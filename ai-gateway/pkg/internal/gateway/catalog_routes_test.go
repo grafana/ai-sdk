@@ -149,7 +149,7 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 	})
 }
 
-func TestCatalogRoutes_EmptyCatalogAndProviderWithoutModels(t *testing.T) {
+func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
 	var probes atomic.Int32
 	var rejectKey atomic.Bool
@@ -188,20 +188,20 @@ func TestCatalogRoutes_EmptyCatalogAndProviderWithoutModels(t *testing.T) {
 
 	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
 		`{"metadata":{"name":"team"},"spec":{"providers":{},"models":{}}}`)
+	assert.Equal(t, http.StatusBadRequest, status, body)
+	assert.Contains(t, body, "at least one provider is required")
+
+	status, body = sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic"}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"}}}`)
 	require.Equal(t, http.StatusCreated, status, body)
+	status, body = sendObject(t, t.Context(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{},"models":{}},"secure":{"claude":{"remove":true}}}`)
+	assert.Equal(t, http.StatusBadRequest, status, body)
+	assert.Contains(t, body, "at least one provider is required")
 	assertNoModels()
-	status, body = postAction("health")
-	require.Equal(t, http.StatusOK, status, body)
-	assert.JSONEq(t, `{"providers":{},"models":{}}`, body)
-	status, body = postAction("available-models?provider=claude")
+	status, body = postAction("available-models?provider=absent")
 	assert.Equal(t, http.StatusNotFound, status, body)
 	assert.JSONEq(t, `{"message":"provider not found in stored catalog"}`, body)
-	assert.Zero(t, probes.Load())
-
-	status, body = sendObject(t, t.Context(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), writer,
-		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic"}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"}}}`)
-	require.Equal(t, http.StatusOK, status, body)
-	assertNoModels()
 	assert.Zero(t, probes.Load())
 	status, body = postAction("health")
 	require.Equal(t, http.StatusOK, status, body)

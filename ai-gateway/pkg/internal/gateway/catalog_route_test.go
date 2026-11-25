@@ -130,7 +130,7 @@ func TestParentCatalog(t *testing.T) {
 		}},
 		{name: "spec that does not decode", info: func(t *testing.T) *resource.RouteRequestInfo {
 			return testCatalogInfo(testCatalogParent(t, func(object map[string]any) { object["spec"] = "not a spec" }))
-		}, status: http.StatusNoContent, stack: &service.StackCatalog{Name: testCatalogName, InvalidSpec: true}},
+		}, status: http.StatusNoContent, stack: &service.StackCatalog{Name: testCatalogName}},
 		{name: "no route info", info: func(*testing.T) *resource.RouteRequestInfo { return nil }, status: http.StatusInternalServerError},
 		{name: "no parent", info: func(*testing.T) *resource.RouteRequestInfo { return testCatalogInfo(nil) }, status: http.StatusInternalServerError},
 		{name: "another plural", info: func(t *testing.T) *resource.RouteRequestInfo {
