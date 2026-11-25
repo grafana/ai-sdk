@@ -161,12 +161,17 @@ func newCandidate(providerConfig config.ResolvedProvider, descriptor config.Prim
 	if validateOptions != nil {
 		candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
 	}
-	providerName := providerConfig.Type
-	if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {
-		providerName = providerConfig.ProviderName
-	}
-	identity := catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: providerName, ModelID: descriptor.Model}
+	identity := catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: providerSlug(providerConfig.Type, providerConfig.ProviderName), ModelID: descriptor.Model}
 	return execution.Translate(candidate, target), identity, nil
+}
+
+// providerSlug returns a configured provider's slug in discovery and routing:
+// an openai-compatible provider's providerName when set, otherwise its type.
+func providerSlug(providerType, providerName string) string {
+	if providerType == "openai-compatible" && providerName != "" {
+		return providerName
+	}
+	return providerType
 }
 
 // composeCandidates returns the only candidate, or an ordered fallback chain

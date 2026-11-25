@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 // LookupEnv resolves one environment variable.
@@ -50,6 +51,11 @@ const (
 // ModelCatalogSetting is the setting key of the YAML model catalog document.
 const ModelCatalogSetting = "model_catalog"
 
+// CustomEndpointsSetting is the setting key of the comma-separated base URLs
+// that stack-catalog providers and request accounts may use as a custom
+// endpoint.
+const CustomEndpointsSetting = "custom_endpoints"
+
 // ExtensionsSetting is the setting key of the YAML operator extension
 // configuration document.
 const ExtensionsSetting = "extensions"
@@ -75,6 +81,8 @@ type Settings struct {
 	Extensions         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
+	// Endpoints are the custom endpoints customers may use.
+	Endpoints outbound.CustomEndpoints
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -137,6 +145,11 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	if env.err != nil {
 		return Settings{}, env.err
 	}
+	endpoints, err := outbound.ParseCustomEndpoints(env.string(CustomEndpointsSetting, ""))
+	if err != nil {
+		return Settings{}, fmt.Errorf("config: %s has an invalid entry: %w", SettingName(CustomEndpointsSetting), err)
+	}
+	settings.Endpoints = endpoints
 	access, err := auth.ParseAccessPolicy(env.string("access_mode", ""), env.string("access_internal_services", ""))
 	if err != nil {
 		return Settings{}, err

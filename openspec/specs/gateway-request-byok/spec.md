@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define catalog-independent native account selection, destination approval, request isolation and bounded fallback for the internal Gateway BYOK engine, separately from authenticated service admission and deployment activation.
+Define catalog-independent native account selection, operator-listed custom endpoints, request isolation and bounded fallback for the internal Gateway BYOK engine, separately from authenticated service admission and deployment activation.
 
 ## Requirements
 
@@ -130,7 +130,7 @@ The BYOK engine SHALL select a supported native provider/model from request data
 - **AND** The suffix SHALL be preserved, including additional slashes, as model data rather than a URL.
 - **AND** Initial providers SHALL be anthropic and openai, using the native Messages and Responses adapters respectively.
 - **AND** The selector SHALL NOT resolve configured models, aliases, provider instances, endpoints, defaults or fallback routes.
-- **AND** A separate service-owned destination approval map MAY authorize an explicitly submitted baseURL; it SHALL NOT supply a default endpoint or account.
+- **AND** An explicitly submitted baseURL SHALL be governed by the operator's custom endpoint list; no service configuration or default SHALL supply an endpoint or account.
 - **AND** Advisory native model lists SHALL NOT act as a configured-catalog allowlist.
 - **AND** Unknown native models SHALL be decided by the selected native provider without unsolicited inventory or validation calls.
 
@@ -254,29 +254,6 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 - **WHEN** an Anthropic BYOK call to `anthropic/claude-fable-5` sends `fallbacks: [{model: claude-opus-4-8}]` and the provider reports a hop to `claude-opus-4-8`
 - **THEN** the native request SHALL use the selected account, destination and model `claude-fable-5`, and the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8`
 
-### Requirement: Service-approved account destinations
-Account destinations SHALL use native defaults or exact provider-scoped host approval. Approval SHALL supply permission only, remain catalog-independent and retain service-owned transport and deployment boundaries.
-
-#### Scenario: Destination approval policy
-- **WHEN** a request supplies or omits an account baseURL
-- **THEN** A supplied nonempty baseURL SHALL match the native provider default or an exact service-owned approval for that provider before construction.
-- **AND** Service composition SHALL validate approved destination syntax when loading its policy; the engine SHALL trust that host input rather than repeat URL grammar checks on every account.
-- **AND** Approval SHALL NOT use host/path prefixes, wildcards or implicit port/trailing-slash normalization, supply account data or come from client controls.
-- **AND** Approvals SHALL be independent of configured accounts/catalogs and SHALL NOT select an endpoint when the account omits it.
-- **AND** This is explicit destination authorization, not proof of public-address enforcement, DNS pinning or deployed proxy/network isolation.
-- **AND** Service owners SHALL approve only intended destinations and control their DNS/proxy/network boundary.
-- **AND** Transport and redirects SHALL remain service-owned.
-- **AND** Approval/configuration activation belongs to the subsequent service change; the engine SHALL NOT expose BYOK HTTP admission in this change.
-
-#### Scenario: Approved account endpoint
-- **WHEN** an account supplies a valid exact service-approved baseURL for its provider
-- **THEN** its native attempt SHALL use that endpoint with only its own key and account headers
-
-#### Scenario: Unapproved endpoint
-- **WHEN** any supplied account, including an unused provider, names an unapproved baseURL
-- **THEN** host selection SHALL fail before native I/O with a non-secret diagnostic
-- **AND** client-supplied approval controls SHALL NOT grant destination access
-
 ### Requirement: Request-scoped provider construction and control removal
 Validated plain accounts SHALL feed explicit native construction without raw-JSON parsing, catalog/configuration/secret lookup or ambient defaults. Request credentials and models SHALL remain request-owned; host controls SHALL be removed before native inference and middleware.
 
@@ -286,7 +263,7 @@ Validated plain accounts SHALL feed explicit native construction without raw-JSO
 - **AND** Construction SHALL NOT parse raw Gateway JSON.
 - **AND** Shared native constructors MAY serve configured and request-only execution, but SHALL receive explicit inputs without performing catalog, configuration or secret lookup.
 - **AND** Missing model/accounts or an unsupported provider SHALL fail before native construction.
-- **AND** The BYOK selector SHALL construct account-bound models for the request using only the selected supplied accounts and native-default or service-approved destinations.
+- **AND** The BYOK selector SHALL construct account-bound models for the request using only the selected supplied accounts and native-default or listed custom destinations.
 - **AND** It SHALL NOT inherit configured instances or ambient SDK key/base-URL/account defaults.
 - **AND** Shared transports SHALL be credential-independent; redirects SHALL NOT forward credentials.
 - **AND** The host SHALL remove gateway controls before generic model middleware and native provider options see them, and forward supported matching native options/content/history without using configured-catalog field allowlists or cross-provider intersections.
@@ -422,3 +399,18 @@ Ordered request accounts, for the selected model and any routed fallback models,
 #### Scenario: Continuation is a separate request
 - **WHEN** a subsequent call supplies supported continuation and a new ordered credential array
 - **THEN** it SHALL use that request's credentials without implicit persisted account affinity
+
+### Requirement: Request account endpoints
+A request account's `baseURL` SHALL follow the custom endpoint rules of stack-catalog providers. Decoding SHALL check every supplied account, including unused providers, against the URL form checks and the custom endpoint list, without DNS. A failure SHALL be the BYOK credentials category before any provider request, without echoing the URL. An account whose `baseURL` is unset or its native default SHALL use the native endpoint.
+
+#### Scenario: Listed endpoint
+- **WHEN** an Anthropic account sets a `baseURL` the list holds
+- **THEN** the attempt SHALL send only that account's key to that endpoint
+
+#### Scenario: Unlisted endpoint
+- **WHEN** any supplied account sets an unlisted custom `baseURL`, such as `https://169.254.169.254` or `http://llm.example.com`
+- **THEN** the call SHALL fail with the BYOK credentials document before any provider request, and the response SHALL NOT contain the URL
+
+#### Scenario: Explicit native endpoint
+- **WHEN** an OpenAI account sets `baseURL: https://API.openai.com/v1/` and the list is empty
+- **THEN** the account SHALL count as having no `baseURL` and reach the native endpoint

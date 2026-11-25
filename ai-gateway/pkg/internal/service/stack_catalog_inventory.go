@@ -34,9 +34,11 @@ type CatalogProviderModels struct {
 	ModelIDs []string      `json:"modelIds"`
 }
 
-// AvailableModels lists one named provider from the checked saved catalog, without caching.
+// AvailableModels lists one named provider from the checked saved catalog,
+// without caching. A catalog whose custom endpoints aren't all listed is
+// refused before any listing request.
 func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace string, stack StackCatalog, provider string) (CatalogProviderModels, error) {
-	file, keys, err := parseStackCatalog(stack)
+	file, keys, err := parseStackCatalog(stack, c.endpoints)
 	if err != nil {
 		return CatalogProviderModels{}, err
 	}

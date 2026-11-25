@@ -47,6 +47,12 @@ func withoutOpenAI() v1alpha1.Spec {
 	return spec
 }
 
+func openAIAt(endpoint string) *v1alpha1.ModelCatalog {
+	spec := testSpec()
+	spec.Providers["openai"] = v1alpha1.Provider{Type: "openai", BaseURL: pointer(endpoint)}
+	return catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": created()})
+}
+
 func TestValidator_Validate(t *testing.T) {
 	spec := testSpec()
 	tests := []struct {
@@ -61,12 +67,15 @@ func TestValidator_Validate(t *testing.T) {
 		{name: "create removing a key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": removed()}), wantErr: "modelcatalog: providers.openai requires the secure value secure.openai"},
 		{name: "create with a name", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": named("shared")}), wantErr: "modelcatalog: secure.openai must not reference a secret by name; set create with the key instead"},
 		{name: "create with an extra key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": created(), "other": created()}), wantErr: "modelcatalog: secure.other matches no provider"},
-		{name: "create with base URL", action: resource.AdmissionActionCreate, object: func() resource.Object {
+		{name: "create with a listed endpoint", action: resource.AdmissionActionCreate, object: openAIAt("https://llm.example.com/v1/team")},
+		{name: "create with a compatible provider", action: resource.AdmissionActionCreate, object: func() resource.Object {
 			changed := testSpec()
-			endpoint := "https://attacker.invalid"
-			changed.Providers["openai"] = v1alpha1.Provider{Type: "openai", BaseURL: &endpoint}
+			changed.Providers["openai"] = v1alpha1.Provider{Type: "openai-compatible", BaseURL: pointer("https://llm.example.com/v1"), ProviderName: pointer("acme"), SupportsStructuredOutputs: pointer(true)}
 			return catalog(changed, resource.InlineSecureValues{"anthropic": created(), "openai": created()})
-		}(), wantErr: "modelcatalog: providers.openai.baseURL is not supported in a model catalog"},
+		}()},
+		{name: "create with an unlisted endpoint", action: resource.AdmissionActionCreate, object: openAIAt("https://llm.example.com/v10"), wantErr: "modelcatalog: providers.openai.baseURL is not a listed custom endpoint"},
+		{name: "update to an unlisted endpoint", action: resource.AdmissionActionUpdate, object: openAIAt("https://169.254.169.254"), old: storedCatalog(), wantErr: "modelcatalog: providers.openai.baseURL is not a listed custom endpoint"},
+		{name: "create with the native endpoint", action: resource.AdmissionActionCreate, object: openAIAt("https://api.openai.com/v1")},
 		{name: "update without secure", action: resource.AdmissionActionUpdate, object: catalog(spec, nil), old: storedCatalog()},
 		{name: "update replacing a key", action: resource.AdmissionActionUpdate, object: catalog(spec, resource.InlineSecureValues{"openai": created()}), old: storedCatalog()},
 		{name: "update repeating stored names", action: resource.AdmissionActionUpdate, object: storedCatalog(), old: storedCatalog()},
@@ -84,7 +93,7 @@ func TestValidator_Validate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := Validator{}.Validate(context.Background(), &app.AdmissionRequest{Action: tc.action, Object: tc.object, OldObject: tc.old})
+			err := Validator{Endpoints: testEndpoints(t)}.Validate(context.Background(), &app.AdmissionRequest{Action: tc.action, Object: tc.object, OldObject: tc.old})
 			if tc.wantErr == "" {
 				require.NoError(t, err)
 				return
