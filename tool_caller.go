@@ -52,21 +52,12 @@ func validateToolExecutors(tools ToolSet) error {
 	return nil
 }
 
-func prepareToolsForCallers(tools ToolSet, routes ToolRoutes, active []string, activeSet bool) (ToolSet, ToolSet, []provider.Message) {
+func prepareToolsForCallers(tools ToolSet, routes ToolRoutes) (ToolSet, ToolSet, []provider.Message) {
 	if tools == nil || routes == nil {
 		return tools, tools, nil
 	}
-	activeNames := make(map[string]bool, len(active))
-	for _, name := range active {
-		activeNames[name] = true
-	}
-	execution := make(ToolSet, len(tools))
-	for name, tool := range tools {
-		if !activeSet || activeNames[name] {
-			execution[name] = tool
-		}
-	}
-	model := maps.Clone(execution)
+	execution := maps.Clone(tools)
+	model := maps.Clone(tools)
 	local := make(map[string]ToolSet)
 	for _, name := range slices.Sorted(maps.Keys(routes)) {
 		tool, ok := execution[name]
