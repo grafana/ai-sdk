@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/anthropic/messages"
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
@@ -59,9 +59,9 @@ func TestStreamInterruption_AdapterBoundary(t *testing.T) {
 				close(ch)
 				return &provider.StreamResult{Stream: ch}, nil
 			}}
-			selector := func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
-				return execution.ConfiguredSelection("model", model, nil), nil
-			}
+			models, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "model"}, Model: model}})
+			require.NoError(t, err)
+			selector := execution.CatalogSelector(models)
 			runtimeForAdapter := func(t *testing.T, acceptsOpenBlocks bool) *execution.Runtime {
 				t.Helper()
 				if !tc.observe && !tc.denyOnFinish {
