@@ -23,6 +23,7 @@ const (
 	routeCatalogHealth            = "catalog_health"
 	routeCatalogConfig            = "catalog_config"
 	routeCatalogLanguageModel     = "catalog_language_model"
+	routeCatalogChatCompletions   = "catalog_chat_completions"
 	routeCatalogAnthropicMessages = "catalog_anthropic_messages"
 	routeUnmatched                = "unmatched"
 	catalogRoutePrefix            = "/modelcatalogs/{" + catalogNameValue + "}"
@@ -66,6 +67,7 @@ func productionRoutes(discovery, language, chat, messages, health, availableMode
 		{method: http.MethodPost, path: catalogRoutePrefix + "/language-model", label: routeCatalogLanguageModel, handler: languageModelPath(language), errors: errorWriter, catalog: true},
 		{method: http.MethodPost, path: catalogRoutePrefix + "/health", label: routeCatalogHealth, handler: health, errors: catalogHealthErrors{}, catalog: true},
 		{method: http.MethodPost, path: catalogRoutePrefix + "/available-models", label: routeCatalogAvailableModels, handler: availableModels, errors: catalogAvailableModelsErrors{}, catalog: true},
+		{method: http.MethodPost, path: catalogRoutePrefix + chatcompletions.Path, label: routeCatalogChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter(), catalog: true},
 	}
 }
 
