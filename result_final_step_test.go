@@ -107,42 +107,75 @@ func TestFinalStep_Completion(t *testing.T) {
 		}
 	})
 
-	t.Run("waits without claiming the stream", func(t *testing.T) {
+	t.Run("waits through a continuation without claiming the stream", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			stream := make(chan provider.StreamPart)
-			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				return &provider.StreamResult{Stream: stream}, nil
-			}}
-			result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")))
-			returned := make(chan StepResult, 1)
-			go func() {
-				step, ok := result.FinalStep()
-				assert.True(t, ok)
-				returned <- step
-			}()
+			continuing := make(chan struct{})
+			releaseContinuation := make(chan struct{})
+			finishing := make(chan struct{})
+			releaseFinish := make(chan struct{})
+			model := &mockModel{}
+			model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				if model.callCount == 1 {
+					return &provider.StreamResult{Stream: projectionToolStepParts()}, nil
+				}
+				close(continuing)
+				<-releaseContinuation
+				return &provider.StreamResult{Stream: textStreamParts("complete")}, nil
+			}
+			result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hello")),
+				WithTools(projectionTools(t)), WithStopWhen(StepCountIs(2)), OnFinish(func(OnFinishState) {
+					close(finishing)
+					<-releaseFinish
+				}))
+			returned := make(chan StepResult, 2)
+			for range cap(returned) {
+				go func() {
+					step, ok := result.FinalStep()
+					assert.True(t, ok)
+					returned <- step
+				}()
+			}
+			<-continuing
 			synctest.Wait()
 			assert.Empty(t, returned)
-
-			drained := make(chan bool, 1)
+			drained := make(chan []string, 1)
 			go func() {
-				sawFinish := false
+				var events []string
 				for part := range result.FullStream() {
-					if _, ok := part.(StreamFinish); ok {
-						sawFinish = true
+					switch p := part.(type) {
+					case StreamStart:
+						events = append(events, "start")
+					case StreamStartStep:
+						events = append(events, "start-step")
+					case StreamTextDelta:
+						events = append(events, p.Text)
+					case StreamFinishStep:
+						events = append(events, "finish-step")
+					case StreamFinish:
+						events = append(events, "finish")
 					}
 				}
-				drained <- sawFinish
+				drained <- events
 			}()
-			for part := range textStreamParts("complete") {
-				stream <- part
+			close(releaseContinuation)
+			<-finishing
+			synctest.Wait()
+			assert.Empty(t, returned)
+			close(releaseFinish)
+
+			assert.Equal(t, []string{"start", "start-step", "checking", "finish-step",
+				"start-step", "complete", "finish-step", "finish"}, <-drained)
+			require.NoError(t, result.Err())
+			steps := result.Steps()
+			require.Len(t, steps, 2)
+			for range cap(returned) {
+				assert.Equal(t, steps[1], <-returned)
 			}
-			close(stream)
-			assert.Equal(t, "complete", (<-returned).Text)
-			assert.True(t, <-drained)
 		})
 	})
 
 	boom := errors.New("provider failed")
+	terminalError := provider.NewAPICallError(provider.APICallErrorOptions{Message: "provider stream failed"})
 	for _, tc := range []struct {
 		name      string
 		completed bool
@@ -152,6 +185,7 @@ func TestFinalStep_Completion(t *testing.T) {
 	}{
 		{name: "initial error", mode: "error", wantErr: boom},
 		{name: "continuation error", completed: true, mode: "error", wantErr: boom, wantText: "checking"},
+		{name: "recorded error step", completed: true, mode: "terminal error", wantErr: terminalError, wantText: "partial"},
 		{name: "empty continuation EOF", completed: true, mode: "empty EOF", wantErr: ErrNoOutputGenerated, wantText: "checking"},
 		{name: "partial continuation EOF", completed: true, mode: "partial EOF", wantText: "partial"},
 		{name: "initial mid-step cancellation", mode: "cancel"},
@@ -170,6 +204,12 @@ func TestFinalStep_Completion(t *testing.T) {
 					return nil, boom
 				case "empty EOF":
 					return &provider.StreamResult{Stream: projectionParts(provider.StreamPart{Type: provider.PartStreamStart})}, nil
+				case "terminal error":
+					return &provider.StreamResult{Stream: projectionParts(
+						provider.StreamPart{Type: provider.PartTextStart, ID: "failed"},
+						provider.StreamPart{Type: provider.PartTextDelta, ID: "failed", Delta: "partial"},
+						provider.StreamPart{Type: provider.PartError, APICallError: terminalError},
+					)}, nil
 				}
 				pending := make(chan provider.StreamPart, 2)
 				pending <- provider.StreamPart{Type: provider.PartTextStart, ID: "unfinished"}
@@ -195,12 +235,16 @@ func TestFinalStep_Completion(t *testing.T) {
 			assert.Equal(t, tc.mode == "cancel", aborted)
 			final, ok := result.FinalStep()
 			steps := result.Steps()
-			if tc.mode == "partial EOF" {
+			switch {
+			case tc.mode == "partial EOF":
 				require.Len(t, steps, 2)
 				assert.Equal(t, provider.FinishReasonOther, final.FinishReason.Unified)
-			} else if tc.completed {
+			case tc.mode == "terminal error":
+				require.Len(t, steps, 2)
+				assert.Equal(t, provider.FinishReasonError, final.FinishReason.Unified)
+			case tc.completed:
 				require.Len(t, steps, 1)
-			} else {
+			default:
 				assert.Empty(t, steps)
 				assert.False(t, ok)
 				assert.Equal(t, StepResult{}, final)
@@ -273,6 +317,12 @@ func TestFinalStep_ValueCopyAndConcurrentReads(t *testing.T) {
 
 			step, ok := tc.final()
 			require.True(t, ok)
+			require.Len(t, want.Files, 1)
+			require.Len(t, step.Files, 1)
+			require.NotEmpty(t, want.Files[0].Data)
+			require.NotEmpty(t, step.Files[0].Data)
+			assert.Same(t, &want.Files[0].Data[0], &step.Files[0].Data[0])
+			assert.Same(t, want.Usage.InputTokens.Total, step.Usage.InputTokens.Total)
 			step.Text = "changed"
 			step.Files = nil
 			step.Response.Headers = nil
