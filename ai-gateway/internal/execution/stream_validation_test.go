@@ -6,6 +6,7 @@ import (
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func streamPart(kind provider.StreamPartType, id string) provider.StreamPart {
@@ -196,6 +197,100 @@ func TestStreamValidator_Rules(t *testing.T) {
 			assert.Equal(t, tc.rejectAt, rejected)
 		})
 	}
+}
+
+func TestStreamValidator_InterruptedFinish(t *testing.T) {
+	interrupted := validFinish()
+	interrupted.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonInterrupted}
+	metadata := provider.StreamPart{Type: provider.PartResponseMeta}
+	textStart := streamPart(provider.PartTextStart, "t")
+	reasoningStart := streamPart(provider.PartReasoningStart, "r")
+	toolStart := toolInput(provider.PartToolInputStart, "c", "f")
+	for _, block := range []provider.StreamPart{textStart, reasoningStart, toolStart} {
+		for _, reason := range []provider.UnifiedFinishReason{
+			provider.FinishReasonStop, provider.FinishReasonLength, provider.FinishReasonContentFilter,
+			provider.FinishReasonToolCalls, provider.FinishReasonError, provider.FinishReasonOther,
+		} {
+			t.Run(string(block.Type)+"/"+string(reason), func(t *testing.T) {
+				v := NewStreamValidator(nil)
+				require.NoError(t, v.Check(block))
+				finish := validFinish()
+				finish.FinishReason = &provider.FinishReason{Unified: reason, Raw: "interrupted"}
+				require.ErrorIs(t, v.Check(finish), ErrInvalidOutput)
+				require.ErrorIs(t, v.Check(metadata), ErrInvalidOutput)
+				require.NoError(t, v.Check(interrupted))
+				assert.True(t, v.SegmentFinished())
+			})
+		}
+	}
+
+	t.Run("rejected finish does not abandon blocks", func(t *testing.T) {
+		v := NewStreamValidator(nil)
+		require.NoError(t, v.Check(textStart))
+		require.NoError(t, v.Check(reasoningStart))
+		require.NoError(t, v.Check(toolStart))
+		for _, invalid := range []provider.StreamPart{
+			withPart(interrupted, func(p *provider.StreamPart) { p.Usage = nil }),
+			withPart(interrupted, func(p *provider.StreamPart) { p.FinishReason = nil }),
+			withPart(interrupted, func(p *provider.StreamPart) { p.Warnings = []provider.Warning{{Type: provider.WarnUnsupported}} }),
+		} {
+			require.ErrorIs(t, v.Check(invalid), ErrInvalidOutput)
+			require.False(t, v.SegmentFinished())
+		}
+		require.NoError(t, v.Check(streamPart(provider.PartTextEnd, "t")))
+		require.NoError(t, v.Check(streamPart(provider.PartReasoningEnd, "r")))
+		require.NoError(t, v.Check(toolInput(provider.PartToolInputEnd, "c", "")))
+		require.NoError(t, v.Check(toolCall("c", "f", false)))
+		require.NoError(t, v.Check(validFinish()))
+	})
+
+	for _, history := range []ToolHistory{nil, {"pending": "f"}} {
+		name := "stream"
+		if history != nil {
+			name = "history"
+		}
+		t.Run("pending preview/"+name, func(t *testing.T) {
+			v := NewStreamValidator(history)
+			if history == nil {
+				require.NoError(t, v.Check(toolCall("pending", "f", true)))
+			}
+			require.NoError(t, v.Check(previewResult("pending", "f")))
+			require.NoError(t, v.Check(textStart))
+			require.ErrorIs(t, v.Check(interrupted), ErrInvalidOutput)
+			require.NoError(t, v.Check(streamPart(provider.PartTextDelta, "t")))
+			require.NoError(t, v.Check(toolResult("pending", "f", "{}")))
+			require.NoError(t, v.Check(interrupted))
+		})
+	}
+
+	t.Run("next segment and abandoned IDs", func(t *testing.T) {
+		v := NewStreamValidator(nil)
+		secondReasoning := streamPart(provider.PartReasoningStart, "s")
+		for _, part := range []provider.StreamPart{textStart, reasoningStart, secondReasoning, toolStart, toolCall("done", "f", true), interrupted} {
+			require.NoError(t, v.Check(part), part.Type)
+		}
+		require.ErrorIs(t, v.Check(interrupted), ErrInvalidOutput)
+		require.ErrorIs(t, v.Check(streamPart(provider.PartTextEnd, "t")), ErrInvalidOutput)
+		require.NoError(t, v.Check(metadata))
+		require.False(t, v.SegmentFinished())
+		for _, part := range []provider.StreamPart{
+			toolStart,
+			toolInput(provider.PartToolInputDelta, "c", ""),
+			toolInput(provider.PartToolInputEnd, "c", ""),
+			toolCall("c", "f", false),
+			toolResult("c", "f", "{}"),
+		} {
+			require.ErrorIs(t, v.Check(part), ErrInvalidOutput, part.Type)
+		}
+		for _, part := range []provider.StreamPart{
+			toolResult("done", "f", "{}"),
+			textStart, reasoningStart, secondReasoning,
+			streamPart(provider.PartTextEnd, "t"), streamPart(provider.PartReasoningEnd, "r"), streamPart(provider.PartReasoningEnd, "s"),
+			validFinish(),
+		} {
+			require.NoError(t, v.Check(part), part.Type)
+		}
+	})
 }
 
 func TestStreamValidator_SegmentFinished(t *testing.T) {

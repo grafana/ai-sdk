@@ -909,6 +909,7 @@ func TestPipeline_StreamOutcome(t *testing.T) {
 	providerErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "private"})
 	errorPart := provider.StreamPart{Type: provider.PartError, APICallError: providerErr}
 	finish := provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}, Usage: &provider.Usage{}}
+	interrupted := provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonInterrupted}, Usage: &provider.Usage{}}
 	recorded := func(records chan extension.Record) extension.Definition {
 		return define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
 			records <- record
@@ -921,6 +922,12 @@ func TestPipeline_StreamOutcome(t *testing.T) {
 		guard   *recorder
 		outcome extension.Outcome
 	}{
+		{name: "interrupted with open text", parts: []provider.StreamPart{
+			{Type: provider.PartStreamStart},
+			{Type: provider.PartTextStart, ID: "t"},
+			{Type: provider.PartTextDelta, ID: "t", Delta: "partial"},
+			interrupted,
+		}, outcome: extension.OutcomeSuccess},
 		{name: "error then finish", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, errorPart, finish}, outcome: extension.OutcomeError},
 		{name: "finish then error", parts: append(textParts("hello"), errorPart), outcome: extension.OutcomeError},
 		{name: "invalid output with an error", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, {Type: provider.PartTextDelta, ID: "never-started", Delta: "x"}, errorPart, finish}, outcome: extension.OutcomeInvalidOutput},

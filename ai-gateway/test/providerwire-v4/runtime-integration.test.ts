@@ -811,6 +811,72 @@ describe("authentic metadata replay with unchanged direct expectations", () => {
   }
 });
 
+describe("synthetic interrupted stream through the real handler", () => {
+  const modelID = "stream-interrupted";
+
+  it("preserves partial blocks and the interrupted finish in SSE and both Gateway clients", async () => {
+    const response = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "ai-language-model-specification-version": "4",
+        "ai-language-model-id": modelID,
+        "ai-language-model-streaming": "true",
+      },
+      body: JSON.stringify({ prompt: [] }),
+    });
+    assert.equal(response.status, 200);
+    const frames = (await response.text()).trimEnd().split("\n\n").map(frame => {
+      assert.ok(frame.startsWith("data: "));
+      return JSON.parse(frame.slice("data: ".length));
+    });
+    for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+    assert.deepEqual(frames, [
+      { type: "stream-start", warnings: [] },
+      { type: "text-start", id: "text" },
+      { type: "text-delta", id: "text", delta: "Partial answer" },
+      { type: "reasoning-start", id: "reasoning" },
+      { type: "reasoning-delta", id: "reasoning", delta: "Thinking" },
+      { type: "tool-input-start", id: "call", toolName: "lookup" },
+      { type: "tool-input-delta", id: "call", delta: "{" },
+      { type: "finish", finishReason: { unified: "interrupted" }, usage: { inputTokens: {}, outputTokens: {} } },
+    ]);
+
+    const tsParts = await collect((await model(modelID).doStream({ prompt: [] })).stream);
+    const go = await captureGoClient(goClientBinary, {
+      baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID, mode: "stream", options: { prompt: [] },
+    });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(tsParts, frames);
+    assert.deepEqual(go.parts, frames);
+  });
+
+  it("retains the partial answer and interrupted UI finish in both SDKs", async () => {
+    const result = streamText({ model: model(modelID), prompt: "test", maxRetries: 0, _internal: { generateId: mockId("id") } });
+    const tsChunks = [];
+    for await (const parsed of parseJsonEventStream({ stream: result.toUIMessageStreamResponse().body!, schema: uiMessageChunkSchema })) {
+      if (!parsed.success) throw parsed.error;
+      tsChunks.push(parsed.value);
+    }
+    assert.equal(await result.text, "Partial answer");
+    assert.equal(await result.finishReason, "interrupted");
+
+    const go = await captureGoClient(goClientBinary, {
+      baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID, mode: "recorded-ui", steps: 1,
+      options: { prompt: [{ role: "user", content: [{ type: "text", text: "test" }] }] },
+    });
+    assert.equal(go.error, undefined);
+    for (const chunk of go.chunks) assert.equal((await safeValidateTypes({ value: chunk, schema: uiMessageChunkSchema })).success, true, JSON.stringify(chunk));
+    for (const chunks of [tsChunks, go.chunks]) {
+      assert.deepEqual(chunks.filter((chunk: { type: string }) => chunk.type === "text-delta"), [
+        { type: "text-delta", id: "text", delta: "Partial answer" },
+      ]);
+      assert.deepEqual(chunks.at(-1), { type: "finish", finishReason: "interrupted" });
+      assert.equal(chunks.some((chunk: { type: string }) => chunk.type === "error"), false);
+    }
+  });
+});
+
 describe("sequential response segments through the real handler", () => {
   for (const shape of ["anthropic", "openai"] as const) {
     it(`delivers every ${shape}-shaped segment to both clients`, async () => {

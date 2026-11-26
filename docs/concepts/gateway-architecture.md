@@ -380,6 +380,12 @@ when a provider error follows that part, as the direct provider stream does.
 Idle time, the deadline and cancellation still end with their terminal error,
 even after a written `finish`.
 
+ProviderWire preserves an `interrupted` finish after partial text, reasoning or
+tool input without adding block ends. Only this finish reason may end a segment
+with open blocks, and an unfinished tool result preview still makes any finish
+invalid. A later segment may reuse text and reasoning IDs, but it cannot resume
+or reuse an abandoned tool input ID.
+
 A provider error event can be followed by more content and a valid finish. It
 is different from a handler-terminal failure such as invalid ordering,
 premature EOF, an invalid value, or a deadline. After commitment, failures

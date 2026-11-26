@@ -227,14 +227,18 @@ Canonical identity SHALL remain authoritative for resolution and operator logica
 
 ### Requirement: Finish validation and terminal authority
 
-A finish part SHALL be valid only when no text, reasoning or tool-input block is active, no tool preview series lacks its final result, the current segment has not already finished, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. A written finish SHALL never be retracted or followed by a synthetic finish.
+A finish part SHALL be valid only when no tool preview series lacks its final result, the current segment has not already finished, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. No text, reasoning or tool-input block SHALL be active unless the unified reason is `interrupted`. A written finish SHALL never be retracted or followed by a synthetic finish.
 
 #### Scenario: Finish closes a valid stream
 - **WHEN** a valid finish is emitted with no active text, reasoning or tool-input block
 - **THEN** the finish SHALL preserve normalized usage, finish reason and supplied ordinary providerMetadata, unrelated transport fields SHALL remain omitted, the handler SHALL keep reading the provider stream under the sequential response segment rules, and the response SHALL end at clean EOF without `[DONE]` when the provider then closes
 
+#### Scenario: Interrupted finish preserves partial blocks
+- **WHEN** an otherwise valid `interrupted` finish arrives with open text, reasoning or tool input
+- **THEN** the handler SHALL forward that finish after the partial blocks as emitted, without synthesizing block ends, tool calls or results, and SHALL end at clean EOF without `[DONE]` when the provider then closes
+
 #### Scenario: Finish is invalid
-- **WHEN** finish arrives with an active block, an unfinished tool preview series, after a finish without intervening response-metadata, with warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid supplied raw usage, or invalid finish metadata
+- **WHEN** a non-interrupted finish arrives with an active block, or any finish arrives with an unfinished tool preview series, after a finish without intervening response-metadata, with warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid supplied raw usage, or invalid finish metadata
 - **THEN** finish SHALL not be written and the handler SHALL attempt at most one synthetic terminal internal error
 
 #### Scenario: Provider emits after finish
@@ -591,7 +595,11 @@ Each finish and error frame SHALL be encoded once together with its optional exe
 - **THEN** the fixed base frame with the same classification SHALL be written
 
 ### Requirement: Sequential response segments
-A committed stream SHALL consist of one or more response segments. The public start SHALL open the first segment, and every accepted response-metadata part SHALL open a new one. Response-metadata SHALL be accepted only while no text, reasoning or tool-input block is open and no tool preview series lacks its final result, the same condition a finish requires. Repeated response-metadata and finish parts SHALL be written in provider order.
+The public start SHALL open the first response segment, and each accepted response-metadata part SHALL open a new one. Response-metadata SHALL be accepted only when no text, reasoning or tool-input block is open and no tool preview is pending. Response-metadata and finish parts SHALL be written in provider order.
+
+#### Scenario: Metadata after an interrupted segment
+- **WHEN** response-metadata follows a valid `interrupted` finish that ends a segment with open blocks
+- **THEN** the open blocks SHALL be treated as abandoned, and the metadata SHALL open a new segment
 
 #### Scenario: Message-shaped segments
 - **WHEN** a provider emits metadata, content and a valid finish, then a raw part, then metadata, content and a valid finish again, and then closes its stream

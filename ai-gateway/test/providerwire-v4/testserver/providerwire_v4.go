@@ -203,6 +203,16 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
 	case "citations":
 		return &provider.StreamResult{Stream: scenarioStream(scenarioCitationStream()...)}, nil
+	case "stream-interrupted":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "Partial answer"},
+			provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning"},
+			provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning", Delta: "Thinking"},
+			provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "lookup"},
+			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call", Delta: "{"},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonInterrupted}, Usage: &provider.Usage{}},
+		)}, nil
 	case "sequential-segments-anthropic", "sequential-segments-openai":
 		m.stats.recordSuccess(options)
 		return &provider.StreamResult{Stream: scenarioStream(scenarioSequentialSegments(m.kind)...)}, nil
@@ -484,7 +494,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 32)
-	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-status-less", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error", "sequential-segments-anthropic", "sequential-segments-openai"} {
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-status-less", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error", "sequential-segments-anthropic", "sequential-segments-openai", "stream-interrupted"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

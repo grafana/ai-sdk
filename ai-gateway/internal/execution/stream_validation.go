@@ -10,6 +10,7 @@ const (
 	toolCallEmitted
 	toolResultPreliminary
 	toolResultEmitted
+	toolInputAbandoned
 )
 
 type streamTool struct {
@@ -25,10 +26,11 @@ type streamTool struct {
 //
 // A stream is a sequence of response segments. A segment opens at the start
 // of the stream and at every response-metadata part, and a finish ends it.
-// Response metadata and finish are accepted only while quiescent: no text,
-// reasoning or tool input is open and no tool result preview is pending,
-// including calls pending in the prompt's [ToolHistory]. After a finish, only
-// response metadata, raw and error parts may follow.
+// Response metadata and finish require no pending tool result previews,
+// including for calls in the prompt's [ToolHistory]. They also require all
+// text, reasoning and tool input blocks to be closed, except an interrupted
+// finish abandons open blocks without releasing their tool IDs. After a finish,
+// only response metadata, raw and error parts may follow.
 //
 // The other rules are: a stream-start only as the first part; text that never
 // overlaps and never reuses an ID within its segment; reasoning blocks that may
@@ -101,7 +103,7 @@ func (v *StreamValidator) check(part provider.StreamPart) bool {
 	case provider.PartStreamStart:
 		return !v.started
 	case provider.PartResponseMeta:
-		if !v.quiescent() {
+		if !v.canEndSegment(false) {
 			return false
 		}
 		v.startSegment()
@@ -137,8 +139,15 @@ func (v *StreamValidator) check(part provider.StreamPart) bool {
 	case provider.PartToolApprovalRequest:
 		return v.checkApproval(part)
 	case provider.PartFinish:
-		if !v.quiescent() || len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil || !registeredFinishReason(part.FinishReason.Unified) {
+		if len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil || !registeredFinishReason(part.FinishReason.Unified) {
 			return false
+		}
+		interrupted := part.FinishReason.Unified == provider.FinishReasonInterrupted
+		if !v.canEndSegment(interrupted) {
+			return false
+		}
+		if interrupted {
+			v.abandonOpenBlocks()
 		}
 		v.segmentFinished = true
 	default:
@@ -156,12 +165,12 @@ func allowedAfterFinish(partType provider.StreamPartType) bool {
 	}
 }
 
-func (v *StreamValidator) quiescent() bool {
-	if v.activeText != "" || len(v.reasoning) != 0 {
+func (v *StreamValidator) canEndSegment(allowOpenBlocks bool) bool {
+	if !allowOpenBlocks && (v.activeText != "" || len(v.reasoning) != 0) {
 		return false
 	}
 	for _, tool := range v.tools {
-		if tool.phase == toolInputOpen || tool.phase == toolResultPreliminary {
+		if tool.phase == toolResultPreliminary || (!allowOpenBlocks && tool.phase == toolInputOpen) {
 			return false
 		}
 	}
@@ -171,6 +180,17 @@ func (v *StreamValidator) quiescent() bool {
 		}
 	}
 	return true
+}
+
+func (v *StreamValidator) abandonOpenBlocks() {
+	v.activeText = ""
+	clear(v.reasoning)
+	for id, tool := range v.tools {
+		if tool.phase == toolInputOpen {
+			tool.phase = toolInputAbandoned
+			v.tools[id] = tool
+		}
+	}
 }
 
 func (v *StreamValidator) startSegment() {
