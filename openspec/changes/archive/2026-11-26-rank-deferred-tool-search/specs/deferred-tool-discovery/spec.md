@@ -31,20 +31,20 @@ The root package SHALL expose ToolSearch(opts ...ToolSearchOption) Tool and opti
 The default keyword ranker SHALL tokenize names/descriptions/queries by splitting ASCII lowercase-letter/digit followed by ASCII uppercase-letter, lowercasing and collecting Unicode letter/number runs. Deduplicated query terms SHALL score two points for name-token membership and one for description-token membership; only positive scores SHALL match.
 
 #### Scenario: Name score and five-result limit
-- **WHEN** one candidate matches a query term in its name and six match only their descriptions
+- **WHEN** search uses the default keyword ranker and limit, and one candidate matches a query term in its name while six match only their descriptions
 - **THEN** the name match SHALL precede the description-only matches and the result SHALL contain at most five names
 - **AND** positive-score matches outside the returned five SHALL remain undiscovered
 
 #### Scenario: Tokenization and duplicate terms
-- **WHEN** a query uses mixed case, repeated terms, camel-case names and Unicode letter/number words
+- **WHEN** the default keyword ranker processes a query with mixed case, repeated terms, camel-case names and Unicode letter/number words
 - **THEN** matching SHALL apply the specified tokenization and each unique term SHALL contribute at most its name/description membership scores
 
 #### Scenario: Empty token set
-- **WHEN** a nonempty query contains only whitespace or punctuation
+- **WHEN** the default keyword ranker receives a nonempty query containing only whitespace or punctuation
 - **THEN** search SHALL return `{ "tools": [] }` and SHALL discover nothing
 
 #### Scenario: Stable ties and repeat search
-- **WHEN** equal-score candidates straddle the five-match limit and search is repeated
+- **WHEN** equal-score candidates straddle the default keyword ranker's result limit and search is repeated
 - **THEN** both searches SHALL return the same ascending-name tie selection, including already discovered matching entries
 
 ### Requirement: Search result limits and tie ordering
@@ -57,7 +57,7 @@ are the Go map-order adaptation to upstream stable insertion-order ties.
 Exactly returned names SHALL be discovered.
 
 #### Scenario: Tie ordering limits discovered names
-- **WHEN** six positive-score candidates tie for five result slots
+- **WHEN** six positive-score candidates tie for five result slots using the default keyword ranker and limit
 - **THEN** ascending tool name SHALL select exactly the five returned discoveries, with this ordering documented as the Go adaptation.
 
 #### Scenario: Different caps on copied and renamed tools
@@ -67,6 +67,24 @@ Exactly returned names SHALL be discovered.
 #### Scenario: Non-positive configured limit
 - **WHEN** a registered search has an explicit limit of zero or less, including when it is not active
 - **THEN** the SDK SHALL return a configuration error without invoking the model.
+
+### Requirement: Descriptions resolve against the current runtime context
+
+Tool SHALL retain static Description and optional DescriptionFunc receiving ToolDescriptionOptions.Context. Non-nil callbacks SHALL override static strings even with empty results. Search SHALL resolve candidates with captured effective step context; eligible model definitions and caller catalogs SHALL use the same contract. Resolution SHALL NOT mutate the registry or introduce sandbox/per-tool context APIs.
+
+#### Scenario: Context-dependent match
+- **WHEN** a candidate's callback returns a capability keyword from the effective PrepareStep context and the default keyword ranker searches for that keyword
+- **THEN** search SHALL match and return the resolved description
+- **AND** subsequent eligible model definitions and caller catalogs SHALL resolve descriptions against their own effective step context
+
+#### Scenario: Inactive descriptions are not evaluated
+- **WHEN** an explicit active selection excludes an entry, including an empty selection without discovery controls
+- **THEN** model and caller-catalog preparation SHALL NOT evaluate that entry's DescriptionFunc
+- **AND** a new model call to the excluded entry SHALL be rejected as unavailable without execution
+
+#### Scenario: Empty versus absent description
+- **WHEN** one matching candidate has an empty static Description with no callback and another callback returns an empty string
+- **THEN** search SHALL omit description for the first candidate and SHALL include an empty description for the second
 
 ## ADDED Requirements
 

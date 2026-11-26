@@ -93,20 +93,20 @@ Discovery SHALL snapshot effective active registry after step overrides: omitted
 The default keyword ranker SHALL tokenize names/descriptions/queries by splitting ASCII lowercase-letter/digit followed by ASCII uppercase-letter, lowercasing and collecting Unicode letter/number runs. Deduplicated query terms SHALL score two points for name-token membership and one for description-token membership; only positive scores SHALL match.
 
 #### Scenario: Name score and five-result limit
-- **WHEN** one candidate matches a query term in its name and six match only their descriptions
+- **WHEN** search uses the default keyword ranker and limit, and one candidate matches a query term in its name while six match only their descriptions
 - **THEN** the name match SHALL precede the description-only matches and the result SHALL contain at most five names
 - **AND** positive-score matches outside the returned five SHALL remain undiscovered
 
 #### Scenario: Tokenization and duplicate terms
-- **WHEN** a query uses mixed case, repeated terms, camel-case names and Unicode letter/number words
+- **WHEN** the default keyword ranker processes a query with mixed case, repeated terms, camel-case names and Unicode letter/number words
 - **THEN** matching SHALL apply the specified tokenization and each unique term SHALL contribute at most its name/description membership scores
 
 #### Scenario: Empty token set
-- **WHEN** a nonempty query contains only whitespace or punctuation
+- **WHEN** the default keyword ranker receives a nonempty query containing only whitespace or punctuation
 - **THEN** search SHALL return `{ "tools": [] }` and SHALL discover nothing
 
 #### Scenario: Stable ties and repeat search
-- **WHEN** equal-score candidates straddle the five-match limit and search is repeated
+- **WHEN** equal-score candidates straddle the default keyword ranker's result limit and search is repeated
 - **THEN** both searches SHALL return the same ascending-name tie selection, including already discovered matching entries
 
 ### Requirement: Search result limits and tie ordering
@@ -119,7 +119,7 @@ are the Go map-order adaptation to upstream stable insertion-order ties.
 Exactly returned names SHALL be discovered.
 
 #### Scenario: Tie ordering limits discovered names
-- **WHEN** six positive-score candidates tie for five result slots
+- **WHEN** six positive-score candidates tie for five result slots using the default keyword ranker and limit
 - **THEN** ascending tool name SHALL select exactly the five returned discoveries, with this ordering documented as the Go adaptation.
 
 #### Scenario: Different caps on copied and renamed tools
@@ -135,7 +135,7 @@ Exactly returned names SHALL be discovered.
 Tool SHALL retain static Description and optional DescriptionFunc receiving ToolDescriptionOptions.Context. Non-nil callbacks SHALL override static strings even with empty results. Search SHALL resolve candidates with captured effective step context; eligible model definitions and caller catalogs SHALL use the same contract. Resolution SHALL NOT mutate the registry or introduce sandbox/per-tool context APIs.
 
 #### Scenario: Context-dependent match
-- **WHEN** a candidate's callback returns a capability keyword from the effective PrepareStep context and search queries that keyword
+- **WHEN** a candidate's callback returns a capability keyword from the effective PrepareStep context and the default keyword ranker searches for that keyword
 - **THEN** search SHALL match and return the resolved description
 - **AND** subsequent eligible model definitions and caller catalogs SHALL resolve descriptions against their own effective step context
 

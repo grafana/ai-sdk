@@ -252,17 +252,16 @@ func (s *toolSearchState) prepare(tools ToolSet, active []string, activeSet bool
 	return prepared
 }
 
-func (cfg toolSearchConfig) findMatches(ctx context.Context, query string, catalog []ToolSearchCandidate) ([]ToolSearchCandidate, error) {
+func (cfg toolSearchConfig) findMatches(ctx context.Context, query string, candidates []ToolSearchCandidate) ([]ToolSearchCandidate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if cfg.search == nil {
-		return searchDeferredTools(catalog, query, cfg.maxResults), nil
+		return searchDeferredTools(candidates, query, cfg.maxResults), nil
 	}
 
-	available := make(map[string]ToolSearchCandidate, len(catalog))
-	candidates := slices.Clone(catalog)
-	for i, candidate := range catalog {
+	available := make(map[string]ToolSearchCandidate, len(candidates))
+	for i, candidate := range candidates {
 		available[candidate.Name] = candidate
 		if candidate.Description != nil {
 			candidates[i].Description = new(*candidate.Description)
@@ -276,7 +275,7 @@ func (cfg toolSearchConfig) findMatches(ctx context.Context, query string, catal
 		return nil, err
 	}
 
-	matches := make([]ToolSearchCandidate, 0, min(cfg.maxResults, len(catalog), len(names)))
+	matches := make([]ToolSearchCandidate, 0, min(cfg.maxResults, len(available), len(names)))
 	for _, name := range names {
 		match, ok := available[name]
 		if !ok {

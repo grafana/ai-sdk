@@ -375,6 +375,26 @@ func TestToolSearch_Options(t *testing.T) {
 }
 
 func TestToolSearch_CustomRanking(t *testing.T) {
+	t.Run("custom limit above five", func(t *testing.T) {
+		names := []string{"h", "g", "f", "e", "d", "c", "b", "a"}
+		registry := ToolSet{"search": ToolSearch(WithToolSearchMaxResults(7), WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+			return names, nil
+		}))}
+		for _, name := range names {
+			registry[name] = Tool{DeferLoading: true}
+		}
+		state, err := newToolSearchState(registry, nil)
+		require.NoError(t, err)
+		first := state.prepare(registry, nil, false, nil)
+		matches := executeSearch(t, first["search"], "meteorology")
+		got := make([]string, len(matches))
+		for i, match := range matches {
+			got[i] = match.Name
+		}
+		assert.Equal(t, names[:7], got)
+		assert.Equal(t, []string{"search"}, slices.Sorted(maps.Keys(first)))
+		assert.ElementsMatch(t, append([]string{"search"}, names[:7]...), slices.Collect(maps.Keys(state.prepare(registry, nil, false, nil))))
+	})
 	t.Run("detached descriptions and eligible ranked names", func(t *testing.T) {
 		const query = "  Meteorology?!  "
 		const stepDescription = "Current step description"
@@ -446,6 +466,17 @@ func TestToolSearch_CustomRanking(t *testing.T) {
 	}
 }
 
+type toolSearchObservedContext struct {
+	context.Context
+	observeErr func(error)
+}
+
+func (ctx toolSearchObservedContext) Err() error {
+	err := ctx.Context.Err()
+	ctx.observeErr(err)
+	return err
+}
+
 func TestToolSearch_CustomRankingCancellation(t *testing.T) {
 	t.Run("pre-canceled execution skips ranker", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
@@ -473,6 +504,26 @@ func TestToolSearch_CustomRankingCancellation(t *testing.T) {
 		require.NoError(t, err)
 		_, err = state.prepare(registry, nil, false, nil)["search"].Execute(ctx, json.RawMessage(`{"query":"weather"}`), ToolExecutionOptions{})
 		assert.ErrorIs(t, err, context.Canceled)
+		assert.NotContains(t, state.prepare(registry, nil, false, nil), "weather")
+	})
+	t.Run("canceled after ranking check cannot publish names", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		ranked := false
+		observed := toolSearchObservedContext{Context: ctx, observeErr: func(err error) {
+			if ranked && err == nil {
+				cancel()
+			}
+		}}
+		registry := ToolSet{"weather": discoveryTool(t), "search": ToolSearch(WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+			ranked = true
+			return []string{"weather"}, nil
+		}))}
+		state, err := newToolSearchState(registry, nil)
+		require.NoError(t, err)
+		output, err := state.prepare(registry, nil, false, nil)["search"].Execute(observed, json.RawMessage(`{"query":"weather"}`), ToolExecutionOptions{})
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Empty(t, output)
 		assert.NotContains(t, state.prepare(registry, nil, false, nil), "weather")
 	})
 }
@@ -795,9 +846,10 @@ func TestToolSearch_InvalidInputDoesNotDiscover(t *testing.T) {
 }
 
 func TestToolCallers_DeferredDiscovery(t *testing.T) {
-	for _, nested := range []bool{false, true} {
+	for _, route := range []string{"direct", "nested", "nested ranked"} {
+		nested := route != "direct"
 		for _, mode := range []string{"stream", "generate", "agent stream", "agent generate"} {
-			t.Run(fmt.Sprintf("%s/nested=%t", mode, nested), func(t *testing.T) {
+			t.Run(mode+"/"+route, func(t *testing.T) {
 				calls := 0
 				runs := 0
 				sameStepUnavailable := false
@@ -808,7 +860,15 @@ func TestToolCallers_DeferredDiscovery(t *testing.T) {
 					return json.RawMessage(`"sunny"`), nil
 				}
 				weather.NeedsApproval = ApprovalRequired()
-				tools := ToolSet{"search": ToolSearch(), "weather": weather, "unrelated": {DeferLoading: true}}
+				search := ToolSearch()
+				query := "weather"
+				if route == "nested ranked" {
+					query = "meteorology"
+					search = ToolSearch(WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+						return []string{"weather"}, nil
+					}))
+				}
+				tools := ToolSet{"search": search, "weather": weather, "unrelated": {DeferLoading: true}}
 				routes := ToolRoutes(nil)
 				if nested {
 					callerSchema := testMustSchema(t, `{"type":"object","properties":{"name":{"type":"string"},"input":{"type":"object"}},"required":["name","input"],"additionalProperties":false}`)
@@ -868,7 +928,7 @@ func TestToolCallers_DeferredDiscovery(t *testing.T) {
 					case 1:
 						if nested {
 							return &provider.StreamResult{Stream: discoveryParts(
-								discoveryCall("nested-search", "code", `{"name":"search","input":{"query":"weather"}}`),
+								discoveryCall("nested-search", "code", fmt.Sprintf(`{"name":"search","input":{"query":%q}}`, query)),
 								discoveryCall("nested-early", "code", `{"name":"weather","input":{}}`),
 							)}, nil
 						}
