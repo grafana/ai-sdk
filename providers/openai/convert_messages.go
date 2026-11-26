@@ -433,13 +433,17 @@ func promptCacheBreakpoint(opts provider.ProviderOptions, providerOptionsName st
 	return po.PromptCacheBreakpoint
 }
 
+type ignoredPartOption struct{}
+
+func (*ignoredPartOption) UnmarshalJSON([]byte) error { return nil }
+
 func openAIPartOptionsFor(opts provider.ProviderOptions, providerOptionsName string) OpenAIPartOptions {
 	if raw, ok := opts[providerOptionsName].(provider.RawProviderOption); ok {
 		var po OpenAIPartOptions
 		// Additional tools are validated only on the paths that replay them.
 		view := struct {
 			*OpenAIPartOptions
-			AdditionalTools json.RawMessage `json:"additionalTools"`
+			AdditionalTools ignoredPartOption `json:"additionalTools"`
 		}{OpenAIPartOptions: &po}
 		if err := json.Unmarshal(raw.Raw, &view); err != nil {
 			return OpenAIPartOptions{}

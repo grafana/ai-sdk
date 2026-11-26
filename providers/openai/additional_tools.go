@@ -105,6 +105,9 @@ func resultAdditionalToolsOption(opts provider.ProviderOptions, namespace string
 			tools = opt.AdditionalTools
 		}
 	case provider.RawProviderOption:
+		if len(opt.Raw) == 0 {
+			return nil, nil
+		}
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(opt.Raw, &fields); err != nil {
 			return nil, fmt.Errorf("expected a provider options object")

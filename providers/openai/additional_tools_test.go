@@ -86,10 +86,11 @@ func TestAdditionalTools_ResultHistory(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
 			for _, tc := range []struct {
-				name      string
-				raw       string
-				modelOpts []Option
-				wantList  string
+				name          string
+				raw           string
+				emptyRawAzure bool
+				modelOpts     []Option
+				wantList      string
 			}{
 				{name: "omitted", raw: `{"openai":{"irrelevant":true}}`},
 				{name: "empty", raw: `{"openai":{"additionalTools":[]}}`},
@@ -98,10 +99,15 @@ func TestAdditionalTools_ResultHistory(t *testing.T) {
 				{name: "azure active ignores openai", raw: `{"azure":{"additionalTools":` + additionalList + `},"openai":{"additionalTools":null}}`, modelOpts: []Option{WithProviderName("custom.azure")}, wantList: additionalList},
 				{name: "azure absent field falls back", raw: `{"azure":{"unrelated":true},"openai":{"additionalTools":` + additionalList + `}}`, modelOpts: []Option{WithProviderName("custom.azure")}, wantList: additionalList},
 				{name: "azure null namespace falls back", raw: `{"azure":null,"openai":{"additionalTools":` + additionalList + `}}`, modelOpts: []Option{WithProviderName("custom.azure")}, wantList: additionalList},
+				{name: "zero raw azure falls back", raw: `{"openai":{"additionalTools":` + additionalList + `}}`, emptyRawAzure: true, modelOpts: []Option{WithProviderName("custom.azure")}, wantList: additionalList},
 				{name: "azure empty wins", raw: `{"azure":{"additionalTools":[]},"openai":{"additionalTools":` + additionalList + `}}`, modelOpts: []Option{WithProviderName("custom.azure")}},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					prompt := additionalResultPrompt(additionalOptions(t, tc.raw))
+					partOpts := additionalOptions(t, tc.raw)
+					if tc.emptyRawAzure {
+						partOpts["azure"] = provider.RawProviderOption{Key: "azure"}
+					}
+					prompt := additionalResultPrompt(partOpts)
 					second := provider.ToolResultPart("lookup_2", "search", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "found more"})
 					second.ProviderOptions = additionalOptions(t, `{"openai":{"additionalTools":[`+additionalFunction+`]}}`)
 					prompt[0].Content = append(prompt[0].Content, second)
@@ -248,7 +254,7 @@ func TestAdditionalTools_ParallelContinuation(t *testing.T) {
 func TestAdditionalTools_NativeResultBoundaries(t *testing.T) {
 	opts := additionalOptions(t, `{"openai":{"additionalTools":{}}}`)
 	definitionOpts := additionalOptions(t, `{"openai":{"additionalTools":`+additionalList+`}}`)
-	search := provider.ToolResultPart("search_1", "tool_search", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"tools":[]}`)})
+	search := provider.ToolResultPart("search_1", "discover", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"tools":[]}`)})
 	search.ProviderOptions = opts
 	custom := provider.ToolResultPart("custom_1", "custom_lookup", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "found"})
 	custom.ProviderOptions = opts
@@ -257,9 +263,17 @@ func TestAdditionalTools_NativeResultBoundaries(t *testing.T) {
 	denied := provider.ToolResultPart("denied_1", "local", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, ProviderOptions: additionalOptions(t, `{"openai":{"approvalId":"approval_1"}}`)})
 	denied.ProviderOptions = opts
 	bare := provider.ToolResultPart("bare_1", "local", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "found", ProviderOptions: definitionOpts})
-	body := captureAdditionalToolsRequest(t, provider.CallOptions{
+	callOpts := provider.CallOptions{
 		Prompt: []provider.Message{provider.NewAssistantMessage(hosted), provider.NewToolMessage(search, custom, denied, bare)},
-		Tools:  []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "custom_lookup", Args: map[string]json.RawMessage{"name": json.RawMessage(`"custom_lookup"`)}}},
-	}, false)
-	assert.JSONEq(t, `[{"type":"item_reference","id":"ws_item"},{"type":"tool_search_output","execution":"client","call_id":"search_1","status":"completed","tools":[]},{"type":"custom_tool_call_output","call_id":"custom_1","output":"found"},{"type":"function_call_output","call_id":"bare_1","output":"found"}]`, string(body.Input))
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeProvider, ID: toolIDToolSearch, Name: "discover"},
+			{Type: provider.ToolTypeProvider, ID: toolIDCustom, Name: "custom_lookup", Args: map[string]json.RawMessage{"name": json.RawMessage(`"custom_lookup"`)}},
+		},
+	}
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
+			body := captureAdditionalToolsRequest(t, callOpts, streaming)
+			assert.JSONEq(t, `[{"type":"item_reference","id":"ws_item"},{"type":"tool_search_output","execution":"client","call_id":"search_1","status":"completed","tools":[]},{"type":"custom_tool_call_output","call_id":"custom_1","output":"found"},{"type":"function_call_output","call_id":"bare_1","output":"found"}]`, string(body.Input))
+		})
+	}
 }
