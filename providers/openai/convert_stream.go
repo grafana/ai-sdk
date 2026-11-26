@@ -10,7 +10,8 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string, protectCredentials bool) {
+func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffered []responseStreamItem, ch chan<- provider.StreamPart, warnings []provider.Warning, br buildResult, requestBody responses.ResponseNewParams, response *http.Response, generateID func() string, providerName string, diagnostics *hostedToolDiagnostics) {
+	protectCredentials := diagnostics != nil && diagnostics.protected()
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
@@ -25,10 +26,10 @@ func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffere
 			}
 			if protectCredentials {
 				if part.APICallError != nil {
-					part.APICallError = safeHostedToolAPIError(part.APICallError)
+					part.APICallError = diagnostics.safeAPIError(part.APICallError)
 				}
 				if part.Type == provider.PartResponseMeta && response != nil {
-					part.ResponseHeaders = flattenHeaders(safeHostedToolHeaders(response.Header))
+					part.ResponseHeaders = flattenHeaders(diagnostics.safeHeaders(response.Header))
 				}
 				if part.Type == provider.PartFinish {
 					part.ProviderMetadata = nil

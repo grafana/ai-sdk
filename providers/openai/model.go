@@ -90,9 +90,10 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	}
 	var rawResponse *http.Response
 	var requestBody json.RawMessage
-	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse), option.WithMiddleware(captureRequestBody(&requestBody)))
+	diagnostics := newHostedToolDiagnostics(body)
+	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse), option.WithMiddleware(captureRequestBody(&requestBody, diagnostics)))
 	resp, err := m.client.New(ctx, body, requestOpts...)
-	protectCredentials := hasHostedToolCredentials(body) || hasWireHostedToolCredentials(requestBody)
+	protectCredentials := diagnostics.protected()
 	if protectCredentials {
 		requestBody = nil
 	}
@@ -107,14 +108,14 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 			resultErr = missingOutputError(resp, rawResponse, body)
 		}
 		if protectCredentials {
-			resultErr = safeHostedToolError(resultErr)
+			resultErr = diagnostics.safeError(resultErr)
 		}
 		return nil, resultErr
 	}
 	result, err := convertResponse(resp, br, m.generateID, m.provider)
 	if err != nil {
 		if protectCredentials {
-			err = safeHostedToolError(err)
+			err = diagnostics.safeError(err)
 		}
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		result.Usage.Raw = nil
 		result.ProviderMetadata = nil
 		result.FinishReason.Raw = ""
-		headers = safeHostedToolHeaders(headers)
+		headers = diagnostics.safeHeaders(headers)
 	}
 	result.Warnings = append(result.Warnings, warnings...)
 	result.Request = &provider.RequestMetadata{Body: requestBody}
@@ -173,24 +174,25 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	}
 	var rawResponse *http.Response
 	var requestBody json.RawMessage
-	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true), option.WithMiddleware(captureRequestBody(&requestBody)))
+	diagnostics := newHostedToolDiagnostics(body)
+	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true), option.WithMiddleware(captureRequestBody(&requestBody, diagnostics)))
 	streamCtx, cancel := context.WithCancel(ctx)
 	_, err = m.client.New(streamCtx, body, requestOptions...)
-	protectCredentials := hasHostedToolCredentials(body) || hasWireHostedToolCredentials(requestBody)
+	protectCredentials := diagnostics.protected()
 	var headers http.Header
 	if rawResponse != nil {
 		headers = rawResponse.Header
 	}
 	if protectCredentials {
 		requestBody = nil
-		headers = safeHostedToolHeaders(headers)
+		headers = diagnostics.safeHeaders(headers)
 	}
 	items := pumpResponseStream(streamCtx, rawResponse, err, params.IncludeRawChunks && !protectCredentials)
 	buffered, err := preflightResponseStream(streamCtx, items, body, rawResponse)
 	if err != nil {
 		cancel()
 		if protectCredentials {
-			err = safeHostedToolError(err)
+			err = diagnostics.safeError(err)
 		}
 		return nil, err
 	}
@@ -199,7 +201,7 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	go func() {
 		defer close(ch)
 		defer cancel()
-		consumeStream(streamCtx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider, protectCredentials)
+		consumeStream(streamCtx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider, diagnostics)
 	}()
 	return &provider.StreamResult{Stream: ch, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: flattenHeaders(headers)}}, nil
 }

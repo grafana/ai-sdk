@@ -587,20 +587,19 @@ func mcpTool(t provider.Tool) (*responses.ToolMcpParam, error) {
 		mcp.SetExtraFields(map[string]any{"connector_id": value})
 	}
 	if hasTunnel {
-		value, err := decodeHostedToolArg[string](t.Args["tunnelId"], "mcp.tunnelId")
-		if err != nil {
+		if err := setMCPTunnelArgs(&mcp, t.Args); err != nil {
 			return nil, err
 		}
-		mcp.TunnelID = param.NewOpt(value)
-	}
-	if auth := stringArg(t.Args, "authorization"); auth != "" {
-		mcp.Authorization = param.NewOpt(auth)
+	} else {
+		if auth := stringArg(t.Args, "authorization"); auth != "" {
+			mcp.Authorization = param.NewOpt(auth)
+		}
+		if headers := stringMapArg(t.Args, "headers"); len(headers) > 0 {
+			mcp.Headers = headers
+		}
 	}
 	if desc := stringArg(t.Args, "serverDescription"); desc != "" {
 		mcp.ServerDescription = param.NewOpt(desc)
-	}
-	if headers := stringMapArg(t.Args, "headers"); len(headers) > 0 {
-		mcp.Headers = headers
 	}
 	if allowedTools, ok := mcpAllowedToolsArg(t.Args); ok {
 		mcp.AllowedTools = allowedTools
@@ -613,6 +612,39 @@ func mcpTool(t provider.Tool) (*responses.ToolMcpParam, error) {
 		}
 	}
 	return &mcp, nil
+}
+
+func setMCPTunnelArgs(mcp *responses.ToolMcpParam, args map[string]json.RawMessage) error {
+	tunnelID, err := decodeHostedToolArg[string](args["tunnelId"], "mcp.tunnelId")
+	if err != nil {
+		return err
+	}
+	mcp.TunnelID = param.NewOpt(tunnelID)
+	mcp.ServerLabel, err = decodeHostedToolArg[string](args["serverLabel"], "mcp.serverLabel")
+	if err != nil {
+		return err
+	}
+	if raw, ok := args["authorization"]; ok {
+		auth, err := decodeHostedToolArg[string](raw, "mcp.authorization")
+		if err != nil {
+			return err
+		}
+		mcp.Authorization = param.NewOpt(auth)
+	}
+	if raw, ok := args["headers"]; ok {
+		headers, err := decodeHostedToolArg[map[string]*string](raw, "mcp.headers")
+		if err != nil {
+			return err
+		}
+		mcp.Headers = make(map[string]string, len(headers))
+		for key, value := range headers {
+			if value == nil {
+				return fmt.Errorf("openai: invalid mcp.headers")
+			}
+			mcp.Headers[key] = *value
+		}
+	}
+	return nil
 }
 
 func shellTool(t provider.Tool) *responses.FunctionShellToolParam {

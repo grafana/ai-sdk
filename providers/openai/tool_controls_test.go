@@ -40,6 +40,10 @@ func TestResponses_HostedToolControls(t *testing.T) {
 		{name: "malformed secret", id: toolIDCodeInterpreter, args: `{"container":{"networkPolicy":{"type":"allowlist","allowedDomains":[],"domainSecrets":[{"domain":"api.example.test","value":"fake-domain-credential"}]}}}`, errorPath: "domainSecrets[0].name"},
 		{name: "malformed secret value", id: toolIDCodeInterpreter, args: `{"container":{"networkPolicy":{"type":"allowlist","allowedDomains":[],"domainSecrets":[{"domain":"api.example.test","name":"KEY","value":{"echo":"fake-domain-credential"}}]}}}`, errorPath: "domainSecrets[0].value"},
 		{name: "tunnel only", id: toolIDMCP, args: `{"serverLabel":"test","tunnelId":"tunnel_test","allowedTools":{"readOnly":true,"toolNames":["read"]},"serverDescription":"test tool","requireApproval":"always"}`, wire: `{"type":"mcp","server_label":"test","tunnel_id":"tunnel_test","allowed_tools":{"read_only":true,"tool_names":["read"]},"server_description":"test tool","require_approval":"always"}`},
+		{name: "empty tunnel credentials", id: toolIDMCP, args: `{"serverLabel":"","tunnelId":"tunnel_test","authorization":"","headers":{}}`, wire: `{"type":"mcp","server_label":"","tunnel_id":"tunnel_test","authorization":"","headers":{},"require_approval":"never"}`},
+		{name: "missing tunnel label", id: toolIDMCP, args: `{"tunnelId":"tunnel_test"}`, errorPath: "serverLabel"},
+		{name: "invalid tunnel authorization", id: toolIDMCP, args: `{"serverLabel":"test","tunnelId":"tunnel_test","authorization":3}`, errorPath: "authorization"},
+		{name: "null tunnel header value", id: toolIDMCP, args: `{"serverLabel":"test","tunnelId":"tunnel_test","headers":{"X-Custom":null}}`, errorPath: "headers"},
 		{name: "URL only", id: toolIDMCP, args: `{"serverLabel":"test","serverUrl":"https://mcp.example.test"}`, wire: `{"type":"mcp","server_label":"test","server_url":"https://mcp.example.test","require_approval":"never"}`},
 		{name: "connector only", id: toolIDMCP, args: `{"serverLabel":"test","connectorId":"connector_test"}`, wire: `{"type":"mcp","server_label":"test","connector_id":"connector_test","require_approval":"never"}`},
 		{name: "legacy pair", id: toolIDMCP, args: `{"serverLabel":"test","serverUrl":"https://mcp.example.test","connectorId":"connector_test"}`, wire: `{"type":"mcp","server_label":"test","server_url":"https://mcp.example.test","connector_id":"connector_test","require_approval":"never"}`},
@@ -70,8 +74,12 @@ func TestResponses_HostedToolControls(t *testing.T) {
 					}
 					return hostedToolHTTPResponse(req, mode, hostedToolResponse), nil
 				})
-				call := provider.CallOptions{Tools: []provider.Tool{hostedTool(t, tc.id, tc.args)}}
-				_, _, err := callHostedTool(t, model, call, mode)
+				wantCaptures := tc.name == "empty tunnel credentials"
+				call := provider.CallOptions{
+					Tools:            []provider.Tool{hostedTool(t, tc.id, tc.args)},
+					IncludeRawChunks: wantCaptures,
+				}
+				request, response, err := callHostedTool(t, model, call, mode)
 				if tc.errorPath != "" {
 					require.Error(t, err)
 					assert.Contains(t, err.Error(), tc.errorPath)
@@ -80,6 +88,10 @@ func TestResponses_HostedToolControls(t *testing.T) {
 					return
 				}
 				require.NoError(t, err)
+				if wantCaptures {
+					assert.Contains(t, string(request), `"authorization":""`)
+					assert.Contains(t, string(response), `"id":"resp_test"`)
+				}
 				assert.Equal(t, 1, calls)
 			})
 		}
@@ -256,8 +268,9 @@ func TestResponses_HostedToolCredentialsFromRequestOptions(t *testing.T) {
 }
 
 func TestSafeHostedToolError_PreservesPanicCause(t *testing.T) {
-	assert.ErrorIs(t, safeHostedToolError(streamrecover.ErrPanic), streamrecover.ErrPanic)
-	wrapped := safeHostedToolAPIError(streamrecover.Error())
+	diagnostics := &hostedToolDiagnostics{}
+	assert.ErrorIs(t, diagnostics.safeError(streamrecover.ErrPanic), streamrecover.ErrPanic)
+	wrapped := diagnostics.safeAPIError(streamrecover.Error())
 	assert.ErrorIs(t, wrapped, streamrecover.ErrPanic)
 	assert.False(t, wrapped.IsRetryable)
 }
@@ -269,15 +282,15 @@ func TestHostedToolCredentialDetection_IsScoped(t *testing.T) {
 	}{
 		{name: "domain secret", id: toolIDCodeInterpreter, args: `{"container":{"networkPolicy":{"type":"allowlist","allowedDomains":[],"domainSecrets":[{"domain":"api.example.test","name":"KEY","value":"fake-domain"}]}}}`, want: true},
 		{name: "empty secrets", id: toolIDCodeInterpreter, args: `{"container":{"networkPolicy":{"type":"allowlist","allowedDomains":[],"domainSecrets":[]}}}`},
-		{name: "tunnel authorization", id: toolIDMCP, args: `{"tunnelId":"tunnel_test","authorization":"fake-auth"}`, want: true},
-		{name: "tunnel headers", id: toolIDMCP, args: `{"tunnelId":"tunnel_test","headers":{"X-Custom":"fake-header"}}`, want: true},
-		{name: "tunnel without credentials", id: toolIDMCP, args: `{"tunnelId":"tunnel_test"}`},
+		{name: "tunnel authorization", id: toolIDMCP, args: `{"serverLabel":"test","tunnelId":"tunnel_test","authorization":"fake-auth"}`, want: true},
+		{name: "tunnel headers", id: toolIDMCP, args: `{"serverLabel":"test","tunnelId":"tunnel_test","headers":{"X-Custom":"fake-header"}}`, want: true},
+		{name: "tunnel without credentials", id: toolIDMCP, args: `{"serverLabel":"test","tunnelId":"tunnel_test"}`},
 		{name: "legacy MCP credentials", id: toolIDMCP, args: `{"connectorId":"connector_test","authorization":"fake-legacy"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, _, _, err := buildParams("gpt-4o", provider.CallOptions{Tools: []provider.Tool{hostedTool(t, tc.id, tc.args)}})
 			require.NoError(t, err)
-			assert.Equal(t, tc.want, hasHostedToolCredentials(body))
+			assert.Equal(t, tc.want, newHostedToolDiagnostics(body).protected())
 		})
 	}
 }

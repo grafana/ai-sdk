@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -16,26 +19,53 @@ import (
 
 const hostedToolRequestFailed = "openai: request with hosted tool credentials failed"
 
-func hasHostedToolCredentials(body responses.ResponseNewParams) bool {
-	for _, tool := range body.Tools {
-		if ci := tool.OfCodeInterpreter; ci != nil && ci.Container.OfCodeInterpreterToolAuto != nil {
-			if policy := ci.Container.OfCodeInterpreterToolAuto.NetworkPolicy.OfAllowlist; policy != nil && len(policy.DomainSecrets) > 0 {
-				return true
-			}
-		}
-		if mcp := tool.OfMcp; mcp != nil && mcp.TunnelID.Valid() && (mcp.Authorization.Valid() || len(mcp.Headers) > 0) {
-			return true
-		}
-	}
-	return false
+type hostedToolDiagnostics struct {
+	credentials    map[string]struct{}
+	omitRetryHints bool
 }
 
-func hasWireHostedToolCredentials(raw json.RawMessage) bool {
+func (d *hostedToolDiagnostics) protected() bool {
+	return len(d.credentials) > 0 || d.omitRetryHints
+}
+
+func (d *hostedToolDiagnostics) addCredential(value string) {
+	if value == "" {
+		return
+	}
+	if d.credentials == nil {
+		d.credentials = make(map[string]struct{})
+	}
+	d.credentials[value] = struct{}{}
+}
+
+func newHostedToolDiagnostics(body responses.ResponseNewParams) *hostedToolDiagnostics {
+	d := &hostedToolDiagnostics{}
+	for _, tool := range body.Tools {
+		if ci := tool.OfCodeInterpreter; ci != nil && ci.Container.OfCodeInterpreterToolAuto != nil {
+			if policy := ci.Container.OfCodeInterpreterToolAuto.NetworkPolicy.OfAllowlist; policy != nil {
+				for _, secret := range policy.DomainSecrets {
+					d.addCredential(secret.Value)
+				}
+			}
+		}
+		if mcp := tool.OfMcp; mcp != nil && mcp.TunnelID.Valid() {
+			if mcp.Authorization.Valid() {
+				d.addCredential(mcp.Authorization.Value)
+			}
+			for _, value := range mcp.Headers {
+				d.addCredential(value)
+			}
+		}
+	}
+	return d
+}
+
+func (d *hostedToolDiagnostics) observeBody(raw json.RawMessage) {
 	var body struct {
 		Tools []json.RawMessage `json:"tools"`
 	}
 	if json.Unmarshal(raw, &body) != nil {
-		return false
+		return
 	}
 	for _, entry := range body.Tools {
 		var tool struct {
@@ -53,13 +83,14 @@ func hasWireHostedToolCredentials(raw json.RawMessage) bool {
 			if tool.Tunnel == nil {
 				continue
 			}
-			if tool.Authorization != nil {
-				return true
-			}
+			d.addWireCredential(tool.Authorization)
 			if tool.Headers != nil {
 				var headers map[string]json.RawMessage
-				if json.Unmarshal(tool.Headers, &headers) != nil || len(headers) > 0 {
-					return true
+				if json.Unmarshal(tool.Headers, &headers) != nil {
+					d.omitRetryHints = true
+				}
+				for _, value := range headers {
+					d.addWireCredential(value)
 				}
 			}
 		case "code_interpreter":
@@ -68,21 +99,40 @@ func hasWireHostedToolCredentials(raw json.RawMessage) bool {
 					DomainSecrets []json.RawMessage `json:"domain_secrets"`
 				} `json:"network_policy"`
 			}
-			if json.Unmarshal(tool.Container, &container) == nil && len(container.NetworkPolicy.DomainSecrets) > 0 {
-				return true
+			if json.Unmarshal(tool.Container, &container) == nil {
+				for _, entry := range container.NetworkPolicy.DomainSecrets {
+					var secret struct {
+						Value json.RawMessage `json:"value"`
+					}
+					if json.Unmarshal(entry, &secret) != nil {
+						d.omitRetryHints = true
+					}
+					d.addWireCredential(secret.Value)
+				}
 			}
 		}
 	}
-	return false
 }
 
-func safeHostedToolError(err error) error {
+func (d *hostedToolDiagnostics) addWireCredential(raw json.RawMessage) {
+	if raw == nil {
+		return
+	}
+	var value string
+	if json.Unmarshal(raw, &value) != nil {
+		d.omitRetryHints = true
+		return
+	}
+	d.addCredential(value)
+}
+
+func (d *hostedToolDiagnostics) safeError(err error) error {
 	if err == nil {
 		return nil
 	}
 	var apiErr *provider.APICallError
 	if errors.As(err, &apiErr) {
-		return safeHostedToolAPIError(apiErr)
+		return d.safeAPIError(apiErr)
 	}
 	if cause := safeHostedToolCause(err); cause != nil {
 		return cause
@@ -96,21 +146,32 @@ func safeHostedToolCause(err error) error {
 			return cause
 		}
 	}
+	var network net.Error
+	if errors.As(err, &network) {
+		cause := errors.New(hostedToolRequestFailed)
+		if network.Timeout() {
+			cause = os.ErrDeadlineExceeded
+		}
+		return &url.Error{Op: "openai", Err: cause}
+	}
 	return nil
 }
 
-func safeHostedToolAPIError(err *provider.APICallError) *provider.APICallError {
+func (d *hostedToolDiagnostics) safeAPIError(err *provider.APICallError) *provider.APICallError {
 	return provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:         hostedToolRequestFailed,
 		StatusCode:      err.StatusCode,
 		IsRetryable:     &err.IsRetryable,
-		ResponseHeaders: safeHostedToolHeaders(err.ResponseHeaders),
+		ResponseHeaders: d.safeHeaders(err.ResponseHeaders),
 		Data:            safeHostedToolErrorCode(err),
 		Cause:           safeHostedToolCause(err),
 	})
 }
 
-func safeHostedToolHeaders(headers http.Header) http.Header {
+func (d *hostedToolDiagnostics) safeHeaders(headers http.Header) http.Header {
+	if d.omitRetryHints {
+		return nil
+	}
 	var safe http.Header
 	for _, key := range []string{"Retry-After-Ms", "Retry-After"} {
 		values := headers.Values(key)
@@ -118,7 +179,7 @@ func safeHostedToolHeaders(headers http.Header) http.Header {
 			continue
 		}
 		hint := normalizedRetryHint(key, values[0])
-		if hint != "" {
+		if hint != "" && !d.containsCredential(values[0]) && !d.containsCredential(hint) {
 			if safe == nil {
 				safe = make(http.Header, 2)
 			}
@@ -126,6 +187,15 @@ func safeHostedToolHeaders(headers http.Header) http.Header {
 		}
 	}
 	return safe
+}
+
+func (d *hostedToolDiagnostics) containsCredential(hint string) bool {
+	for value := range d.credentials {
+		if strings.Contains(hint, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizedRetryHint(key, value string) string {

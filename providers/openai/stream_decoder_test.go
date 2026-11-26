@@ -78,7 +78,7 @@ func TestConsumeStream_CancelStalledConsumer(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		consumeStream(ctx, items, nil, output, nil, buildResult{}, responses.ResponseNewParams{}, response, func() string { return "id" }, "openai", false)
+		consumeStream(ctx, items, nil, output, nil, buildResult{}, responses.ResponseNewParams{}, response, func() string { return "id" }, "openai", nil)
 	}()
 	require.Eventually(t, func() bool { return len(output) == cap(output) }, time.Second, time.Millisecond)
 	cancel()
