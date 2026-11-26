@@ -290,8 +290,8 @@ decrypted keys. Plugin host errors SHALL use Chat envelopes; pre-plugin
 failures MAY use the platform format.
 
 #### Scenario: Configured callers
-- **WHEN** a self-hosted user/service account or a cloud allowlisted internal
-  caller makes a valid Chat request
+- **WHEN** a self-hosted user/service account or an allowlisted internal
+  caller in either mode makes a valid Chat request
 - **THEN** the shared selector uses configured catalog models.
 
 #### Scenario: BYOK-only caller cannot obtain the catalog

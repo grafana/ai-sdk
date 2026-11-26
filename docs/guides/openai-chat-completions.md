@@ -51,7 +51,7 @@ plugin kinds, so this does not enable catalog Chat on deployed Grafana Cloud.
 
 To use the operator catalog instead, set the base URL to
 `.../namespaces/<namespace>/v1`. Self-hosted users and service accounts and
-allowlisted cloud-mode internal services can call that namespace route.
+allowlisted internal services in either mode can call that namespace route.
 Cloud-mode users and service accounts get HTTP 400 on the namespace route
 because Chat does not accept request-scoped provider keys (BYOK).
 Internal service access tokens use `X-Access-Token` without an `Authorization`

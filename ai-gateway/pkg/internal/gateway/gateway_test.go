@@ -104,10 +104,10 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 	}{
 		{name: "missing access mode", change: func(env map[string]string) { delete(env, "GF_PLUGIN_ACCESS_MODE") }, message: "access mode is required"},
 		{name: "unknown access mode", change: func(env map[string]string) { env["GF_PLUGIN_ACCESS_MODE"] = "hybrid" }, message: "cloud or self-hosted"},
-		{name: "allowlist in self-hosted mode", change: func(env map[string]string) {
+		{name: "invalid allowlist in self-hosted mode", change: func(env map[string]string) {
 			env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
-			env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = "svc-a"
-		}, message: "requires cloud access mode"},
+			env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = "svc-a,"
+		}, message: "must not be empty"},
 		{name: "no signing keys with insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
 			env[plugin.EnvVarInsecureSkipAuthentication] = "true"
