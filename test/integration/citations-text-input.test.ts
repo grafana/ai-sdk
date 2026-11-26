@@ -121,6 +121,20 @@ describe("citations and text-encoded tool input", () => {
     }
   });
 
+  it("preserves steering as raw history without passing it to the Agent model", async () => {
+    const message = assistant({
+      type: "steering-message", id: "steer-1", parts: [{ type: "text", text: "change course" }], extra: { keep: true },
+    });
+    const messages = [user, message];
+    await expect(validateUIMessages({ messages })).resolves.toHaveLength(2);
+    const persistence = await postMessages("ui-tool-state-persistence", messages);
+    expect(persistence.status, await persistence.clone().text()).toBe(200);
+    expect((await persistence.json()).uiMessages).toEqual(messages);
+    const agent = await postMessages("ui-tool-state-agent", messages);
+    expect(agent.status, await agent.clone().text()).toBe(400);
+    expect(await agent.json()).toMatchObject({ providerCalls: 0, error: expect.stringContaining("unsupported UI part") });
+  });
+
   it("round-trips a required empty approval ID through Go persistence", async () => {
     const messages = [user, assistant({
       type: "dynamic-tool", toolName: "lookup", toolCallId: "c", state: "approval-requested", input: {}, approval: { id: "" },

@@ -130,7 +130,6 @@ func (m *UIMessage) UnmarshalJSON(data []byte) error {
 type partEnvelope struct {
 	Type       *UIPartType     `json:"type"`
 	Text       nonNullUIField  `json:"text"`
-	Citations  json.RawMessage `json:"citations"`
 	Kind       nonNullUIField  `json:"kind"`
 	MediaType  nonNullUIField  `json:"mediaType"`
 	URL        nonNullUIField  `json:"url"`
@@ -196,7 +195,7 @@ func unmarshalPart(data json.RawMessage) (Part, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := requireUICitationFields(env.Citations); err != nil {
+		if err := requireUICitationFields(data); err != nil {
 			return nil, err
 		}
 		return p, nil
@@ -249,32 +248,47 @@ func unmarshalPart(data json.RawMessage) (Part, error) {
 	return rawPart{Type_: typeName, Raw: data}, nil
 }
 
-func requireUICitationFields(raw json.RawMessage) error {
-	if raw == nil {
+type uiCitationObject[T any] struct {
+	fields  T
+	present bool
+}
+
+func (o *uiCitationObject[T]) UnmarshalJSON(data []byte) error {
+	o.present = !isJSONNull(data)
+	if !o.present {
 		return nil
 	}
-	var citations []struct {
-		Source *struct {
-			Type       *provider.ContentPartType `json:"type"`
-			SourceType *provider.SourceType      `json:"sourceType"`
-			ID         nonNullUIField            `json:"id"`
-			URL        nonNullUIField            `json:"url"`
-			MediaType  nonNullUIField            `json:"mediaType"`
-			Title      nonNullUIField            `json:"title"`
-		} `json:"source"`
+	return json.Unmarshal(data, &o.fields)
+}
+
+type uiCitationSourceFields struct {
+	Type       json.RawMessage      `json:"type"`
+	SourceType *provider.SourceType `json:"sourceType"`
+	ID         nonNullUIField       `json:"id"`
+	URL        nonNullUIField       `json:"url"`
+	MediaType  nonNullUIField       `json:"mediaType"`
+	Title      nonNullUIField       `json:"title"`
+}
+
+func requireUICitationFields(data json.RawMessage) error {
+	var text struct {
+		Citations []uiCitationObject[struct {
+			Source uiCitationObject[uiCitationSourceFields] `json:"source"`
+		}] `json:"citations"`
 	}
-	if err := json.Unmarshal(raw, &citations); err != nil {
+	if err := json.Unmarshal(data, &text); err != nil {
 		return err
 	}
-	for i, citation := range citations {
-		source := citation.Source
-		if source == nil {
+	for i, citation := range text.Citations {
+		if !citation.present || !citation.fields.Source.present {
 			return fmt.Errorf("citation %d: %w", i, missingUIField("source"))
 		}
-		if source.Type == nil {
+		source := citation.fields.Source.fields
+		if source.Type == nil || isJSONNull(source.Type) {
 			return fmt.Errorf("citation %d: %w", i, missingUIField("source.type"))
 		}
-		if *source.Type != provider.ContentPartTypeSource {
+		var sourceKind provider.ContentPartType
+		if err := json.Unmarshal(source.Type, &sourceKind); err != nil || sourceKind != provider.ContentPartTypeSource {
 			return fmt.Errorf("citation %d: invalid source.type, expected %q", i, provider.ContentPartTypeSource)
 		}
 		if source.SourceType == nil {

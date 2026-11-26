@@ -126,6 +126,64 @@ func TestUIMessage_RequiredFieldsRoundTrip(t *testing.T) {
 	assert.Equal(t, message, roundTripped)
 }
 
+func TestUIMessage_CitationDuplicateFields(t *testing.T) {
+	const first = `[{"source":{"type":"source","sourceType":"url","id":"u","url":"first"},"startIndex":0}]`
+	const merged = `[{"source":{"type":"source","sourceType":"url","id":"u","url":"second"},"startIndex":0}]`
+	for _, tc := range []struct {
+		name, later, want, field string
+	}{
+		{"merges source", `[{"SOURCE":{"URL":"second"}}]`, merged, ""},
+		{"merges after intermediate null source", `[{"source":null,"SOURCE":{"URL":"second"}}]`, merged, ""},
+		{"merges after intermediate null citation", `[null],"citations":[{"source":{"url":"second"}}]`, merged, ""},
+		{"clears array", `[]`, `[]`, ""},
+		{"switches to document requirements", `[{"source":{"sourceType":"document","mediaType":"","title":""}}]`, `[{"source":{"type":"source","sourceType":"document","id":"u","mediaType":"","title":""},"startIndex":0}]`, ""},
+		{"new document arm requires title", `[{"source":{"sourceType":"document","mediaType":""}}]`, "", `"source.title"`},
+		{"null required leaf", `[{"source":{"ID":null}}]`, "", `"source.id"`},
+		{"null source", `[{"source":null}]`, "", `"source"`},
+		{"null citation", `[null]`, "", `"source"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":` + first + `,"CITATIONS":` + tc.later + `}]}`
+			var message UIMessage
+			err := json.Unmarshal([]byte(input), &message)
+			if tc.field != "" {
+				require.ErrorContains(t, err, "unmarshaling part 0: citation 0:")
+				assert.ErrorContains(t, err, tc.field)
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":`+tc.want+`}]}`, string(encoded))
+		})
+	}
+}
+
+func TestUIMessage_CitationDuplicateDiscriminator(t *testing.T) {
+	const first = `[{"source":{"type":0,"sourceType":"url","id":"u","url":"first"}}]`
+	for _, tc := range []struct {
+		name, later, want string
+	}{
+		{"discarded", `[]`, `[]`},
+		{"overwritten", `[{"source":{"TYPE":"source"}}]`, `[{"source":{"type":"source","sourceType":"url","id":"u","url":"first"}}]`},
+		{"survives", `[{}]`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":` + first + `,"CITATIONS":` + tc.later + `}]}`
+			var message UIMessage
+			err := json.Unmarshal([]byte(input), &message)
+			if tc.want == "" {
+				require.ErrorContains(t, err, "unmarshaling part 0: citation 0: invalid source.type")
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":`+tc.want+`}]}`, string(encoded))
+		})
+	}
+}
+
 func TestPartRoundTrip(t *testing.T) {
 	t.Run("text part", func(t *testing.T) {
 		msg := UIMessage{
