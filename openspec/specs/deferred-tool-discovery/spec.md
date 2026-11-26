@@ -129,7 +129,7 @@ Tool SHALL retain static Description and optional DescriptionFunc receiving Tool
 #### Scenario: Inactive descriptions are not evaluated
 - **WHEN** an explicit active selection excludes an entry, including an empty selection without discovery controls
 - **THEN** model and caller-catalog preparation SHALL NOT evaluate that entry's DescriptionFunc
-- **AND** existing non-discovery execution lookup behavior SHALL remain unchanged
+- **AND** a new model call to the excluded entry SHALL be rejected as unavailable without execution
 
 #### Scenario: Empty versus absent description
 - **WHEN** one matching candidate has an empty static Description with no callback and another callback returns an empty string

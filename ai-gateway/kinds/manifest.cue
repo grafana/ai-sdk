@@ -32,6 +32,7 @@ manifest: {
 				{kind: "ModelCatalog/language-model", verbs: ["get"]},
 				{kind: "ModelCatalog/messages", verbs: ["get"]},
 				{kind: "ModelCatalog/config", verbs: ["get"]},
+				{kind: "ModelCatalog/chat-completions", verbs: ["get"]},
 			]
 		}
 		"aigateway:middlewarereader": {
@@ -113,6 +114,13 @@ v1alpha1: {
 			"x-grafana-declared-authz-subresource": "language-model"
 			"x-grafana-declared-authz-verb":        "get"
 			responses: default: description: "ProviderWire language-model response for the catalog"
+		}
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/chat/completions": post: {
+			operationId:                            "createModelCatalogChatCompletion"
+			"x-grafana-declared-authz-resource":    "modelcatalogs"
+			"x-grafana-declared-authz-subresource": "chat-completions"
+			"x-grafana-declared-authz-verb":        "get"
+			responses: default: description: "OpenAI Chat Completions response for the catalog"
 		}
 	}
 }

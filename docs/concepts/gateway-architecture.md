@@ -70,7 +70,7 @@ flowchart LR
   ts --> host
   chatclient --> host
   msgclient --> host
-  admin -->|Check health or open model suggestions| host
+  admin -->|Check health after create or on request; open model suggestions| host
   host --> health
   health -->|shared catalog checks| stack
   health -->|model listings only| apis
@@ -102,8 +102,9 @@ flowchart LR
 The plugin backend composes its routes from one route table. Each entry names a
 method, a path under the prefix `/apis/{group}/{version}/namespaces/{namespace}`,
 a telemetry label, the adapter's handler and the adapter's host-error writer.
-Every entry gets the same access decision and request telemetry, and a refused
-caller gets that adapter's permission document without its body being read. The
+Every entry uses the shared access middleware and request telemetry, with
+separate namespace and catalog access decisions. A refused caller gets that
+adapter's permission document without its body being read. The
 production table matches the committed manifest: `GET {prefix}/config` and
 `POST {prefix}/language-model`, `POST {prefix}/v1/chat/completions` and
 `POST {prefix}/v1/messages`. A request that matches no entry does no access,
@@ -111,21 +112,25 @@ selection or provider work, and is labeled `unmatched`.
 
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
-admission validators to accept or refuse each create and update. Each catalog
-also has five routes in the same table: `GET .../modelcatalogs/{name}/config`,
-`POST .../modelcatalogs/{name}/language-model`, `POST .../modelcatalogs/{name}/v1/messages`,
-`POST .../modelcatalogs/{name}/health`, and `POST .../modelcatalogs/{name}/available-models`.
-Grafana reads the catalog as the caller, runs the route's declared `get` access
-check (`aigateway:modelinvoker` grants discovery and invocation;
-`aigateway:catalogwriter` grants health and provider inventory), and only then decrypts the catalog's keys and passes the object, its resource
+admission validators to accept or refuse each create and update. Under
+`.../modelcatalogs/{name}` the same route table serves `GET /config`,
+`POST /language-model`, `POST /v1/messages`, `POST /v1/chat/completions` and
+`POST /health` and `POST /available-models`.
+Grafana reads the catalog as the caller, runs the route's declared access check
+(`get` on the declared `modelcatalogs` subresource). The
+`aigateway:modelinvoker` role grants discovery and invocation;
+`aigateway:catalogwriter` grants health and provider inventory. Chat checks `modelcatalogs/chat-completions`
+even though its route tail is `v1/chat/completions`. Grafana then decrypts the
+keys and passes the object, its resource
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
 and discovery lists it without building models. Health and the provider model
 ID field's suggestions share the same catalog checks, saved keys, bounded
 provider listing and admission, outside the model execution pipeline. Health
-reports only statuses for configured targets; suggestions use IDs from one
-saved provider without caching them.
+reports provider statuses even before models are configured, and target
+statuses only for configured primaries and fallbacks. Suggestions use IDs
+from one saved provider without caching them.
 Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
@@ -161,14 +166,15 @@ shipped backend passes `DefaultExtensions()`, the `default-instructions` and
 `default-settings` tenant extensions.
 
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
-supported request subset into the same execution runtime. Its call-scoped
-translator applies defaults per native fallback candidate. It supplies its own
-response/error projection and no BYOK controls; the shared selector therefore
-rejects Cloud user and service-account calls without provider accounts with
-HTTP 400 (`ErrInvalidBYOK`), before native I/O. Host access-policy refusal remains
-HTTP 403; the adapter does not add a separate access dispatcher.
-Self-hosted users/service accounts and allowlisted internal services use the
-configured catalog. Chat parses its own request body; selection, execution,
+supported request subset into the same execution runtime. Tenant defaults fill
+unset call fields before its call-scoped translator applies defaults per native
+fallback candidate. Chat supplies its own response and error projection without
+the ProviderWire execution overview. The namespace route uses the operator
+catalog for self-hosted users and service accounts and allowlisted cloud-mode
+internal services. It refuses cloud-mode user and service-account calls with
+HTTP 400 (`ErrInvalidBYOK`) before native I/O because Chat exposes no BYOK controls.
+Catalog Chat uses the named catalog instead, subject to the same parent and
+access checks as catalog ProviderWire. Selection, extensions, execution,
 cancellation and stream cleanup use the shared runtime and host contract.
 
 The [Anthropic Messages adapter](../guides/anthropic-messages.md) is built the
@@ -260,7 +266,10 @@ sequenceDiagram
    a configured route. A stack-catalog selection follows the same rules over
    one stored catalog: it checks the catalog on every request, refuses
    `gateway.byok`, and constructs only the candidates its chain attempts, with
-   that catalog's keys. Every selection names its source, `operator-catalog`,
+   that catalog's keys. A stack-catalog provider or request account may use a
+   custom endpoint only when the operator's `custom_endpoints` list holds it,
+   checked as a string before any model is built. Every selection names its
+   source, `operator-catalog`,
    `stack-catalog` or `request-byok`. Invalid or unknown
    controls fail here, before any provider call. This private path refuses
    request credentials; its caller cannot switch to request accounts. See
@@ -438,10 +447,11 @@ and the verified token, not from a caller choosing a different model name:
 - **Catalog:** on a `ModelCatalog`'s routes, any verified user, service account
   or service acting alone whose token covers the namespace gets catalog access,
   whatever the `access_mode`; Grafana's declared checks decide who may invoke.
-  The selector uses only that catalog and the keys Grafana decrypted for the
-  call, checks the catalog again on every call, builds only the candidates the
-  call's chain attempts, and refuses `gateway.byok`. It never reaches the
-  configured catalog, server-held keys or request accounts.
+  A valid catalog with no models lists none and returns the unknown-model
+  error on invocation. The selector uses only that catalog and the keys Grafana
+  decrypted for the call. It checks the catalog again on every call, builds
+  only the candidates the call's chain attempts, and refuses `gateway.byok`.
+  It never reaches the configured catalog, server-held keys or request accounts.
 
 See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).

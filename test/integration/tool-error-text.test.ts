@@ -33,14 +33,25 @@ function errorChunks(chunks: UIMessageChunk[]) {
 }
 
 describe("tool error text", () => {
-  it("keeps the model's error text by default so the history round-trips", async () => {
-    const chunks = await scenarioChunks("default");
+  it.each(["default", "inactive", "inactive-blank"])("keeps the model's error text so %s history round-trips", async (mode) => {
+    const chunks = await scenarioChunks(mode);
+    const unavailableChunk = {
+      type: "tool-input-error", toolCallId: "missing-1", toolName: "missing",
+      input: mode === "inactive-blank" ? " \t" : {}, errorText: unavailable,
+      ...(mode === "default" ? { dynamic: true } : {}),
+    };
+    expect(chunks.filter(chunk => "toolCallId" in chunk && chunk.toolCallId === "missing-1")).toEqual([unavailableChunk]);
     expect(errorChunks(chunks)).toEqual([
-      { type: "tool-input-error", toolCallId: "missing-1", toolName: "missing", input: {}, dynamic: true, errorText: unavailable },
+      unavailableChunk,
       { type: "tool-output-error", toolCallId: "weather-1", errorText: failure },
     ]);
 
     const message = await assembleMessage(chunks);
+    if (mode === "inactive-blank") {
+      expect(message.parts.find(part => "toolCallId" in part && part.toolCallId === "missing-1")).toMatchObject({
+        state: "output-error", input: " \t",
+      });
+    }
     const modelReceived = JSON.parse(message.parts.filter(part => part.type === "text").map(part => part.text).join(""));
     expect(modelReceived).toEqual({ "weather-1": failure, "missing-1": unavailable });
 

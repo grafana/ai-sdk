@@ -17,7 +17,7 @@ A stack-catalog selection SHALL be built from three inputs: one catalog's spec, 
 - **THEN** a stack-catalog selection of `assistant` SHALL attempt only the stack catalog's candidates, with the stack catalog's keys
 
 ### Requirement: Stored catalog checked on every request
-Every stack-catalog selection SHALL check the stored spec with the stack-catalog provider policy, the shared catalog shape checks and the key check, before resolving a model. A spec that fails, or a provider whose decrypted value is missing or empty, SHALL fail the call with the catalog configuration category before any provider request. The failure SHALL NOT carry check messages, spec identifiers or key values.
+Every stack-catalog selection SHALL check the stored spec with the stack-catalog provider policy, the custom endpoint list, the shared catalog shape checks and the key check, before resolving a model. A spec that fails, or a provider whose decrypted value is missing or empty, SHALL fail the call with the catalog configuration category before any provider request. The failure SHALL NOT carry check messages, spec identifiers or key values.
 
 #### Scenario: Stored catalog fails the checks
 - **WHEN** a stored spec has an unknown provider type or an alias collision
@@ -35,6 +35,10 @@ Every stack-catalog selection SHALL check the stored spec with the stack-catalog
 - **WHEN** a catalog is valid for one request and invalid for the next
 - **THEN** the first SHALL succeed and the second SHALL fail with the catalog configuration category
 
+#### Scenario: Endpoint no longer listed
+- **WHEN** a stored catalog's custom `baseURL` is not in the current list
+- **THEN** the call SHALL fail with the catalog configuration category, with zero provider requests
+
 ### Requirement: Only needed candidates are constructed
 A stack-catalog selection SHALL construct provider models only for the candidates its composed attempt chain contains. Those come from the requested model and any `gateway.models` entries, filtered by `only` and ordered by `order`. It SHALL NOT construct candidates of other catalog models, and SHALL keep no built model after the call.
 
@@ -47,7 +51,7 @@ A stack-catalog selection SHALL construct provider models only for the candidate
 - **THEN** only the `openai` candidate SHALL be constructed
 
 ### Requirement: Stack-catalog routing and fallback
-Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be the provider types.
+Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be derived as for operator providers: an `openai-compatible` provider's `providerName` when set, otherwise the provider type.
 
 #### Scenario: Alias call
 - **WHEN** a call requests an alias of a catalog model
@@ -57,17 +61,25 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 - **WHEN** a call requests an ID that is neither a model nor an alias in the catalog
 - **THEN** the call SHALL fail with the model not found category, with zero provider requests
 
+#### Scenario: No configured models
+- **WHEN** a valid catalog call requests a model from a checked catalog with no models
+- **THEN** the call SHALL fail with the existing model not found category (`404 model_not_found`), without constructing a candidate, using another catalog, or contacting a provider
+
 #### Scenario: Unknown models entry
 - **WHEN** a `gateway.models` entry names no model or alias in the catalog
 - **THEN** the call SHALL fail with model not found and the fallback-model reason, with zero provider requests
 
 #### Scenario: Primary fails and the fallback succeeds
 - **WHEN** the primary candidate fails with a fallback-eligible error and the fallback succeeds
-- **THEN** the call SHALL succeed with two provider requests and an overview listing both attempts
+- **THEN** the call SHALL succeed with two provider requests; for ProviderWire the overview SHALL list both attempts
 
 #### Scenario: Composed chain above the bound
 - **WHEN** routing controls compose more than 8 candidates
 - **THEN** the call SHALL fail with the attempt-bound document, with zero constructed models and zero provider requests
+
+#### Scenario: Compatible provider slug
+- **WHEN** a catalog has an `openai-compatible` provider with `providerName: acme` and a call sends `only: ["acme"]`
+- **THEN** the selection SHALL keep that provider's candidates, and `only: ["openai-compatible"]` SHALL exclude them
 
 ### Requirement: BYOK controls refused on stack catalogs
 A stack-catalog selection SHALL refuse `gateway.byok` and any other unsupported control with the unsupported gateway control category, before checking the stored catalog and before any provider request. It SHALL never fall back to the operator catalog, server-held provider keys or ambient credentials.
@@ -81,18 +93,18 @@ A stack-catalog selection SHALL refuse `gateway.byok` and any other unsupported 
 - **THEN** the call SHALL fail with the catalog configuration category, and the operator key SHALL NOT be used
 
 ### Requirement: Stack-catalog execution overview
-A stack-catalog call SHALL publish the same execution overview as an operator-catalog call: the requested ID, the canonical model ID, and each attempt's provider name, provider type and backend model ID.
+A stack-catalog ProviderWire call SHALL publish the same execution overview as an operator-catalog call: the requested ID, the canonical model ID, and each attempt's provider name, provider type and backend model ID. Chat calls SHALL NOT publish that overview.
 
 #### Scenario: Direct success
-- **WHEN** a stack-catalog call succeeds on its primary candidate
+- **WHEN** a stack-catalog ProviderWire call succeeds on its primary candidate
 - **THEN** the overview SHALL list one selected attempt with the catalog's provider name as provider instance
 
 ### Requirement: No private attempt records for stack catalogs
-Stack-catalog calls use customer-owned keys, and like BYOK calls they SHALL write no private physical attempt records. Their per-attempt evidence SHALL be the execution overview returned to the caller.
+Stack-catalog calls use customer-owned keys, and like BYOK calls they SHALL write no private physical attempt records. For ProviderWire the execution overview returned to the caller SHALL provide per-attempt evidence.
 
 #### Scenario: Fallback on a stack catalog
 - **WHEN** a stack-catalog call's primary fails and its fallback succeeds
-- **THEN** no physical attempt record SHALL be written, and the overview SHALL list both attempts
+- **THEN** no physical attempt record SHALL be written, and a ProviderWire response's overview SHALL list both attempts
 
 ### Requirement: Catalog language-model route
 A catalog route's `language-model` call SHALL select from its parent catalog as a stack-catalog selection: the parent's spec, the decrypted values the platform passed with the request, keyed by provider name, and the parent's name. The Gateway SHALL keep no catalog, key or built model between requests, so the next request after a catalog edit uses the edited catalog and keys.
@@ -129,6 +141,14 @@ The action SHALL use read-only provider model listings, not inference. A valid l
 
 ### Requirement: Closed health results for the saved catalog
 On an accepted check the response SHALL be non-cacheable `200` JSON with `providers` mapping provider names to statuses, and `models` mapping canonical model IDs to a `primary` status and ordered `fallback` statuses. Statuses SHALL use only `ok`, `invalidKey`, `unknownModel`, `unreachable`, `refused`, and `notChecked`. Aliases SHALL NOT produce separate model entries.
+
+#### Scenario: Catalog without providers
+- **WHEN** a health check targets a stored catalog that has no providers
+- **THEN** it SHALL return the fixed catalog configuration error (`424`) without contacting any provider
+
+#### Scenario: Provider with no configured targets
+- **WHEN** a health check probes a connected provider that is neither a primary nor a fallback of any configured model
+- **THEN** it SHALL check the first listing page with the same provider outcomes as other providers, SHALL NOT request another page, and SHALL NOT emit any target statuses for that provider
 
 #### Scenario: Accepted native listing
 - **WHEN** the official endpoint returns a valid model listing
@@ -172,6 +192,10 @@ The `available-models` action SHALL accept exactly one `provider` query paramete
 #### Scenario: List one of two accounts of the same type
 - **WHEN** a valid caller asks for one named provider in a saved catalog
 - **THEN** the action SHALL use that provider's account only and SHALL NOT substitute another provider's key or ambient credentials
+
+#### Scenario: Browse before adding any models
+- **WHEN** a valid caller asks for a saved provider in a catalog that has no configured models
+- **THEN** the action SHALL list that provider's inventory using the usual listing rules
 
 #### Scenario: Invalid input
 - **WHEN** the action receives a body, a missing or invalid selector, duplicate selectors, or extra parameters

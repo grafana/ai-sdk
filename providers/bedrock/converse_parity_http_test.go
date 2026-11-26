@@ -3,6 +3,7 @@ package bedrock
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,76 +16,85 @@ import (
 )
 
 func TestConverseParity_JSONToolRequestCapture(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		streaming  bool
-		choice     provider.ToolChoice
-		providerID string
-	}{
-		{name: "generate named choice", choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "weather"}},
-		{name: "stream none choice", streaming: true, choice: provider.ToolChoice{Type: provider.ToolChoiceNone}},
-		{name: "generate provider tool", providerID: "anthropic.code_execution_20250522"},
-		{name: "stream provider tool", streaming: true, providerID: "anthropic.code_execution_20250522"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var req struct {
-					ToolConfig struct {
-						Tools []struct {
-							ToolSpec struct {
-								Name string `json:"name"`
-							} `json:"toolSpec"`
-						} `json:"tools"`
-						ToolChoice json.RawMessage `json:"toolChoice"`
-					} `json:"toolConfig"`
-					AdditionalModelRequestFields map[string]json.RawMessage `json:"additionalModelRequestFields"`
+	const openObject = `{"type":"object","additionalProperties":true}`
+	const toolSchema = `{"type":"object","additionalProperties":false}`
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range []struct {
+			name                string
+			choice              provider.ToolChoice
+			withProviderTool    bool
+			want                []string
+			wantAnthropicChoice bool
+		}{
+			{name: "none", choice: provider.ToolChoice{Type: provider.ToolChoiceNone}, withProviderTool: true, want: []string{"json"}},
+			{name: "named", choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"}, withProviderTool: true, want: []string{"lookup", "json"}},
+			{name: "named provider", choice: provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "execute"}, withProviderTool: true, want: []string{"execute", "json"}, wantAnthropicChoice: true},
+			{name: "auto", choice: provider.ToolChoice{Type: provider.ToolChoiceAuto}, want: []string{"lookup", "unused", "json"}},
+			{name: "required", choice: provider.ToolChoice{Type: provider.ToolChoiceRequired}, want: []string{"lookup", "unused", "json"}},
+			{name: "auto with provider", choice: provider.ToolChoice{Type: provider.ToolChoiceAuto}, withProviderTool: true, want: []string{"execute", "lookup", "unused", "json"}, wantAnthropicChoice: true},
+		} {
+			t.Run(fmt.Sprintf("stream=%t/%s", streaming, tc.name), func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var req struct {
+						ToolConfig struct {
+							Tools []struct {
+								ToolSpec struct {
+									Name string `json:"name"`
+								} `json:"toolSpec"`
+							} `json:"tools"`
+							ToolChoice json.RawMessage `json:"toolChoice"`
+						} `json:"toolConfig"`
+						AdditionalModelRequestFields map[string]json.RawMessage `json:"additionalModelRequestFields"`
+					}
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+					var names []string
+					for _, tool := range req.ToolConfig.Tools {
+						names = append(names, tool.ToolSpec.Name)
+					}
+					assert.Equal(t, tc.want, names)
+					assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
+					if tc.wantAnthropicChoice {
+						assert.Empty(t, req.ToolConfig.ToolChoice)
+						assert.JSONEq(t, `{"type":"any"}`, string(req.AdditionalModelRequestFields["tool_choice"]))
+					} else {
+						assert.JSONEq(t, `{"any":{}}`, string(req.ToolConfig.ToolChoice))
+						assert.NotContains(t, req.AdditionalModelRequestFields, "tool_choice")
+					}
+					if streaming {
+						w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+						_, err := w.Write(encodeFixtures(t, `{"messageStart":{"role":"assistant"}}`, `{"messageStop":{"stopReason":"end_turn"}}`, `{"metadata":{"usage":{"inputTokens":1,"outputTokens":1}}}`))
+						require.NoError(t, err)
+					} else {
+						w.Header().Set("Content-Type", "application/json")
+						_, err := w.Write([]byte(`{"output":{"message":{"role":"assistant","content":[{"text":"ok"}]}} ,"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1}}`))
+						require.NoError(t, err)
+					}
+				}))
+				defer server.Close()
+				model := New("anthropic.claude-opus-5", WithBaseURL(server.URL), WithCredentials(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")))
+				opts := provider.CallOptions{
+					Prompt:         []provider.Message{provider.UserText("hi")},
+					ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(openObject)},
+					ToolChoice:     &tc.choice,
+					Tools: []provider.Tool{
+						{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(toolSchema)},
+						{Type: provider.ToolTypeFunction, Name: "unused", InputSchema: json.RawMessage(toolSchema)},
+					},
 				}
-				require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-				var names []string
-				for _, tool := range req.ToolConfig.Tools {
-					names = append(names, tool.ToolSpec.Name)
+				if tc.withProviderTool {
+					opts.Tools = append(opts.Tools, provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20250522", Name: "execute"})
 				}
-				if tc.providerID == "" {
-					assert.Equal(t, []string{"weather", "search", "json"}, names)
-					assert.JSONEq(t, `{"any":{}}`, string(req.ToolConfig.ToolChoice))
-				} else {
-					assert.Equal(t, []string{"code_execution", "json"}, names)
-					assert.Empty(t, req.ToolConfig.ToolChoice)
-					assert.JSONEq(t, `{"type":"any"}`, string(req.AdditionalModelRequestFields["tool_choice"]))
-				}
-				if tc.streaming {
-					w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
-					_, err := w.Write(encodeFixtures(t, `{"messageStart":{"role":"assistant"}}`, `{"messageStop":{"stopReason":"end_turn"}}`, `{"metadata":{"usage":{"inputTokens":1,"outputTokens":1}}}`))
+				if streaming {
+					result, err := model.DoStream(context.Background(), opts)
 					require.NoError(t, err)
+					for range result.Stream {
+					}
 				} else {
-					w.Header().Set("Content-Type", "application/json")
-					_, err := w.Write([]byte(`{"output":{"message":{"role":"assistant","content":[{"text":"ok"}]}} ,"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1}}`))
+					_, err := model.DoGenerate(context.Background(), opts)
 					require.NoError(t, err)
 				}
-			}))
-			defer server.Close()
-			model := New(testAnthropicModel, WithBaseURL(server.URL), WithCredentials(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")))
-			opts := provider.CallOptions{
-				Prompt:          []provider.Message{provider.UserText("hi")},
-				ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeJSONTool}),
-				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)},
-			}
-			if tc.providerID == "" {
-				opts.ToolChoice = &tc.choice
-				opts.Tools = []provider.Tool{{Type: provider.ToolTypeFunction, Name: "weather", InputSchema: json.RawMessage(`{"type":"object"}`)}, {Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}
-			} else {
-				opts.Tools = []provider.Tool{{Type: provider.ToolTypeProvider, ID: tc.providerID, Name: "code_execution"}}
-			}
-			if tc.streaming {
-				result, err := model.DoStream(context.Background(), opts)
-				require.NoError(t, err)
-				for range result.Stream {
-				}
-			} else {
-				_, err := model.DoGenerate(context.Background(), opts)
-				require.NoError(t, err)
-			}
-		})
+			})
+		}
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/grafana/grafana-app-sdk/app"
+	"github.com/grafana/grafana-app-sdk/routes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/kube-openapi/pkg/spec3"
@@ -33,15 +34,16 @@ func TestManifest_DeclaresGatewayRoutesAndKinds(t *testing.T) {
 	assert.Equal(t, "v1alpha1", version.Name)
 	assert.True(t, version.Served)
 	assert.Equal(t, map[string][]string{
-		"/namespaces/{namespace}/config":                                {http.MethodGet},
-		"/namespaces/{namespace}/language-model":                        {http.MethodPost},
-		"/namespaces/{namespace}/v1/chat/completions":                   {http.MethodPost},
-		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages":      {http.MethodPost},
-		"/namespaces/{namespace}/v1/messages":                           {http.MethodPost},
-		"/namespaces/{namespace}/modelcatalogs/{name}/config":           {http.MethodGet},
-		"/namespaces/{namespace}/modelcatalogs/{name}/language-model":   {http.MethodPost},
-		"/namespaces/{namespace}/modelcatalogs/{name}/health":           {http.MethodPost},
-		"/namespaces/{namespace}/modelcatalogs/{name}/available-models": {http.MethodPost},
+		"/namespaces/{namespace}/config":                                   {http.MethodGet},
+		"/namespaces/{namespace}/language-model":                           {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions":                      {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/messages":         {http.MethodPost},
+		"/namespaces/{namespace}/v1/messages":                              {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/config":              {http.MethodGet},
+		"/namespaces/{namespace}/modelcatalogs/{name}/language-model":      {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/health":              {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/available-models":    {http.MethodPost},
+		"/namespaces/{namespace}/modelcatalogs/{name}/v1/chat/completions": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
 	require.Len(t, version.Kinds, 2)
 	for _, tc := range []struct {
@@ -292,6 +294,7 @@ func TestManifest_DeclaredAccessChecks(t *testing.T) {
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/language-model", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "language-model"},
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/health", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "health"},
 		{path: "/namespaces/{namespace}/modelcatalogs/{name}/available-models", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "available-models"},
+		{path: "/namespaces/{namespace}/modelcatalogs/{name}/v1/chat/completions", operation: func(p spec3.PathProps) *spec3.Operation { return p.Post }, subresource: "chat-completions"},
 	} {
 		t.Run(tc.subresource, func(t *testing.T) {
 			operation := tc.operation(paths[tc.path])
@@ -311,6 +314,21 @@ func TestManifest_DeclaredAccessChecks(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestManifest_CatalogChatKindRoute(t *testing.T) {
+	parsed, problems := routes.Parse(LocalManifest().ManifestData.Versions[0], routes.Options{})
+	require.Empty(t, problems)
+	for _, route := range parsed {
+		if route.Declared == "/namespaces/{namespace}/modelcatalogs/{name}/v1/chat/completions" {
+			require.NotNil(t, route.Kind)
+			assert.Equal(t, "ModelCatalog", route.Kind.Kind)
+			assert.Equal(t, "v1/chat/completions", route.Subresource)
+			assert.Equal(t, "chat-completions", route.Authz[http.MethodPost].Subresource)
+			return
+		}
+	}
+	require.Fail(t, "catalog Chat route was not parsed")
 }
 
 func TestManifest_Roles(t *testing.T) {
@@ -334,6 +352,7 @@ func TestManifest_Roles(t *testing.T) {
 			{Kind: "ModelCatalog/language-model", Verbs: []string{"get"}},
 			{Kind: "ModelCatalog/messages", Verbs: []string{"get"}},
 			{Kind: "ModelCatalog/config", Verbs: []string{"get"}},
+			{Kind: "ModelCatalog/chat-completions", Verbs: []string{"get"}},
 		}, Routes: []string{}},
 	}, data.Roles)
 	fixedIDs := []string{}

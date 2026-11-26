@@ -17,25 +17,18 @@ The Gateway's API group SHALL serve a namespaced `ModelCatalog` kind in version 
 - **THEN** the platform SHALL refuse it
 
 #### Scenario: Operator catalog document as a spec
-- **WHEN** a valid operator catalog document without `apiKeyEnv`, with only `anthropic` and `openai` providers, is used as a `spec` together with one secure value per provider
+- **WHEN** a valid operator catalog document without `apiKeyEnv`, whose custom endpoints are listed, is used as a `spec` together with one secure value per provider
 - **THEN** the catalog SHALL be accepted
 
-### Requirement: Unsupported fields are refused, not pruned
-The kind schema SHALL keep the operator provider fields `baseURL`, `providerName` and `supportsStructuredOutputs`, so schema pruning cannot remove them before admission. Admission SHALL refuse any catalog that sets one of them, with any value.
-
-#### Scenario: Endpoint override
-- **WHEN** a catalog provider sets `baseURL`
-- **THEN** the write SHALL be refused, and no key SHALL be sent anywhere
-
-#### Scenario: Compatibility field set to its default
-- **WHEN** a catalog provider sets `supportsStructuredOutputs: false` or an empty `providerName`
-- **THEN** the write SHALL be refused
-
 ### Requirement: Stack catalog provider policy
-Admission SHALL accept only provider types `anthropic` and `openai`, and provider names that are DNS labels: 1 to 63 lowercase ASCII letters, digits or `-`, starting and ending with a letter or digit.
+Admission SHALL accept only provider types `anthropic`, `openai` and `openai-compatible`, and provider names that are DNS labels: 1 to 63 lowercase ASCII letters, digits or `-`, starting and ending with a letter or digit.
 
 #### Scenario: Compatible provider type
-- **WHEN** a catalog provider has type `openai-compatible` or an unknown type
+- **WHEN** a catalog provider has type `openai-compatible` with a listed `baseURL`
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Unknown provider type
+- **WHEN** a catalog provider has an unknown type
 - **THEN** the write SHALL be refused
 
 #### Scenario: Provider name outside the pattern
@@ -43,7 +36,19 @@ Admission SHALL accept only provider types `anthropic` and `openai`, and provide
 - **THEN** the write SHALL be refused
 
 ### Requirement: Shared catalog shape validation
-Admission SHALL apply the operator catalog's shape checks to the spec: at least one provider and one model, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds.
+A stack catalog SHALL require `spec.providers` and `spec.models` maps with at least one provider. The model map MAY be empty. Admission SHALL apply the shared checks to entries that are present: provider shape, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds. The operator catalog SHALL still require at least one provider and one model and SHALL retain its credential checks.
+
+#### Scenario: No providers or models
+- **WHEN** a writer creates or updates a stack catalog without providers, even if it has no resulting secure keys
+- **THEN** admission SHALL refuse the write
+
+#### Scenario: Missing or null map
+- **WHEN** a write omits a required map or sends it as null
+- **THEN** the write SHALL be refused
+
+#### Scenario: Provider connected before adding a model
+- **WHEN** a writer creates or updates a stack catalog with an empty model map and one secure value for each valid provider with no extra secure values
+- **THEN** admission SHALL accept the write
 
 #### Scenario: Unknown provider reference
 - **WHEN** a model's primary or fallback names a provider the catalog does not declare
@@ -125,7 +130,12 @@ Admission SHALL review `CREATE` and `UPDATE` only. Deletes SHALL NOT be reviewed
 - **THEN** the plugin SHALL receive no admission request
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health` and `ModelCatalog/available-models`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model`, `ModelCatalog/config` and `ModelCatalog/messages`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
+The manifest SHALL bind these roles:
+- Viewer: `aigateway:catalogreader`, the viewer set on `ModelCatalog`.
+- Admin: `aigateway:catalogwriter`, the editor set on `ModelCatalog` and `get` on its `health` and `available-models` subresources.
+- Editor: `aigateway:modelinvoker`, `get` on `ModelCatalog` and its `language-model`, `config`, `messages` and `chat-completions` subresources.
+
+Gateway role names SHALL use lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace
@@ -136,7 +146,7 @@ The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `
 - **THEN** authorization SHALL allow the request, subject to admission
 
 #### Scenario: Invoker
-- **WHEN** an Editor or Admin calls `language-model`, `config` or `v1/messages` on a catalog in their namespace
+- **WHEN** an Editor or Admin calls `language-model`, `config`, `v1/messages` or `v1/chat/completions` on a catalog in their namespace
 - **THEN** Grafana's declared check SHALL allow it, and a Viewer's call SHALL be refused with `403` before the plugin is called
 
 #### Scenario: Authorized health check
@@ -186,3 +196,30 @@ Operator documentation SHALL explain managing catalogs from the app, which roles
 #### Scenario: Developer reads the catalog package guide
 - **WHEN** a developer reads the catalog package guide
 - **THEN** it SHALL say that stack catalogs are stored `ModelCatalog` resources the Gateway serves, and link to their documentation
+
+### Requirement: Endpoint and compatibility fields
+The kind schema SHALL keep `baseURL`, `providerName` and `supportsStructuredOutputs`, so pruning cannot drop them before admission. Admission SHALL apply the operator catalog's rules to them: `openai-compatible` requires `baseURL`, and only it may set the other two. A `baseURL` SHALL pass the operator endpoint form checks, and a custom one, other than its type's native default, SHALL be listed in `custom_endpoints`.
+
+#### Scenario: Listed Anthropic endpoint
+- **WHEN** an `anthropic` provider sets a `baseURL` the list holds
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Compatible provider with its fields
+- **WHEN** an `openai-compatible` provider sets a listed `baseURL`, `providerName: acme` and `supportsStructuredOutputs: true`
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Compatible provider without an endpoint
+- **WHEN** an `openai-compatible` provider has no `baseURL`
+- **THEN** the write SHALL be refused
+
+#### Scenario: Compatibility field on a native type
+- **WHEN** an `openai` provider sets `providerName` or `supportsStructuredOutputs`
+- **THEN** the write SHALL be refused
+
+#### Scenario: Endpoint with credentials or a query
+- **WHEN** a `baseURL` carries userinfo, a query or a fragment
+- **THEN** the write SHALL be refused, and the reason SHALL NOT echo the URL
+
+#### Scenario: Native default endpoint
+- **WHEN** an `openai` provider sets `baseURL: https://api.openai.com/v1` and the list is empty
+- **THEN** the write SHALL be accepted, and the provider SHALL count as having no `baseURL`

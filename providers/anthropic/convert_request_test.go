@@ -535,6 +535,27 @@ func TestBuildParams_WebToolValidation(t *testing.T) {
 	}
 }
 
+func TestBuildParams_JSONToolFallbackValidatesOnlyRetainedWebToolArgs(t *testing.T) {
+	opts := provider.CallOptions{
+		ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object","additionalProperties":true}`)},
+		ToolChoice:     &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"},
+		Tools: []provider.Tool{
+			{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)},
+			{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch", Args: map[string]json.RawMessage{"maxUses": json.RawMessage(`"invalid"`)}},
+		},
+	}
+	p, _, _, br, err := buildParams("claude-sonnet-4-6", opts, false)
+	require.NoError(t, err)
+	require.True(t, br.usesJsonResponseTool)
+	require.Len(t, p.Tools, 2)
+	assert.Equal(t, "lookup", *p.Tools[0].GetName())
+	assert.Equal(t, "json", *p.Tools[1].GetName())
+
+	opts.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "fetch"}
+	_, _, _, _, err = buildParams("claude-sonnet-4-6", opts, false)
+	require.ErrorContains(t, err, "maxUses")
+}
+
 func TestWebTool_HTTPVersionMatrix(t *testing.T) {
 	cases := []struct {
 		id, args, wireType, wireName, beta string
@@ -6323,7 +6344,7 @@ func TestGroupIntoBlocks_GroupingRules(t *testing.T) {
 
 func ptrInt(i int) *int { return &i }
 
-func TestHasWebTool20260209WithoutCodeExecution(t *testing.T) {
+func TestHasDynamicFilteringWebToolWithoutCodeExecution(t *testing.T) {
 	tests := []struct {
 		name  string
 		tools []provider.Tool
@@ -6389,7 +6410,9 @@ func TestHasWebTool20260209WithoutCodeExecution(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, hasWebTool20260209WithoutCodeExecution(tc.tools))
+			tools, warnings, _ := convertTools(&cacheControlValidator{}, tc.tools, false)
+			require.Empty(t, warnings)
+			assert.Equal(t, tc.want, hasDynamicFilteringWebToolWithoutCodeExecution(tools))
 		})
 	}
 }
@@ -6417,11 +6440,36 @@ func TestBuildParams_MarkCodeExecutionDynamic(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, br.markCodeExecutionDynamic)
 	})
+
+	for _, tc := range []struct {
+		name       string
+		selectedID string
+		excludedID string
+	}{
+		{name: "keep web fetch and exclude explicit code execution", selectedID: "anthropic.web_fetch_20260209", excludedID: "anthropic.code_execution_20260120"},
+		{name: "keep March web fetch and exclude February web search", selectedID: "anthropic.web_fetch_20260318", excludedID: "anthropic.web_search_20260209"},
+		{name: "keep March web search and exclude February web fetch", selectedID: "anthropic.web_search_20260318", excludedID: "anthropic.web_fetch_20260209"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object","additionalProperties":true}`)},
+				ToolChoice:     &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "selected"},
+				Tools: []provider.Tool{
+					{Type: provider.ToolTypeProvider, ID: tc.selectedID, Name: "selected"},
+					{Type: provider.ToolTypeProvider, ID: tc.excludedID, Name: "excluded"},
+				},
+			}
+			p, _, _, br, err := buildParams("claude-sonnet-4-6", opts, false)
+			require.NoError(t, err)
+			require.True(t, br.usesJsonResponseTool)
+			require.Len(t, p.Tools, 2)
+			assert.True(t, br.markCodeExecutionDynamic)
+		})
+	}
 }
 
-// TestConvertResponse_CodeExecutionDynamic exercises the upstream
-// hasWebTool20260209WithoutCodeExecution mark on non-streaming responses.
-// Mirrors upstream anthropic-language-model.ts:1043-1047.
+// TestConvertResponse_CodeExecutionDynamic exercises the dynamic marker
+// on non-streaming responses.
 func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 	msg := unmarshalMessage(t, `{
 		"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-sonnet-4-6",

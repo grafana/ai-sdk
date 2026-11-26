@@ -48,6 +48,18 @@ function callCatalog(request: APIRequestContext, name: string, modelID: string, 
   });
 }
 
+function callCatalogChat(request: APIRequestContext, name: string, stream: boolean) {
+  return request.post(`${CATALOGS}/${name}/v1/chat/completions`, {
+    data: {
+      model: 'team',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_completion_tokens: 16,
+      stream,
+      ...(stream ? { stream_options: { include_usage: true } } : {}),
+    },
+  });
+}
+
 async function replyText(response: APIResponse, streaming: boolean): Promise<string> {
   const body = await response.text();
   expect(body).not.toContain(SENTINEL);
@@ -87,8 +99,37 @@ test.describe('ModelCatalog routes', () => {
     }
   });
 
+  test('a catalog with a provider but no models lists none and rejects calls as unknown model', async ({
+    accounts,
+  }) => {
+    const name = uniqueName();
+    const response = await accounts.Admin.post(CATALOGS, {
+      data: {
+        apiVersion: `${API_GROUP}/${API_VERSION}`,
+        kind: 'ModelCatalog',
+        metadata: { name },
+        spec: { providers: { claude: { type: 'anthropic' } }, models: {} },
+        secure: { claude: { create: SENTINEL } },
+      },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    const config = await accounts.Editor.get(`${CATALOGS}/${name}/config`);
+    expect(config.status(), await config.text()).toBe(200);
+    expect(await config.json()).toEqual({ models: [] });
+    for (const streaming of [false, true]) {
+      const invocation = await callCatalog(accounts.Editor, name, 'team-model', streaming);
+      expect(invocation.status(), await invocation.text()).toBe(404);
+      expect((await invocation.json()).error.code).toBe('model_not_found');
+    }
+    const unknown = await accounts.Admin.post(`${CATALOGS}/${name}/available-models?provider=absent`);
+    expect(unknown.status(), await unknown.text()).toBe(404);
+    expect(await unknown.json()).toEqual({ message: 'provider not found in stored catalog' });
+  });
+
   test('the invoker role is registered and bound to Editor', async ({ accounts }) => {
-    const routeActions = ['language-model', 'config'].map((route) => `${API_GROUP}/modelcatalogs/${route}:get`);
+    const routeActions = ['language-model', 'config', 'chat-completions'].map(
+      (route) => `${API_GROUP}/modelcatalogs/${route}:get`
+    );
     for (const role of ROLES) {
       const held = Object.keys(
         await (await accounts[role].get('/api/access-control/user/permissions?reloadcache=true')).json()
@@ -138,6 +179,41 @@ test.describe('ModelCatalog routes', () => {
     }
   });
 
+  test('catalog Chat uses the decrypted key and the model-invoker grant', async ({ accounts }) => {
+    const name = uniqueName();
+    const key = `${SENTINEL}-chat`;
+    const model = 'claude-sonnet-4-6';
+    expect((await accounts.Admin.post(CATALOGS, { data: catalog(name, model, key) })).status()).toBe(201);
+    await expectStatus(await callCatalogChat(accounts.Viewer, name, false), 403, 'Forbidden');
+
+    for (const role of ['Editor', 'Admin'] as const) {
+      const unary = await callCatalogChat(accounts[role], name, false);
+      const body = await unary.text();
+      expect(unary.status(), body).toBe(200);
+      expect(body).not.toContain(SENTINEL);
+      expect(JSON.parse(body)).toMatchObject({
+        object: 'chat.completion',
+        choices: [{ message: { role: 'assistant', content: nativeReply(key, model) }, finish_reason: 'stop' }],
+      });
+
+      const stream = await callCatalogChat(accounts[role], name, true);
+      const events = await stream.text();
+      expect(stream.status(), events).toBe(200);
+      expect(stream.headers()['content-type']).toContain('text/event-stream');
+      expect(events).not.toContain(SENTINEL);
+      const data = events
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => line.slice(6));
+      expect(data.pop()).toBe('[DONE]');
+      const chunks = data.map((event) => JSON.parse(event));
+      expect(chunks[0]).toMatchObject({ object: 'chat.completion.chunk', choices: [{ delta: { role: 'assistant' } }] });
+      expect(chunks.at(-2)?.choices[0]?.finish_reason).toBe('stop');
+      expect(chunks.at(-1)).toMatchObject({ choices: [], usage: { prompt_tokens: 1 } });
+      expect(chunks.map((chunk) => chunk.choices[0]?.delta.content ?? '').join('')).toBe(nativeReply(key, model));
+    }
+  });
+
   test('a catalog edit applies on the next call', async ({ accounts }) => {
     const name = uniqueName();
     const first = `${SENTINEL}-route-before-edit`;
@@ -158,6 +234,7 @@ test.describe('ModelCatalog routes', () => {
   test('an unknown catalog is answered by Grafana with a 404 Status', async ({ accounts }) => {
     await expectStatus(await accounts.Editor.get(`${CATALOGS}/e2e-routes-missing/config`), 404, 'NotFound');
     await expectStatus(await callCatalog(accounts.Editor, 'e2e-routes-missing', 'team', false), 404, 'NotFound');
+    await expectStatus(await callCatalogChat(accounts.Editor, 'e2e-routes-missing', false), 404, 'NotFound');
   });
 
   test('a stored catalog leaves the namespace routes unchanged', async ({ accounts, page }) => {

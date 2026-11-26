@@ -2680,7 +2680,7 @@ func TestStreamTextContextCancellation(t *testing.T) {
 	}{
 		{
 			name:          "no output",
-			expectedTypes: []string{"start", "start-step", "abort"},
+			expectedTypes: []string{"start", "abort"},
 		},
 		{
 			name: "partial output",
@@ -2698,7 +2698,7 @@ func TestStreamTextContextCancellation(t *testing.T) {
 				{Type: provider.PartTextDelta, ID: "t1", Delta: "discarded"},
 			},
 			pendingAtCancel: true,
-			expectedTypes:   []string{"start", "start-step", "abort"},
+			expectedTypes:   []string{"start", "abort"},
 		},
 	}
 

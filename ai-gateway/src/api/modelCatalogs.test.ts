@@ -92,24 +92,21 @@ describe('api/modelCatalogs', () => {
     );
   });
 
-  test('creates a catalog with its keys as secure.create', async () => {
-    await createModelCatalog('team', spec, { anthropic: { create: 'key' } });
+  test('creates a catalog with its first provider and key, but no models', async () => {
+    const initial = { providers: spec.providers, models: {} };
+    const secure = { anthropic: { create: 'typed-key' } };
+    await createModelCatalog('team', initial, secure);
     expect(backendSrv.post).toHaveBeenCalledWith(
       CATALOGS,
       {
         apiVersion: 'aigateway.ext.grafana.app/v1alpha1',
         kind: 'ModelCatalog',
         metadata: { name: 'team' },
-        spec,
-        secure: { anthropic: { create: 'key' } },
+        spec: initial,
+        secure,
       },
       OPTIONS
     );
-  });
-
-  test('creates a catalog without secure when no key is entered', async () => {
-    await createModelCatalog('team', spec, {});
-    expect(backendSrv.post.mock.calls[0][1]).not.toHaveProperty('secure');
   });
 
   test('updates a catalog with its stored metadata and only the changed secure values', async () => {
