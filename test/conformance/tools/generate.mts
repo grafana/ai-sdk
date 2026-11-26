@@ -15,6 +15,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import {
   convertToModelMessages,
   streamText,
@@ -345,14 +346,14 @@ function createModel(
 
 // --- Generate Expected Output ---
 
-function generateResultSnapshot(result: any): Record<string, unknown> {
-  const bedrockMetadata = result.providerMetadata?.bedrock;
+function generateResultSnapshot(result: LanguageModelV4GenerateResult): Record<string, unknown> {
+  const { content, finishReason, usage, providerMetadata, warnings } = result;
   return {
-    content: result.content,
-    finishReason: result.finishReason,
-    usage: result.usage,
-    ...(bedrockMetadata ? { providerMetadata: { bedrock: bedrockMetadata } } : {}),
-    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+    content,
+    finishReason,
+    usage,
+    ...(providerMetadata && Object.keys(providerMetadata).length ? { providerMetadata } : {}),
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 

@@ -31,6 +31,10 @@
     }
   },
   "providerMetadata": {
+    "amazonBedrock": {
+      "isJsonResponseFromTool": true,
+      "stopSequence": null
+    },
     "bedrock": {
       "isJsonResponseFromTool": true,
       "stopSequence": null
