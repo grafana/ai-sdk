@@ -52,10 +52,64 @@ func resolveCompactionRequest(config *CompactionConfig, raw json.RawMessage) (an
 	return params, nil
 }
 
-func compactionMetadata(block anthropic.BetaCompactionBlock) (provider.ProviderMetadata, error) {
+func compactionReplayMetadata(opts provider.ProviderOptions) (signature *string, ok bool) {
+	raw := extractRawJSON(opts)
+	if raw == nil {
+		return nil, false
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil, false
+	}
+	var kind string
+	if json.Unmarshal(fields["type"], &kind) != nil || kind != "compaction" {
+		return nil, false
+	}
+	if rawSig := fields["signature"]; rawSig != nil {
+		if json.Unmarshal(rawSig, &signature) != nil {
+			return nil, true
+		}
+	}
+	return signature, true
+}
+
+type compactionBlock struct {
+	Content   string
+	Signature *string
+}
+
+func decodeCompactionBlock(raw string) (compactionBlock, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return compactionBlock{}, fmt.Errorf("decoding compaction block: %w", err)
+	}
+	content, err := decodeCompactionContent(fields["content"])
+	if err != nil {
+		return compactionBlock{}, err
+	}
+	block := compactionBlock{Content: content}
+	if signature := fields["signature"]; signature != nil {
+		if err := json.Unmarshal(signature, &block.Signature); err != nil {
+			return compactionBlock{}, fmt.Errorf("decoding compaction signature: %w", err)
+		}
+	}
+	return block, nil
+}
+
+func decodeCompactionContent(raw json.RawMessage) (string, error) {
+	var content string
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &content); err != nil {
+			return "", fmt.Errorf("decoding compaction content: %w", err)
+		}
+	}
+	return content, nil
+}
+
+func (block compactionBlock) metadata() (provider.ProviderMetadata, error) {
 	metadata := map[string]string{"type": "compaction"}
-	if block.JSON.Signature.Valid() {
-		metadata["signature"] = block.Signature
+	if block.Signature != nil {
+		metadata["signature"] = *block.Signature
 	}
 	raw, err := json.Marshal(metadata)
 	if err != nil {

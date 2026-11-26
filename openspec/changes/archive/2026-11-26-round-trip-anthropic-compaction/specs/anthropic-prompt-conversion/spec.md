@@ -23,3 +23,7 @@ Assistant text with `ProviderOptions["anthropic"].type == "compaction"` SHALL se
 #### Scenario: Unsigned continuation remains legacy compaction
 - **WHEN** a retained compaction part has an absent, null or non-string signature
 - **THEN** the native compaction block SHALL omit the signature and SHALL NOT activate `compact-2026-09-04` on its own
+
+#### Scenario: Case variants are not compaction replay metadata
+- **WHEN** assistant text options contain case variants such as `Type` or `Signature`
+- **THEN** those keys SHALL NOT supply or override the lowercase `type` and `signature` keys for compaction replay

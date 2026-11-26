@@ -154,6 +154,10 @@ Assistant text with `ProviderOptions["anthropic"].type == "compaction"` SHALL se
 - **WHEN** a retained compaction part has an absent, null or non-string signature
 - **THEN** the native compaction block SHALL omit the signature and SHALL NOT activate `compact-2026-09-04` on its own
 
+#### Scenario: Case variants are not compaction replay metadata
+- **WHEN** assistant text options contain case variants such as `Type` or `Signature`
+- **THEN** those keys SHALL NOT supply or override the lowercase `type` and `signature` keys for compaction replay
+
 ### Requirement: System messages continue to flow into p.System
 
 `provider.Message` entries with `Role == provider.RoleSystem` SHALL continue to append `BetaTextBlockParam` entries onto the request's top-level `System` array (not into `Messages`). The grouping pre-pass SHALL NOT change the per-message cache-control resolution for system messages: each source system message's `ProviderOptions["anthropic"].cache_control` continues to apply to its own emitted `BetaTextBlockParam`.

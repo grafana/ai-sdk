@@ -241,12 +241,15 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			meta := provider.ProviderMetadata{"anthropic": metaJSON}
 			ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: blockID(idx), ProviderMetadata: meta}
 		case "compaction":
-			compaction := cb.AsCompaction()
-			metadata, err := compactionMetadata(compaction)
+			compaction, err := decodeCompactionBlock(cb.RawJSON())
 			if err != nil {
 				return err
 			}
-			complete := compaction.JSON.Signature.Valid() && compaction.Content != ""
+			metadata, err := compaction.metadata()
+			if err != nil {
+				return err
+			}
+			complete := compaction.Signature != nil && compaction.Content != ""
 			a.blocks[idx] = &blockState{blockType: "text", compactionComplete: complete}
 			id := blockID(idx)
 			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: id, ProviderMetadata: metadata}
@@ -402,14 +405,11 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if delta.Type == "citations_delta" {
 			return a.handleCitationDelta(ch, bs, delta.AsCitationsDelta().Citation)
 		}
-		if bs == nil {
+		if bs == nil || (bs.compactionComplete && (delta.Type == "text_delta" || delta.Type == "compaction_delta")) {
 			return nil
 		}
 		switch delta.Type {
 		case "text_delta":
-			if bs.compactionComplete {
-				return nil
-			}
 			if bs.heldBackText != nil {
 				bs.heldBackText.WriteString(delta.Text)
 				return nil
@@ -439,11 +439,15 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 				}
 			}
 		case "compaction_delta":
-			if !bs.compactionComplete && delta.Content != "" {
+			content, err := decodeCompactionContent(json.RawMessage(delta.JSON.Content.Raw()))
+			if err != nil {
+				return err
+			}
+			if content != "" {
 				ch <- provider.StreamPart{
 					Type:  provider.PartTextDelta,
 					ID:    blockID(idx),
-					Delta: delta.Content,
+					Delta: content,
 				}
 			}
 		case "input_json_delta":

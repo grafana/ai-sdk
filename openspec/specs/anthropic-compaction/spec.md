@@ -35,3 +35,12 @@ The provider SHALL project nonempty unary compaction as text, and stream compact
 #### Scenario: Native unary response has no compaction summary
 - **WHEN** a unary compaction block has missing, null or empty content
 - **THEN** it SHALL contribute no text or content metadata
+
+#### Scenario: Native compaction fields have the wrong type
+- **WHEN** a unary compaction block or streamed compaction start has non-null, non-string content or signature, or an otherwise applicable compaction delta has non-null, non-string content
+- **THEN** the provider SHALL report a conversion error without turning the invalid values into text or replay metadata
+- **AND** the Go provider SHALL stop a stream at the offending event under its existing conversion-error policy, whereas the upstream adapter continues after reporting an invalid chunk
+
+#### Scenario: Case variants are not native compaction fields
+- **WHEN** Anthropic content includes an additional `Content` or `Signature` member
+- **THEN** neither member SHALL supply or override the corresponding lowercase wire field

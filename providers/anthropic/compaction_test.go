@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -19,6 +18,7 @@ const (
 	compactionTestBeta    = "compact-2026-09-04"
 	compactionTestSummary = "Résumé  \n"
 	compactionTestBlock   = `{"type":"compaction","content":"Résumé  \n","signature":"opaque+/="}`
+	compactionTestWire    = `{"type":"compaction","content":"Résumé  \n","signature":"opaque+/=","Content":"other","Signature":"not a signature"}`
 	compactionTestMeta    = `{"type":"compaction","signature":"opaque+/="}`
 	compactionTestStart   = `{"type":"message_start","message":{"id":"msg_summary","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0}}}`
 	compactionTestDelta   = `{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":0}}`
@@ -55,7 +55,7 @@ func TestModel_CompactionRequest(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					model, requests := compactionTestModel(t, func(call int) (string, string) {
 						if mode == "stream" {
-							return "text/event-stream", compactionSSE(compactionTestStart, compactionTestDelta, compactionTestStop)
+							return "text/event-stream", transportSSE([]string{compactionTestStart, compactionTestDelta, compactionTestStop})
 						}
 						return "application/json", compactionUnary("")
 					})
@@ -102,16 +102,16 @@ func TestModel_CompactionRoundTrip(t *testing.T) {
 					return "application/json", compactionUnary(`{"type":"text","text":"continued"}`)
 				}
 				if mode == "generate" {
-					return "application/json", compactionUnary(compactionTestBlock)
+					return "application/json", compactionUnary(compactionTestWire)
 				}
-				return "text/event-stream", compactionSSE(
+				return "text/event-stream", transportSSE([]string{
 					compactionTestStart,
-					`{"type":"content_block_start","index":0,"content_block":`+compactionTestBlock+`}`,
+					`{"type":"content_block_start","index":0,"content_block":` + compactionTestWire + `}`,
 					`{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"Résumé  \n"}}`,
 					`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"should not be appended"}}`,
 					`{"type":"content_block_stop","index":0}`,
 					compactionTestDelta, compactionTestStop,
-				)
+				})
 			})
 			options := makeProviderOpts(`{"compaction":{"type":"summarize"}}`)
 			user := provider.UserText("summarize")
@@ -168,21 +168,21 @@ func TestModel_CompactionLegacy(t *testing.T) {
 				{"type":"compaction","content":"","signature":"empty"},
 				{"type":"compaction","content":null,"signature":"null"},
 				{"type":"compaction","signature":"missing"},
-				{"type":"compaction","content":"legacy","signature":null},
+				{"type":"compaction","content":"legacy","Signature":"ignored"},
 				{"type":"compaction","content":"empty signature","signature":""},
 				{"type":"text","text":"normal"}`)
 		}
-		return "text/event-stream", compactionSSE(
+		return "text/event-stream", transportSSE([]string{
 			compactionTestStart,
-			`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"not authoritative","signature":null}}`,
-			`{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"split "}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"not authoritative","signature":null,"Signature":"ignored"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"split ","Content":"ignored"}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":null}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"summary"}}`,
 			`{"type":"content_block_stop","index":0}`,
 			`{"type":"content_block_start","index":1,"content_block":{"type":"compaction","content":"","signature":""}}`,
 			`{"type":"content_block_stop","index":1}`,
 			compactionTestDelta, compactionTestStop,
-		)
+		})
 	})
 	limit := 64
 	options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, MaxOutputTokens: &limit}
@@ -217,6 +217,70 @@ func TestModel_CompactionLegacy(t *testing.T) {
 	assert.Equal(t, provider.PartTextEnd, textParts[5].Type)
 }
 
+func TestModel_CompactionRejectsMalformedNativeFields(t *testing.T) {
+	const blockStart = `{"type":"content_block_start","index":0,"content_block":`
+	const blockStop = `{"type":"content_block_stop","index":0}`
+	limit := 64
+	opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("summarize")}, MaxOutputTokens: &limit}
+	for _, tc := range []struct {
+		name, block, field string
+	}{
+		{"numeric signature", `{"type":"compaction","content":"summary","signature":42}`, "signature"},
+		{"boolean signature", `{"type":"compaction","content":"summary","signature":true}`, "signature"},
+		{"numeric summary", `{"type":"compaction","content":42,"signature":"opaque"}`, "content"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("generate", func(t *testing.T) {
+				model, _ := compactionTestModel(t, func(int) (string, string) {
+					return "application/json", compactionUnary(tc.block)
+				})
+				result, err := model.DoGenerate(t.Context(), opts)
+				require.ErrorContains(t, err, tc.field)
+				assert.Nil(t, result)
+			})
+			t.Run("stream", func(t *testing.T) {
+				model, _ := compactionTestModel(t, func(int) (string, string) {
+					return "text/event-stream", transportSSE([]string{
+						compactionTestStart, blockStart + tc.block + `}`, blockStop, compactionTestDelta, compactionTestStop,
+					})
+				})
+				assertCompactionStreamError(t, model, opts, tc.field)
+			})
+		})
+	}
+
+	t.Run("numeric summary delta", func(t *testing.T) {
+		model, _ := compactionTestModel(t, func(int) (string, string) {
+			return "text/event-stream", transportSSE([]string{
+				compactionTestStart,
+				blockStart + `{"type":"compaction","content":null}}`,
+				`{"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":42}}`,
+				blockStop, compactionTestDelta, compactionTestStop,
+			})
+		})
+		assertCompactionStreamError(t, model, opts, "content")
+	})
+}
+
+func assertCompactionStreamError(t *testing.T, model provider.LanguageModel, opts provider.CallOptions, field string) {
+	t.Helper()
+	result, err := model.DoStream(t.Context(), opts)
+	require.NoError(t, err)
+	var errs []*provider.APICallError
+	for part := range result.Stream {
+		switch part.Type {
+		case provider.PartTextStart:
+			assert.NotContains(t, string(part.ProviderMetadata["anthropic"]), `"signature"`)
+		case provider.PartTextDelta, provider.PartFinish:
+			assert.Fail(t, "malformed compaction emitted text or completed", "%+v", part)
+		case provider.PartError:
+			errs = append(errs, part.APICallError)
+		}
+	}
+	require.Len(t, errs, 1)
+	require.ErrorContains(t, errs[0], field)
+}
+
 func TestBuildParams_CompactionReplaySignaturePresence(t *testing.T) {
 	for _, tc := range []struct {
 		name, metadata, text, block string
@@ -226,6 +290,10 @@ func TestBuildParams_CompactionReplaySignaturePresence(t *testing.T) {
 		{"null", `{"type":"compaction","signature":null}`, "summary", `{"type":"compaction","content":"summary"}`, false},
 		{"nonstring", `{"type":"compaction","signature":3}`, "summary", `{"type":"compaction","content":"summary"}`, false},
 		{"empty signature", `{"type":"compaction","signature":""}`, "summary", `{"type":"compaction","content":"summary","signature":""}`, true},
+		{"case variant cannot override signature", `{"type":"compaction","signature":"opaque","Signature":"ignored"}`, "summary", `{"type":"compaction","content":"summary","signature":"opaque"}`, true},
+		{"case variant cannot override type", `{"type":"compaction","Type":"other"}`, "summary", `{"type":"compaction","content":"summary"}`, false},
+		{"case variant is not signed", `{"type":"compaction","Signature":"ignored"}`, "summary", `{"type":"compaction","content":"summary"}`, false},
+		{"case variant is not compaction", `{"Type":"compaction","signature":"ignored"}`, "summary", `{"type":"text","text":"summary","citations":[]}`, false},
 		{"empty summary", `{"type":"compaction","signature":"sig"}`, "", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -276,13 +344,4 @@ func compactionTestModel(t *testing.T, respond func(int) (contentType, body stri
 
 func compactionUnary(blocks string) string {
 	return `{"id":"msg_summary","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[` + blocks + `],"stop_reason":"compaction","usage":{"input_tokens":0,"output_tokens":0}}`
-}
-
-func compactionSSE(events ...string) string {
-	var sse strings.Builder
-	for _, event := range events {
-		eventType, _, _ := strings.Cut(strings.TrimPrefix(event, `{"type":"`), `"`)
-		fmt.Fprintf(&sse, "event: %s\ndata: %s\n\n", eventType, event)
-	}
-	return sse.String()
 }

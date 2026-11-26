@@ -1151,12 +1151,12 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		switch p.Type {
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			if isCompaction(p.ProviderOptions) {
+			if signature, compaction := compactionReplayMetadata(p.ProviderOptions); compaction {
 				block := &anthropic.BetaCompactionBlockParam{
 					Content:      anthropic.String(p.Text),
 					CacheControl: cc,
 				}
-				if signature := extractSignature(p.ProviderOptions); signature != nil {
+				if signature != nil {
 					block.Signature = anthropic.String(*signature)
 				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{OfCompaction: block})
@@ -3320,10 +3320,6 @@ func extractAnthropicType(opts provider.ProviderOptions) string {
 		return ""
 	}
 	return data.Type
-}
-
-func isCompaction(opts provider.ProviderOptions) bool {
-	return extractAnthropicType(opts) == "compaction"
 }
 
 func isMCPToolUse(opts provider.ProviderOptions) bool {

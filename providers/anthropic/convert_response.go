@@ -51,11 +51,14 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				Type: provider.ContentCustom, Kind: anthropicContainerUploadKind, ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata},
 			})
 		case "compaction":
-			compaction := block.AsCompaction()
+			compaction, err := decodeCompactionBlock(block.RawJSON())
+			if err != nil {
+				return nil, err
+			}
 			if compaction.Content == "" {
 				continue
 			}
-			metadata, err := compactionMetadata(compaction)
+			metadata, err := compaction.metadata()
 			if err != nil {
 				return nil, err
 			}
