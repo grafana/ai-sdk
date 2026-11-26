@@ -16,7 +16,7 @@ import { parseJsonEventStream, safeValidateTypes } from "@ai-sdk/provider-utils"
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
-import { generateText, Output, jsonSchema, stepCountIs, streamText, tool, uiMessageChunkSchema, wrapLanguageModel } from "ai";
+import { generateText, Output, isToolUIPart, jsonSchema, readUIMessageStream, simulateReadableStream, stepCountIs, streamText, tool, uiMessageChunkSchema, wrapLanguageModel, type UIMessage } from "ai";
 import packageManifest from "./package.json" with { type: "json" };
 import { buildTools, loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
@@ -873,6 +873,17 @@ describe("synthetic interrupted stream through the real handler", () => {
       ]);
       assert.deepEqual(chunks.at(-1), { type: "finish", finishReason: "interrupted" });
       assert.equal(chunks.some((chunk: { type: string }) => chunk.type === "error"), false);
+      let assembled: UIMessage | undefined;
+      for await (const message of readUIMessageStream({ stream: simulateReadableStream({ chunks }), terminateOnError: true })) {
+        assembled = message;
+      }
+      assert.ok(assembled);
+      const text = assembled.parts.filter(part => part.type === "text").map(part => part.text);
+      const reasoning = assembled.parts.filter(part => part.type === "reasoning").map(part => part.text);
+      const tools = assembled.parts.filter(isToolUIPart);
+      assert.deepEqual(text, ["Partial answer"]);
+      assert.deepEqual(reasoning, ["Thinking"]);
+      assert.deepEqual(tools.map(({ toolCallId, state }) => ({ toolCallId, state })), [{ toolCallId: "call", state: "input-streaming" }]);
     }
   });
 });

@@ -185,7 +185,7 @@ func streamRuleCases() []streamRuleCase {
 func TestStreamValidator_Rules(t *testing.T) {
 	for _, tc := range streamRuleCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			validator := NewStreamValidator(tc.history)
+			validator := NewStreamValidator(t.Context(), tc.history)
 			rejected := -1
 			for i, part := range tc.parts {
 				if err := validator.Check(part); err != nil {
@@ -200,6 +200,7 @@ func TestStreamValidator_Rules(t *testing.T) {
 }
 
 func TestStreamValidator_InterruptedFinish(t *testing.T) {
+	ctx := withStreamOptions(t.Context(), WithInterruptedBlocks())
 	interrupted := validFinish()
 	interrupted.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonInterrupted}
 	metadata := provider.StreamPart{Type: provider.PartResponseMeta}
@@ -212,7 +213,7 @@ func TestStreamValidator_InterruptedFinish(t *testing.T) {
 			provider.FinishReasonToolCalls, provider.FinishReasonError, provider.FinishReasonOther,
 		} {
 			t.Run(string(block.Type)+"/"+string(reason), func(t *testing.T) {
-				v := NewStreamValidator(nil)
+				v := NewStreamValidator(ctx, nil)
 				require.NoError(t, v.Check(block))
 				finish := validFinish()
 				finish.FinishReason = &provider.FinishReason{Unified: reason, Raw: "interrupted"}
@@ -225,7 +226,7 @@ func TestStreamValidator_InterruptedFinish(t *testing.T) {
 	}
 
 	t.Run("rejected finish does not abandon blocks", func(t *testing.T) {
-		v := NewStreamValidator(nil)
+		v := NewStreamValidator(ctx, nil)
 		require.NoError(t, v.Check(textStart))
 		require.NoError(t, v.Check(reasoningStart))
 		require.NoError(t, v.Check(toolStart))
@@ -250,7 +251,7 @@ func TestStreamValidator_InterruptedFinish(t *testing.T) {
 			name = "history"
 		}
 		t.Run("pending preview/"+name, func(t *testing.T) {
-			v := NewStreamValidator(history)
+			v := NewStreamValidator(ctx, history)
 			if history == nil {
 				require.NoError(t, v.Check(toolCall("pending", "f", true)))
 			}
@@ -264,7 +265,7 @@ func TestStreamValidator_InterruptedFinish(t *testing.T) {
 	}
 
 	t.Run("next segment and abandoned IDs", func(t *testing.T) {
-		v := NewStreamValidator(nil)
+		v := NewStreamValidator(ctx, nil)
 		secondReasoning := streamPart(provider.PartReasoningStart, "s")
 		for _, part := range []provider.StreamPart{textStart, reasoningStart, secondReasoning, toolStart, toolCall("done", "f", true), interrupted} {
 			require.NoError(t, v.Check(part), part.Type)
@@ -294,7 +295,7 @@ func TestStreamValidator_InterruptedFinish(t *testing.T) {
 }
 
 func TestStreamValidator_SegmentFinished(t *testing.T) {
-	validator := NewStreamValidator(nil)
+	validator := NewStreamValidator(t.Context(), nil)
 	steps := []struct {
 		part     provider.StreamPart
 		finished bool
@@ -318,7 +319,7 @@ func TestStreamValidator_SegmentFinished(t *testing.T) {
 }
 
 func TestStreamValidator_TrailingError(t *testing.T) {
-	validator := NewStreamValidator(nil)
+	validator := NewStreamValidator(t.Context(), nil)
 	steps := []struct {
 		part     provider.StreamPart
 		trailing bool
@@ -343,7 +344,7 @@ func TestStreamValidator_TrailingError(t *testing.T) {
 
 func TestStreamValidator_HistoryIsNotShared(t *testing.T) {
 	history := ToolHistory{"hosted": "search"}
-	first, second := NewStreamValidator(history), NewStreamValidator(history)
+	first, second := NewStreamValidator(t.Context(), history), NewStreamValidator(t.Context(), history)
 	assert.NoError(t, first.Check(toolResult("hosted", "search", `{}`)))
 	assert.ErrorIs(t, first.Check(toolResult("hosted", "search", `{}`)), ErrInvalidOutput)
 	assert.NoError(t, second.Check(toolResult("hosted", "search", `{}`)))

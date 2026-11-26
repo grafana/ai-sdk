@@ -6,7 +6,7 @@ At the registered upstream commit [`0e8e0543`](https://github.com/vercel/ai/tree
 
 Keep this as a provider-output lifecycle decision, shared with extension observers. A valid interrupted finish discards the active text and reasoning state and marks each open input abandoned. An abandoned input remains reserved for the stream, but cannot be resumed or become a tool call; completed calls remain unchanged. The next response-metadata starts a new segment as usual. Preview checks, the other finish preconditions and after-finish rules remain unchanged.
 
-Do not manufacture block ends. That would claim blocks completed, potentially misrepresent incomplete reasoning or tool input, and add events the upstream client does not need. Do not add a per-adapter validation flag: this provider sequence is valid regardless of adapter, while the native Chat Completions and Anthropic Messages adapters retain their own stricter finish-reason mappings.
+Do not manufacture block ends. That would claim blocks completed, potentially misrepresent incomplete reasoning or tool input, and add events the upstream client does not need. ProviderWire opts into the shared interruption rule. The runtime and extension pipeline use the same per-call rule, with separate validator state. The default remains strict so native adapters and extension observers retain their existing invalid-output classification without inspecting a rejected finish. In particular, native Anthropic Messages cannot turn an interrupted segment with open blocks into a successful message when a later segment finishes normally.
 
 ## Evidence
 

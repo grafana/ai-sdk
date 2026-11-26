@@ -922,12 +922,12 @@ func TestPipeline_StreamOutcome(t *testing.T) {
 		guard   *recorder
 		outcome extension.Outcome
 	}{
-		{name: "interrupted with open text", parts: []provider.StreamPart{
+		{name: "interrupted with open text without opt-in", parts: []provider.StreamPart{
 			{Type: provider.PartStreamStart},
 			{Type: provider.PartTextStart, ID: "t"},
 			{Type: provider.PartTextDelta, ID: "t", Delta: "partial"},
 			interrupted,
-		}, outcome: extension.OutcomeSuccess},
+		}, outcome: extension.OutcomeInvalidOutput},
 		{name: "error then finish", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, errorPart, finish}, outcome: extension.OutcomeError},
 		{name: "finish then error", parts: append(textParts("hello"), errorPart), outcome: extension.OutcomeError},
 		{name: "invalid output with an error", parts: []provider.StreamPart{{Type: provider.PartStreamStart}, {Type: provider.PartTextDelta, ID: "never-started", Delta: "x"}, errorPart, finish}, outcome: extension.OutcomeInvalidOutput},

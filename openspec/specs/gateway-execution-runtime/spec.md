@@ -406,8 +406,9 @@ The runtime SHALL validate each provider part before an adapter receives it. The
 
 #### Scenario: Interrupted finish with open blocks
 - **WHEN** a finish with unified reason `interrupted` meets all finish preconditions other than having open text, reasoning or tool-input blocks
-- **THEN** the runtime SHALL deliver it unchanged, end the segment and discard the active text and reasoning state without synthesizing any parts
+- **THEN** ProviderWire SHALL receive it unchanged; the runtime SHALL end the segment and discard active text and reasoning state without synthesizing any parts
 - **AND** every open tool input SHALL be abandoned, with its ID still reserved for the whole stream; it SHALL NOT resume or yield a tool call in a later segment
+- **AND** extension validation SHALL use the same policy as the adapter for inspection and observation: ProviderWire SHALL receive the interruption unless a response inspector denies it, and native adapter streams SHALL get the invalid-output outcome without passing that finish to a response inspector
 
 #### Scenario: Parts after a finish
 - **WHEN** a part other than `response-metadata`, raw or provider error arrives after an accepted `finish`, including a second `finish`

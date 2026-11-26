@@ -200,12 +200,13 @@ func (c *Call) generate(ctx context.Context) (result *provider.GenerateResult, e
 }
 
 // Stream invokes the model's stream once. A failed setup, or a stream returned
-// after the context ended, is canceled and drained once.
-func (c *Call) Stream() (*Stream, error) {
+// after the context ended, is canceled and drained once. Validation is strict
+// unless the adapter opts into [WithInterruptedBlocks].
+func (c *Call) Stream(options ...StreamOption) (*Stream, error) {
 	if err := c.ctx.Err(); err != nil {
 		return nil, err
 	}
-	modelContext, cancel := context.WithCancel(c.ctx)
+	modelContext, cancel := context.WithCancel(withStreamOptions(c.ctx, options...))
 	result, err := c.stream(modelContext)
 	if ctxErr := c.ctx.Err(); ctxErr != nil {
 		c.abandon(cancel, result)
@@ -228,7 +229,7 @@ func (c *Call) Stream() (*Stream, error) {
 		parts:     result.Stream,
 		idle:      time.NewTimer(c.limits.StreamIdleDuration),
 		limits:    c.limits,
-		validator: NewStreamValidator(c.history),
+		validator: NewStreamValidator(modelContext, c.history),
 	}, nil
 }
 
