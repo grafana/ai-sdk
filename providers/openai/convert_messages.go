@@ -290,14 +290,13 @@ func convertToolMessage(msg provider.Message, ctx inputConversionContext) ([]res
 	for _, part := range msg.Content {
 		switch part.Type {
 		case provider.ContentPartTypeToolResult:
-			item, itemWarnings, err := convertProviderToolResult(part, ctx)
+			var itemWarnings []provider.Warning
+			var err error
+			items, itemWarnings, err = appendProviderToolResult(items, part, ctx)
 			if err != nil {
 				return nil, nil, err
 			}
 			warnings = append(warnings, itemWarnings...)
-			if item != nil {
-				items = append(items, *item)
-			}
 
 		case provider.ContentPartTypeToolApprovalResponse:
 			approvalID := part.ApprovalID
@@ -435,6 +434,18 @@ func promptCacheBreakpoint(opts provider.ProviderOptions, providerOptionsName st
 }
 
 func openAIPartOptionsFor(opts provider.ProviderOptions, providerOptionsName string) OpenAIPartOptions {
+	if raw, ok := opts[providerOptionsName].(provider.RawProviderOption); ok {
+		var po OpenAIPartOptions
+		// Additional tools are validated only on the paths that replay them.
+		view := struct {
+			*OpenAIPartOptions
+			AdditionalTools json.RawMessage `json:"additionalTools"`
+		}{OpenAIPartOptions: &po}
+		if err := json.Unmarshal(raw.Raw, &view); err != nil {
+			return OpenAIPartOptions{}
+		}
+		return po
+	}
 	po, ok, err := provider.ResolveOption[OpenAIPartOptions](opts, providerOptionsName)
 	if err != nil || !ok {
 		return OpenAIPartOptions{}
