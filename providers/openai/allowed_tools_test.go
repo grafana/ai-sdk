@@ -51,7 +51,7 @@ func TestPrepareTools_AllowedToolsKinds(t *testing.T) {
 		{"computer", allowedProvider(toolIDComputer, "lookup"), map[string]any{"type": "computer"}},
 		{"programmatic tool calling", allowedProvider(toolIDProgrammatic, "lookup"), map[string]any{"type": "programmatic_tool_calling"}},
 		{"custom", allowedProvider(toolIDCustom, "lookup"), map[string]any{"type": "custom", "name": "lookup"}},
-		{"mcp", provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "lookup", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`)}}, map[string]any{"type": "mcp", "server_label": "srv"}},
+		{"mcp", provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "lookup", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}}, map[string]any{"type": "mcp", "server_label": "srv"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestPrepareTools_AllowedToolsMixedAndOverride(t *testing.T) {
 		allowedFunction("weather"),
 		allowedProvider(toolIDWebSearch, "search"),
 		allowedProvider(toolIDCustom, "freeform"),
-		{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "docs", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`)}},
+		{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "docs", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}},
 	}
 	selection := []string{"docs", "weather", "search", "freeform", "weather"}
 	opts := provider.CallOptions{
@@ -123,8 +123,8 @@ func TestPrepareTools_AllowedToolsAliases(t *testing.T) {
 		},
 		{
 			name: "direct mcp name", tools: []provider.Tool{
-				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"one"`)}},
-				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"two"`)}},
+				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"one"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}},
+				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"two"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}},
 			}, selected: "beta", want: map[string]any{"type": "mcp", "server_label": "two"},
 		},
 	}
@@ -153,8 +153,8 @@ func TestPrepareTools_AllowedToolsWarningsAndDrops(t *testing.T) {
 		{
 			name: "ambiguous mcp alias", tools: []provider.Tool{
 				allowedFunction("weather"),
-				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"one"`)}},
-				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"two"`)}},
+				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"one"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}},
+				{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"two"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}},
 			}, names: []string{"mcp", "beta", "weather"}, want: []any{map[string]any{"type": "mcp", "server_label": "two"}, map[string]any{"type": "function", "name": "weather"}},
 			warnings: []provider.Warning{{Type: provider.WarnUnsupported, Feature: `allowedTools entry "mcp"`, Details: "several tools in this request share this provider tool name; use the tool name from the tools for this request instead"}},
 		},
@@ -219,7 +219,7 @@ func TestPrepareTools_AllowedToolsEmptyAndNoDeclarations(t *testing.T) {
 	}{
 		{"empty", []provider.Tool{allowedFunction("weather")}, nil, "allowedTools with only tools that cannot be allow-listed ()"},
 		{"all dropped in selection order", []provider.Tool{allowedProvider(toolIDToolSearch, "finder"), {Type: provider.ToolTypeFunction, Name: "deferred", ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{DeferLoading: &deferLoading})}}, []string{"deferred", "finder", "deferred"}, "allowedTools with only tools that cannot be allow-listed (deferred, finder, deferred)"},
-		{"ambiguous only", []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"one"`)}}, {Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"two"`)}}}, []string{"mcp"}, "allowedTools with only tools that cannot be allow-listed (mcp)"},
+		{"ambiguous only", []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "alpha", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"one"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}}, {Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "beta", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"two"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}}}, []string{"mcp"}, "allowedTools with only tools that cannot be allow-listed (mcp)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			call := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Tools: tc.tools,
