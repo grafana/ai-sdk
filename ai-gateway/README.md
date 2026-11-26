@@ -276,9 +276,10 @@ model does not block its backend ID; add the ID to the blocklist to stop
 serving it through that instance.
 
 Call an unlisted model as `<provider-instance>/<model-id>`, for example
-`team-openai/gpt-5` for the instance named `team-openai`. A listed ID or alias
-wins if it matches the full selector. If no listed ID or alias matches, a
-blocked selector returns `404 model_not_found`. Unlisted models have no
+`team-openai/gpt-5` for the instance named `team-openai`. Catalog Chat
+Completions accepts the same selector in its `model` field. A listed ID or
+alias wins if it matches the full selector. If no listed ID or alias matches,
+a blocked selector returns `404 model_not_found`. Unlisted models have no
 implicit fallback, but can use or be named in explicit `gateway.models`
 fallbacks. `/config` still discovers only listed models. The provider still
 decides which requests and models its account supports. The provider model ID

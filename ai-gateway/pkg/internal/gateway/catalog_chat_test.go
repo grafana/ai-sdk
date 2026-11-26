@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,11 +10,57 @@ import (
 
 	"github.com/grafana/grafana-app-sdk/resource"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
 const catalogChatPath = "/modelcatalogs/" + testCatalogName + "/v1/chat/completions"
+
+func TestCatalogChat_QualifiedModelAndBlocklist(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	native := newFakeAnthropic(t)
+	useNativeAnthropic(t, native)
+	parent := testCatalogInfo(testCatalogParent(t, func(object map[string]any) {
+		spec := object["spec"].(map[string]any)
+		spec["providers"] = map[string]any{
+			"claude": map[string]any{"type": "anthropic", "serveAllModels": true, "modelBlocklist": []string{"org/blocked"}},
+		}
+		model := spec["models"].(map[string]any)["balanced"].(map[string]any)
+		model["aliases"] = []string{"claude/org/alias"}
+	}))
+	for _, tc := range []struct {
+		name, selector, backend string
+	}{
+		{name: "unlisted model", selector: "claude/org/new", backend: "org/new"},
+		{name: "blocked model", selector: "claude/org/blocked"},
+		{name: "listed alias wins", selector: "claude/org/alias", backend: "claude-sonnet"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := native.requests.Load()
+			body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}],"max_completion_tokens":16}`, tc.selector)
+			request := callerRequest(bodyBYOKCaller, http.MethodPost, catalogChatPath, strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request = request.WithContext(resource.WithRouteRequestInfo(request.Context(), parent))
+			response := httptest.NewRecorder()
+			h.gateway.Handler().ServeHTTP(response, request)
+			assert.Zero(t, h.anthropic.requests.Load())
+			if tc.backend == "" {
+				assert.Equal(t, http.StatusNotFound, response.Code, response.Body.String())
+				assert.Contains(t, response.Body.String(), `"code":"model_not_found"`)
+				assert.Equal(t, before, native.requests.Load())
+				return
+			}
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			require.Equal(t, before+1, native.requests.Load())
+			keys, calls := native.nativeCalls()
+			require.NotEmpty(t, keys)
+			require.NotEmpty(t, calls)
+			assert.Equal(t, string(parent.DecryptedSecureValues["claude"]), keys[len(keys)-1])
+			assert.Contains(t, calls[len(calls)-1], `"model":"`+tc.backend+`"`)
+		})
+	}
+}
 
 func TestCatalogChat_ParentAccessAndErrors(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
