@@ -25,11 +25,17 @@ const usage = {
   outputTokens: { total: 1, text: 1, reasoning: undefined },
 };
 
-for (const mode of ["direct", "nested"] as const) {
-  const steps = mode === "direct"
+for (const mode of ["direct", "nested", "direct-ranked", "nested-ranked"] as const) {
+  const nested = mode.startsWith("nested");
+  const ranking = mode.endsWith("-ranked") ? {
+    maxResults: 2,
+    names: ["unknown", "rainRisk", "rainRisk", "search", "getWeather", "unrelated"],
+  } : undefined;
+  const query = ranking ? "meteorology" : "weather";
+  const steps = !nested
     ? [
         [
-          { id: "search", name: "search", input: { query: "weather" } },
+          { id: "search", name: "search", input: { query } },
           { id: "too-early", name: "getWeather", input: {} },
         ],
         [{ id: "weather", name: "getWeather", input: {} }],
@@ -38,7 +44,7 @@ for (const mode of ["direct", "nested"] as const) {
     : [
         [{
           id: "search", name: "code",
-          input: { name: "search", input: { query: "weather" } },
+          input: { name: "search", input: { query } },
         }],
         [{
           id: "weather", name: "code",
@@ -89,7 +95,18 @@ for (const mode of ["direct", "nested"] as const) {
     additionalProperties: false,
   });
   const tools = {
-    search: toolSearch(),
+    search: toolSearch(ranking && {
+      maxResults: ranking.maxResults,
+      search: ({ query, tools }) => {
+        assert.equal(query, "meteorology");
+        assert.deepEqual(tools, [
+          { name: "getWeather", description: "Weather forecast" },
+          { name: "unrelated", description: "Send email" },
+          { name: "rainRisk", description: "Chance of rain" },
+        ]);
+        return ranking.names;
+      },
+    }),
     getWeather: tool({
       deferLoading: true,
       description: "Weather forecast",
@@ -101,6 +118,11 @@ for (const mode of ["direct", "nested"] as const) {
       description: "Send email",
       inputSchema: jsonSchema(objectSchema),
     }),
+    ...(ranking && { rainRisk: tool({
+      deferLoading: true,
+      description: "Chance of rain",
+      inputSchema: jsonSchema(objectSchema),
+    }) }),
   };
   const code = experimental_toolCaller(
     tool({ description: "Stable code tool.", inputSchema: callerSchema }),
@@ -117,12 +139,13 @@ for (const mode of ["direct", "nested"] as const) {
     },
   );
   const settings = { model, prompt: "Find the weather.", stopWhen: stepCountIs(3) };
-  const result = mode === "nested"
+  const result = nested
     ? streamText({
         ...settings,
         tools: { ...tools, code },
         experimental_toolCallers: {
           search: ["code"], getWeather: ["code"], unrelated: ["code"],
+          ...(ranking && { rainRisk: ["code"] }),
         },
       })
     : streamText({ ...settings, tools });
@@ -137,7 +160,7 @@ for (const mode of ["direct", "nested"] as const) {
     `../ui/deferred-tool-discovery/${mode}/`, import.meta.url,
   ));
   mkdirSync(dir, { recursive: true });
-  writeFileSync(dir + "scenario.json", JSON.stringify({ mode, steps }, null, 2) + "\n");
+  writeFileSync(dir + "scenario.json", JSON.stringify({ mode, steps, ranking }, null, 2) + "\n");
   writeFileSync(dir + "expected.jsonl", chunks.map(chunk => JSON.stringify(chunk)).join("\n") + "\n");
   writeFileSync(dir + "expected-requests.jsonl", requests.map(request => JSON.stringify(request)).join("\n") + "\n");
 }

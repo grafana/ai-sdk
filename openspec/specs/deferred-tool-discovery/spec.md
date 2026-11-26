@@ -8,7 +8,7 @@ Define opt-in generation-local discovery of deferred tools, including bounded ke
 
 ### Requirement: Core discovery is explicitly opted into
 
-The root package SHALL expose ToolSearch() Tool and optional Tool.DeferLoading, whose zero value retains ordinary loading. Search SHALL be an internally marked function tool; the marker SHALL survive copies, arbitrary registration names and ordinary field changes. Unbound execution SHALL error without global discovery. Deferred tools without available search SHALL remain undiscovered for new model-step calls.
+The root package SHALL expose ToolSearch(opts ...ToolSearchOption) Tool and optional Tool.DeferLoading, whose zero value retains ordinary loading. Search SHALL be an internally marked function tool; the marker SHALL survive copies, arbitrary registration names and ordinary field changes. Unbound execution SHALL error without global discovery. Deferred tools without available search SHALL remain undiscovered for new model-step calls.
 
 #### Scenario: Customized copied search
 - **WHEN** a caller copies a ToolSearch value, changes its description, and registers it under a different name
@@ -90,7 +90,7 @@ Discovery SHALL snapshot effective active registry after step overrides: omitted
 
 ### Requirement: Search ranking is deterministic and limited
 
-Search SHALL tokenize names/descriptions/queries by splitting ASCII lowercase-letter/digit followed by ASCII uppercase-letter, lowercasing and collecting Unicode letter/number runs. Deduplicated query terms SHALL score two points for name-token membership and one for description-token membership; only positive scores SHALL match.
+The default keyword ranker SHALL tokenize names/descriptions/queries by splitting ASCII lowercase-letter/digit followed by ASCII uppercase-letter, lowercasing and collecting Unicode letter/number runs. Deduplicated query terms SHALL score two points for name-token membership and one for description-token membership; only positive scores SHALL match.
 
 #### Scenario: Name score and five-result limit
 - **WHEN** one candidate matches a query term in its name and six match only their descriptions
@@ -111,11 +111,24 @@ Search SHALL tokenize names/descriptions/queries by splitting ASCII lowercase-le
 
 ### Requirement: Search result limits and tie ordering
 
-Results SHALL sort by descending score, then ascending tool name for ties, and contain at most five matches. Exactly returned names SHALL be discovered. Sorted-name ties SHALL be documented as the Go map-order adaptation to upstream stable insertion-order ties.
+The SDK SHALL use a default limit of five matches per search. An explicit limit
+SHALL be a positive Go `int` and SHALL be validated on the original registry
+before model I/O even for inactive search tools. Default keyword results SHALL
+sort by descending score, then ascending tool name for ties. Sorted-name ties
+are the Go map-order adaptation to upstream stable insertion-order ties.
+Exactly returned names SHALL be discovered.
 
 #### Scenario: Tie ordering limits discovered names
 - **WHEN** six positive-score candidates tie for five result slots
 - **THEN** ascending tool name SHALL select exactly the five returned discoveries, with this ordering documented as the Go adaptation.
+
+#### Scenario: Different caps on copied and renamed tools
+- **WHEN** a generation registers search tools with different positive limits, including copied tools under new names
+- **THEN** each search SHALL enforce its own cap without changing the other search's options or results.
+
+#### Scenario: Non-positive configured limit
+- **WHEN** a registered search has an explicit limit of zero or less, including when it is not active
+- **THEN** the SDK SHALL return a configuration error without invoking the model.
 
 ### Requirement: Descriptions resolve against the current runtime context
 
@@ -222,3 +235,31 @@ Discovery SHALL preserve UI chunk types/SSE framing. Coverage SHALL pair provide
 #### Scenario: Request evidence before and after discovery
 - **WHEN** provider-neutral request projections are captured for an exact-baseline upstream mock scenario and the matching Go scenario
 - **THEN** the evidence SHALL show undiscovered definitions absent before search, discovered schemas present only on subsequent steps, and unchanged direct prompts or stable caller definitions with next-step announcements
+
+### Requirement: Search supports caller-defined ranking
+
+A configured ranker SHALL receive the execution context, unmodified query and
+detached name-sorted catalog of eligible deferred candidates. Each entry SHALL
+contain only its name and resolved optional description. The SDK SHALL filter
+unknown, ineligible and duplicate names before limiting results in rank order.
+Returning no names SHALL NOT fall back to keyword search. Result metadata
+SHALL come from the original catalog.
+
+#### Scenario: Ranker returns more names than the cap
+- **WHEN** a ranker returns duplicates, ineligible names and more eligible names than the limit
+- **THEN** only the first eligible unique names up to the limit SHALL appear in output or activate on later steps.
+
+#### Scenario: Ranker mutates its catalog copy
+- **WHEN** a ranker changes a candidate name or description in its catalog
+- **THEN** the original eligibility and descriptions SHALL still determine output and discovery.
+
+### Requirement: Failed and canceled searches do not discover tools
+
+A ranker error SHALL use the ordinary tool execution error path and SHALL NOT
+discover any tools from that invocation. If the SDK observes cancellation
+before committing matches, the invocation SHALL NOT discover any tools. This
+does not require rolling back completed searches.
+
+#### Scenario: Ranker fails or is canceled
+- **WHEN** a ranker returns an error with names or cancellation is observed before matches are committed
+- **THEN** that invocation SHALL NOT publish any discoveries.

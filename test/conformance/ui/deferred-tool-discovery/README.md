@@ -22,6 +22,14 @@ calls, rather than injecting precomputed search results. The direct case rejects
 a premature call and executes it only on the next step; nested search keeps the
 caller definition stable and announces the discovered catalog next step.
 
+The `direct-ranked` and `nested-ranked` cases extend those lifecycle tests
+with the custom ranking and limit behavior from
+`packages/ai/src/tool-search/prepare-tool-search.test.ts` at `0e8e0543`
+(`ai@7.0.173`). The same ranked names are used in both SDKs. After invalid
+names and duplicates are skipped, the cap retains two results in callback
+order. A third eligible tool remains undiscovered. The query deliberately
+has no keyword overlap so the fixtures cannot pass using the default ranker.
+
 The message ID is fixed. Tool definitions and caller catalog names are sorted
 for the documented Go map-order adaptation; these cases have no tied scores.
 No error text, chunk fields, schemas or prompt content are normalized away.

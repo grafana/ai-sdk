@@ -198,7 +198,7 @@ type Tool struct {
 	OnInputDelta     func(inputTextDelta string, opts ToolExecutionOptions)
 	OnInputAvailable func(input json.RawMessage, opts ToolExecutionOptions)
 
-	toolSearch bool
+	toolSearch *toolSearchConfig
 }
 
 // ToolSet is a named collection of tools. Tools are keyed by name.

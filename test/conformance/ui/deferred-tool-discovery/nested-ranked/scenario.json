@@ -1,0 +1,39 @@
+{
+  "mode": "nested-ranked",
+  "steps": [
+    [
+      {
+        "id": "search",
+        "name": "code",
+        "input": {
+          "name": "search",
+          "input": {
+            "query": "meteorology"
+          }
+        }
+      }
+    ],
+    [
+      {
+        "id": "weather",
+        "name": "code",
+        "input": {
+          "name": "getWeather",
+          "input": {}
+        }
+      }
+    ],
+    []
+  ],
+  "ranking": {
+    "maxResults": 2,
+    "names": [
+      "unknown",
+      "rainRisk",
+      "rainRisk",
+      "search",
+      "getWeather",
+      "unrelated"
+    ]
+  }
+}
