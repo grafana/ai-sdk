@@ -32,7 +32,7 @@ type inputConversionContext struct {
 	configurationUpdateUnsupportedReason string
 }
 
-func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
+func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName, toolOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
 	ctx := inputConversionContext{
 		store:                   store,
 		providerOptionsName:     providerOptionsName,
@@ -46,7 +46,7 @@ func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, s
 	}
 	for _, tool := range tools {
 		if tool.Type == provider.ToolTypeFunction {
-			options, err := toolOptions(tool)
+			options, err := toolOptions(tool, toolOptionsName)
 			if err == nil && len(options.OutputSchema) > 0 && !isJSONNull(options.OutputSchema) {
 				ctx.outputSchemaToolNames[tool.Name] = struct{}{}
 			}

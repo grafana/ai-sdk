@@ -40,7 +40,7 @@ type shellNetworkPolicyArg struct {
 // prepareTools converts CallOptions tools and tool choice into the Responses
 // request, returning warnings for unsupported tools. It also records tool
 // presence flags on the buildResult for include auto-population.
-func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, caps modelCapabilities, br *buildResult) ([]provider.Warning, error) {
+func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, popts OpenAIResponsesOptions, caps modelCapabilities, br *buildResult, toolOptionsName string) ([]provider.Warning, error) {
 	var warnings []provider.Warning
 
 	if len(opts.Tools) == 0 {
@@ -54,7 +54,7 @@ func prepareTools(body *responses.ResponseNewParams, opts provider.CallOptions, 
 	for _, t := range opts.Tools {
 		switch t.Type {
 		case provider.ToolTypeFunction:
-			openaiOptions, err := toolOptions(t)
+			openaiOptions, err := toolOptions(t, toolOptionsName)
 			if err != nil {
 				return nil, err
 			}
@@ -262,12 +262,15 @@ func providerTool(t provider.Tool, caps modelCapabilities, br *buildResult) (res
 	}
 }
 
-func toolOptions(t provider.Tool) (OpenAIToolOptions, error) {
-	options, ok, err := provider.ResolveOption[OpenAIToolOptions](t.ProviderOptions, "openai")
-	if err != nil || !ok {
+func toolOptions(t provider.Tool, name string) (OpenAIToolOptions, error) {
+	options, ok, err := provider.ResolveOption[OpenAIToolOptions](t.ProviderOptions, name)
+	if err != nil {
 		return OpenAIToolOptions{}, err
 	}
-	return options, nil
+	if !ok && name != providerName {
+		options, _, err = provider.ResolveOption[OpenAIToolOptions](t.ProviderOptions, providerName)
+	}
+	return options, err
 }
 
 func webSearchTool(t provider.Tool) responses.ToolUnionParam {
@@ -391,7 +394,7 @@ func imageGenerationTool(t provider.Tool) *responses.ToolImageGenerationParam {
 }
 
 func customTool(t provider.Tool, caps modelCapabilities) (*responses.CustomToolParam, []provider.Warning, error) {
-	options, err := toolOptions(t)
+	options, err := toolOptions(t, providerName)
 	if err != nil {
 		return nil, nil, err
 	}
