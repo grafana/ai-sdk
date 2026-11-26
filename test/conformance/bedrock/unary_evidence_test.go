@@ -36,17 +36,14 @@ func TestUnaryResultEvidence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bedrock")
 			source := filepath.Join("upstream", fixture)
-			destination := filepath.Join(root, source)
-			require.NoError(t, os.MkdirAll(destination, 0o700))
-			for _, filename := range []string{"config.yaml", "input.response.json", "expected-requests.jsonl"} {
-				data, err := os.ReadFile(filepath.Join(source, filename))
+			require.NoError(t, os.CopyFS(filepath.Join(root, source), os.DirFS(source)))
+			goldenPath := filepath.Join(root, source, golden)
+			if tc.mutate == nil {
+				require.NoError(t, os.Remove(goldenPath))
+			} else {
+				data, err := os.ReadFile(goldenPath)
 				require.NoError(t, err)
-				require.NoError(t, os.WriteFile(filepath.Join(destination, filename), data, 0o600))
-			}
-			if tc.mutate != nil {
-				data, err := os.ReadFile(filepath.Join(source, golden))
-				require.NoError(t, err)
-				require.NoError(t, os.WriteFile(filepath.Join(destination, golden), tc.mutate(t, data), 0o600))
+				require.NoError(t, os.WriteFile(goldenPath, tc.mutate(t, data), 0o600))
 			}
 
 			cmd := exec.CommandContext(t.Context(), binary, "-test.v", "-test.run=^TestConformance$/^upstream$/^"+fixture+"$")
