@@ -1,18 +1,16 @@
 import React from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { OrgRole } from '@grafana/data';
 import { PluginPageProps } from '@grafana/runtime';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import NewCatalog from './NewCatalog';
-import { createModelCatalog, listProviderModels, updateModelCatalog } from '../api/modelCatalogs';
+import { createModelCatalog } from '../api/modelCatalogs';
 import { CatalogActions } from '../permissions';
 import { signInAs } from '../testUtils';
 
 jest.mock('../api/modelCatalogs', () => ({
   ...jest.requireActual('../api/modelCatalogs'),
   createModelCatalog: jest.fn(),
-  listProviderModels: jest.fn(),
-  updateModelCatalog: jest.fn(),
 }));
 
 jest.mock('@grafana/runtime', () => ({
@@ -23,16 +21,18 @@ jest.mock('@grafana/runtime', () => ({
 
 const APP = '/a/grafana-aigateway-app';
 const URL = 'https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs';
-const KEY = 'typed-provider-key';
-const OTHER_KEY = 'other-provider-key';
 const ALL = Object.values(CatalogActions);
+
+function Arrival() {
+  return <div>{useLocation().state?.checkHealthAfterCreate ? 'catalog page after create' : 'catalog page'}</div>;
+}
 
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`${APP}/catalogs/new`]}>
       <Routes>
         <Route path={`${APP}/catalogs/new`} element={<NewCatalog />} />
-        <Route path={`${APP}/catalogs/edit/:name`} element={<div>catalog page</div>} />
+        <Route path={`${APP}/catalogs/edit/:name`} element={<Arrival />} />
       </Routes>
     </MemoryRouter>
   );
@@ -42,86 +42,37 @@ function type(element: HTMLElement, value: string) {
   fireEvent.change(element, { target: { value } });
 }
 
-async function connect(provider: 'Anthropic' | 'OpenAI', key: string) {
-  fireEvent.click(screen.getByRole('button', { name: 'Connect a provider' }));
-  const dialog = within(screen.getByRole('dialog'));
-  fireEvent.click(dialog.getByRole('radio', { name: provider }));
-  type(dialog.getByLabelText(/^API key/), key);
-  fireEvent.click(dialog.getByRole('button', { name: 'Connect' }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-}
-
-async function addModel(provider: string, providerModel: string) {
-  const card = within(screen.getByRole('region', { name: provider }));
-  type(card.getByRole('textbox', { name: `Add a model to ${provider}` }), providerModel);
-  fireEvent.click(card.getByRole('button', { name: 'Add model' }));
-  await card.findByRole('listitem', { name: providerModel });
-}
-
 describe('pages/NewCatalog', () => {
   beforeEach(() => {
     jest
       .mocked(createModelCatalog)
       .mockReset()
       .mockResolvedValue({} as never);
-    jest.mocked(updateModelCatalog).mockReset();
   });
 
-  test('creates a catalog with its providers, keys and models in one request, then opens it', async () => {
+  test('creates one provider with no models, then opens the catalog for a health check', async () => {
     signInAs(OrgRole.Admin, ALL);
     renderPage();
 
     expect(screen.queryByText(new RegExp(`^${URL}`))).not.toBeInTheDocument();
     type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
     expect(screen.getByText(`${URL}/ops`)).toBeInTheDocument();
-    await connect('Anthropic', KEY);
-    expect(within(screen.getByRole('region', { name: 'anthropic' })).getByText('Key entered')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Add a model to anthropic' })).not.toBeInTheDocument();
-    expect(screen.getByText(/After saving the catalog, you can browse/)).toBeInTheDocument();
-    await addModel('anthropic', 'claude-sonnet-4-6');
-    expect(listProviderModels).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Connect a provider' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add model' })).not.toBeInTheDocument();
+    type(screen.getByLabelText(/^API key/), 'typed-key');
     expect(createModelCatalog).not.toHaveBeenCalled();
-    expect(updateModelCatalog).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
-    expect(await screen.findByText('catalog page')).toBeInTheDocument();
+    expect(await screen.findByText('catalog page after create')).toBeInTheDocument();
+    expect(createModelCatalog).toHaveBeenCalledTimes(1);
     expect(createModelCatalog).toHaveBeenCalledWith(
       'ops',
       {
         providers: { anthropic: { type: 'anthropic' } },
-        models: {
-          'claude-sonnet-4-6': {
-            name: 'claude-sonnet-4-6',
-            primary: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
-          },
-        },
+        models: {},
       },
-      { anthropic: { create: KEY } }
+      { anthropic: { create: 'typed-key' } }
     );
-  });
-
-  test('never shows an entered key, and discards the key of a removed provider', async () => {
-    signInAs(OrgRole.Admin, ALL);
-    renderPage();
-
-    type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
-    await connect('Anthropic', KEY);
-    await connect('OpenAI', OTHER_KEY);
-    await addModel('openai', 'gpt-5');
-    expect(document.body.innerHTML).not.toContain(KEY);
-    expect(document.body.innerHTML).not.toContain(OTHER_KEY);
-
-    fireEvent.click(
-      within(screen.getByRole('region', { name: 'anthropic' })).getByRole('button', { name: 'Remove anthropic' })
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'anthropic' })).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
-
-    await screen.findByText('catalog page');
-    const [, spec, secure] = jest.mocked(createModelCatalog).mock.calls[0];
-    expect(Object.keys(spec.providers)).toEqual(['openai']);
-    expect(secure).toEqual({ openai: { create: OTHER_KEY } });
   });
 
   test('checks the name as it is typed and shows the URL only for a valid one', () => {
@@ -142,30 +93,61 @@ describe('pages/NewCatalog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
     expect(await screen.findByText('Enter a name.')).toBeInTheDocument();
-    expect(screen.getByText('Connect a provider and add a model.')).toBeInTheDocument();
-    await connect('Anthropic', KEY);
+    expect(screen.getByText('Enter the API key.')).toBeInTheDocument();
+    expect(createModelCatalog).not.toHaveBeenCalled();
+  });
+
+  test('requires a custom endpoint for OpenAI-compatible', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+    type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'local');
+    fireEvent.click(screen.getByRole('radio', { name: 'OpenAI-compatible' }));
+    type(screen.getByLabelText(/^API key/), 'typed-key');
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
-    expect(await screen.findByText('Add at least one model.')).toBeInTheDocument();
+    expect(await screen.findByText('Enter the provider endpoint.')).toBeInTheDocument();
+    expect(createModelCatalog).not.toHaveBeenCalled();
+
+    type(screen.getByRole('textbox', { name: /^Provider endpoint/ }), 'https://gateway.example/v1');
+    fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
+    expect(screen.getByText('Enter the API key.')).toBeInTheDocument();
+    expect(createModelCatalog).not.toHaveBeenCalled();
+    type(screen.getByLabelText(/^API key/), 'typed-key');
+    fireEvent.click(await screen.findByRole('button', { name: 'Create catalog' }));
+    expect(await screen.findByText('catalog page after create')).toBeInTheDocument();
+    expect(createModelCatalog).toHaveBeenCalledWith(
+      'local',
+      {
+        providers: { 'openai-compatible': { type: 'openai-compatible', baseURL: 'https://gateway.example/v1' } },
+        models: {},
+      },
+      { 'openai-compatible': { create: 'typed-key' } }
+    );
+  });
+
+  test('a provider type change clears the key before saving', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    renderPage();
+    type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
+    type(screen.getByLabelText(/^API key/), 'previous-provider-key');
+    fireEvent.click(screen.getByRole('radio', { name: 'OpenAI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
+    expect(await screen.findByText('Enter the API key.')).toBeInTheDocument();
     expect(createModelCatalog).not.toHaveBeenCalled();
   });
 
   test('shows a refused create as returned and keeps the input', async () => {
-    const message =
-      'admission hook for ModelCatalog denied the request: config: alias "claude-sonnet-4-6" collides with canonical model';
+    const message = 'modelcatalogs.aigateway.ext.grafana.app "ops" already exists';
     jest.mocked(createModelCatalog).mockRejectedValue({ status: 400, data: { kind: 'Status', message } });
     signInAs(OrgRole.Admin, ALL);
     renderPage();
 
     type(screen.getByRole('textbox', { name: /^Catalog name/ }), 'ops');
-    await connect('Anthropic', KEY);
-    await addModel('anthropic', 'claude-sonnet-4-6');
+    type(screen.getByLabelText(/^API key/), 'typed-key');
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /^Catalog name/ })).toHaveValue('ops');
-    expect(screen.getByRole('listitem', { name: 'claude-sonnet-4-6' })).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent(KEY);
-    expect(screen.queryByText('catalog page')).not.toBeInTheDocument();
+    expect(screen.queryByText(/catalog page/)).not.toBeInTheDocument();
   });
 
   test('offers no catalog creation without the create action', () => {

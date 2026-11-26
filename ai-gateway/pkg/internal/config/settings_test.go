@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -83,6 +84,35 @@ func TestParseSettings_EmptyValuesSelectDefaults(t *testing.T) {
 	assert.True(t, settings.AgentObservability.TLS)
 }
 
+func TestParseSettings_CustomEndpoints(t *testing.T) {
+	t.Run("unset lists none", func(t *testing.T) {
+		settings, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
+		require.NoError(t, err)
+		assert.Equal(t, outbound.CustomEndpoints{}, settings.Endpoints)
+	})
+	t.Run("listed endpoints", func(t *testing.T) {
+		environment := baseSettingsEnvironment()
+		environment["GF_PLUGIN_CUSTOM_ENDPOINTS"] = "https://llm.corp.example/v1, http://10.20.0.5:8080"
+		settings, err := ParseSettings(mapLookup(environment))
+		require.NoError(t, err)
+		want, err := outbound.ParseCustomEndpoints("https://llm.corp.example/v1, http://10.20.0.5:8080")
+		require.NoError(t, err)
+		assert.Equal(t, want, settings.Endpoints)
+		_, err = settings.Endpoints.Check("https://llm.corp.example/v1/team", "")
+		require.NoError(t, err)
+	})
+	for _, value := range []string{"https://private-entry.example,,", "https://user:private@llm.example", "https://private-entry.example,https://private-entry.example", " "} {
+		t.Run(value, func(t *testing.T) {
+			environment := baseSettingsEnvironment()
+			environment["GF_PLUGIN_CUSTOM_ENDPOINTS"] = value
+			_, err := ParseSettings(mapLookup(environment))
+			require.Error(t, err)
+			assert.True(t, strings.HasPrefix(err.Error(), "config: GF_PLUGIN_CUSTOM_ENDPOINTS has an invalid entry: "), err.Error())
+			assert.NotContains(t, err.Error(), "private")
+		})
+	}
+}
+
 func TestParseSettings_RemovedSettingsAreIgnored(t *testing.T) {
 	want, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
 	require.NoError(t, err)
@@ -92,6 +122,9 @@ func TestParseSettings_RemovedSettingsAreIgnored(t *testing.T) {
 		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "private-value"},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "20s"},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "private-value"},
+		{env: "GF_PLUGIN_CUSTOM_ENDPOINT_ALLOW", value: "10.0.0.0/8"},
+		{env: "GF_PLUGIN_CUSTOM_ENDPOINT_DENY", value: "private-value,"},
+		{env: "GF_PLUGIN_STACK_CATALOG_EGRESS_ALLOW", value: "10.0.0.0/8"},
 	} {
 		t.Run(tc.env+"="+tc.value, func(t *testing.T) {
 			environment := baseSettingsEnvironment()

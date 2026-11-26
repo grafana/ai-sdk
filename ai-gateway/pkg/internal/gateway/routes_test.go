@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -81,7 +82,25 @@ type fakeAnthropic struct {
 func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 	t.Helper()
 	fake := &fakeAnthropic{canceled: make(chan struct{}), blocked: make(chan error, 8)}
-	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fake.server = httptest.NewServer(fake.handler())
+	t.Cleanup(fake.server.Close)
+	return fake
+}
+
+// newTLSFakeAnthropic is newFakeAnthropic over TLS on 127.0.0.1, with a
+// certificate the process trusts.
+func newTLSFakeAnthropic(t *testing.T) *fakeAnthropic {
+	t.Helper()
+	fake := &fakeAnthropic{canceled: make(chan struct{}), blocked: make(chan error, 8)}
+	fake.server = httptest.NewUnstartedServer(fake.handler())
+	fake.server.TLS = &tls.Config{Certificates: []tls.Certificate{endpointCertificate}}
+	fake.server.StartTLS()
+	t.Cleanup(fake.server.Close)
+	return fake
+}
+
+func (fake *fakeAnthropic) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fake.requests.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		fake.mu.Lock()
@@ -126,9 +145,7 @@ func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 		event("content_block_stop", `{"type":"content_block_stop","index":0}`)
 		event("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":2}}`)
 		event("message_stop", `{"type":"message_stop"}`)
-	}))
-	t.Cleanup(fake.server.Close)
-	return fake
+	})
 }
 
 func (f *fakeAnthropic) hold() chan struct{} {
@@ -257,6 +274,7 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	if options.withoutCatalog {
 		delete(env, "GF_PLUGIN_MODEL_CATALOG")
 	}
+	maps.Copy(env, options.env)
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"
 		env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = testInternalService

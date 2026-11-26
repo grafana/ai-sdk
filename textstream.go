@@ -21,7 +21,10 @@ type StreamStart struct{}
 
 func (StreamStart) textStreamPart() {}
 
-// StreamStartStep signals the beginning of a new step in the orchestration loop.
+// StreamStartStep marks the first provider part processed in a step other than
+// stream-start or a part withheld by the effective tool choice. It carries the
+// provider's stream-start warnings and the step's request metadata. A step that
+// ends before such a part is processed emits no StreamStartStep.
 type StreamStartStep struct {
 	Warnings []provider.Warning
 	Request  *provider.RequestMetadata

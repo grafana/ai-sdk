@@ -616,6 +616,13 @@ func testEffectiveToolChoiceEntry(t *testing.T, useAgent, streaming bool) {
 				assert.Equal(t, 1, errors)
 				assert.Empty(t, step.ToolApprovalRequests)
 				assert.Empty(t, step.ToolResults)
+				effective := tc.choice
+				if tc.override != nil {
+					effective = *tc.override
+				}
+				if effective.Type == provider.ToolChoiceNone {
+					assert.Empty(t, step.ToolCalls)
+				}
 			} else {
 				require.NoError(t, err)
 				assert.Zero(t, errors)

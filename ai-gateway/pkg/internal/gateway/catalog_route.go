@@ -32,8 +32,8 @@ type catalogIdentity struct {
 // is the `ModelCatalog` the route names. It stores that catalog, with its
 // decrypted values, for the selector and the lister. A missing or mismatched
 // parent is a platform defect, written as the internal host error before the
-// body is read. A parent whose spec does not decode is stored without spec
-// or keys, so its catalog fails its checks as a catalog configuration error.
+// body is read. A parent that does not decode passes an empty spec and no
+// keys, so the route's catalog checks fail.
 func parentCatalog(errors host.ErrorWriter, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		name := request.PathValue(catalogNameValue)

@@ -648,10 +648,10 @@ The suite SHALL support deterministic provider-independent core orchestration/UI
 - **THEN** Go SHALL emit the same resolved `reasoning-file` and `file` UI chunks, fields, metadata, ordering, and lifecycle chunks as the registered upstream `ai` package
 - **AND** the expected sequence SHALL be reproducible from the fixture's stream-part input and exact-baseline TypeScript generator without external network access
 
-#### Scenario: Cancellation before provider output
+#### Scenario: Cancellation before the first step part
 
-- **WHEN** context cancellation occurs after the provider stream starts but before it emits output
-- **THEN** the UI sequence SHALL end with exactly one `abort` chunk containing the cancellation reason
+- **WHEN** context cancellation occurs after `stream-start` and before any subsequent provider part is processed
+- **THEN** the UI sequence SHALL consist of `start` and a single `abort` chunk containing the cancellation reason
 - **AND** the UI finish callback SHALL report `IsAborted` as true
 
 #### Scenario: Cancellation after partial output
@@ -662,9 +662,15 @@ The suite SHALL support deterministic provider-independent core orchestration/UI
 
 #### Scenario: Provider output is pending when cancellation is observed
 
-- **WHEN** provider parts are available but cancellation is already observable before orchestration processes them
-- **THEN** the pending provider parts SHALL NOT appear in the UI sequence
-- **AND** the UI sequence SHALL end with exactly one `abort` chunk
+- **WHEN** the provider's first step parts are queued but cancellation is observable before orchestration processes them
+- **THEN** neither the pending provider parts nor `start-step` SHALL appear in the UI sequence
+- **AND** the UI sequence SHALL consist of `start` and a single `abort` chunk
+
+#### Scenario: Reproduce cancellation fixture expectations
+
+- **WHEN** the cancellation scenarios are run with a controlled mock model in the registered TypeScript `ai` package
+- **THEN** the Go UI sequence SHALL match the generated expectations
+- **AND** the fixtures SHALL document how to regenerate them without contacting a provider API
 
 #### Scenario: Core UI cases remain outside provider fixture inventory
 

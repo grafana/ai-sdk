@@ -70,7 +70,7 @@ flowchart LR
   ts --> host
   chatclient --> host
   msgclient --> host
-  admin -->|Check health or open model suggestions| host
+  admin -->|Check health after create or on request; open model suggestions| host
   host --> health
   health -->|shared catalog checks| stack
   health -->|model listings only| apis
@@ -124,8 +124,9 @@ selector builds that catalog's models for the call with `SelectStackCatalog`,
 and discovery lists it without building models. Health and the provider model
 ID field's suggestions share the same catalog checks, saved keys, bounded
 provider listing and admission, outside the model execution pipeline. Health
-reports only statuses for configured targets; suggestions use IDs from one
-saved provider without caching them.
+reports provider statuses even before models are configured, and target
+statuses only for configured primaries and fallbacks. Suggestions use IDs
+from one saved provider without caching them.
 Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has
@@ -260,7 +261,10 @@ sequenceDiagram
    a configured route. A stack-catalog selection follows the same rules over
    one stored catalog: it checks the catalog on every request, refuses
    `gateway.byok`, and constructs only the candidates its chain attempts, with
-   that catalog's keys. Every selection names its source, `operator-catalog`,
+   that catalog's keys. A stack-catalog provider or request account may use a
+   custom endpoint only when the operator's `custom_endpoints` list holds it,
+   checked as a string before any model is built. Every selection names its
+   source, `operator-catalog`,
    `stack-catalog` or `request-byok`. Invalid or unknown
    controls fail here, before any provider call. This private path refuses
    request credentials; its caller cannot switch to request accounts. See
@@ -438,10 +442,11 @@ and the verified token, not from a caller choosing a different model name:
 - **Catalog:** on a `ModelCatalog`'s routes, any verified user, service account
   or service acting alone whose token covers the namespace gets catalog access,
   whatever the `access_mode`; Grafana's declared checks decide who may invoke.
-  The selector uses only that catalog and the keys Grafana decrypted for the
-  call, checks the catalog again on every call, builds only the candidates the
-  call's chain attempts, and refuses `gateway.byok`. It never reaches the
-  configured catalog, server-held keys or request accounts.
+  A valid catalog with no models lists none and returns the unknown-model
+  error on invocation. The selector uses only that catalog and the keys Grafana
+  decrypted for the call. It checks the catalog again on every call, builds
+  only the candidates the call's chain attempts, and refuses `gateway.byok`.
+  It never reaches the configured catalog, server-held keys or request accounts.
 
 See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).

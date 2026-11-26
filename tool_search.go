@@ -62,17 +62,10 @@ func resolveToolDescription(tool Tool, runtimeContext any) *string {
 	return nil
 }
 
-func resolveToolDescriptions(tools ToolSet, runtimeContext any, active []string, activeSet bool) ToolSet {
-	var activeNames map[string]bool
-	if activeSet {
-		activeNames = make(map[string]bool, len(active))
-		for _, name := range active {
-			activeNames[name] = true
-		}
-	}
+func resolveToolDescriptions(tools ToolSet, runtimeContext any) ToolSet {
 	var resolved ToolSet
 	for name, tool := range tools {
-		if tool.DescriptionFunc == nil || (activeSet && !activeNames[name]) {
+		if tool.DescriptionFunc == nil {
 			continue
 		}
 		if resolved == nil {
@@ -139,17 +132,17 @@ func (s *toolSearchState) sharesCaller(searchName, candidateName string, active 
 }
 
 func (s *toolSearchState) prepare(tools ToolSet, active []string, activeSet bool, runtimeContext any) ToolSet {
-	if s == nil {
-		return tools
-	}
 	eligible := tools
-	if activeSet {
+	if activeSet && tools != nil {
 		eligible = make(ToolSet, len(active))
 		for _, name := range active {
 			if tool, ok := tools[name]; ok {
 				eligible[name] = tool
 			}
 		}
+	}
+	if s == nil {
+		return eligible
 	}
 	prepared := make(ToolSet, len(eligible))
 	s.mu.Lock()

@@ -3,8 +3,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -144,6 +147,76 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 		}
 		assert.Contains(t, logs, `"caller_identity":"user:private-user-uid"`)
 	})
+}
+
+func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	var probes atomic.Int32
+	var rejectKey atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probes.Add(1)
+		assert.Equal(t, "GET /v1/models", r.Method+" "+r.URL.Path)
+		assert.Equal(t, routeCatalogKey, r.Header.Get("X-Api-Key"))
+		if rejectKey.Load() {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Query().Get("after_id") == "" {
+			_, _ = io.WriteString(w, `{"data":[{"id":"ready"}],"has_more":true,"last_id":"ready"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":"next"}],"has_more":false}`)
+	}))
+	defer upstream.Close()
+	useNativeAnthropicURL(t, upstream.URL)
+	writer := h.serviceToken(t, testInternalService)
+	user := session(h.host.AddSession(types.TypeUser, "catalog-user", testNamespace))
+	postAction := func(route string) (int, string) {
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, h.catalogURL(route), nil)
+		require.NoError(t, err)
+		user(request)
+		return do(t, request)
+	}
+	assertNoModels := func() {
+		status, body := do(t, discoveryRequest(t, h.catalogURL("config"), user))
+		require.Equal(t, http.StatusOK, status, body)
+		assert.JSONEq(t, `{"models":[]}`, body)
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "public", unaryBody, false, user))
+		assert.Equal(t, http.StatusNotFound, status, body)
+		assert.Contains(t, body, `"code":"model_not_found"`)
+	}
+
+	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{},"models":{}}}`)
+	assert.Equal(t, http.StatusBadRequest, status, body)
+	assert.Contains(t, body, "at least one provider is required")
+
+	status, body = sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic"}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"}}}`)
+	require.Equal(t, http.StatusCreated, status, body)
+	status, body = sendObject(t, t.Context(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{},"models":{}},"secure":{"claude":{"remove":true}}}`)
+	assert.Equal(t, http.StatusBadRequest, status, body)
+	assert.Contains(t, body, "at least one provider is required")
+	assertNoModels()
+	status, body = postAction("available-models?provider=absent")
+	assert.Equal(t, http.StatusNotFound, status, body)
+	assert.JSONEq(t, `{"message":"provider not found in stored catalog"}`, body)
+	assert.Zero(t, probes.Load())
+	status, body = postAction("health")
+	require.Equal(t, http.StatusOK, status, body)
+	assert.JSONEq(t, `{"providers":{"claude":"ok"},"models":{}}`, body)
+	assert.EqualValues(t, 1, probes.Load(), "health stops after the first page without targets")
+	status, body = postAction("available-models?provider=claude")
+	require.Equal(t, http.StatusOK, status, body)
+	assert.JSONEq(t, `{"status":"ok","modelIds":["next","ready"]}`, body)
+	assert.EqualValues(t, 3, probes.Load(), "inventory still traverses pages")
+	rejectKey.Store(true)
+	status, body = postAction("health")
+	require.Equal(t, http.StatusOK, status, body)
+	assert.JSONEq(t, `{"providers":{"claude":"invalidKey"},"models":{}}`, body)
+	assert.EqualValues(t, 4, probes.Load())
+	assert.Zero(t, h.anthropic.requests.Load())
 }
 
 func TestCatalogRoutes_Access(t *testing.T) {
