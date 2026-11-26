@@ -1,6 +1,7 @@
 package aisdk
 
 import (
+	"encoding/json"
 	"slices"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -44,7 +45,8 @@ func WithPruneReasoning(mode PruneReasoningMode) PruneOption {
 // Zero protects no messages, a positive count protects that many trailing
 // input messages (including empty ones), and a negative count disables the rule.
 // Linked calls and results needed by the protected suffix, including by a
-// retained approval, are also protected.
+// retained approval, are also protected. A retained execution-denied result
+// with an OpenAI approval correlation also protects the linked approval.
 // Omit tool names (or pass a nil slice) to select all tools. A non-nil empty
 // slice selects no known tool names. Unresolved approvals outside the suffix
 // are pruned even with a name list. Rules run in the order supplied.
@@ -104,6 +106,8 @@ func pruneToolHistory(messages []provider.Message, rule pruneToolRule) {
 	keptApprovals := make(map[string]struct{})
 	callNames := make(map[string]string)
 	approvalCalls := make(map[string]string)
+	type denialResponseKey struct{ approvalID, callID string }
+	denialResponses := make(map[denialResponseKey]struct{})
 	for i, msg := range messages {
 		if msg.Role != provider.RoleAssistant && msg.Role != provider.RoleTool {
 			continue
@@ -115,10 +119,12 @@ func pruneToolHistory(messages []provider.Message, rule pruneToolRule) {
 				if i >= end {
 					keptCalls[part.ToolCallID] = struct{}{}
 				}
-			case provider.ContentPartTypeToolApprovalRequest:
-				approvalCalls[part.ApprovalID] = part.ToolCallID
-				fallthrough
-			case provider.ContentPartTypeToolApprovalResponse:
+			case provider.ContentPartTypeToolApprovalRequest, provider.ContentPartTypeToolApprovalResponse:
+				if part.Type == provider.ContentPartTypeToolApprovalRequest {
+					approvalCalls[part.ApprovalID] = part.ToolCallID
+				} else if msg.Role == provider.RoleTool && isProviderDenialResponse(part) {
+					denialResponses[denialResponseKey{approvalID: part.ApprovalID, callID: part.ToolCallID}] = struct{}{}
+				}
 				if i >= end {
 					keptApprovals[part.ApprovalID] = struct{}{}
 				}
@@ -131,14 +137,44 @@ func pruneToolHistory(messages []provider.Message, rule pruneToolRule) {
 		}
 	}
 
+	keepCallPart := func(part provider.ContentPart) bool {
+		_, kept := keptCalls[part.ToolCallID]
+		return kept || rule.tools != nil && !slices.Contains(rule.tools, part.ToolName)
+	}
+	denialApprovals := make(map[string]string)
+	for _, msg := range messages {
+		if msg.Role != provider.RoleTool {
+			continue
+		}
+		for _, part := range msg.Content {
+			if part.Type != provider.ContentPartTypeToolResult || part.Output == nil || part.Output.Type != provider.ToolOutputExecutionDenied || !keepCallPart(part) {
+				continue
+			}
+			id := denialApprovalID(part.Output.ProviderOptions)
+			_, exact := denialResponses[denialResponseKey{approvalID: id, callID: part.ToolCallID}]
+			_, unspecified := denialResponses[denialResponseKey{approvalID: id}]
+			if id != "" && part.ToolCallID != "" && approvalCalls[id] == part.ToolCallID && (exact || unspecified) {
+				denialApprovals[id] = part.ToolCallID
+				keptCalls[part.ToolCallID] = struct{}{}
+			}
+		}
+	}
+
 	keepPart := func(part provider.ContentPart) bool {
 		switch part.Type {
 		case provider.ContentPartTypeToolCall, provider.ContentPartTypeToolResult:
-			_, kept := keptCalls[part.ToolCallID]
-			return kept || rule.tools != nil && !slices.Contains(rule.tools, part.ToolName)
+			return keepCallPart(part)
 		case provider.ContentPartTypeToolApprovalRequest, provider.ContentPartTypeToolApprovalResponse:
 			if _, kept := keptApprovals[part.ApprovalID]; kept {
 				return true
+			}
+			if callID, kept := denialApprovals[part.ApprovalID]; kept {
+				if part.Type == provider.ContentPartTypeToolApprovalRequest && part.ToolCallID == callID {
+					return true
+				}
+				if part.Type == provider.ContentPartTypeToolApprovalResponse && isProviderDenialResponse(part) && (part.ToolCallID == "" || part.ToolCallID == callID) {
+					return true
+				}
 			}
 			call, linked := approvalCalls[part.ApprovalID]
 			name, named := callNames[call]
@@ -156,6 +192,35 @@ func pruneToolHistory(messages []provider.Message, rule pruneToolRule) {
 			msg.Content = slices.DeleteFunc(msg.Content, func(part provider.ContentPart) bool { return !keepPart(part) })
 		}
 	}
+}
+
+func isProviderDenialResponse(part provider.ContentPart) bool {
+	return part.ProviderExecuted && part.Approved != nil && !*part.Approved
+}
+
+func denialApprovalID(options provider.ProviderOptions) string {
+	opt := options[deniedApprovalCorrelationProvider]
+	if opt == nil {
+		return ""
+	}
+	var raw []byte
+	switch opt := opt.(type) {
+	case provider.RawProviderOption:
+		raw = opt.Raw
+	default:
+		var err error
+		raw, err = json.Marshal(opt)
+		if err != nil {
+			return ""
+		}
+	}
+	var correlation struct {
+		ApprovalID string `json:"approvalId"`
+	}
+	if err := json.Unmarshal(raw, &correlation); err != nil {
+		return ""
+	}
+	return correlation.ApprovalID
 }
 
 func pruneAssistantToolParts(parts []provider.ContentPart, keepPart func(provider.ContentPart) bool) []provider.ContentPart {

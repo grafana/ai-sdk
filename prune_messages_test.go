@@ -170,6 +170,86 @@ func testPruneToolHistory(t *testing.T) {
 		}
 		assert.Equal(t, []provider.Message{provider.NewAssistantMessage(keepCall), provider.NewToolMessage(keepResult)}, PruneMessages(history, WithPruneToolCalls(1)))
 	})
+	t.Run("CorrelatedDenialProtectsApproval", func(t *testing.T) {
+		nativeCall := dropCall
+		nativeCall.ProviderExecuted = true
+		nativeDenial := provider.ProviderExecutedToolApprovalResponsePart("ad", false, "no")
+		otherReq := provider.ToolApprovalRequestPart("other", "d", false)
+		otherResp := provider.ProviderExecutedToolApprovalResponsePart("other", true, "yes")
+		for _, tc := range []struct {
+			name    string
+			options provider.ProviderOptions
+		}{
+			{"matching approval", providerExecutedDenialOptions("ad")},
+			{"unrelated approval", providerExecutedDenialOptions("ak")},
+			{"unknown approval", providerExecutedDenialOptions("missing")},
+			{"unmarked denial", nil},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				denial := provider.ToolResultPart("d", "drop", &provider.ToolResultOutput{
+					Type: provider.ToolOutputExecutionDenied, ProviderOptions: tc.options,
+				})
+				results := provider.NewToolMessage(denial, keepResult)
+				history := []provider.Message{
+					provider.NewAssistantMessage(nativeCall, dropReq, otherReq, keepCall, keepReq),
+					provider.NewToolMessage(nativeDenial, otherResp, keepResp),
+					results,
+				}
+				want := []provider.Message{provider.NewAssistantMessage(nativeCall, keepCall), results}
+				if tc.name == "matching approval" {
+					want = []provider.Message{
+						provider.NewAssistantMessage(nativeCall, dropReq, keepCall),
+						provider.NewToolMessage(nativeDenial),
+						results,
+					}
+				}
+				assert.Equal(t, want, PruneMessages(history, WithPruneToolCalls(1)))
+				assert.Empty(t, PruneMessages(history, WithPruneToolCalls(0)))
+			})
+		}
+	})
+	t.Run("CorrelatedDenialWithResultAlias", func(t *testing.T) {
+		nativeCall := dropCall
+		nativeCall.ProviderExecuted = true
+		denial := provider.ToolResultPart("d", "alias", &provider.ToolResultOutput{
+			Type: provider.ToolOutputExecutionDenied, ProviderOptions: providerExecutedDenialOptions("ad"),
+		})
+		response := provider.ProviderExecutedToolApprovalResponsePart("ad", false, "no")
+		response.ToolCallID = nativeCall.ToolCallID
+		history := []provider.Message{
+			provider.NewAssistantMessage(nativeCall, dropReq),
+			provider.NewToolMessage(response),
+			provider.NewToolMessage(denial),
+		}
+		assert.Equal(t, history, PruneMessages(history, WithPruneToolCalls(0, "drop")))
+	})
+	t.Run("CorrelatedDenialDoesNotProtectConflictingDecision", func(t *testing.T) {
+		nativeCall := dropCall
+		nativeCall.ProviderExecuted = true
+		denial := provider.ToolResultPart("d", "drop", &provider.ToolResultOutput{
+			Type: provider.ToolOutputExecutionDenied, ProviderOptions: providerExecutedDenialOptions("ad"),
+		})
+		for _, tc := range []struct {
+			name     string
+			callID   string
+			approved bool
+		}{
+			{name: "conflicting call", callID: "k"},
+			{name: "approved decision", callID: "d", approved: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				decision := provider.ProviderExecutedToolApprovalResponsePart("ad", tc.approved, "")
+				decision.ToolCallID = tc.callID
+				result := provider.NewToolMessage(denial)
+				history := []provider.Message{
+					provider.NewAssistantMessage(nativeCall, dropReq),
+					provider.NewToolMessage(decision),
+					result,
+				}
+				assert.Equal(t, []provider.Message{provider.NewAssistantMessage(nativeCall), result}, PruneMessages(history, WithPruneToolCalls(1)))
+			})
+		}
+	})
 	t.Run("SuffixCountsBeforeRemovingEmpties", func(t *testing.T) {
 		history := []provider.Message{provider.NewAssistantMessage(keepCall), provider.NewToolMessage(keepResult), provider.NewToolMessage(unresolved), user}
 		assert.Equal(t, []provider.Message{user}, PruneMessages(history, WithPruneToolCalls(0, "drop"), WithPruneToolCalls(2, "keep")))

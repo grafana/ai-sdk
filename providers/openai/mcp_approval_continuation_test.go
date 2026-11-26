@@ -21,8 +21,28 @@ var mcpApprovalRequestEvents = []string{
 }
 
 func TestMCPApprovalDenial_CoreContinuation(t *testing.T) {
-	for _, mode := range []string{"generate", "stream"} {
-		t.Run(mode, func(t *testing.T) {
+	denied := provider.ProviderExecutedToolApprovalResponsePart("appr_1", false, "not allowed")
+	conflict := denied
+	conflict.ToolCallID = "different-call"
+	approved := provider.ProviderExecutedToolApprovalResponsePart("appr_1", true, "")
+	for _, tc := range []struct {
+		name            string
+		generate        bool
+		typed           bool
+		thirdDecisions  []provider.ContentPart
+		omitThirdDenial bool
+	}{
+		{name: "generate", generate: true},
+		{name: "generate typed denial options", generate: true, typed: true},
+		{name: "generate raw conflict first", generate: true, thirdDecisions: []provider.ContentPart{conflict, denied}},
+		{name: "generate raw conflict last", generate: true, thirdDecisions: []provider.ContentPart{denied, conflict}},
+		{name: "generate typed conflict first", generate: true, typed: true, thirdDecisions: []provider.ContentPart{conflict, denied}},
+		{name: "generate typed conflict last", generate: true, typed: true, thirdDecisions: []provider.ContentPart{denied, conflict}},
+		{name: "generate conflict alone", generate: true, thirdDecisions: []provider.ContentPart{conflict}, omitThirdDenial: true},
+		{name: "generate approval alone", generate: true, thirdDecisions: []provider.ContentPart{approved}, omitThirdDenial: true},
+		{name: "stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			var bodies []map[string]any
 			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				raw, err := io.ReadAll(r.Body)
@@ -39,7 +59,7 @@ func TestMCPApprovalDenial_CoreContinuation(t *testing.T) {
 			model := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
 			run := func(messages []provider.Message) []provider.Message {
 				t.Helper()
-				if mode == "generate" {
+				if tc.generate {
 					result, err := aisdk.GenerateText(t.Context(), model, aisdk.WithModelMessages(messages...))
 					require.NoError(t, err)
 					return result.ResponseMessages
@@ -60,7 +80,7 @@ func TestMCPApprovalDenial_CoreContinuation(t *testing.T) {
 				}
 			}
 			require.NotEmpty(t, toolCallID)
-			history = append(history, provider.NewToolMessage(provider.ProviderExecutedToolApprovalResponsePart("appr_1", false, "not allowed")))
+			history = append(history, provider.NewToolMessage(denied))
 
 			resumed := run(history)
 
@@ -72,21 +92,43 @@ func TestMCPApprovalDenial_CoreContinuation(t *testing.T) {
 					}
 				}
 			}
-			if mode == "generate" {
+			if tc.generate {
 				require.Len(t, denials, 1)
 				assert.Equal(t, toolCallID, denials[0].ToolCallID)
 				assert.Equal(t, "mcp.do_thing", denials[0].ToolName)
 				assert.Equal(t, "appr_1", openAIPartOptionsFor(denials[0].Output.ProviderOptions, "openai").ApprovalID)
+				if tc.typed {
+					denials[0].Output.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ApprovalID: "appr_1"})
+				}
 			} else {
 				assert.Empty(t, denials)
 			}
 
+			if tc.thirdDecisions != nil {
+				history[len(history)-1] = provider.NewToolMessage(tc.thirdDecisions...)
+			}
 			history = append(history, resumed...)
 			history = append(history, provider.UserText("next turn"))
+			if tc.generate {
+				history = aisdk.PruneMessages(history, aisdk.WithPruneToolCalls(len(resumed)+1))
+				var decisions []provider.ContentPart
+				for _, msg := range history {
+					for _, part := range msg.Content {
+						if part.Type == provider.ContentPartTypeToolApprovalResponse {
+							decisions = append(decisions, part)
+						}
+					}
+				}
+				if tc.omitThirdDenial {
+					assert.Empty(t, decisions)
+				} else {
+					assert.Equal(t, []provider.ContentPart{denied}, decisions)
+				}
+			}
 			run(history)
 
 			require.Len(t, bodies, 3)
-			for _, body := range bodies[1:] {
+			for i, body := range bodies[1:] {
 				var approvalResponses []any
 				for _, item := range body["input"].([]any) {
 					entry := item.(map[string]any)
@@ -95,7 +137,11 @@ func TestMCPApprovalDenial_CoreContinuation(t *testing.T) {
 						approvalResponses = append(approvalResponses, entry)
 					}
 				}
-				assert.Equal(t, []any{map[string]any{"type": "mcp_approval_response", "approval_request_id": "appr_1", "approve": false}}, approvalResponses)
+				if i == 1 && tc.omitThirdDenial {
+					assert.Empty(t, approvalResponses)
+				} else {
+					assert.Equal(t, []any{map[string]any{"type": "mcp_approval_response", "approval_request_id": "appr_1", "approve": false}}, approvalResponses)
+				}
 			}
 		})
 	}

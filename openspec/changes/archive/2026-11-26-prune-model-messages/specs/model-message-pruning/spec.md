@@ -37,6 +37,11 @@ Tool pruning SHALL apply rules in caller order to assistant and tool messages. A
 - **THEN** associated calls and results earlier in history SHALL be retained
 - **AND** an approval request or response in the suffix SHALL also protect earlier parts carrying that approval ID and earlier calls and results for the originating call
 
+#### Scenario: A retained OpenAI denial carries an approval correlation
+- **WHEN** a retained tool-role `execution-denied` result carries `providerOptions.openai.approvalId` on its output and that ID identifies a request and provider-executed denial response for the same call
+- **THEN** the matching approval request, denial response, and originating call SHALL also be retained so that the OpenAI adapter can send the denial
+- **AND** a response whose explicit call ID conflicts with the originating call SHALL NOT be retained by this exception
+
 ### Requirement: Tool pruning preserves related reasoning runs
 A tool rule SHALL prune a contiguous group of assistant reasoning text and files if at least one non-reasoning part follows it and the rule removes every part before the next reasoning group or the end of the message.
 
