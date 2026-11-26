@@ -60,6 +60,14 @@ function parseUIResponse(response: Response, chunks?: UIMessageChunk[]) {
   }));
 }
 
+async function readContinuation(stream: ReadableStream<UIMessageChunk>, initial: UIMessage) {
+  let latest: UIMessage | undefined;
+  for await (const message of readUIMessageStream({ stream, message: structuredClone(initial), terminateOnError: true })) {
+    latest = message;
+  }
+  return latest;
+}
+
 const messages: UIMessage[] = [
   { id: "u", role: "user", parts: [
     { type: "text", text: "Question" },
@@ -100,21 +108,15 @@ describe.each(["create", "write"] as const)("Agent UI data conversion (%s)", hel
     const target = write
       ? parseUIResponse(await createAgentUIStreamResponse(options))
       : await createAgentUIStream(options);
-    let expected: UIMessage | undefined;
     const initial = messages.at(-1)!;
-    for await (const message of readUIMessageStream({ stream: target, message: structuredClone(initial), terminateOnError: true })) {
-      expected = message;
-    }
+    const expected = await readContinuation(target, initial);
     expect(model.doStreamCalls).toHaveLength(1);
     const prompt = JSON.parse(JSON.stringify(model.doStreamCalls[0].prompt));
     expect(prompt).toEqual(convert ? convertedPrompt : plainPrompt);
 
-    let assembled: UIMessage | undefined;
     const chunks: UIMessageChunk[] = [];
     const go = parseUIResponse(await goResponse(messages, write, convert), chunks);
-    for await (const message of readUIMessageStream({ stream: go, message: structuredClone(initial), terminateOnError: true })) {
-      assembled = message;
-    }
+    const assembled = await readContinuation(go, initial);
     expect(chunks[0]).toMatchObject({ type: "start", messageId: "a" });
     expect(assembled?.metadata).toEqual({ prompt, providerCalls: 1 });
     expect(assembled?.id).toBe(expected?.id);
