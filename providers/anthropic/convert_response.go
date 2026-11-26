@@ -50,6 +50,20 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			content = append(content, provider.GenerateContentPart{
 				Type: provider.ContentCustom, Kind: anthropicContainerUploadKind, ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata},
 			})
+		case "compaction":
+			compaction := block.AsCompaction()
+			if compaction.Content == "" {
+				continue
+			}
+			metadata, err := compactionMetadata(compaction)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{
+				Type:             provider.ContentText,
+				Text:             compaction.Content,
+				ProviderMetadata: metadata,
+			})
 		case "text":
 			if i >= textStart {
 				var rawCitations []json.RawMessage

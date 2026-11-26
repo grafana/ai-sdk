@@ -12,17 +12,18 @@ import (
 )
 
 type blockState struct {
-	blockType        string
-	toolCallID       string
-	toolName         string
-	accumulatedInput string
-	providerExecuted bool
-	callerType       string
-	callerToolID     string
-	firstDelta       bool
-	providerToolName string
-	citations        []json.RawMessage
-	heldBackText     *strings.Builder
+	blockType          string
+	toolCallID         string
+	toolName           string
+	accumulatedInput   string
+	providerExecuted   bool
+	callerType         string
+	callerToolID       string
+	firstDelta         bool
+	providerToolName   string
+	citations          []json.RawMessage
+	heldBackText       *strings.Builder
+	compactionComplete bool
 }
 
 type heldBackTextBlock struct {
@@ -240,13 +241,18 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			meta := provider.ProviderMetadata{"anthropic": metaJSON}
 			ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: blockID(idx), ProviderMetadata: meta}
 		case "compaction":
-			a.blocks[idx] = &blockState{blockType: "text"}
-			metaJSON, err := json.Marshal(map[string]string{"type": "compaction"})
+			compaction := cb.AsCompaction()
+			metadata, err := compactionMetadata(compaction)
 			if err != nil {
-				return fmt.Errorf("marshaling compaction metadata: %w", err)
+				return err
 			}
-			meta := provider.ProviderMetadata{"anthropic": metaJSON}
-			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: blockID(idx), ProviderMetadata: meta}
+			complete := compaction.JSON.Signature.Valid() && compaction.Content != ""
+			a.blocks[idx] = &blockState{blockType: "text", compactionComplete: complete}
+			id := blockID(idx)
+			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: id, ProviderMetadata: metadata}
+			if complete {
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: id, Delta: compaction.Content}
+			}
 		case "tool_use":
 			if a.usesJsonResponseTool && cb.Name == jsonResponseToolName {
 				a.isJsonResponseFromTool = true
@@ -401,6 +407,9 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		}
 		switch delta.Type {
 		case "text_delta":
+			if bs.compactionComplete {
+				return nil
+			}
 			if bs.heldBackText != nil {
 				bs.heldBackText.WriteString(delta.Text)
 				return nil
@@ -430,7 +439,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 				}
 			}
 		case "compaction_delta":
-			if delta.Content != "" {
+			if !bs.compactionComplete && delta.Content != "" {
 				ch <- provider.StreamPart{
 					Type:  provider.PartTextDelta,
 					ID:    blockID(idx),
