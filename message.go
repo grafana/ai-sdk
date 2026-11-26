@@ -79,7 +79,7 @@ func (ReasoningPart) PartType() string { return string(UIPartReasoning) }
 // is unset while a request is pending and set true/false once the user
 // responds.
 type ToolApproval struct {
-	ID       string `json:"id,omitempty"`
+	ID       string `json:"id"`
 	Approved *bool  `json:"approved,omitempty"`
 	// Descriptor retains opaque approval request data, including JSON null.
 	Descriptor json.RawMessage `json:"descriptor,omitempty"`

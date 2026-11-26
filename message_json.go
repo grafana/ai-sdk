@@ -4,19 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/grafana/ai-sdk/provider"
 )
 
 var _ json.Marshaler = UIMessage{}
 
 type uiMessageJSON struct {
-	ID       string            `json:"id"`
-	Role     Role              `json:"role"`
+	ID       *string           `json:"id"`
+	Role     *Role             `json:"role"`
 	Parts    []json.RawMessage `json:"parts"`
 	Metadata json.RawMessage   `json:"metadata,omitempty"`
-}
-
-type partEnvelope struct {
-	Type string `json:"type"`
 }
 
 func (m UIMessage) MarshalJSON() ([]byte, error) {
@@ -29,8 +27,8 @@ func (m UIMessage) MarshalJSON() ([]byte, error) {
 		parts[i] = b
 	}
 	return json.Marshal(uiMessageJSON{
-		ID:       m.ID,
-		Role:     m.Role,
+		ID:       &m.ID,
+		Role:     &m.Role,
 		Parts:    parts,
 		Metadata: m.Metadata,
 	})
@@ -108,18 +106,76 @@ func (m *UIMessage) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	m.ID = raw.ID
-	m.Role = raw.Role
-	m.Metadata = raw.Metadata
-	m.Parts = make([]Part, len(raw.Parts))
+	if raw.ID == nil {
+		return missingUIField("id")
+	}
+	if raw.Role == nil {
+		return missingUIField("role")
+	}
+	if raw.Parts == nil {
+		return missingUIField("parts")
+	}
+	parts := make([]Part, len(raw.Parts))
 	for i, partData := range raw.Parts {
 		p, err := unmarshalPart(partData)
 		if err != nil {
 			return fmt.Errorf("unmarshaling part %d: %w", i, err)
 		}
-		m.Parts[i] = p
+		parts[i] = p
+	}
+	*m = UIMessage{ID: *raw.ID, Role: *raw.Role, Metadata: raw.Metadata, Parts: parts}
+	return nil
+}
+
+type partEnvelope struct {
+	Type       *UIPartType     `json:"type"`
+	Text       nonNullUIField  `json:"text"`
+	Citations  json.RawMessage `json:"citations"`
+	Kind       nonNullUIField  `json:"kind"`
+	MediaType  nonNullUIField  `json:"mediaType"`
+	URL        nonNullUIField  `json:"url"`
+	SourceID   nonNullUIField  `json:"sourceId"`
+	Title      nonNullUIField  `json:"title"`
+	ToolCallID nonNullUIField  `json:"toolCallId"`
+	ToolName   nonNullUIField  `json:"toolName"`
+	State      nonNullUIField  `json:"state"`
+	Approval   json.RawMessage `json:"approval"`
+}
+
+type nonNullUIField bool
+
+func (present *nonNullUIField) UnmarshalJSON(data []byte) error {
+	*present = nonNullUIField(!isJSONNull(data))
+	return nil
+}
+
+type uiRequiredField struct {
+	name    string
+	present nonNullUIField
+}
+
+func missingUIField(name string) error {
+	return fmt.Errorf("aisdk: missing or null required UI field %q", name)
+}
+
+func requireUIFields(fields ...uiRequiredField) error {
+	for _, field := range fields {
+		if !field.present {
+			return missingUIField(field.name)
+		}
 	}
 	return nil
+}
+
+func decodeUIValue[T Part](data json.RawMessage, fields ...uiRequiredField) (T, error) {
+	var part T
+	if err := requireUIFields(fields...); err != nil {
+		return part, err
+	}
+	if err := json.Unmarshal(data, &part); err != nil {
+		return part, err
+	}
+	return part, nil
 }
 
 func unmarshalPart(data json.RawMessage) (Part, error) {
@@ -127,94 +183,155 @@ func unmarshalPart(data json.RawMessage) (Part, error) {
 	if err := json.Unmarshal(data, &env); err != nil {
 		return nil, err
 	}
+	if env.Type == nil {
+		return nil, missingUIField("type")
+	}
+	if *env.Type == "" {
+		return nil, fmt.Errorf("aisdk: UI part type must not be empty")
+	}
 
-	partType := UIPartType(env.Type)
-
-	switch {
-	case partType == UIPartText:
-		var p TextPart
-		if err := json.Unmarshal(data, &p); err != nil {
+	switch *env.Type {
+	case UIPartText:
+		p, err := decodeUIValue[TextPart](data, uiRequiredField{"text", env.Text})
+		if err != nil {
+			return nil, err
+		}
+		if err := requireUICitationFields(env.Citations); err != nil {
 			return nil, err
 		}
 		return p, nil
-
-	case partType == UIPartReasoning:
-		var p ReasoningPart
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
-
-	case partType == UIPartFile:
-		var p FilePart
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
-
-	case partType == UIPartReasoningFile:
-		var p ReasoningFilePart
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
-
-	case partType == UIPartSourceURL:
-		var p SourceURLPart
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
-
-	case partType == UIPartSourceDocument:
-		var p SourceDocumentPart
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
-
-	case partType == UIPartCustom:
-		var p CustomPart
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
-
-	case partType == UIPartStepStart:
+	case UIPartReasoning:
+		return decodeUIValue[ReasoningPart](data, uiRequiredField{"text", env.Text})
+	case UIPartFile:
+		return decodeUIValue[FilePart](data, uiRequiredField{"mediaType", env.MediaType}, uiRequiredField{"url", env.URL})
+	case UIPartReasoningFile:
+		return decodeUIValue[ReasoningFilePart](data, uiRequiredField{"mediaType", env.MediaType}, uiRequiredField{"url", env.URL})
+	case UIPartSourceURL:
+		return decodeUIValue[SourceURLPart](data, uiRequiredField{"sourceId", env.SourceID}, uiRequiredField{"url", env.URL})
+	case UIPartSourceDocument:
+		return decodeUIValue[SourceDocumentPart](data, uiRequiredField{"sourceId", env.SourceID}, uiRequiredField{"mediaType", env.MediaType}, uiRequiredField{"title", env.Title})
+	case UIPartCustom:
+		return decodeUIValue[CustomPart](data, uiRequiredField{"kind", env.Kind})
+	case UIPartStepStart:
 		return StepStartPart{}, nil
-
-	case partType == UIPartDynamicTool:
-		var p DynamicToolUIPart
-		if err := json.Unmarshal(data, &p); err != nil {
+	case UIPartDynamicTool:
+		p, err := decodeUIValue[DynamicToolUIPart](data, uiRequiredField{"toolName", env.ToolName})
+		if err != nil {
 			return nil, err
 		}
-		return p, nil
+		return p, requireUIToolFields(env, toolPartFields(p))
+	}
 
-	case strings.HasPrefix(env.Type, "tool-"):
-		toolName := strings.TrimPrefix(env.Type, "tool-")
-		var p ToolInvocationPart
-		if err := json.Unmarshal(data, &p); err != nil {
+	typeName := string(*env.Type)
+	if toolName, ok := strings.CutPrefix(typeName, "tool-"); ok {
+		p, err := decodeUIValue[ToolInvocationPart](data)
+		if err != nil {
 			return nil, err
 		}
 		if p.ToolName == "" {
 			p.ToolName = toolName
 		} else if p.ToolName != toolName {
-			return nil, fmt.Errorf("tool type prefix %q conflicts with toolName field %q", env.Type, p.ToolName)
+			return nil, fmt.Errorf("tool type prefix %q conflicts with toolName field %q", typeName, p.ToolName)
 		}
-		return p, nil
-
-	case strings.HasPrefix(env.Type, "data-"):
-		dataName := strings.TrimPrefix(env.Type, "data-")
+		return p, requireUIToolFields(env, toolPartFields(p))
+	}
+	if dataName, ok := strings.CutPrefix(typeName, "data-"); ok {
 		var p DataPart
 		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, err
 		}
+		if p.Data == nil {
+			return nil, missingUIField("data")
+		}
 		p.DataName = dataName
 		return p, nil
-
-	default:
-		return rawPart{Type_: env.Type, Raw: data}, nil
 	}
+	return rawPart{Type_: typeName, Raw: data}, nil
+}
+
+func requireUICitationFields(raw json.RawMessage) error {
+	if raw == nil {
+		return nil
+	}
+	var citations []struct {
+		Source *struct {
+			Type       *provider.ContentPartType `json:"type"`
+			SourceType *provider.SourceType      `json:"sourceType"`
+			ID         nonNullUIField            `json:"id"`
+			URL        nonNullUIField            `json:"url"`
+			MediaType  nonNullUIField            `json:"mediaType"`
+			Title      nonNullUIField            `json:"title"`
+		} `json:"source"`
+	}
+	if err := json.Unmarshal(raw, &citations); err != nil {
+		return err
+	}
+	for i, citation := range citations {
+		source := citation.Source
+		if source == nil {
+			return fmt.Errorf("citation %d: %w", i, missingUIField("source"))
+		}
+		if source.Type == nil {
+			return fmt.Errorf("citation %d: %w", i, missingUIField("source.type"))
+		}
+		if *source.Type != provider.ContentPartTypeSource {
+			return fmt.Errorf("citation %d: invalid source.type, expected %q", i, provider.ContentPartTypeSource)
+		}
+		if source.SourceType == nil {
+			return fmt.Errorf("citation %d: %w", i, missingUIField("source.sourceType"))
+		}
+		fields := []uiRequiredField{{"source.id", source.ID}}
+		switch *source.SourceType {
+		case provider.SourceTypeURL:
+			fields = append(fields, uiRequiredField{"source.url", source.URL})
+		case provider.SourceTypeDocument:
+			fields = append(fields, uiRequiredField{"source.mediaType", source.MediaType}, uiRequiredField{"source.title", source.Title})
+		}
+		if err := requireUIFields(fields...); err != nil {
+			return fmt.Errorf("citation %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func requireUIToolFields(env partEnvelope, p toolPartFields) error {
+	if err := requireUIFields(uiRequiredField{"toolCallId", env.ToolCallID}, uiRequiredField{"state", env.State}); err != nil {
+		return err
+	}
+	if toolInvocationStateRequiresInput(p.State) && p.Input == nil {
+		return missingUIField("input")
+	}
+	switch p.State {
+	case ToolStateOutputAvailable:
+		if p.Output == nil {
+			return missingUIField("output")
+		}
+	case ToolStateOutputError:
+		if p.ErrorText == nil {
+			return missingUIField("errorText")
+		}
+	case ToolStateApprovalRequested, ToolStateApprovalResponded, ToolStateOutputDenied:
+		if p.Approval == nil {
+			return missingUIField("approval")
+		}
+	default:
+		return nil
+	}
+	if p.Approval != nil {
+		var approval struct {
+			ID *string `json:"id"`
+		}
+		if err := json.Unmarshal(env.Approval, &approval); err != nil {
+			return err
+		}
+		if approval.ID == nil {
+			return missingUIField("approval.id")
+		}
+		if p.State != ToolStateApprovalRequested && p.Approval.Approved == nil {
+			return missingUIField("approval.approved")
+		}
+	}
+	return nil
 }
 
 type rawPart struct {

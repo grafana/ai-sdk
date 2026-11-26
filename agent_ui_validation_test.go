@@ -54,6 +54,8 @@ func TestValidateAgentUIMessages_Structure(t *testing.T) {
 		fields toolPartFields
 	}{
 		{"missing error", toolPartFields{State: ToolStateOutputError}},
+		{"missing denied approval", toolPartFields{State: ToolStateOutputDenied, Input: json.RawMessage(`null`)}},
+		{"empty approval ID", toolPartFields{State: ToolStateApprovalRequested, Input: json.RawMessage(`null`), Approval: &ToolApproval{}}},
 		{"unknown state", toolPartFields{State: ToolInvocationState("future")}},
 		{"forbidden output", toolPartFields{State: ToolStateInputAvailable, Input: json.RawMessage(`{}`), Output: json.RawMessage(`null`)}},
 		{"forbidden error", toolPartFields{State: ToolStateOutputAvailable, Input: json.RawMessage(`{}`), Output: json.RawMessage(`null`), ErrorText: new("")}},
@@ -387,8 +389,6 @@ func TestCreateAgentUIStream_PersistedValidation(t *testing.T) {
 		{"failed input normalized", `"state":"output-error","input":{"q":1},"errorText":""`, true},
 		{"legacy error", `"state":"output-error","rawInput":"legacy","errorText":""`, true},
 		{"contradictory output", `"state":"input-available","input":{"q":"x"},"output":"bad"`, false},
-		{"missing error", `"state":"output-error"`, false},
-		{"denied missing approval", `"state":"output-denied","input":{"q":"x"}`, false},
 		{"denied wrong approval", `"state":"output-denied","input":{"q":"x"},"approval":{"id":"a","approved":true}`, false},
 		{"valid denied", `"state":"output-denied","input":{"q":"x"},"approval":{"id":"a","approved":false,"reason":""}`, true},
 		{"unknown terminal normalized", `"state":"output-available","input":{},"output":1,"toolName":"missing","type":"tool-missing"`, true},
