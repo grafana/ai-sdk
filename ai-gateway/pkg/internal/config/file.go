@@ -115,22 +115,15 @@ func ParseModelCatalog(document string) (File, error) {
 
 // Validate validates an operator catalog: its shape and each provider's
 // apiKeyEnv reference.
-func (file File) Validate() error { return file.validate(requireAPIKeyEnv) }
+func (file File) Validate() error { return file.validate(true) }
 
 // ValidateShape validates provider types and fields, provider references,
 // model routes and their skills and server fallback policies, public IDs,
-// aliases and discovery bounds, without checking where provider keys come
-// from.
-func (file File) ValidateShape() error { return file.validate(nil) }
+// aliases and discovery bounds, without requiring models or an apiKeyEnv
+// reference.
+func (file File) ValidateShape() error { return file.validate(false) }
 
-func requireAPIKeyEnv(name string, provider Provider) error {
-	if strings.TrimSpace(provider.APIKeyEnv) == "" {
-		return fmt.Errorf("config: providers.%s.apiKeyEnv is required", name)
-	}
-	return nil
-}
-
-func (file File) validate(checkKey func(name string, provider Provider) error) error {
+func (file File) validate(operator bool) error {
 	if len(file.Providers) == 0 {
 		return fmt.Errorf("config: at least one provider is required")
 	}
@@ -166,13 +159,11 @@ func (file File) validate(checkKey func(name string, provider Provider) error) e
 		default:
 			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic, openai or openai-compatible)", name, provider.Type)
 		}
-		if checkKey != nil {
-			if err := checkKey(name, provider); err != nil {
-				return err
-			}
+		if operator && strings.TrimSpace(provider.APIKeyEnv) == "" {
+			return fmt.Errorf("config: providers.%s.apiKeyEnv is required", name)
 		}
 	}
-	if len(file.Models) == 0 {
+	if operator && len(file.Models) == 0 {
 		return fmt.Errorf("config: at least one model is required")
 	}
 	rowCount := 0

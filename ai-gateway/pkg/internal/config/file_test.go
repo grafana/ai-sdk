@@ -358,6 +358,13 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 	})
 }
 
+func TestParseModelCatalog_RequiresProvidersAndModels(t *testing.T) {
+	_, err := ParseModelCatalog("providers: {}\nmodels: {}\n")
+	assert.EqualError(t, err, "config: at least one provider is required")
+	_, err = ParseModelCatalog("providers:\n  claude: {type: anthropic, apiKeyEnv: EXAMPLE_KEY}\nmodels: {}\n")
+	assert.EqualError(t, err, "config: at least one model is required")
+}
+
 func TestFileValidateShape(t *testing.T) {
 	withoutKey := func(file File) File {
 		file.Providers = map[string]Provider{"provider": {Type: "anthropic"}}
@@ -371,7 +378,6 @@ func TestFileValidateShape(t *testing.T) {
 		{name: "no key reference", mutate: func(*File) {}},
 		{name: "no providers", mutate: func(file *File) { file.Providers = nil }, wantErr: "config: at least one provider is required"},
 		{name: "unsupported type", mutate: func(file *File) { file.Providers["provider"] = Provider{Type: "unsupported"} }, wantErr: `config: providers.provider.type "unsupported" is unsupported (want anthropic, openai or openai-compatible)`},
-		{name: "no models", mutate: func(file *File) { file.Models = nil }, wantErr: "config: at least one model is required"},
 		{name: "missing name", mutate: func(file *File) {
 			model := file.Models["canonical"]
 			model.Name = ""

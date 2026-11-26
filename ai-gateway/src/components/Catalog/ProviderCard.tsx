@@ -9,23 +9,14 @@ import { fieldErrors, providerTypeLabel, targetLabel } from './catalogSpec';
 import { useFieldErrors } from './useFieldErrors';
 import { Model, Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
 
-/** KeyState is a key notice: entered for a draft provider or missing. */
-export type KeyState = 'entered' | 'missing';
-
-const KEY_BADGES: Record<KeyState, { text: string; color: 'blue' | 'orange' }> = {
-  entered: { text: 'Key entered', color: 'blue' },
-  missing: { text: 'No key', color: 'orange' },
-};
-
 interface Props {
   name: string;
   provider: Provider;
   models: Array<[string, Model]>;
-  keyState?: KeyState;
+  hasKey: boolean;
   health?: CatalogHealth;
   readOnly: boolean;
   removeBlocked?: string;
-  lastModel: boolean;
   onOpenModel: (id: string) => void;
   onRemoveModel: (id: string) => void;
   listingRevision?: string;
@@ -41,10 +32,9 @@ interface Props {
  * a writer add a model by its provider model ID alone.
  */
 export function ProviderCard(props: Props) {
-  const { name, provider, models, keyState, health, readOnly, removeBlocked, lastModel } = props;
+  const { name, provider, models, hasKey, health, readOnly, removeBlocked } = props;
   const s = useStyles2(getStyles);
   const label = providerTypeLabel(provider.type);
-  const badge = keyState && KEY_BADGES[keyState];
 
   return (
     <section className={s.card} aria-label={name}>
@@ -54,7 +44,7 @@ export function ProviderCard(props: Props) {
             {label}
           </Text>
           {name !== provider.type && <code className={s.name}>{name}</code>}
-          {badge && <Badge text={badge.text} icon="lock" color={badge.color} />}
+          {!hasKey && <Badge text="No key" icon="lock" color="orange" />}
           <CatalogHealthBadge status={health?.providers[name]} />
         </Stack>
         {!readOnly && (
@@ -103,14 +93,7 @@ export function ProviderCard(props: Props) {
                 </Text>
               )}
             </div>
-            {!readOnly && (
-              <IconButton
-                name="times"
-                tooltip={lastModel ? 'A catalog needs at least one model' : `Remove ${id}`}
-                disabled={lastModel}
-                onClick={() => props.onRemoveModel(id)}
-              />
-            )}
+            {!readOnly && <IconButton name="times" tooltip={`Remove ${id}`} onClick={() => props.onRemoveModel(id)} />}
           </li>
         ))}
       </ul>

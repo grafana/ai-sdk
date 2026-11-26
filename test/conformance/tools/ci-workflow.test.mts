@@ -663,8 +663,10 @@ describe("candidate-source workflow gates", () => {
       'go build -race -mod=readonly -o "$output/gateway" ./pkg',
       'go build -race -mod=readonly -o "$output/plugin-host" ./test/platformhost/cmd/plugin-host',
     ]);
-    const goContract = readFileSync(resolve(root, "ai-gateway/test/openai-chat-completions-adapter/command_test.go"), "utf8");
-    assert.match(goContract, /^\/\/go:build !ci_separate_chat_completions_contract/);
+    for (const file of ["command_test.go", "catalog_test.go"]) {
+      const goContract = readFileSync(resolve(root, "ai-gateway/test/openai-chat-completions-adapter", file), "utf8");
+      assert.match(goContract, /^\/\/go:build !ci_separate_chat_completions_contract/);
+    }
   });
 });
 

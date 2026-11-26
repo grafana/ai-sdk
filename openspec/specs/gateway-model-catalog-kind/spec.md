@@ -36,7 +36,19 @@ Admission SHALL accept only provider types `anthropic`, `openai` and `openai-com
 - **THEN** the write SHALL be refused
 
 ### Requirement: Shared catalog shape validation
-Admission SHALL apply the operator catalog's shape checks to the spec: at least one provider and one model, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds.
+A stack catalog SHALL require `spec.providers` and `spec.models` maps with at least one provider. The model map MAY be empty. Admission SHALL apply the shared checks to entries that are present: provider shape, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds. The operator catalog SHALL still require at least one provider and one model and SHALL retain its credential checks.
+
+#### Scenario: No providers or models
+- **WHEN** a writer creates or updates a stack catalog without providers, even if it has no resulting secure keys
+- **THEN** admission SHALL refuse the write
+
+#### Scenario: Missing or null map
+- **WHEN** a write omits a required map or sends it as null
+- **THEN** the write SHALL be refused
+
+#### Scenario: Provider connected before adding a model
+- **WHEN** a writer creates or updates a stack catalog with an empty model map and one secure value for each valid provider with no extra secure values
+- **THEN** admission SHALL accept the write
 
 #### Scenario: Unknown provider reference
 - **WHEN** a model's primary or fallback names a provider the catalog does not declare
@@ -118,7 +130,12 @@ Admission SHALL review `CREATE` and `UPDATE` only. Deletes SHALL NOT be reviewed
 - **THEN** the plugin SHALL receive no admission request
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `ModelCatalog`, bound to Viewer), `aigateway:catalogwriter` (editor set on `ModelCatalog` and `get` on `ModelCatalog/health` and `ModelCatalog/available-models`, bound to Admin) and `aigateway:modelinvoker` (`get` on `ModelCatalog`, `ModelCatalog/language-model`, `ModelCatalog/config` and `ModelCatalog/messages`, bound to Editor). Gateway role names SHALL use lowercase letters and digits only.
+The manifest SHALL bind these roles:
+- Viewer: `aigateway:catalogreader`, the viewer set on `ModelCatalog`.
+- Admin: `aigateway:catalogwriter`, the editor set on `ModelCatalog` and `get` on its `health` and `available-models` subresources.
+- Editor: `aigateway:modelinvoker`, `get` on `ModelCatalog` and its `language-model`, `config`, `messages` and `chat-completions` subresources.
+
+Gateway role names SHALL use lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace
@@ -129,7 +146,7 @@ The manifest SHALL declare `aigateway:catalogreader` (viewer permission set on `
 - **THEN** authorization SHALL allow the request, subject to admission
 
 #### Scenario: Invoker
-- **WHEN** an Editor or Admin calls `language-model`, `config` or `v1/messages` on a catalog in their namespace
+- **WHEN** an Editor or Admin calls `language-model`, `config`, `v1/messages` or `v1/chat/completions` on a catalog in their namespace
 - **THEN** Grafana's declared check SHALL allow it, and a Viewer's call SHALL be refused with `403` before the plugin is called
 
 #### Scenario: Authorized health check

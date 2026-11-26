@@ -1,8 +1,6 @@
 import {
   catalogNameError,
-  createSecure,
   defaultProviderName,
-  draftKeys,
   fallbackSuggestions,
   fallbackUsers,
   keyChange,
@@ -11,7 +9,6 @@ import {
   modelErrors,
   modelFromDraft,
   modelsOf,
-  newCatalogProblems,
   providerNameError,
   publicIDError,
   quickAddError,
@@ -120,12 +117,6 @@ describe('components/Catalog/catalogSpec', () => {
     expect(keyRemoval('claude', [])).toEqual({});
   });
 
-  test('keeps a new catalog’s entered keys until it is created', () => {
-    const keys = draftKeys(draftKeys({}, { claude: { create: 'a' }, gpt: { create: 'b' } }), { gpt: { remove: true } });
-    expect(keys).toEqual({ claude: 'a' });
-    expect(createSecure(keys)).toEqual({ claude: { create: 'a' } });
-  });
-
   test.each([
     ['', 'Enter a name.'],
     ['team', undefined],
@@ -154,17 +145,9 @@ describe('components/Catalog/catalogSpec', () => {
     expect(modelErrors(draft, [])).toEqual({ aliases: expect.stringContaining('"not ok" can\'t be an alias.') });
   });
 
-  test('checks a new provider name and a new catalog', () => {
+  test('checks a new provider name', () => {
     expect(providerNameError('', [])).toBe('Enter a name.');
     expect(providerNameError('Anthropic', [])).toContain('lowercase letters');
     expect(providerNameError('claude', ['claude'])).toBe('A provider named "claude" already exists.');
-    expect(newCatalogProblems('', { providers: {}, models: {} })).toEqual({
-      name: 'Enter a name.',
-      content: 'Connect a provider and add a model.',
-    });
-    expect(newCatalogProblems('team', { providers: spec.providers, models: {} })).toEqual({
-      content: 'Add at least one model.',
-    });
-    expect(newCatalogProblems('team', spec)).toEqual({});
   });
 });

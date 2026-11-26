@@ -12,7 +12,7 @@
 
 ## 3. Command-contract ownership
 
-- [x] 3.1 Build one race-enabled Gateway/host pair per combined contract invocation, keeping local direct entry points and per-test isolation. Run `mise run test-openai-chat-completions-adapter`, compare Go and TS scenario names and outcomes, and verify one build invocation per executable.
+- [x] 3.1 Build one ordinary race-enabled Gateway/host pair per combined contract invocation and a separate test-only Gateway for the Go stack-catalog cases. Preserve local entry points and per-test isolation. Verify both catalog topologies and the other Go and TypeScript scenarios with `mise run test-openai-chat-completions-adapter`.
 - [x] 3.2 Route only the moved contract package away from the redundant CI invocations. Keep one explicit owner under the existing required race check; document coverage ownership. Test routing and fail-closed merge/publication evidence with `mise run test-ci-workflow` and the locked release tooling tests.
 - [x] 3.3 Verify the new harness rejects known bad test outcomes and missing binaries rather than skipping execution. Run the retained ProviderWire semantic request mutants via `mise run test-providerwire-v4`; confirm the differential, not build/setup failure, rejects the copied mutant code.
 

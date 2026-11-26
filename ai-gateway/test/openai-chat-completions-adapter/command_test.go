@@ -33,6 +33,7 @@ type upstream struct {
 	hold        bool
 	invalidJSON bool
 	cancelled   chan struct{}
+	key         string
 }
 
 func (u *upstream) handle(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +46,11 @@ func (u *upstream) handle(w http.ResponseWriter, r *http.Request) {
 	u.requests = append(u.requests, body)
 	fail, hold, invalidJSON := u.fail, u.hold, u.invalidJSON
 	u.mu.Unlock()
-	if r.URL.Path != "/v1/responses" || r.Header.Get("Authorization") != "Bearer fake-backend-key" {
+	key := u.key
+	if key == "" {
+		key = "fake-backend-key"
+	}
+	if r.URL.Path != "/v1/responses" || r.Header.Get("Authorization") != "Bearer "+key {
 		w.WriteHeader(401)
 		return
 	}
@@ -162,10 +167,23 @@ func TestMain(m *testing.M) {
 
 func startCommand(t *testing.T, backend, topology string, customConfig ...string) string {
 	t.Helper()
+	return startCommandWithOptions(t, backend, topology, commandOptions{}, customConfig...)
+}
+
+type commandOptions struct {
+	pluginBinary string
+	environment  []string
+}
+
+func startCommandWithOptions(t *testing.T, backend, topology string, options commandOptions, customConfig ...string) string {
+	t.Helper()
 	dir, err := commandBinaries()
 	require.NoError(t, err)
 	require.True(t, filepath.IsAbs(dir), "command-contract binary directory must be absolute")
-	binary := filepath.Join(dir, "gateway")
+	binary := options.pluginBinary
+	if binary == "" {
+		binary = filepath.Join(dir, "gateway")
+	}
 	hostBinary := filepath.Join(dir, "plugin-host")
 	require.FileExists(t, binary)
 	require.FileExists(t, hostBinary)
@@ -175,7 +193,7 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	}
 	raceDir := t.TempDir()
 	const raceReport = "race-report"
-	cmd := exec.Command(hostBinary, "--plugin", binary, "--topology", topology, "--namespace", "stacks-1", "--service-account-token", testToken, "--route-deadline", "10s")
+	cmd := exec.Command(hostBinary, "--plugin", binary, "--topology", topology, "--namespace", "stacks-1", "--service-account-token", testToken, "--route-deadline", "10s", "--manifest", "../../src/app-sdk-manifest.json")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if name != "GORACE" && !strings.HasPrefix(name, "GF_PLUGIN_") && !strings.HasPrefix(name, "GRAFANA_") && !strings.HasPrefix(name, "SIGIL_") && !strings.HasPrefix(name, "AGENTO11Y_") {
@@ -186,6 +204,7 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	if topology == "cloud" {
 		cmd.Env = append(cmd.Env, "GF_PLUGIN_ACCESS_INTERNAL_SERVICES=integration")
 	}
+	cmd.Env = append(cmd.Env, options.environment...)
 	stdout, err := cmd.StdoutPipe()
 	require.NoError(t, err)
 	var stderr bytes.Buffer

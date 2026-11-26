@@ -50,7 +50,7 @@ type StreamTextResult struct {
 	provMeta                provider.ProviderMetadata
 	lastResponse            ResponseMetadata
 	firstError              error
-	abortCause              error
+	abortErr                error
 
 	outputValue any
 	outputErr   error
@@ -558,8 +558,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Context:          currentRuntimeContext,
 			})
 			if err != nil {
-				if ctx.Err() != nil && cfg.onAbort != nil {
-					cfg.onAbort(OnAbortState{Steps: r.steps})
+				if ctx.Err() != nil {
+					r.abort(ctx, cfg, err)
+					return
 				}
 				r.emitError(err, cfg.onError)
 				return
@@ -645,9 +646,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 
 		// Build provider tools (sorted for deterministic order)
 		stepTools := toolSearch.prepare(cfg.tools, activeTools, activeToolsSet, stepContext)
-		stepTools = resolveToolDescriptions(stepTools, stepContext, activeTools, activeToolsSet)
-		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes, activeTools, activeToolsSet)
-		modelTools = resolveToolDescriptions(modelTools, stepContext, activeTools, activeToolsSet)
+		stepTools = resolveToolDescriptions(stepTools, stepContext)
+		executionTools, modelTools, callerMessages := prepareToolsForCallers(stepTools, cfg.toolRoutes)
+		modelTools = resolveToolDescriptions(modelTools, stepContext)
 		if err := validateToolExecutors(executionTools); err != nil {
 			r.emitError(err, cfg.onError)
 			return
@@ -655,8 +656,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		currentMsgs = appendToolCallerMessages(currentMsgs, callerMessages)
 		provTools, toolWarnings := toolSetToProviderTools(modelTools)
 		r.allWarnings = append(r.allWarnings, toolWarnings...)
-		if cfg.toolRoutes == nil && activeToolsSet {
-			provTools = filterProviderTools(provTools, activeTools)
+		if cfg.toolRoutes == nil && activeToolsSet && len(provTools) == 0 {
+			provTools = nil
 		}
 		if toolChoice == nil {
 			auto := provider.ToolChoice{Type: provider.ToolChoiceAuto}
@@ -708,8 +709,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			if stepTimer != nil {
 				stepTimer.Stop()
 			}
-			if ctx.Err() != nil && cfg.onAbort != nil {
-				cfg.onAbort(OnAbortState{Steps: r.steps})
+			if ctx.Err() != nil {
+				r.abort(ctx, cfg, err)
+				return
 			}
 			r.emitStreamError(err, cfg.onError)
 			return
@@ -718,7 +720,11 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		stepCfg := *cfg
 		stepCfg.tools = executionTools
 		stepCfg.toolChoice = toolChoice
-		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, stepContext, currentMsgs, opCancel)
+		providerResultTools := executionTools
+		if toolSearch == nil && cfg.toolRoutes == nil {
+			providerResultTools = cfg.tools
+		}
+		step, outcome, err := r.processStep(ctx, stepNum, stepModel, streamResult, &stepCfg, providerResultTools, stepContext, currentMsgs, opCancel)
 		if stepTimer != nil {
 			stepTimer.Stop()
 		}
@@ -743,8 +749,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					cfg.onStepFinish(OnStepFinishState{StepResult: step})
 				}
 			}
-			r.totalUsage = aggregateUsage(r.steps)
-			r.abort(ctx, cfg)
+			r.abort(ctx, cfg, nil)
 			return
 		}
 
@@ -870,6 +875,7 @@ func (r *StreamTextResult) processStep(
 	stepModel StepModel,
 	streamResult *provider.StreamResult,
 	cfg *streamConfig,
+	providerResultTools ToolSet,
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
@@ -883,7 +889,7 @@ func (r *StreamTextResult) processStep(
 		step.StepType = StepTypeToolResult
 	}
 
-	var warnings []provider.Warning
+	var started bool
 	responseMeta := provider.ResponseMetadata{ID: generateConfigID(cfg), ModelID: stepModel.ModelID}
 	var responseHeaders map[string]string
 	// Step text joins each text block in the order it first appeared, as
@@ -924,8 +930,6 @@ func (r *StreamTextResult) processStep(
 	var outputTextMeta provider.ProviderMetadata
 	r.lastPartialJSON = ""
 
-	r.emit(StreamStartStep{Warnings: warnings, Request: streamResult.Request})
-
 	firstChunkTimeout := cfg.timeout.FirstChunk
 	var firstChunkTimer *time.Timer
 	if firstChunkTimeout > 0 {
@@ -964,6 +968,8 @@ loop:
 			break loop
 		}
 
+		// Withheld parts must not start a step, count as output, or satisfy or
+		// extend content deadlines.
 		if withholdToolParts {
 			switch part.Type {
 			case provider.PartToolCall:
@@ -975,6 +981,10 @@ loop:
 			}
 		}
 
+		if part.Type == provider.PartStreamStart {
+			step.Warnings = part.Warnings
+			continue
+		}
 		if isSemanticOutputStreamPart(part) {
 			hasOutput = true
 			if firstChunkTimer != nil {
@@ -990,6 +1000,11 @@ loop:
 			}
 		}
 
+		if !started {
+			started = true
+			r.emit(StreamStartStep{Warnings: step.Warnings, Request: streamResult.Request})
+		}
+
 		switch part.Type {
 		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
 			part.ID = remapStreamPartID(part, textPartIDs, r.usedTextIDs, cfg)
@@ -1001,10 +1016,6 @@ loop:
 		}
 
 		switch part.Type {
-		case provider.PartStreamStart:
-			warnings = part.Warnings
-			step.Warnings = warnings
-
 		case provider.PartTextStart:
 			responseTextIndex[part.ID] = len(step.responseContent)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
@@ -1181,7 +1192,7 @@ loop:
 			}
 
 		case provider.PartToolResult:
-			if err := r.handleToolResult(part, &step, cfg); err != nil {
+			if err := r.handleToolResult(part, &step, cfg, providerResultTools); err != nil {
 				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			preliminary := part.Preliminary != nil && *part.Preliminary
@@ -1489,35 +1500,18 @@ func (r *StreamTextResult) handleToolCall(
 	toolTitleByID map[string]string,
 	stepContext any,
 ) {
-	var parsedInput json.RawMessage
-	if strings.TrimSpace(part.Input) == "" {
+	t, toolExists := cfg.tools[part.ToolName]
+	unavailable := !toolExists && !part.ProviderExecuted
+	parsedInput := json.RawMessage(part.Input)
+	if !unavailable && strings.TrimSpace(part.Input) == "" {
 		parsedInput = json.RawMessage(`{}`)
-	} else {
-		if !json.Valid([]byte(part.Input)) {
-			input, _ := json.Marshal(string(part.Input))
-			r.rejectToolCall(part, json.RawMessage(input), step, cfg, toolTitleByID, fmt.Errorf("invalid JSON input for tool %q", part.ToolName))
-			return
-		}
-		parsedInput = json.RawMessage(part.Input)
+	}
+	validJSON := json.Valid(parsedInput)
+	if !validJSON {
+		parsedInput, _ = json.Marshal(part.Input)
 	}
 
-	if t, ok := cfg.tools[part.ToolName]; ok {
-		if t.InputSchema.Compiled() != nil {
-			if err := t.InputSchema.Validate(parsedInput); err != nil {
-				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, err))
-				return
-			}
-		}
-		if t.ValidateInput != nil {
-			if valErr := t.ValidateInput(parsedInput); valErr != nil {
-				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, valErr))
-				return
-			}
-		}
-	}
-
-	_, toolExists := cfg.tools[part.ToolName]
-	if !toolExists && !part.ProviderExecuted {
+	if unavailable {
 		availableTools := make([]string, 0, len(cfg.tools))
 		for name := range cfg.tools {
 			availableTools = append(availableTools, name)
@@ -1532,6 +1526,25 @@ func (r *StreamTextResult) handleToolCall(
 		}
 		r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, errors.New(errMsg))
 		return
+	}
+
+	if !validJSON {
+		r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid JSON input for tool %q", part.ToolName))
+		return
+	}
+	if toolExists {
+		if t.InputSchema.Compiled() != nil {
+			if err := t.InputSchema.Validate(parsedInput); err != nil {
+				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, err))
+				return
+			}
+		}
+		if t.ValidateInput != nil {
+			if valErr := t.ValidateInput(parsedInput); valErr != nil {
+				r.rejectToolCall(part, parsedInput, step, cfg, toolTitleByID, fmt.Errorf("invalid input for tool %s: %w", part.ToolName, valErr))
+				return
+			}
+		}
 	}
 
 	title := part.Title
@@ -1560,7 +1573,7 @@ func (r *StreamTextResult) handleToolCall(
 	r.emit(tsp)
 	r.callOnChunk(cfg, tsp)
 
-	if t, ok := cfg.tools[part.ToolName]; ok && t.OnInputAvailable != nil {
+	if toolExists && t.OnInputAvailable != nil {
 		t.OnInputAvailable(parsedInput, ToolExecutionOptions{ToolCallID: part.ToolCallID, Context: stepContext})
 	}
 }
@@ -1569,6 +1582,7 @@ func (r *StreamTextResult) handleToolResult(
 	part provider.StreamPart,
 	step *StepResult,
 	cfg *streamConfig,
+	providerResultTools ToolSet,
 ) error {
 	preliminary := part.Preliminary != nil && *part.Preliminary
 	dynamic := part.Dynamic
@@ -1617,7 +1631,7 @@ func (r *StreamTextResult) handleToolResult(
 		return nil
 	}
 
-	if tool, ok := cfg.tools[part.ToolName]; ok && tool.ToModelOutput != nil {
+	if tool, ok := providerResultTools[part.ToolName]; ok && tool.ToModelOutput != nil {
 		modelOutput, err := tool.ToModelOutput(ToolOutputContext{
 			ToolCallID: part.ToolCallID,
 			Input:      input,
@@ -2113,17 +2127,22 @@ func (r *StreamTextResult) emit(part TextStreamPart) {
 	}
 }
 
-func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
+func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig, startupErr error) {
+	r.totalUsage = aggregateUsage(r.steps)
 	if cfg.onAbort != nil {
 		cfg.onAbort(OnAbortState{Steps: r.steps})
 	}
 	part := StreamAbort{}
-	if cause := context.Cause(ctx); cause != nil {
-		r.mu.Lock()
-		r.abortCause = cause
-		r.mu.Unlock()
+	cause := context.Cause(ctx)
+	if cause != nil {
 		part.Reason = cause.Error()
 	}
+	if startupErr == nil {
+		startupErr = cause
+	}
+	r.mu.Lock()
+	r.abortErr = startupErr
+	r.mu.Unlock()
 	r.emit(part)
 	r.callOnChunk(cfg, part)
 }
@@ -2855,7 +2874,7 @@ func (r *StreamTextResult) abortError() error {
 	r.Wait()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.abortCause
+	return r.abortErr
 }
 
 // Helpers
@@ -2882,23 +2901,6 @@ func collectResponseMessages(initial []provider.Message, steps []StepResult) []p
 		messages = append(messages, step.Response.Messages...)
 	}
 	return messages
-}
-
-func filterProviderTools(tools []provider.Tool, activeNames []string) []provider.Tool {
-	nameSet := make(map[string]bool, len(activeNames))
-	for _, n := range activeNames {
-		nameSet[n] = true
-	}
-	var filtered []provider.Tool
-	for _, t := range tools {
-		if t.Type != provider.ToolTypeFunction && t.Type != provider.ToolTypeProvider {
-			continue
-		}
-		if nameSet[t.Name] {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
 }
 
 func generateConfigID(cfg *streamConfig) string {

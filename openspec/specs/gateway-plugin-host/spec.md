@@ -6,12 +6,12 @@ Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWir
 ## Requirements
 
 ### Requirement: Gateway app manifest
-The Gateway SHALL be one Grafana app plugin. Its manifest SHALL serve one API version with exactly nine namespaced custom routes and only the `ModelCatalog` and `Middleware` kinds. It SHALL declare validation admission, no mutation or conversion hooks, and no other routes, kinds or hooks.
+The Gateway SHALL be one Grafana app plugin. Its manifest SHALL serve one API version with exactly ten namespaced custom routes and only the `ModelCatalog` and `Middleware` kinds. It SHALL declare validation admission, no mutation or conversion hooks, and no other routes, kinds or hooks.
 
 #### Scenario: Committed manifest declares only the supported routes
 - **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with only the four namespace routes and the five `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
-- **AND** each catalog route SHALL declare a `get` access check on its `modelcatalogs` subresource (`config`, `language-model`, `messages`, `health` or `available-models`), and the namespace routes SHALL declare none
+- **THEN** it SHALL declare one version with only the four namespace routes and the six `ModelCatalog` subresource routes, and the `ModelCatalog` and `Middleware` kinds as its only kinds
+- **AND** each catalog route SHALL declare a `get` access check on its `modelcatalogs` subresource (`config`, `language-model`, `messages`, `health`, `available-models` or `chat-completions`), and the namespace routes SHALL declare none
 
 #### Scenario: Plugin identity is fixed
 - **WHEN** the backend is built by any supported method, including plain `go build` in tests
@@ -232,7 +232,7 @@ The production route table SHALL declare exactly the method and path pairs of th
 
 #### Scenario: Production table and manifest agree
 - **WHEN** the production route table is compared with the committed manifest
-- **THEN** both SHALL contain only `GET config`, `POST language-model`, `POST v1/chat/completions` and `POST v1/messages` under `namespaces/{namespace}/`, and `GET config`, `POST language-model`, `POST v1/messages`, `POST health` and `POST available-models` under `namespaces/{namespace}/modelcatalogs/{name}/`
+- **THEN** both SHALL contain only `GET config`, `POST language-model`, `POST v1/chat/completions` and `POST v1/messages` under `namespaces/{namespace}/`, and `GET config`, `POST language-model`, `POST v1/messages`, `POST v1/chat/completions`, `POST health` and `POST available-models` under `namespaces/{namespace}/modelcatalogs/{name}/`
 
 #### Scenario: Undeclared path or method
 - **WHEN** a request targets another path under the route prefix, or a declared path with another method, including `HEAD` on either `config` route or `GET` or `HEAD` on `health` or `available-models`
@@ -400,8 +400,9 @@ Before using a catalog route's decrypted values, the Gateway SHALL check that th
 - **THEN** the response SHALL be the internal host error
 
 #### Scenario: Parent whose spec does not decode
-- **WHEN** the parent names the route's catalog but its spec does not decode as a `ModelCatalog` spec
-- **THEN** language-model SHALL fail with the catalog configuration document and `config` with the catalog configuration host error
+- **WHEN** an authorized, otherwise valid request carries a matching parent whose spec does not decode or whose required maps are absent or null
+- **THEN** each catalog route SHALL return its fixed catalog configuration error (`424`) with no provider requests
+- **AND** the Gateway SHALL NOT use partially decoded configuration or decrypted values
 
 #### Scenario: Parent whose identity does not decode
 - **WHEN** the parent is not JSON, or its API version, kind, namespace or name cannot be read

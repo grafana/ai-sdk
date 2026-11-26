@@ -28,7 +28,8 @@ Source CI SHALL run the existing official OpenAI Go and TypeScript client contra
 #### Scenario: Same candidate binaries across client suites
 
 - **WHEN** the command-contract owner runs
-- **THEN** both suites SHALL run using a single build of each executable from the candidate's local module graph, with separate test processes and fixtures
+- **THEN** both suites SHALL share one ordinary Gateway and host build from the candidate's local module graph, with separate test processes and fixtures
+- **AND** Go stack-catalog scenarios SHALL use a distinct race-enabled, test-only Gateway build with the same host
 - **AND** a failed contract assertion, reported race or missing execution SHALL prevent required source success and Gateway publication
 
 ### Requirement: Tag artifact validation bypasses CI caches

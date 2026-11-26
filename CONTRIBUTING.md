@@ -592,8 +592,9 @@ SDK's Go module dependency graph.
   pushes keep the validated package, built from a clean checkout of the push
   revision, as a workflow artifact. Full Gateway Go source tests run in parallel
   with the plugin build and checks. The required `race` job runs the official
-  OpenAI Go and TypeScript Chat Completions contracts once using the same two
-  race-enabled candidate executables; run them locally with
+  OpenAI Go and TypeScript Chat Completions contracts once. They share a
+  race-enabled candidate Gateway and host; the Go stack-catalog cases use a
+  separate test-only Gateway build with the same host. Run them locally with
   `mise run test-openai-chat-completions-adapter`. The `Validate AI Gateway plugin` check waits
   for both jobs to succeed before retaining the validated package; the build
   job hands off a separate, short-lived candidate artifact. Gateway is not published

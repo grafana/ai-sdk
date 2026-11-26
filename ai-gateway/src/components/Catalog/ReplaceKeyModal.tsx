@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Field, SecretInput } from '@grafana/ui';
 import { FormModal } from './FormModal';
 import { useFieldErrors } from './useFieldErrors';
-import { CatalogChange, fieldErrors, keyChange, keyError } from './catalogSpec';
+import { CatalogChange, fieldErrors, keyChange, keyError, providerTypeLabel } from './catalogSpec';
 import { Spec } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
 
 interface Props {
@@ -17,6 +17,8 @@ export function ReplaceKeyModal({ spec, provider, onSave, onDismiss }: Props) {
   const [key, setKey] = useState('');
   const checks = useFieldErrors(fieldErrors({ key: keyError(key) }), { key });
   const error = checks.errors.key;
+  const { baseURL, type } = spec.providers[provider];
+  const destination = baseURL || `${providerTypeLabel(type)}'s native endpoint`;
 
   const submit = async () => {
     if (checks.submit()) {
@@ -28,7 +30,7 @@ export function ReplaceKeyModal({ spec, provider, onSave, onDismiss }: Props) {
     <FormModal title={`Replace the ${provider} key`} submitLabel="Save key" onSubmit={submit} onDismiss={onDismiss}>
       <Field
         label="New API key"
-        description="Replaces the saved key, which can't be viewed. Calls use the new key from the next request."
+        description={`Use a key for ${destination}. It replaces the saved key and applies on the next request.`}
         invalid={error !== undefined}
         error={error}
       >
