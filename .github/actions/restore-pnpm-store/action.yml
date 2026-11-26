@@ -1,0 +1,19 @@
+name: Restore pnpm store
+description: Restore the shared pnpm download store without saving it
+runs:
+  using: composite
+  steps:
+    - name: Resolve pnpm store path
+      id: pnpm-store
+      shell: bash
+      run: |
+        path=$(pnpm store path --silent)
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Restore pnpm store
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-

@@ -571,11 +571,13 @@ SDK's Go module dependency graph.
   to `ai-gateway/README.md`. Changes to the packaging README at
   `ai-gateway/src/README.md`, fallback README additions/removals, and mixed or
   uncertain changes run source checks.
-- **CI caches:** Source lanes can restore a shared Go dependency archive keyed
-  by module inputs. On canonical `main`, module resolution seeds that archive
-  after its checks; platform-compatible native, race and plugin build archives
-  and the lint analysis archive refresh on a weekly key. Pull requests do not
-  write these Go caches or wait for producers. A miss runs the same checks;
+- **CI caches:** On canonical `main`, `build-test` saves the Go module downloads
+  from its ordinary successful checks on a manifest-keyed cache miss. The
+  archive can be partial; Go resolves missing modules normally. Native, race,
+  plugin and lint analysis caches retain their separate weekly keys. Pull
+  requests do not write these Go or lint caches or wait for producers. The
+  race, module-resolution and parity-baseline jobs restore the shared pnpm
+  download store before the frozen workspace install; they do not save it.
   Gateway tag builds neither restore nor save workflow caches.
 - **Gateway plugin:** Gateway builds the plugin backend in `ai-gateway/pkg`, the
   standard plugin backend root, from same-revision SDK source through the

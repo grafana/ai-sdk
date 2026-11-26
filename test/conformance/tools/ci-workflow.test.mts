@@ -510,7 +510,7 @@ describe("candidate-source workflow gates", () => {
     }
   });
 
-  it("restores one shared module seed and independently refreshes compatible Go build flavors", () => {
+  it("shares Go module downloads from a successful canonical main build and retains rolling build flavors", () => {
     const action = readFileSync(resolve(root, ".github/actions/cache-go/action.yml"), "utf8");
     const cacheDocument = parseDocument(action);
     assert.deepEqual(cacheDocument.errors, []);
@@ -542,7 +542,13 @@ describe("candidate-source workflow gates", () => {
 
     const main = "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk'";
     const saves = Object.keys(jobs).flatMap((job) => steps(job).filter((step) => step.uses?.startsWith("actions/cache/save@")).map((step) => ({ job, step })));
-    assert.deepEqual(saves.map(({ job }) => job), ["build-test", "lint", "race", "module-resolution", "plugin-build"]);
+    assert.deepEqual(saves.map(({ job, step }) => [job, step.with?.path]), [
+      ["build-test", "${{ steps.go-cache.outputs.module-path }}"],
+      ["build-test", "${{ steps.go-cache.outputs.build-path }}"],
+      ["lint", "${{ runner.temp }}/golangci-lint"],
+      ["race", "${{ steps.go-cache.outputs.build-path }}"],
+      ["plugin-build", "${{ steps.go-cache.outputs.build-path }}"],
+    ]);
     const lintRestore = steps("lint").find((step) => step.name === "Restore lint analysis seed")!;
     assert.match(lintRestore.uses!, /^actions\/cache\/restore@[0-9a-f]{40}$/);
     assert.match(lintRestore.with?.key as string, /^golangci-v3-.*\$\{\{ steps.go-cache.outputs.build-key \}\}$/);
@@ -553,15 +559,14 @@ describe("candidate-source workflow gates", () => {
     const lintIndex = steps("lint").findIndex((step) => step.run === "mise run lint");
     assert.ok(steps("lint").indexOf(lintRestore) < lintIndex && lintIndex < steps("lint").indexOf(lintSave));
     for (const { job, step } of saves.filter(({ job }) => job !== "lint")) {
-      const moduleSeed = job === "module-resolution";
-      const kind = moduleSeed ? "module" : "build";
-      const checked = moduleSeed ? "bash scripts/seed-go-modules.sh" : ({
+      const kind = step.with?.path === "${{ steps.go-cache.outputs.module-path }}" ? "module" : "build";
+      const checked = ({
         "build-test": "mise run test-short",
         race: "mise run test-openai-chat-completions-adapter",
         "plugin-build": "mise run validate-ai-gateway-plugin",
       })[job];
       assert.match(step.uses!, /^actions\/cache\/save@[0-9a-f]{40}$/);
-      assert.equal(step.if, `\${{ ${main} && steps.go-cache.outputs.${kind}-hit != 'true'${moduleSeed ? " && steps.seed-modules.outcome == 'success'" : ""} }}`);
+      assert.equal(step.if, `\${{ ${main} && steps.go-cache.outputs.${kind}-hit != 'true' }}`);
       assert.deepEqual(step.with, {
         key: `\${{ steps.go-cache.outputs.${kind}-key }}`,
         path: `\${{ steps.go-cache.outputs.${kind}-path }}`,
@@ -570,14 +575,44 @@ describe("candidate-source workflow gates", () => {
       const producerIndex = jobSteps.findIndex((item) => item.run === checked);
       assert.ok(producerIndex >= 0 && jobSteps.indexOf(step) > producerIndex, job);
     }
-    const seed = steps("module-resolution").find((step) => step.run === "bash scripts/seed-go-modules.sh")!;
-    assert.equal(seed.if, `\${{ ${main} && steps.go-cache.outputs.module-hit != 'true' }}`);
-    const script = readFileSync(resolve(root, "scripts/seed-go-modules.sh"), "utf8");
-    assert.match(script, /module-policy.sh all-modules/);
-    assert.match(script, /go list -mod=readonly -deps -test/);
-    assert.match(script, /for arch in amd64 arm64/);
-    assert.match(script, /GOOS=linux GOARCH="\$arch" CGO_ENABLED=0 go list -mod=readonly -deps -tags=arrow_json_stdlib/);
-    assert.match(script, /git diff --exit-code -- go.mod go.sum/);
+  });
+
+  it("restores the existing pnpm download store before workspace installs without adding writers", () => {
+    const actionPath = "./.github/actions/restore-pnpm-store";
+    const actionDoc = parseDocument(readFileSync(resolve(root, actionPath, "action.yml"), "utf8"));
+    assert.deepEqual(actionDoc.errors, []);
+    const action = actionDoc.toJS() as { runs: { using: string; steps: Array<{ id?: string; run?: string; uses?: string; with?: Record<string, unknown> }> } };
+    assert.equal(action.runs.using, "composite");
+    assert.equal(action.runs.steps.length, 2);
+    const [pathStep, restore] = action.runs.steps;
+    assert.equal(pathStep?.id, "pnpm-store");
+    assert.match(pathStep?.run ?? "", /pnpm store path --silent/);
+    assert.match(restore?.uses ?? "", /^actions\/cache\/restore@[0-9a-f]{40}$/);
+    assert.deepEqual(restore?.with, {
+      path: "${{ steps.pnpm-store.outputs.path }}",
+      key: "${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}",
+      "restore-keys": "${{ runner.os }}-pnpm-\n",
+    });
+    const installs = {
+      race: "mise run test-openai-chat-completions-adapter",
+      "module-resolution": "mise run test-ci-workflow",
+      "parity-baseline": "mise run validate-parity-baseline",
+    };
+    const consumers = Object.keys(jobs).filter((job) => steps(job).some((step) => step.uses === actionPath));
+    assert.deepEqual(consumers, Object.keys(installs));
+    for (const [job, install] of Object.entries(installs)) {
+      const jobSteps = steps(job);
+      const index = jobSteps.findIndex((step) => step.uses === actionPath);
+      assert.ok(index > jobSteps.findIndex((step) => step.uses?.startsWith("jdx/mise-action@")), job);
+      assert.ok(index < jobSteps.findIndex((step) => step.run === install), job);
+    }
+    for (const job of ["integration-test", "plugin-build", "conformance-test"]) {
+      const producer = steps(job).find((step) => step.uses?.startsWith("actions/cache@") && step.with?.path === restore?.with?.path);
+      assert.equal(producer?.with?.key, restore?.with?.key, job);
+      assert.equal(producer?.with?.["restore-keys"], restore?.with?.["restore-keys"], job);
+    }
+    const mise = readFileSync(resolve(root, "mise.toml"), "utf8");
+    assert.match(mise.split("[deps.test]")[1]!.split(/\n\[/)[0]!, /run = "pnpm install --frozen-lockfile"/);
   });
 
   it("does not exchange Go, mise, pnpm or browser caches on tag builds", () => {
@@ -590,7 +625,7 @@ describe("candidate-source workflow gates", () => {
           assert.equal(step.with?.cache, `\${{ !${tag} }}`, job);
         } else if (step.uses?.startsWith("actions/cache/save@")) {
           assert.match(step.if ?? "", /github\.ref == 'refs\/heads\/main'/, job);
-        } else if (step.uses === "./.github/actions/cache-go" || /^actions\/cache(?:\/restore)?@/.test(step.uses ?? "")) {
+        } else if (step.uses === "./.github/actions/cache-go" || step.uses === "./.github/actions/restore-pnpm-store" || /^actions\/cache(?:\/restore)?@/.test(step.uses ?? "")) {
           assert.equal(normalize(step.if), `\${{ !${tag} && (${sourceWork}) }}`, job);
           if (step.uses?.startsWith("actions/cache@")) {
             combined.push(job);
@@ -651,7 +686,7 @@ describe("documentation-only CI selection", () => {
           assert.ok(step.run?.startsWith("echo "));
         } else if (["Plugin test host suites", "Archive candidate plugin package", "Keep candidate plugin package"].includes(step.name ?? "")) {
           assert.equal(normalize(step.if), pushGuard);
-        } else if (!step.uses?.startsWith("actions/cache/save@") && step.name !== "Populate complete Go module seed") {
+        } else if (!step.uses?.startsWith("actions/cache/save@")) {
           assert.ok(step.if?.includes(guard), `${worker}: ${step.name ?? step.uses} lacks fail-closed guard`);
         }
       }

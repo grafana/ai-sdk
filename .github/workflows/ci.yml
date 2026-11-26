@@ -96,6 +96,13 @@ jobs:
           GOFLAGS: -tags=ci_separate_chat_completions_contract
         run: mise run test-short
 
+      - name: Save Go module downloads
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.module-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.go-cache.outputs.module-path }}
+          key: ${{ steps.go-cache.outputs.module-key }}
+
       - name: Save Go build seed
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.build-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -185,6 +192,9 @@ jobs:
           GOFLAGS: -tags=ci_separate_chat_completions_contract
         run: mise run test-race
 
+      - uses: ./.github/actions/restore-pnpm-store
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
+
       - name: Official Gateway Chat Completions command contracts
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-openai-chat-completions-adapter
@@ -237,12 +247,14 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        id: go-cache
         if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Test module policy fixtures
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-module-policy
+
+      - uses: ./.github/actions/restore-pnpm-store
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Test CI source and artifact gates
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -259,20 +271,6 @@ jobs:
       - name: Verify SDK isolation from Gateway source
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run verify-sdk-gateway-isolation
-
-      - name: Populate complete Go module seed
-        id: seed-modules
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.module-hit != 'true' }}
-        timeout-minutes: 5
-        continue-on-error: true
-        run: bash scripts/seed-go-modules.sh
-
-      - name: Save Go module seed
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.module-hit != 'true' && steps.seed-modules.outcome == 'success' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ steps.go-cache.outputs.module-path }}
-          key: ${{ steps.go-cache.outputs.module-key }}
 
   parity-baseline:
     needs: changes
@@ -297,6 +295,9 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
+
+      - uses: ./.github/actions/restore-pnpm-store
         if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Validate parity baseline

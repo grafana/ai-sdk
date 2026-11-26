@@ -8,7 +8,7 @@ Candidate CI repeats the same Gateway contract builds and writes overlapping Go 
 
 - Classify only reviewed narrative Gateway Markdown as docs-only, without weakening fail-closed path and mode checks or skipping docs lint and Gateway documentation-link validation.
 - Make the official OpenAI TypeScript command contract explicitly required in CI and give the Go and TypeScript contracts one execution owner and one race-enabled build of the Gateway and test host per invocation. Retain separate short, race and full Gateway coverage outside that contract package.
-- Seed reusable Go caches with explicit producers and bounded build-cache writes. Eligible tag validation must not restore or publish CI cache entries.
+- Reuse the Go module downloads from a successful canonical-main build, retain rolling compiled Go and lint caches, and restore the existing pnpm store before more jobs run their frozen workspace install. Eligible tag validation must not restore or save CI caches.
 - Defer browser worker-count and shard benchmarking outside this change. Keep the existing browser configuration, E2E coverage and plugin validation.
 - Keep check identities, candidate-source inputs, assertions and release/publication gates. Do not change provider behavior, dependency pins, Renovate schedules, runner capacity or branch protection.
 

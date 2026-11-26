@@ -33,10 +33,15 @@ Source CI SHALL run the existing official OpenAI Go and TypeScript client contra
 
 ### Requirement: Tag artifact validation bypasses CI caches
 
-Gateway tag validation SHALL neither restore nor save CI caches in the Build & Test workflow. Non-tag cache hits or misses SHALL NOT change source-check selection, module verification, or artifact provenance.
+Gateway tag validation SHALL neither restore nor save CI caches in the Build & Test workflow. Non-tag cache hits, misses or partial caches SHALL NOT change source-check selection, module or lockfile verification, or artifact provenance.
 
 #### Scenario: Eligible Gateway tag push
 
 - **WHEN** Build & Test validates a Gateway tag
 - **THEN** source and artifact validation SHALL run without CI cache exchange
 - **AND** only same-revision artifact evidence SHALL be eligible for publication
+
+#### Scenario: Empty or partial dependency caches
+
+- **WHEN** non-tag CI has an empty or partial Go module cache or pnpm download store
+- **THEN** the same checks SHALL run with ordinary checked dependency resolution and frozen pnpm installs

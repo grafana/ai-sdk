@@ -33,11 +33,11 @@ Build each executable once in an invocation-owned temporary directory using `GOW
 
 The pinned upstream context is the registered `ai@7.0.173` commit, including OpenAI Responses tool-argument SSE, compatible `/chat/completions` tool calls, and Anthropic `/messages` content deltas. These contextual checks do not replace the official client contract assertions; the adapter boundary and fixture bodies remain unchanged.
 
-### Prefer canonical main seeding; separate immutable dependencies from rolling builds
+### Reuse dependency downloads from existing jobs
 
-- Use one module scope keyed by runner/toolchain and the tracked Go manifests/sums (including examples, integration and conformance modules; discover via the existing module-policy inventory). Only a deliberate canonical default-branch producer publishes it after complete readonly population. Test the download command from an empty module cache: the whole intended graph must be available, and no manifest or sum may change. Do not make consumer tests depend on another job finishing. Consumers restore when available, and ordinary checked Go resolution handles misses. Avoid arbitrary first-writer locks or a write per pull request.
-- Compare those savings with a small number of main-only rolling build producers: native (build-test), race, and plugin (its amd64/arm64 build and flags). Key by compatibility and bounded time bucket, not SHA, so subsequent changes can refresh the seed; include conservative flavor/environment partitioning. Keep one writer per flavor; make other lanes restore-only or omit restoration where transfer is more expensive than recompilation. Treat the bucket width as provisional: compare projected retained bytes across windows, manifests, flavors and other cache families against 10 GB before choosing a cadence. A shorter main-only bucket trades freshness for retained bytes. Test that a restored seed recompiles changed source and does not hide changed behavior. Assess same-policy rolling lint cache or omitting it, rather than leaving a dominant per-SHA archive family unmeasured.
-- Use explicit restore/save roles. Skip them entirely on Gateway tag pushes, including other combined cache steps, and retain the existing tag bypass for mise. Test non-tag miss/hit, default-branch-only saves, and a tag bypass. No global cache delete/quota changes. Cache archives are not release artifacts.
+- On a cache miss, only the canonical `main` `build-test` job saves `GOMODCACHE`, after its ordinary checks succeed. The key includes runner and toolchain identity and the tracked Go manifest and sum inputs. A saved archive can be partial; ordinary checked module resolution supplies anything missing. Consumers do not wait for a producer, and there is no separate dependency fill step.
+- Keep the existing canonical-main weekly compiled Go caches partitioned by native, race and plugin workloads, plus the separate lint analysis archive. Pull requests do not write these Go or lint caches. Skip cache exchange entirely on Gateway tags, including the combined caches and mise. Cache archives are not release artifacts.
+- The race, module-resolution and parity-baseline jobs restore the existing lockfile-keyed pnpm download store before their first workspace install. Integration, conformance and plugin jobs remain the existing writers. Every job still runs its frozen install as needed; no `node_modules` or runtime artifacts are added to the cache.
 
 ### Defer browser parallelism benchmarks
 
@@ -45,11 +45,11 @@ Browser worker-count and shard comparisons are outside this change and are not a
 
 ## Risks / Trade-offs
 
-- **Cold rollout and retention:** a new cache key begins cold; content-addressed build reuse may decay between seed refreshes. Compare same-environment runs using fresh private cache dirs for cold and restored/seeded caches for warm. Measure elapsed, archive bytes, restore/save time, compile time and hit type; separately record comparable hosted job observations and their limits.
+- **Cache misses:** new keys or evicted archives can make jobs slower, and a partial module archive only saves downloads that overlap. A miss never waives a check or requires a producer job.
 - **Silent drops:** structural tests must enforce one owner, fail-closed status/artifact gates and docs guards; local inventory and semantic negative controls must prove the intended Go/TS cases still execute and reject bad outcomes.
 - **Benchmark confounds:** build cache eviction and hosted runner variation prevent attributing historical timing differences to this change.
 - **Renovate:** leave scheduling and fixes separate. The repository rebases behind-base branches and uses weekly package rules; Renovate defaults allow some existing PR updates outside a schedule. Assess effective inherited rules and a deliberate update-before-merge path separately because current required statuses must be up to date.
 
 ## Migration Plan
 
-Validate classifier, cache policy and contract routing in separable commits. New cache keys warm naturally on canonical main; no migration or deletion. Revert any component if its coverage or measured trade-offs are unacceptable; never work around status gates or publish during testing.
+Validate classifier, cache policy and contract routing in separable commits. New cache keys warm naturally on canonical main; no migration or deletion. Revert any component if it weakens coverage; never work around status gates or publish during testing.
