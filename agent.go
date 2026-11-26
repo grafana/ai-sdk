@@ -705,6 +705,32 @@ func findHeaderKey(headers map[string]string, name string) string {
 	return ""
 }
 
+// AgentUIStreamOption configures CreateAgentUIStream and WriteAgentUIStream.
+// Both helpers also accept individual UIMessageStreamOption values.
+type AgentUIStreamOption interface {
+	applyAgentUIStream(*agentUIStreamConfig)
+}
+
+type agentUIStreamConfig struct {
+	streamOptions   []UIMessageStreamOption
+	convertDataPart func(DataPart) (*provider.ContentPart, error)
+}
+
+type agentUIStreamOptionFunc func(*agentUIStreamConfig)
+
+func (f agentUIStreamOptionFunc) applyAgentUIStream(cfg *agentUIStreamConfig) { f(cfg) }
+
+// WithAgentUIStreamConvertDataPart converts user and assistant data parts to
+// model text or file content without changing the original UI history. A nil
+// callback or result omits data from the prompt. The callback receives its own
+// copy of the data bytes. Callback errors abort creation before the Agent starts
+// streaming.
+func WithAgentUIStreamConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) AgentUIStreamOption {
+	return agentUIStreamOptionFunc(func(cfg *agentUIStreamConfig) {
+		cfg.convertDataPart = fn
+	})
+}
+
 // CreateAgentUIStream creates a UIMessageChunk stream from an Agent and UI message history.
 //
 // The helper validates represented states and configured static tool schemas
@@ -713,7 +739,7 @@ func findHeaderKey(headers map[string]string, name string) string {
 // to model messages and preserved for response assembly.
 // Application metadata/data schemas and unrepresented provider-tool schemas
 // are not validated; Tool.ValidateInput is not a history validation callback.
-func CreateAgentUIStream(ctx context.Context, agent Agent, messages []UIMessage, opts ...UIMessageStreamOption) (<-chan UIMessageChunk, error) {
+func CreateAgentUIStream(ctx context.Context, agent Agent, messages []UIMessage, opts ...AgentUIStreamOption) (<-chan UIMessageChunk, error) {
 	if agent == nil {
 		return nil, fmt.Errorf("aisdk: agent is nil")
 	}
@@ -721,18 +747,30 @@ func CreateAgentUIStream(ctx context.Context, agent Agent, messages []UIMessage,
 	if err != nil {
 		return nil, err
 	}
-	modelMessages, err := ConvertToModelMessages(normalized, WithTools(agent.Tools()))
+	var cfg agentUIStreamConfig
+	for _, opt := range opts {
+		if opt != nil {
+			opt.applyAgentUIStream(&cfg)
+		}
+	}
+	convertOpts := []ConvertOption{WithTools(agent.Tools())}
+	if cfg.convertDataPart != nil {
+		convertOpts = append(convertOpts, WithConvertDataPart(func(part DataPart) (*provider.ContentPart, error) {
+			part.Data = cloneRawMessage(part.Data)
+			return cfg.convertDataPart(part)
+		}))
+	}
+	modelMessages, err := ConvertToModelMessages(normalized, convertOpts...)
 	if err != nil {
 		return nil, err
 	}
 	result := agent.Stream(ctx, WithAgentModelMessages(modelMessages...))
-	streamOpts := append([]UIMessageStreamOption{}, opts...)
-	streamOpts = append(streamOpts, WithUIMessageStreamOriginalMessages(normalized...))
+	streamOpts := append(cfg.streamOptions, WithUIMessageStreamOriginalMessages(normalized...))
 	return result.ToUIMessageStream(streamOpts...), nil
 }
 
 // WriteAgentUIStream creates an Agent UI stream and writes it as SSE.
-func WriteAgentUIStream(w http.ResponseWriter, ctx context.Context, agent Agent, messages []UIMessage, opts ...UIMessageStreamOption) error {
+func WriteAgentUIStream(w http.ResponseWriter, ctx context.Context, agent Agent, messages []UIMessage, opts ...AgentUIStreamOption) error {
 	stream, err := CreateAgentUIStream(ctx, agent, messages, opts...)
 	if err != nil {
 		return err

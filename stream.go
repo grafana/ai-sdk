@@ -359,6 +359,7 @@ type uiMessageStreamConfig struct {
 
 // UIMessageStreamOption configures UI message stream helpers.
 type UIMessageStreamOption interface {
+	AgentUIStreamOption
 	applyUIMessageStream(*uiMessageStreamConfig)
 	uiMessageStreamOption()
 }
@@ -367,6 +368,9 @@ type uiMessageStreamOptionFunc func(*uiMessageStreamConfig)
 
 func (f uiMessageStreamOptionFunc) applyUIMessageStream(cfg *uiMessageStreamConfig) { f(cfg) }
 func (uiMessageStreamOptionFunc) uiMessageStreamOption()                            {}
+func (f uiMessageStreamOptionFunc) applyAgentUIStream(cfg *agentUIStreamConfig) {
+	cfg.streamOptions = append(cfg.streamOptions, f)
+}
 
 // WithUIMessageStreamOriginalMessages configures the original messages used
 // for continuation IDs and message snapshots. Calling this option, even with no
