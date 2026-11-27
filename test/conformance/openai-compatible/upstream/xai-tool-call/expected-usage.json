@@ -1,0 +1,33 @@
+[
+  {
+    "inputTokens": {
+      "total": 307,
+      "noCache": 1,
+      "cacheRead": 306
+    },
+    "outputTokens": {
+      "total": 26,
+      "text": 0,
+      "reasoning": 227
+    },
+    "raw": {
+      "prompt_tokens": 307,
+      "completion_tokens": 26,
+      "total_tokens": 560,
+      "prompt_tokens_details": {
+        "cached_tokens": 306,
+        "text_tokens": 307,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 227,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0,
+        "audio_tokens": 0
+      },
+      "num_sources_used": 0,
+      "cost_in_usd_ticks": 1497500
+    }
+  }
+]
