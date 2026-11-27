@@ -1,6 +1,7 @@
 # Structured JSON stream in OpenAI-compatible Chat Completions format.
 model: gpt-4.1-mini
 prompt: "Return a status JSON object with status ok and count 2."
+assertOutputValue: true
 responseFormat:
   type: json
   name: status_response
