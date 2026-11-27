@@ -67,7 +67,7 @@ registered package versions rather than unverified latest releases:
 
 ```bash
 AI_SDK_ROOT=/absolute/path/to/ai-sdk
-npm create vite@latest ai-chat-web -- --template react-ts
+npm create vite@latest ai-chat-web -- --template react-ts --no-interactive
 cd ai-chat-web
 npm install
 npm install $(node -p '
