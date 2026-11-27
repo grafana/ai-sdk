@@ -5,7 +5,9 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
+
 ## Requirements
+
 ### Requirement: Provider construction and identity
 
 The `providers/openai` Go module SHALL expose `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel` and `NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`, backed by Responses via `github.com/openai/openai-go`. Both SHALL implement provider.LanguageModel, report v4 and the supplied modelID, accept functional options, and neither panic nor call the network during construction.
@@ -1161,3 +1163,19 @@ Shell tool calls SHALL expose `action.timeout_ms` and `action.max_output_length`
 #### Scenario: Output length round trip
 - **WHEN** a shell tool result contains `maxOutputLength: 10000`
 - **THEN** the next request's `shell_call_output` SHALL contain `max_output_length: 10000`, and SHALL omit it when the result has none
+
+### Requirement: Responses input transformation metadata
+
+The adapter SHALL project `input_transformations` to `inputTransformations` in the existing provider metadata namespace of unary results and in finish parts for `response.completed`, `response.incomplete`, and `response.failed`. Entries SHALL retain their order, optional nullable `id`, and string-valued `type`, `action`, and `reason`, including unrecognized strings. Other response metadata and finish behavior SHALL remain unchanged.
+
+#### Scenario: Terminal response reports transformed items
+
+- **WHEN** a unary or terminal stream response reports input transformations
+- **THEN** the result or finish part includes those entries under the active provider metadata namespace
+- **AND** an omitted entry ID stays omitted, and an explicit null ID stays null
+
+#### Scenario: Empty and unreported transformations are distinct
+
+- **WHEN** a unary or terminal stream response contains an empty transformations array
+- **THEN** the metadata contains `inputTransformations: []`
+- **AND** the metadata omits the key for missing or null arrays
