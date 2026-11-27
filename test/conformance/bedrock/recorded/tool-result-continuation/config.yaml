@@ -1,0 +1,16 @@
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+prompt: "Use lookup_bin exactly once to look up the bin for the fictional item paper crane. After you receive the result, reply with just the bin code from the tool. Do not guess."
+stopWhenStepCount: 2
+maxRetries: 0
+tools:
+  lookup_bin:
+    description: "Look up the bin code for a fictional warehouse item."
+    inputSchema:
+      type: object
+      properties:
+        item:
+          type: string
+      required: [item]
+      additionalProperties: false
+    mockResults:
+      - bin: "CRANE-71"
