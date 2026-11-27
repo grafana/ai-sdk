@@ -1,0 +1,20 @@
+model: gpt-5.6-luna
+reasoning: none
+maxRetries: 0
+stopWhenStepCount: 1
+providerOptions:
+  openai:
+    store: false
+    promptCacheOptions:
+      mode: explicit
+messages:
+  - role: user
+    content:
+      - type: text
+        text: 'Demo instruction: answer in plain text.'
+        providerOptions:
+          openai:
+            promptCacheBreakpoint:
+              mode: explicit
+      - type: text
+        text: Reply with READY.
