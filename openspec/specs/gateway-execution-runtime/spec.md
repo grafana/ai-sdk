@@ -394,15 +394,21 @@ As the first step of a call, before host policy, the context check and selection
 - **THEN** it SHALL write the same fixed 400 invalid-request document as before this change
 
 ### Requirement: Shared stream output validation
-The runtime SHALL validate each provider part before an adapter receives it. The rules are: the start position, response segments, text and reasoning IDs, the tool input, call, preview, result and approval phases (including calls seeded from history), finish preconditions and a registered finish reason. A violation SHALL end the stream with the invalid-output outcome. The rules SHALL be those ProviderWire enforced before this change, including response segments.
+The runtime SHALL validate each provider part before an adapter receives it. The rules are: the start position, response segments, text and reasoning IDs, the tool input, call, preview, result and approval phases (including calls seeded from history), finish preconditions and a registered finish reason. A violation SHALL end the stream with the invalid-output outcome. Each adapter SHALL retain its own representation checks and protocol mappings.
 
 #### Scenario: Start position
 - **WHEN** a `stream-start` part arrives after any other part
 - **THEN** the wait SHALL return invalid output, and a first `stream-start` SHALL be accepted
 
 #### Scenario: Response segments
-- **WHEN** a `response-metadata` or `finish` part arrives while text, reasoning or tool input is open or a preview is pending, in the stream or in history
+- **WHEN** a `response-metadata` or a non-interrupted `finish` arrives while text, reasoning or tool input is open, or any `response-metadata` or `finish` arrives while a tool preview is pending, in the stream or in history
 - **THEN** the wait SHALL return invalid output, while an accepted `response-metadata` SHALL open a new segment, at the start of the stream, after content or after a `finish`
+
+#### Scenario: Interrupted finish with open blocks
+- **WHEN** a finish with unified reason `interrupted` meets all finish preconditions other than having open text, reasoning or tool-input blocks
+- **THEN** ProviderWire SHALL receive it unchanged; the runtime SHALL end the segment and discard active text and reasoning state without synthesizing any parts
+- **AND** every open tool input SHALL be abandoned, with its ID still reserved for the whole stream; it SHALL NOT resume or yield a tool call in a later segment
+- **AND** extension validation SHALL use the same policy as the adapter for inspection and observation: ProviderWire SHALL receive the interruption unless a response inspector denies it, and native adapter streams SHALL get the invalid-output outcome without passing that finish to a response inspector
 
 #### Scenario: Parts after a finish
 - **WHEN** a part other than `response-metadata`, raw or provider error arrives after an accepted `finish`, including a second `finish`

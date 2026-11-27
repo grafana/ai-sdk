@@ -1,6 +1,10 @@
 package execution
 
-import "github.com/grafana/ai-sdk/provider"
+import (
+	"context"
+
+	"github.com/grafana/ai-sdk/provider"
+)
 
 type toolPhase uint8
 
@@ -10,6 +14,7 @@ const (
 	toolCallEmitted
 	toolResultPreliminary
 	toolResultEmitted
+	toolInputAbandoned
 )
 
 type streamTool struct {
@@ -25,10 +30,11 @@ type streamTool struct {
 //
 // A stream is a sequence of response segments. A segment opens at the start
 // of the stream and at every response-metadata part, and a finish ends it.
-// Response metadata and finish are accepted only while quiescent: no text,
-// reasoning or tool input is open and no tool result preview is pending,
-// including calls pending in the prompt's [ToolHistory]. After a finish, only
-// response metadata, raw and error parts may follow.
+// Response metadata and finish require no pending tool result previews,
+// including for calls in the prompt's [ToolHistory]. They also require all
+// text, reasoning and tool input blocks to be closed unless configured with
+// [WithInterruptedBlocks]. After a finish, only response metadata, raw and
+// error parts may follow.
 //
 // The other rules are: a stream-start only as the first part; text that never
 // overlaps and never reuses an ID within its segment; reasoning blocks that may
@@ -38,27 +44,53 @@ type streamTool struct {
 // a registered unified finish reason. Error and raw parts change no lifecycle
 // state other than the start position.
 type StreamValidator struct {
-	started         bool
-	segmentFinished bool
-	trailingError   bool
-	activeText      string
-	textIDs         map[string]struct{}
-	reasoning       map[string]struct{}
-	reasoningIDs    map[string]struct{}
-	tools           map[string]streamTool
-	history         map[string]streamTool
-	approvalIDs     map[string]struct{}
+	allowInterruptedBlocks bool
+	started                bool
+	segmentFinished        bool
+	trailingError          bool
+	activeText             string
+	textIDs                map[string]struct{}
+	reasoning              map[string]struct{}
+	reasoningIDs           map[string]struct{}
+	tools                  map[string]streamTool
+	history                map[string]streamTool
+	approvalIDs            map[string]struct{}
 }
 
-// NewStreamValidator returns a validator seeded from its own copy of history.
-func NewStreamValidator(history ToolHistory) *StreamValidator {
+type streamPolicy struct {
+	allowInterruptedBlocks bool
+}
+
+type streamPolicyKey struct{}
+
+// StreamOption configures stream output validation for a call.
+type StreamOption func(*streamPolicy)
+
+// WithInterruptedBlocks lets a valid interrupted finish abandon open text,
+// reasoning and tool input without releasing any tool IDs.
+func WithInterruptedBlocks() StreamOption {
+	return func(policy *streamPolicy) { policy.allowInterruptedBlocks = true }
+}
+
+func withStreamOptions(ctx context.Context, options ...StreamOption) context.Context {
+	var policy streamPolicy
+	for _, option := range options {
+		option(&policy)
+	}
+	return context.WithValue(ctx, streamPolicyKey{}, policy)
+}
+
+// NewStreamValidator uses the call's output policy and its own copy of history.
+func NewStreamValidator(ctx context.Context, history ToolHistory) *StreamValidator {
+	policy, _ := ctx.Value(streamPolicyKey{}).(streamPolicy)
 	validator := &StreamValidator{
-		textIDs:      make(map[string]struct{}),
-		reasoning:    make(map[string]struct{}),
-		reasoningIDs: make(map[string]struct{}),
-		tools:        make(map[string]streamTool),
-		history:      make(map[string]streamTool, len(history)),
-		approvalIDs:  make(map[string]struct{}),
+		allowInterruptedBlocks: policy.allowInterruptedBlocks,
+		textIDs:                make(map[string]struct{}),
+		reasoning:              make(map[string]struct{}),
+		reasoningIDs:           make(map[string]struct{}),
+		tools:                  make(map[string]streamTool),
+		history:                make(map[string]streamTool, len(history)),
+		approvalIDs:            make(map[string]struct{}),
 	}
 	for id, name := range history {
 		validator.history[id] = streamTool{name: name, phase: toolCallEmitted, providerExecuted: true}
@@ -101,7 +133,7 @@ func (v *StreamValidator) check(part provider.StreamPart) bool {
 	case provider.PartStreamStart:
 		return !v.started
 	case provider.PartResponseMeta:
-		if !v.quiescent() {
+		if !v.canEndSegment(false) {
 			return false
 		}
 		v.startSegment()
@@ -137,8 +169,15 @@ func (v *StreamValidator) check(part provider.StreamPart) bool {
 	case provider.PartToolApprovalRequest:
 		return v.checkApproval(part)
 	case provider.PartFinish:
-		if !v.quiescent() || len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil || !registeredFinishReason(part.FinishReason.Unified) {
+		if len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil || !registeredFinishReason(part.FinishReason.Unified) {
 			return false
+		}
+		abandon := v.allowInterruptedBlocks && part.FinishReason.Unified == provider.FinishReasonInterrupted
+		if !v.canEndSegment(abandon) {
+			return false
+		}
+		if abandon {
+			v.abandonOpenBlocks()
 		}
 		v.segmentFinished = true
 	default:
@@ -156,12 +195,12 @@ func allowedAfterFinish(partType provider.StreamPartType) bool {
 	}
 }
 
-func (v *StreamValidator) quiescent() bool {
-	if v.activeText != "" || len(v.reasoning) != 0 {
+func (v *StreamValidator) canEndSegment(allowOpenBlocks bool) bool {
+	if !allowOpenBlocks && (v.activeText != "" || len(v.reasoning) != 0) {
 		return false
 	}
 	for _, tool := range v.tools {
-		if tool.phase == toolInputOpen || tool.phase == toolResultPreliminary {
+		if tool.phase == toolResultPreliminary || (!allowOpenBlocks && tool.phase == toolInputOpen) {
 			return false
 		}
 	}
@@ -171,6 +210,17 @@ func (v *StreamValidator) quiescent() bool {
 		}
 	}
 	return true
+}
+
+func (v *StreamValidator) abandonOpenBlocks() {
+	v.activeText = ""
+	clear(v.reasoning)
+	for id, tool := range v.tools {
+		if tool.phase == toolInputOpen {
+			tool.phase = toolInputAbandoned
+			v.tools[id] = tool
+		}
+	}
 }
 
 func (v *StreamValidator) startSegment() {

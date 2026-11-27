@@ -193,7 +193,7 @@ func validStreamEvent(value streamEvent) bool {
 }
 
 func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions) {
-	stream, err := call.Stream()
+	stream, err := call.Stream(execution.WithInterruptedBlocks())
 	if err != nil {
 		view := call.View(err)
 		h.writeSafeError(w, safeErrorFromProvider(err), view.Metadata())

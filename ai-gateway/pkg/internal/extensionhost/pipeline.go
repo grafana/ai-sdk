@@ -337,7 +337,7 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 	established = true
 	history, _ := execution.RebuildToolHistory(options.Prompt)
 	out := make(chan provider.StreamPart, streamBuffer)
-	go p.forward(ctx, cancel, c, execution.NewStreamValidator(history), result.Stream, out)
+	go p.forward(ctx, cancel, c, execution.NewStreamValidator(ctx, history), result.Stream, out)
 	return &provider.StreamResult{Stream: out, Request: result.Request, Response: result.Response}, nil
 }
 
