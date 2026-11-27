@@ -1,0 +1,26 @@
+[
+  {
+    "inputTokens": {
+      "total": 31,
+      "noCache": 31,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 4
+    },
+    "raw": {
+      "service_tier": "standard",
+      "input_tokens": 31,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 4,
+      "inference_geo": "not_available",
+      "speed": "standard"
+    }
+  }
+]
