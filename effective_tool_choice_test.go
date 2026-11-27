@@ -476,10 +476,15 @@ func TestStreamText_EffectiveToolChoiceApprovalSuppression(t *testing.T) {
 			} else {
 				assert.Zero(t, executions)
 			}
-			if status == ToolApprovalUserApproval {
-				assert.Empty(t, result.ToolResults())
-			} else {
+			if status == ToolApprovalApproved {
 				assert.Len(t, result.ToolResults(), 1)
+			} else {
+				assert.Empty(t, result.ToolResults())
+			}
+			if status == ToolApprovalDenied {
+				output := promptToolOutputs(result.Steps()[0].Response.Messages)["c1"]
+				require.NotNil(t, output)
+				assert.Equal(t, provider.ToolOutputExecutionDenied, output.Type)
 			}
 		})
 	}

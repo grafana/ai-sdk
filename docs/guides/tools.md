@@ -177,6 +177,21 @@ Lifecycle hooks support input streaming and observability. Keep hook handling at
 an infrastructure boundary so ordinary tool business logic remains focused on
 validation and execution.
 
+## Read results and failures
+
+`ToolResults` on a step or collected response lists final tool results. A tool
+that returns an ordinary value, even one with an `error` field, still has a
+result. Failed execution, rejected input, provider-reported tool errors,
+approval denials, and preliminary outputs are not in this list.
+
+**Migration:** If you checked `IsError` on entries in `ToolResults`, look
+for `ToolErrorContent` in `Content` instead (or
+`StreamToolError` in the full stream). To observe errors from tools that
+actually ran locally, use `OnToolCallFinish`. For denials, inspect the step's
+`ToolApprovalResponses`. To continue the conversation, use
+`ResponseMessages` rather than rebuilding history from `ToolResults`; model
+history still carries the error and denial outcomes.
+
 ## Reference
 
 - [`TypedTool`](https://pkg.go.dev/github.com/grafana/ai-sdk#TypedTool)

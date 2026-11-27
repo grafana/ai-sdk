@@ -855,9 +855,10 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		require.Len(t, steps, 2)
 		require.Len(t, steps[0].ToolCalls, 1)
 		assert.True(t, steps[0].ToolCalls[0].Invalid)
-		require.Len(t, steps[0].ToolResults, 1)
-		require.NotNil(t, steps[0].ToolResults[0].ModelOutput)
-		assert.Contains(t, steps[0].ToolResults[0].ModelOutput.Text, "invalid input for tool search")
+		assert.Empty(t, steps[0].ToolResults)
+		output := promptToolOutputs(steps[0].Response.Messages)["c1"]
+		require.NotNil(t, output)
+		assert.Contains(t, output.Text, "invalid input for tool search")
 
 		var inputError, outputError *UIMessageChunk
 		for i := range chunks {
@@ -871,7 +872,7 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		require.NotNil(t, inputError)
 		assert.Nil(t, outputError, "the tool-input-error chunk alone reports an invalid tool call")
 		assert.Nil(t, inputError.Dynamic)
-		assert.Equal(t, steps[0].ToolResults[0].ModelOutput.Text, inputError.ErrorText)
+		assert.Equal(t, output.Text, inputError.ErrorText)
 	})
 
 	t.Run("optional empty string is valid without minLength", func(t *testing.T) {
@@ -947,7 +948,10 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		require.Len(t, steps, 2)
 		require.Len(t, steps[0].ToolCalls, 1)
 		assert.True(t, steps[0].ToolCalls[0].Invalid)
-		require.Len(t, steps[0].ToolResults, 1)
+		assert.Empty(t, steps[0].ToolResults)
+		output := promptToolOutputs(steps[0].Response.Messages)["c1"]
+		require.NotNil(t, output)
+		assert.Equal(t, provider.ToolOutputErrorText, output.Type)
 	})
 
 	t.Run("whitespace-only input validates as empty object", func(t *testing.T) {
@@ -1042,10 +1046,7 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		assert.Error(t, step.ToolCalls[0].Error)
 		assert.True(t, step.ToolCalls[0].ProviderExecuted)
 		assert.Equal(t, boolPtr(true), step.ToolCalls[0].Dynamic)
-		require.Len(t, step.ToolResults, 1)
-		assert.True(t, step.ToolResults[0].ProviderExecuted)
-		assert.True(t, step.ToolResults[0].IsError)
-		assert.Error(t, step.ToolResults[0].Error)
+		assert.Empty(t, step.ToolResults)
 		require.Len(t, step.Content, 2)
 		callContent, ok := step.Content[0].(ToolCallContent)
 		require.True(t, ok)
@@ -1089,8 +1090,7 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		assert.Error(t, result.ToolCalls[0].Error)
 		assert.True(t, result.ToolCalls[0].ProviderExecuted)
 		assert.Equal(t, boolPtr(true), result.ToolCalls[0].Dynamic)
-		require.Len(t, result.ToolResults, 1)
-		assert.True(t, result.ToolResults[0].ProviderExecuted)
+		assert.Empty(t, result.ToolResults)
 		require.Len(t, result.Content, 2)
 		callContent, ok := result.Content[0].(ToolCallContent)
 		require.True(t, ok)
@@ -1159,8 +1159,9 @@ func TestStreamText_ToolInputSchemaValidation(t *testing.T) {
 		require.Len(t, result.ToolCalls, 1)
 		assert.True(t, result.ToolCalls[0].Invalid)
 		assert.Error(t, result.ToolCalls[0].Error)
-		require.Len(t, result.ToolResults, 1)
-		assert.True(t, result.ToolResults[0].ProviderExecuted)
+		assert.Empty(t, result.ToolResults)
+		require.Len(t, result.Content, 2)
+		assert.IsType(t, ToolErrorContent{}, result.Content[1])
 	})
 }
 
@@ -2639,10 +2640,11 @@ func TestStreamTextToolApproval_AutomaticDeniedPolicy(t *testing.T) {
 	require.Len(t, steps[0].ToolApprovalResponses, 1)
 	assert.False(t, steps[0].ToolApprovalResponses[0].Approved)
 	assert.Equal(t, "policy denied", steps[0].ToolApprovalResponses[0].Reason)
-	require.Len(t, steps[0].ToolResults, 1)
-	require.NotNil(t, steps[0].ToolResults[0].ModelOutput)
-	assert.Equal(t, provider.ToolOutputExecutionDenied, steps[0].ToolResults[0].ModelOutput.Type)
-	assert.Equal(t, new("policy denied"), steps[0].ToolResults[0].ModelOutput.Reason)
+	assert.Empty(t, steps[0].ToolResults)
+	output := promptToolOutputs(steps[0].Response.Messages)["c1"]
+	require.NotNil(t, output)
+	assert.Equal(t, provider.ToolOutputExecutionDenied, output.Type)
+	assert.Equal(t, new("policy denied"), output.Reason)
 }
 
 func TestStreamTextDefaultStopCondition(t *testing.T) {
@@ -3847,7 +3849,7 @@ func TestStreamText_StopWhenAnyNamedToolIsCalled(t *testing.T) {
 	assert.Equal(t, 1, calls, "no second model call after the stop condition matched")
 }
 
-func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
+func TestStreamTextToolErrorProducesModelOutput(t *testing.T) {
 	callNum := 0
 	dynamic := true
 	metadata := provider.ProviderMetadata{"test": json.RawMessage(`{"itemId":"call-1"}`)}
@@ -3885,21 +3887,17 @@ func TestStreamTextToolErrorProducesToolResult(t *testing.T) {
 
 	steps := result.Steps()
 	require.GreaterOrEqual(t, len(steps), 2, "error result should allow continuation")
-	require.Len(t, steps[0].ToolResults, 1)
-
-	tr := steps[0].ToolResults[0]
-	require.NotNil(t, tr.ModelOutput)
-	assert.Equal(t, provider.ToolOutputErrorText, tr.ModelOutput.Type)
-	assert.Equal(t, "transient failure", tr.ModelOutput.Text)
-	assert.Equal(t, boolPtr(true), tr.Dynamic)
-	assert.Equal(t, metadata, tr.ProviderMetadata)
-	assert.True(t, tr.IsError)
-	require.Error(t, tr.Error)
+	assert.Empty(t, steps[0].ToolResults)
+	output := promptToolOutputs(steps[0].Response.Messages)["call-1"]
+	require.NotNil(t, output)
+	assert.Equal(t, provider.ToolOutputErrorText, output.Type)
+	assert.Equal(t, "transient failure", output.Text)
 	require.Len(t, steps[0].Content, 2)
 	toolError, ok := steps[0].Content[1].(ToolErrorContent)
 	require.True(t, ok)
-	_, ok = toolError.Error.(error)
-	assert.True(t, ok)
+	toolErr, ok := toolError.Error.(error)
+	require.True(t, ok)
+	assert.ErrorContains(t, toolErr, "transient failure")
 	assert.Equal(t, boolPtr(true), toolError.Dynamic)
 	assert.Equal(t, metadata, toolError.ProviderMetadata)
 	assert.Equal(t, "recovered", result.Text())
@@ -3971,12 +3969,11 @@ func TestStreamTextUnavailableToolRejection(t *testing.T) {
 	assert.True(t, tc.Invalid, "tool call should be marked invalid")
 	assert.Equal(t, boolPtr(true), tc.Dynamic)
 
-	require.Len(t, steps[0].ToolResults, 1, "unavailable tool result should be tracked in step")
-	tr := steps[0].ToolResults[0]
-	assert.Equal(t, "unknown_tool", tr.ToolName)
-	require.NotNil(t, tr.ModelOutput)
-	assert.Equal(t, provider.ToolOutputErrorText, tr.ModelOutput.Type)
-	assert.Contains(t, tr.ModelOutput.Text, "unavailable tool 'unknown_tool'")
+	assert.Empty(t, steps[0].ToolResults)
+	output := promptToolOutputs(steps[0].Response.Messages)[tc.ToolCallID]
+	require.NotNil(t, output)
+	assert.Equal(t, provider.ToolOutputErrorText, output.Type)
+	assert.Contains(t, output.Text, "unavailable tool 'unknown_tool'")
 
 	assert.Equal(t, "recovered", result.Text())
 }
@@ -4243,19 +4240,18 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 
 		steps := result.Steps()
 		require.GreaterOrEqual(t, len(steps), 2)
-		require.Len(t, steps[0].ToolResults, 3)
+		require.Len(t, steps[0].ToolResults, 2)
 
 		trA := steps[0].ToolResults[0]
 		assert.Equal(t, "good_a", trA.ToolName)
 		assert.Equal(t, json.RawMessage(`{"ok":"a"}`), trA.Output)
 
-		trB := steps[0].ToolResults[1]
-		assert.Equal(t, "bad_b", trB.ToolName)
-		require.NotNil(t, trB.ModelOutput)
-		assert.Equal(t, provider.ToolOutputErrorText, trB.ModelOutput.Type)
-		assert.Equal(t, "bad_b failed", trB.ModelOutput.Text)
+		output := promptToolOutputs(steps[0].Response.Messages)["c2"]
+		require.NotNil(t, output)
+		assert.Equal(t, provider.ToolOutputErrorText, output.Type)
+		assert.Equal(t, "bad_b failed", output.Text)
 
-		trC := steps[0].ToolResults[2]
+		trC := steps[0].ToolResults[1]
 		assert.Equal(t, "good_c", trC.ToolName)
 		assert.Equal(t, json.RawMessage(`{"ok":"c"}`), trC.Output)
 	})
@@ -4470,10 +4466,12 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 
 		steps := result.Steps()
 		require.GreaterOrEqual(t, len(steps), 2)
-		require.Len(t, steps[0].ToolResults, 3)
-		for _, tr := range steps[0].ToolResults {
-			require.NotNil(t, tr.ModelOutput)
-			assert.Equal(t, provider.ToolOutputErrorText, tr.ModelOutput.Type)
+		assert.Empty(t, steps[0].ToolResults)
+		outputs := promptToolOutputs(steps[0].Response.Messages)
+		require.Len(t, outputs, 3)
+		for _, id := range []string{"c1", "c2", "c3"} {
+			require.Contains(t, outputs, id)
+			assert.Equal(t, provider.ToolOutputErrorText, outputs[id].Type)
 		}
 	})
 
@@ -4521,18 +4519,17 @@ func TestStreamTextConcurrentToolExecution(t *testing.T) {
 
 		steps := result.Steps()
 		require.GreaterOrEqual(t, len(steps), 2)
-		require.Len(t, steps[0].ToolResults, 2)
+		require.Len(t, steps[0].ToolResults, 1)
 
 		trGood := steps[0].ToolResults[0]
 		assert.Equal(t, "good", trGood.ToolName)
 		assert.Equal(t, json.RawMessage(`{"ok":true}`), trGood.Output)
 		assert.Nil(t, trGood.ModelOutput)
 
-		trBad := steps[0].ToolResults[1]
-		assert.Equal(t, "bad_convert", trBad.ToolName)
-		require.NotNil(t, trBad.ModelOutput)
-		assert.Equal(t, provider.ToolOutputErrorText, trBad.ModelOutput.Type)
-		assert.Equal(t, "conversion failed", trBad.ModelOutput.Text)
+		output := promptToolOutputs(steps[0].Response.Messages)["c2"]
+		require.NotNil(t, output)
+		assert.Equal(t, provider.ToolOutputErrorText, output.Type)
+		assert.Equal(t, "conversion failed", output.Text)
 	})
 
 	t.Run("stream_events_arrive_in_completion_order", func(t *testing.T) {
@@ -4672,7 +4669,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "srv-1", ToolName: "web_search", Output: json.RawMessage(`[{"url":"x"}]`), ProviderExecuted: true},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		require.Len(t, msgs, 1, "should have only assistant message, no tool message")
 		am := msgs[0]
 		assert.Equal(t, provider.RoleAssistant, am.Role)
@@ -4691,7 +4688,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "tc-1", ToolName: "my_tool", Output: json.RawMessage(`{"ok":true}`)},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		require.Len(t, msgs, 2)
 		assert.Equal(t, provider.RoleAssistant, msgs[0].Role)
 		assert.Equal(t, provider.RoleTool, msgs[1].Role)
@@ -4709,7 +4706,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "tc-1", ToolName: "report", Output: json.RawMessage(`{"ok":true}`)},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		require.Len(t, msgs, 2, "assistant + tool message")
 
 		am := msgs[0]
@@ -4732,7 +4729,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "tc-1", ToolName: "t", Output: json.RawMessage(`{}`), ProviderExecuted: true, ProviderMetadata: meta},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		am := msgs[0]
 		assert.NotNil(t, am.Content[0].ProviderOptions, "ToolCall ProviderOptions should be set")
 		assert.NotNil(t, am.Content[1].ProviderOptions, "ToolResult ProviderOptions should be set")
@@ -4751,7 +4748,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "srv-1", ToolName: "ws", Output: json.RawMessage(`{}`), ModelOutput: modelOutput, ProviderExecuted: true},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		am := msgs[0]
 		require.NotNil(t, am.Content[1].Output)
 		assert.Equal(t, provider.ToolOutputText, am.Content[1].Output.Type)
@@ -4774,7 +4771,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "tc-1", ToolName: "weather", Output: json.RawMessage(`"72F sunny"`)},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		require.Len(t, msgs, 2, "assistant + tool message")
 
 		am := msgs[0]
@@ -4799,7 +4796,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "tc-1", ToolName: "t", Input: json.RawMessage(`{}`)},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		require.Len(t, msgs, 1, "no tool results yet, only assistant message")
 		am := msgs[0]
 		require.Len(t, am.Content, 1, "only the tool-call part")
@@ -4821,7 +4818,7 @@ func TestAppendToolResults_ProviderExecutedRouting(t *testing.T) {
 				{ToolCallID: "tc-1", ToolName: "my_tool", Output: json.RawMessage(`{"ok":true}`)},
 			},
 		}
-		msgs := appendToolResults(nil, step)
+		msgs := appendToolResults(nil, step, step.ToolResults)
 		require.Len(t, msgs, 2)
 		require.Len(t, msgs[0].Content, 2)
 		assert.Equal(t, provider.ContentPartTypeToolCall, msgs[0].Content[0].Type)
@@ -5088,7 +5085,7 @@ func TestBuildContent(t *testing.T) {
 			}},
 		}
 
-		content := buildContent(step)
+		content := buildContent(step, step.ToolResults)
 		require.Len(t, content, 7)
 
 		file, ok := content[0].(FileContent)
@@ -5144,7 +5141,7 @@ func TestBuildContent(t *testing.T) {
 			},
 		}
 
-		content := buildContent(step)
+		content := buildContent(step, step.ToolResults)
 		require.Len(t, content, 6)
 		require.IsType(t, ToolCallContent{}, content[0])
 		require.IsType(t, ToolResultContent{}, content[1])
@@ -5179,7 +5176,7 @@ func TestBuildContent(t *testing.T) {
 			},
 		}
 
-		content := buildContent(step)
+		content := buildContent(step, step.ToolResults)
 		require.Len(t, content, 6)
 		assert.IsType(t, ToolCallContent{}, content[0])
 		assert.IsType(t, ToolApprovalRequestContent{}, content[1])
@@ -5481,7 +5478,18 @@ func TestStreamText_ToolResultsFollowCallOrderInMixedSteps(t *testing.T) {
 			for _, r := range result.Steps()[0].ToolResults {
 				got = append(got, r.ToolName)
 			}
-			assert.Equal(t, tc.calls, got)
+			assert.Equal(t, []string{"good"}, got)
+
+			var contentOutcomeOrder []string
+			for _, part := range result.Steps()[0].Content {
+				switch part := part.(type) {
+				case ToolErrorContent:
+					contentOutcomeOrder = append(contentOutcomeOrder, part.ToolName)
+				case ToolResultContent:
+					contentOutcomeOrder = append(contentOutcomeOrder, part.ToolName)
+				}
+			}
+			assert.Equal(t, tc.calls, contentOutcomeOrder)
 		})
 	}
 }

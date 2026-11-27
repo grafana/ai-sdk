@@ -738,14 +738,14 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		if ctx.Err() != nil {
 			if outcome.completed {
 				r.mu.Lock()
-				r.steps = append(r.steps, step)
+				r.steps = append(r.steps, step.StepResult)
 				r.lastStep = &r.steps[len(r.steps)-1]
 				r.lastResponse = step.Response
 				r.provMeta = step.ProviderMetadata
 				r.allWarnings = append(r.allWarnings, step.Warnings...)
 				r.mu.Unlock()
 				if cfg.onStepFinish != nil {
-					cfg.onStepFinish(OnStepFinishState{StepResult: step})
+					cfg.onStepFinish(OnStepFinishState{StepResult: step.StepResult})
 				}
 			}
 			r.abort(ctx, cfg, nil)
@@ -758,7 +758,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		r.mu.Lock()
-		r.steps = append(r.steps, step)
+		r.steps = append(r.steps, step.StepResult)
 		r.lastStep = &r.steps[len(r.steps)-1]
 		r.lastResponse = step.Response
 		r.provMeta = step.ProviderMetadata
@@ -766,7 +766,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		r.mu.Unlock()
 
 		if cfg.onStepFinish != nil {
-			cfg.onStepFinish(OnStepFinishState{StepResult: step})
+			cfg.onStepFinish(OnStepFinishState{StepResult: step.StepResult})
 		}
 
 		// Check if we should continue — only count client (non-provider-executed)
@@ -775,8 +775,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		// follow-up request.
 		hasClientToolCalls := false
 		hasUnresolvedClientToolCalls := false
-		toolResultsByID := make(map[string]bool, len(step.ToolResults))
-		for _, tr := range step.ToolResults {
+		toolResultsByID := make(map[string]bool, len(step.toolOutcomes))
+		for _, tr := range step.toolOutcomes {
 			toolResultsByID[tr.ToolCallID] = true
 		}
 		for _, tc := range step.ToolCalls {
@@ -830,7 +830,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Append tool results to messages for next step
-		msgs = appendToolResults(currentMsgs, step)
+		msgs = appendToolResults(currentMsgs, step.StepResult, step.toolOutcomes)
 	}
 }
 
@@ -868,6 +868,16 @@ type stepStreamOutcome struct {
 	toolChoiceViolated bool
 }
 
+type stepDraft struct {
+	StepResult
+	toolOutcomes []ToolResult
+}
+
+func (s *stepDraft) recordToolResult(result ToolResult) {
+	s.toolOutcomes = append(s.toolOutcomes, result)
+	s.ToolResults = append(s.ToolResults, result)
+}
+
 func (r *StreamTextResult) processStep(
 	ctx context.Context,
 	stepNum int,
@@ -878,12 +888,12 @@ func (r *StreamTextResult) processStep(
 	stepContext any,
 	currentMsgs []provider.Message,
 	opCancel context.CancelFunc,
-) (StepResult, stepStreamOutcome, error) {
-	step := StepResult{
+) (stepDraft, stepStreamOutcome, error) {
+	step := stepDraft{StepResult: StepResult{
 		StepNumber: stepNum,
 		StepType:   StepTypeInitial,
 		Model:      stepModel,
-	}
+	}}
 	if stepNum > 0 {
 		step.StepType = StepTypeToolResult
 	}
@@ -1195,8 +1205,8 @@ loop:
 				return step, stepStreamOutcome{hasOutput: hasOutput}, err
 			}
 			preliminary := part.Preliminary != nil && *part.Preliminary
-			if !preliminary && len(step.ToolResults) > 0 {
-				tr := step.ToolResults[len(step.ToolResults)-1]
+			if !preliminary && len(step.toolOutcomes) > 0 {
+				tr := step.toolOutcomes[len(step.toolOutcomes)-1]
 				if tr.ProviderExecuted && !tr.Preliminary {
 					step.responseContent = append(step.responseContent, provider.ContentPart{
 						Type:             provider.ContentPartTypeToolResult,
@@ -1405,8 +1415,8 @@ loop:
 	}
 	if terminated && !completed {
 		step.FinishReason = provider.FinishReason{Unified: provider.FinishReasonError}
-		step.Content = buildContent(step)
-		step.Response.Messages = ToResponseMessages(buildResponseContent(step))
+		step.Content = buildContent(step.StepResult, step.toolOutcomes)
+		step.Response.Messages = ToResponseMessages(buildResponseContent(step.StepResult, step.toolOutcomes))
 		r.emit(StreamFinishStep{
 			Response:         &responseMeta,
 			Usage:            &step.Usage,
@@ -1438,12 +1448,12 @@ loop:
 			}
 		}
 		sortToolResultsByCall(&step)
-		step.Content = buildContent(step)
+		step.Content = buildContent(step.StepResult, step.toolOutcomes)
 		// Populate Response.Messages with the next-call message tail
 		// (mirrors upstream result.response.messages). The same ordering
 		// is used by appendToolResults, so the orchestration loop and the
 		// surfaced field stay in lockstep.
-		step.Response.Messages = ToResponseMessages(buildResponseContent(step))
+		step.Response.Messages = ToResponseMessages(buildResponseContent(step.StepResult, step.toolOutcomes))
 		r.emit(StreamFinishStep{
 			Response:         &responseMeta,
 			Usage:            &step.Usage,
@@ -1494,7 +1504,7 @@ func isSemanticOutputStreamPart(part provider.StreamPart) bool {
 
 func (r *StreamTextResult) handleToolCall(
 	part provider.StreamPart,
-	step *StepResult,
+	step *stepDraft,
 	cfg *streamConfig,
 	toolTitleByID map[string]string,
 	stepContext any,
@@ -1579,7 +1589,7 @@ func (r *StreamTextResult) handleToolCall(
 
 func (r *StreamTextResult) handleToolResult(
 	part provider.StreamPart,
-	step *StepResult,
+	step *stepDraft,
 	cfg *streamConfig,
 	providerResultTools ToolSet,
 ) error {
@@ -1607,7 +1617,7 @@ func (r *StreamTextResult) handleToolResult(
 	if part.IsError {
 		tr.Error = toolResultError(part.Result)
 		if !preliminary {
-			step.ToolResults = append(step.ToolResults, tr)
+			step.toolOutcomes = append(step.toolOutcomes, tr)
 		}
 		tsp := StreamToolError{
 			ToolCallID: part.ToolCallID, ToolName: part.ToolName,
@@ -1641,20 +1651,18 @@ func (r *StreamTextResult) handleToolResult(
 		}
 		tr.ModelOutput = modelOutput
 	}
-	step.ToolResults = append(step.ToolResults, tr)
+	step.recordToolResult(tr)
 	return nil
 }
 
-// sortToolResultsByCall puts step.ToolResults in step.ToolCalls order. Results
-// are appended as each kind is handled: provider-executed and rejected calls
-// while the model stream is read, denied approvals before any tool starts, and
-// executed calls after they all finish, so a step mixing them otherwise lists
-// results in handling order. Upstream keeps arrival order here; Go keeps call
-// order, as recorded in test/conformance/upstream.yaml. A result for a call
-// outside this step keeps its relative position ahead of this step's results,
-// and results for the same call keep their order.
-func sortToolResultsByCall(step *StepResult) {
-	if len(step.ToolResults) < 2 {
+// sortToolResultsByCall puts both published results and complete tool outcomes
+// in step.ToolCalls order. Outcomes are collected during model streaming
+// (provider-executed and rejected calls), before execution (denied calls), and
+// after execution (local tools). Upstream exposes arrival order; Go exposes
+// call order, as recorded in test/conformance/upstream.yaml. Results with no
+// call in this step sort first, and results for the same call keep their order.
+func sortToolResultsByCall(step *stepDraft) {
+	if len(step.toolOutcomes) < 2 {
 		return
 	}
 	position := make(map[string]int, len(step.ToolCalls))
@@ -1669,9 +1677,9 @@ func sortToolResultsByCall(step *StepResult) {
 		}
 		return -1
 	}
-	slices.SortStableFunc(step.ToolResults, func(a, b ToolResult) int {
-		return cmp.Compare(rank(a), rank(b))
-	})
+	byCall := func(a, b ToolResult) int { return cmp.Compare(rank(a), rank(b)) }
+	slices.SortStableFunc(step.toolOutcomes, byCall)
+	slices.SortStableFunc(step.ToolResults, byCall)
 }
 
 // toolExecOutcome holds the result of a single tool execution, including
@@ -1685,7 +1693,7 @@ type toolExecOutcome struct {
 func (r *StreamTextResult) rejectToolCall(
 	part provider.StreamPart,
 	input json.RawMessage,
-	step *StepResult,
+	step *stepDraft,
 	cfg *streamConfig,
 	toolTitleByID map[string]string,
 	err error,
@@ -1725,7 +1733,7 @@ func (r *StreamTextResult) rejectToolCall(
 		return
 	}
 
-	step.ToolResults = append(step.ToolResults, ToolResult{
+	step.toolOutcomes = append(step.toolOutcomes, ToolResult{
 		ToolCallID: part.ToolCallID,
 		ToolName:   part.ToolName,
 		Input:      input,
@@ -1763,7 +1771,7 @@ func (r *StreamTextResult) rejectToolCall(
 // chunk identity (the documented contract) remain compatible.
 func (r *StreamTextResult) executeTools(
 	ctx context.Context,
-	step *StepResult,
+	step *stepDraft,
 	cfg *streamConfig,
 	stepContext any,
 	currentMsgs []provider.Message,
@@ -1824,16 +1832,11 @@ func (r *StreamTextResult) executeTools(
 			resp := newToolApprovalResponse(approvalID, tc, false, decision.Reason)
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
 			step.ToolApprovalResponses = append(step.ToolApprovalResponses, resp)
-			// Auto-deny stores the synthetic execution-denied result on the
-			// step (so appendToolResults can surface it in the next prompt and
-			// Content() consumers see it), but does NOT stream a
-			// tool-output-denied event. Upstream
-			// create-execute-tools-transformation.ts only emits the request +
-			// response chunks for in-step auto-deny; tool-output-denied is
-			// reserved for the resume-from-prior-message flow in
-			// resolveToolApprovals.
+			// Keep the synthetic execution-denied outcome in history and
+			// Content, not ToolResults. The Go stream emits only approval
+			// request/response here, unlike the resume-from-history flow.
 			if !tc.ProviderExecuted {
-				step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: denialReason(decision.Reason)}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
+				step.toolOutcomes = append(step.toolOutcomes, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: denialReason(decision.Reason)}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
 			}
 			r.emitToolApprovalRequest(cfg, req)
 			r.emitToolApprovalResponse(cfg, resp)
@@ -1864,7 +1867,12 @@ func (r *StreamTextResult) executeTools(
 
 	// Events went out as each tool completed; results stay in call order.
 	for _, out := range outcomes {
-		step.ToolResults = append(step.ToolResults, out.result)
+		switch out.event.(type) {
+		case StreamToolResult:
+			step.recordToolResult(out.result)
+		default:
+			step.toolOutcomes = append(step.toolOutcomes, out.result)
+		}
 	}
 	return nil
 }
@@ -2671,7 +2679,7 @@ func (r *StreamTextResult) ToolCalls() []ToolCall {
 	return r.toolCalls()
 }
 
-// ToolResults returns the tool results from all recorded steps in step order.
+// ToolResults concatenates each recorded step's [StepResult.ToolResults] in step order.
 // The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolResults() []ToolResult {
 	r.Wait()
@@ -2989,10 +2997,10 @@ func addTokenCounts(a, b *int) *int {
 // orchestration loop and external multi-step consumers share one
 // implementation. Reasoning blocks (with their ProviderMetadata, including
 // Anthropic's extended-thinking signature) are preserved across rounds.
-func appendToolResults(msgs []provider.Message, step StepResult) []provider.Message {
+func appendToolResults(msgs []provider.Message, step StepResult, toolOutcomes []ToolResult) []provider.Message {
 	result := make([]provider.Message, len(msgs))
 	copy(result, msgs)
-	result = append(result, ToResponseMessages(buildResponseContent(step))...)
+	result = append(result, ToResponseMessages(buildResponseContent(step, toolOutcomes))...)
 	return result
 }
 
@@ -3003,7 +3011,7 @@ func appendToolResults(msgs []provider.Message, step StepResult) []provider.Mess
 // Otherwise, manually constructed step state uses deterministic grouped order.
 // Invalid tool-call inputs with non-object payloads are collapsed to {} so the
 // model sees syntactically valid JSON on the next call.
-func buildResponseContent(step StepResult) []provider.ContentPart {
+func buildResponseContent(step StepResult, toolOutcomes []ToolResult) []provider.ContentPart {
 	if len(step.responseContent) > 0 {
 		existingApprovalRequests := make(map[string]bool, len(step.ToolApprovalRequests))
 		for _, part := range step.responseContent {
@@ -3012,7 +3020,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 			}
 		}
 
-		parts := make([]provider.ContentPart, 0, len(step.responseContent)+len(step.ToolApprovalRequests)+len(step.Files)+len(step.ToolApprovalResponses)+len(step.ToolResults))
+		parts := make([]provider.ContentPart, 0, len(step.responseContent)+len(step.ToolApprovalRequests)+len(step.Files)+len(step.ToolApprovalResponses)+len(toolOutcomes))
 		parts = append(parts, step.responseContent...)
 		for _, ar := range step.ToolApprovalRequests {
 			if existingApprovalRequests[ar.ApprovalID] {
@@ -3054,7 +3062,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 				ProviderOptions:  providerMetadataToOptions(ar.ProviderMetadata),
 			})
 		}
-		for _, tr := range step.ToolResults {
+		for _, tr := range toolOutcomes {
 			if tr.ProviderExecuted || tr.Preliminary {
 				continue
 			}
@@ -3111,7 +3119,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 	// we re-establish call/result adjacency here rather than relying on
 	// [ToResponseMessages] to rewrite the input.
 	inlineResults := make(map[string]ToolResult)
-	for _, tr := range step.ToolResults {
+	for _, tr := range toolOutcomes {
 		if tr.ProviderExecuted && !tr.Preliminary {
 			inlineResults[tr.ToolCallID] = tr
 		}
@@ -3175,7 +3183,7 @@ func buildResponseContent(step StepResult) []provider.ContentPart {
 			ProviderOptions:  providerMetadataToOptions(ar.ProviderMetadata),
 		})
 	}
-	for _, tr := range step.ToolResults {
+	for _, tr := range toolOutcomes {
 		if tr.ProviderExecuted || tr.Preliminary {
 			continue
 		}
@@ -3273,20 +3281,20 @@ func isDynamic(toolName string, providerDynamic *bool, tools map[string]Tool) *b
 	return nil
 }
 
-func buildContent(step StepResult) []ContentPart {
+func buildContent(step StepResult, toolOutcomes []ToolResult) []ContentPart {
 	if len(step.responseContent) > 0 {
-		return buildRecordedContent(step)
+		return buildRecordedContent(step, toolOutcomes)
 	}
-	return buildGroupedContent(step)
+	return buildGroupedContent(step, toolOutcomes)
 }
 
-func buildRecordedContent(step StepResult) []ContentPart {
+func buildRecordedContent(step StepResult, toolOutcomes []ToolResult) []ContentPart {
 	toolCalls := make(map[string]ToolCall, len(step.ToolCalls))
 	for _, call := range step.ToolCalls {
 		toolCalls[call.ToolCallID] = call
 	}
-	toolResults := make(map[string][]ToolResult, len(step.ToolResults))
-	for _, result := range step.ToolResults {
+	toolResults := make(map[string][]ToolResult, len(toolOutcomes))
+	for _, result := range toolOutcomes {
 		if !result.Preliminary {
 			toolResults[result.ToolCallID] = append(toolResults[result.ToolCallID], result)
 		}
@@ -3298,7 +3306,7 @@ func buildRecordedContent(step StepResult) []ContentPart {
 
 	var parts []ContentPart
 	seenCalls := make(map[string]bool, len(step.ToolCalls))
-	seenResults := make(map[string]int, len(step.ToolResults))
+	seenResults := make(map[string]int, len(toolOutcomes))
 	seenRequests := make(map[string]bool, len(step.ToolApprovalRequests))
 	for index, recorded := range step.responseContent {
 		switch recorded.Type {
@@ -3369,7 +3377,7 @@ func buildRecordedContent(step StepResult) []ContentPart {
 	for _, response := range step.ToolApprovalResponses {
 		parts = append(parts, ToolApprovalResponseContent{ToolApprovalResponse: response})
 	}
-	for _, result := range step.ToolResults {
+	for _, result := range toolOutcomes {
 		if result.Preliminary {
 			continue
 		}
@@ -3383,7 +3391,7 @@ func buildRecordedContent(step StepResult) []ContentPart {
 	return parts
 }
 
-func buildGroupedContent(step StepResult) []ContentPart {
+func buildGroupedContent(step StepResult, toolOutcomes []ToolResult) []ContentPart {
 	var parts []ContentPart
 	for _, output := range step.Reasoning {
 		switch reasoning := output.(type) {
@@ -3404,8 +3412,8 @@ func buildGroupedContent(step StepResult) []ContentPart {
 	for _, ar := range step.ToolApprovalResponses {
 		responsesByToolCallID[ar.ToolCallID] = append(responsesByToolCallID[ar.ToolCallID], ar)
 	}
-	resultsByToolCallID := make(map[string][]ToolResult, len(step.ToolResults))
-	for _, tr := range step.ToolResults {
+	resultsByToolCallID := make(map[string][]ToolResult, len(toolOutcomes))
+	for _, tr := range toolOutcomes {
 		if !tr.Preliminary {
 			resultsByToolCallID[tr.ToolCallID] = append(resultsByToolCallID[tr.ToolCallID], tr)
 		}
@@ -3436,7 +3444,7 @@ func buildGroupedContent(step StepResult) []ContentPart {
 		}
 		parts = append(parts, ToolApprovalResponseContent{ToolApprovalResponse: ar})
 	}
-	for _, tr := range step.ToolResults {
+	for _, tr := range toolOutcomes {
 		if tr.Preliminary || seenToolCallID[tr.ToolCallID] {
 			continue
 		}

@@ -301,8 +301,13 @@ func TestToolStream_EmptyErrorAndSingleResult(t *testing.T) {
 			}
 			require.NoError(t, result.Err())
 			assert.Equal(t, tc.wantPrelim, prelim)
+			if tc.wantError {
+				assert.Empty(t, result.ToolResults())
+				require.Len(t, result.Content(), 2)
+				assert.IsType(t, ToolErrorContent{}, result.Content()[1])
+				return
+			}
 			require.Len(t, result.ToolResults(), 1)
-			assert.Equal(t, tc.wantError, result.ToolResults()[0].IsError)
 			assert.Equal(t, tc.wantOutput, string(result.ToolResults()[0].Output))
 		})
 	}
