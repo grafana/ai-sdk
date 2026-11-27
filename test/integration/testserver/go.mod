@@ -86,3 +86,5 @@ replace github.com/grafana/ai-sdk/providers/openai-compatible => ../../../provid
 replace github.com/grafana/ai-sdk/providers/anthropic => ../../../providers/anthropic
 
 replace github.com/grafana/ai-sdk/providers/bedrock => ../../../providers/bedrock
+
+replace github.com/grafana/ai-sdk/providers/openai => ../../../providers/openai

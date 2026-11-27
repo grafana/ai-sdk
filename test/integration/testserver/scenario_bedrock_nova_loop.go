@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,15 +39,17 @@ type novaLoopTransport struct {
 }
 
 func (tr *novaLoopTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	defer r.Body.Close()
+	if r.Body == nil {
+		return nil, errors.New("missing Nova request body")
+	}
+	body, readErr := io.ReadAll(r.Body)
+	if err := errors.Join(readErr, r.Body.Close()); err != nil {
+		return nil, fmt.Errorf("consume Nova request body: %w", err)
+	}
 	turn := len(tr.requests)
 	if r.Method != http.MethodPost || r.URL.Host != "bedrock-runtime.us-east-1.invalid" ||
 		!strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 Credential=nova-test/") || turn >= len(tr.frames) {
 		return nil, fmt.Errorf("unexpected Nova transport request on turn %d: %s %s", turn+1, r.Method, r.URL)
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read Nova request: %w", err)
 	}
 	tr.requests = append(tr.requests, novaLoopRequest{r.Method, r.URL.String(), body})
 	return &http.Response{
