@@ -127,6 +127,22 @@ func TestSonnet55ExplicitThinkingIsNormalized(t *testing.T) {
 	}
 }
 
+func TestSonnet55ReasoningDerivedEffortIsCappedForBetweenTools(t *testing.T) {
+	for _, reasoning := range []provider.ReasoningEffort{provider.ReasoningXHigh, provider.ReasoningMax} {
+		t.Run(string(reasoning), func(t *testing.T) {
+			thinking := ThinkingConfig{Type: ThinkingBetweenTools}
+			p, _, warnings, _, err := buildParams("claude-sonnet-5-5", provider.CallOptions{
+				Reasoning:       reasoning,
+				ProviderOptions: provider.BuildProviderOptions(AnthropicOptions{Thinking: &thinking}),
+			}, false)
+			require.NoError(t, err)
+			assertThinkingJSON(t, p.Thinking, `{"type":"between_tools"}`)
+			assert.Equal(t, "high", string(p.OutputConfig.Effort))
+			assert.Equal(t, []string{"providerOptions.anthropic.effort"}, warningFeatures(warnings))
+		})
+	}
+}
+
 func TestSonnet55DropsSamplingParameters(t *testing.T) {
 	temperature := 0.2
 	p, _, warnings, _, err := buildParams("claude-sonnet-5-5", provider.CallOptions{Reasoning: provider.ReasoningNone, Temperature: &temperature}, false)
