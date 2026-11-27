@@ -37,7 +37,7 @@ Other records have their own homes:
 | SDK provider transport context | Provider contract | mixed | Anthropic/OpenAI HTTP tests, `mantle_transport_test.go` |
 | ProviderWire request projection | Provider contract | automated | `ai-gateway/test/providerwire-v4` (`mise run test-providerwire-v4`) |
 | Provider stream parts | Provider implementation | automated | `expected-parts.jsonl` for streaming `recorded/` and `upstream/` cases, `testdata/anthropic-*` |
-| Unary provider results | Provider implementation | mixed | `bedrock/upstream/*/expected-generate.json`, `testdata/anthropic-unary/` |
+| Unary provider results | Provider implementation | mixed | `<provider>/upstream/*/expected-generate.json`, `testdata/anthropic-unary/` |
 | Provider adapters | Provider implementation | mixed | `<provider>/recorded/`, `<provider>/upstream/`, `testdata/anthropic-prompt-conversion`, provider module tests |
 | Bedrock Mantle Responses | Provider implementation | mixed | `providers/bedrock/mantle` request tests |
 | Anthropic on Microsoft Foundry | Provider implementation | mixed | `providers/azure` HTTP tests |

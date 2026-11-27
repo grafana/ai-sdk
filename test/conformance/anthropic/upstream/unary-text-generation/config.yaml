@@ -1,0 +1,7 @@
+# "ignores typed ping opt-in for non-streaming requests" in anthropic-language-model.test.ts
+operation: generate
+model: claude-3-haiku-20240307
+prompt: Hello
+providerOptions:
+  anthropic:
+    includePings: true

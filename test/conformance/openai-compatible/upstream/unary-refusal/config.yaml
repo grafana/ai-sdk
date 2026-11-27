@@ -1,0 +1,4 @@
+# "should extract a refusal from a real response" in openai-compatible-chat-language-model.test.ts
+operation: generate
+model: grok-3
+prompt: Hello

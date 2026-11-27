@@ -1,0 +1,17 @@
+# "should surface a refusal content part as text and map the finish reason to content-filter"
+# in openai-responses-language-model.test.ts
+operation: generate
+model: gpt-4o
+prompt: Hello
+responseFormat:
+  type: json
+  name: response
+  schema:
+    type: object
+    properties:
+      steps:
+        type: array
+        items:
+          type: string
+    required: [steps]
+    additionalProperties: false

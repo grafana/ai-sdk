@@ -67,7 +67,7 @@ anthropic-json-tool.1.json: null
 anthropic-mcp.1.json: null
 anthropic-programmatic-tool-calling.1.json: null
 anthropic-refusal.json: null
-anthropic-text.json: null
+anthropic-text.json: unary-text-generation
 anthropic-tool-no-args.json: null
 anthropic-tool-search-bm25.1.json: null
 anthropic-tool-search-regex.1.json: null
