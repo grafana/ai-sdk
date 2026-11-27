@@ -790,7 +790,8 @@ func replayInputFiles(dir string, operation Operation) ([]string, error) {
 	var names []string
 	for _, entry := range entries {
 		name := entry.Name()
-		if name != replayUnaryInput && !(strings.HasPrefix(name, "input") && strings.HasSuffix(name, ".chunks.txt")) {
+		isStreamInput := strings.HasPrefix(name, "input") && strings.HasSuffix(name, ".chunks.txt")
+		if name != replayUnaryInput && !isStreamInput {
 			continue
 		}
 		if !entry.Type().IsRegular() {
