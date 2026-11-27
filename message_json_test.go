@@ -47,6 +47,143 @@ func TestToolStatePersistence(t *testing.T) {
 	})
 }
 
+func TestUIMessage_RequiredFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, field string
+	}{
+		{"null message", `null`, `"id"`},
+		{"missing ID", `{"role":"assistant","parts":[]}`, `"id"`},
+		{"null role", `{"id":"m","role":null,"parts":[]}`, `"role"`},
+		{"null parts", `{"id":"m","role":"assistant","parts":null}`, `"parts"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var message UIMessage
+			require.ErrorContains(t, json.Unmarshal([]byte(tc.message), &message), tc.field)
+		})
+	}
+
+	for _, tc := range []struct {
+		name, part, field string
+	}{
+		{"null part", `null`, `"type"`},
+		{"missing type", `{"text":""}`, `"type"`},
+		{"null type", `{"type":null}`, `"type"`},
+		{"missing text", `{"type":"text"}`, `"text"`},
+		{"last text is null", `{"type":"text","text":"","TEXT":null}`, `"text"`},
+		{"missing reasoning", `{"type":"reasoning"}`, `"text"`},
+		{"null custom kind", `{"type":"custom","kind":null}`, `"kind"`},
+		{"missing file URL", `{"type":"file","mediaType":"","providerReference":{}}`, `"url"`},
+		{"null reasoning file media type", `{"type":"reasoning-file","mediaType":null,"url":""}`, `"mediaType"`},
+		{"missing source URL", `{"type":"source-url","sourceId":""}`, `"url"`},
+		{"missing source document title", `{"type":"source-document","sourceId":"","mediaType":""}`, `"title"`},
+		{"null source ID", `{"type":"source-url","sourceId":null,"url":""}`, `"sourceId"`},
+		{"missing citation source", `{"type":"text","text":"","citations":[{}]}`, `citation 0:`},
+		{"wrong citation discriminator", `{"type":"text","text":"","citations":[{"source":{"type":"SOURCE","sourceType":"url","id":"","url":""}}]}`, `source.type`},
+		{"null citation URL", `{"type":"text","text":"","citations":[{"source":{"type":"source","sourceType":"url","id":"","url":null}}]}`, `"source.url"`},
+		{"missing citation document media type", `{"type":"text","text":"","citations":[{"source":{"type":"source","sourceType":"document","id":"","title":""}}]}`, `"source.mediaType"`},
+		{"missing data", `{"type":"data-info"}`, `"data"`},
+		{"missing dynamic name", `{"type":"dynamic-tool","toolCallId":"c","state":"input-streaming"}`, `"toolName"`},
+		{"null static call ID", `{"type":"tool-lookup","toolCallId":null,"state":"input-streaming"}`, `"toolCallId"`},
+		{"missing tool state", `{"type":"tool-lookup","toolCallId":"c"}`, `"state"`},
+		{"missing tool input", `{"type":"tool-lookup","toolCallId":"c","state":"input-available"}`, `"input"`},
+		{"missing tool output", `{"type":"dynamic-tool","toolName":"lookup","toolCallId":"c","state":"output-available","input":null}`, `"output"`},
+		{"missing tool error text", `{"type":"tool-lookup","toolCallId":"c","state":"output-error"}`, `"errorText"`},
+		{"missing approval", `{"type":"dynamic-tool","toolName":"lookup","toolCallId":"c","state":"output-denied","input":null}`, `"approval"`},
+		{"missing approval ID", `{"type":"tool-lookup","toolCallId":"c","state":"approval-requested","input":null,"approval":{}}`, `"approval.id"`},
+		{"missing approval decision", `{"type":"tool-lookup","toolCallId":"c","state":"approval-responded","input":null,"approval":{"id":"a"}}`, `"approval.approved"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var message UIMessage
+			err := json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{"type":"step-start"},`+tc.part+`]}`), &message)
+			require.ErrorContains(t, err, "unmarshaling part 1:")
+			assert.ErrorContains(t, err, tc.field)
+		})
+	}
+}
+
+func TestUIMessage_RequiredFieldsRoundTrip(t *testing.T) {
+	input := `{"ID":"first","id":"","ROLE":"assistant","PARTS":[
+		{"TYPE":"text","text":null,"TEXT":"","CITATIONS":[{"SOURCE":{"TYPE":"source","sourceType":"url","ID":""},"source":{"URL":""}}],"additive":{}},
+		{"type":"file","MEDIAType":"","URL":"","PROVIDERREFERENCE":{"OPENAI":"file-1"}},
+		{"type":"tool-lookup","TOOLCALLID":"","STATE":"output-available","INPUT":null,"OUTPUT":null,"APPROVAL":{"ID":"","APPROVED":true}},
+		{"type":"data-test","DATA":null},
+		{"TYPE":"future-type","text":{"payload":[]},"FutureField":5}
+	]}`
+	want := `{"id":"","role":"assistant","parts":[
+		{"type":"text","text":"","citations":[{"source":{"type":"source","sourceType":"url","id":"","url":""}}]},
+		{"type":"file","mediaType":"","url":"","providerReference":{"OPENAI":"file-1"}},
+		{"type":"tool-lookup","toolName":"lookup","toolCallId":"","state":"output-available","input":null,"output":null,"approval":{"id":"","approved":true}},
+		{"type":"data-test","data":null},
+		{"TYPE":"future-type","text":{"payload":[]},"FutureField":5}
+	]}`
+	var message UIMessage
+	require.NoError(t, json.Unmarshal([]byte(input), &message))
+	encoded, err := json.Marshal(message)
+	require.NoError(t, err)
+	assert.JSONEq(t, want, string(encoded))
+	var roundTripped UIMessage
+	require.NoError(t, json.Unmarshal(encoded, &roundTripped))
+	assert.Equal(t, message, roundTripped)
+}
+
+func TestUIMessage_CitationDuplicateFields(t *testing.T) {
+	const first = `[{"source":{"type":"source","sourceType":"url","id":"u","url":"first"},"startIndex":0}]`
+	const merged = `[{"source":{"type":"source","sourceType":"url","id":"u","url":"second"},"startIndex":0}]`
+	for _, tc := range []struct {
+		name, later, want, field string
+	}{
+		{"merges source", `[{"SOURCE":{"URL":"second"}}]`, merged, ""},
+		{"merges after intermediate null source", `[{"source":null,"SOURCE":{"URL":"second"}}]`, merged, ""},
+		{"merges after intermediate null citation", `[null],"citations":[{"source":{"url":"second"}}]`, merged, ""},
+		{"clears array", `[]`, `[]`, ""},
+		{"switches to document requirements", `[{"source":{"sourceType":"document","mediaType":"","title":""}}]`, `[{"source":{"type":"source","sourceType":"document","id":"u","mediaType":"","title":""},"startIndex":0}]`, ""},
+		{"new document arm requires title", `[{"source":{"sourceType":"document","mediaType":""}}]`, "", `"source.title"`},
+		{"null required leaf", `[{"source":{"ID":null}}]`, "", `"source.id"`},
+		{"null source", `[{"source":null}]`, "", `"source"`},
+		{"null citation", `[null]`, "", `"source"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":` + first + `,"CITATIONS":` + tc.later + `}]}`
+			var message UIMessage
+			err := json.Unmarshal([]byte(input), &message)
+			if tc.field != "" {
+				require.ErrorContains(t, err, "unmarshaling part 0: citation 0:")
+				assert.ErrorContains(t, err, tc.field)
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":`+tc.want+`}]}`, string(encoded))
+		})
+	}
+}
+
+func TestUIMessage_CitationDuplicateDiscriminator(t *testing.T) {
+	const first = `[{"source":{"type":0,"sourceType":"url","id":"u","url":"first"}}]`
+	for _, tc := range []struct {
+		name, later, want string
+	}{
+		{"discarded", `[]`, `[]`},
+		{"overwritten", `[{"source":{"TYPE":"source"}}]`, `[{"source":{"type":"source","sourceType":"url","id":"u","url":"first"}}]`},
+		{"survives", `[{}]`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":` + first + `,"CITATIONS":` + tc.later + `}]}`
+			var message UIMessage
+			err := json.Unmarshal([]byte(input), &message)
+			if tc.want == "" {
+				require.ErrorContains(t, err, "unmarshaling part 0: citation 0: invalid source.type")
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"id":"m","role":"assistant","parts":[{"type":"text","text":"","citations":`+tc.want+`}]}`, string(encoded))
+		})
+	}
+}
+
 func TestPartRoundTrip(t *testing.T) {
 	t.Run("text part", func(t *testing.T) {
 		msg := UIMessage{
@@ -279,7 +416,7 @@ func TestUnknownTypeFallback(t *testing.T) {
 }
 
 func TestToolNameConflictReturnsError(t *testing.T) {
-	data := `{"id":"msg-1","role":"assistant","parts":[{"type":"tool-foo","toolCallId":"c1","toolName":"bar","state":"input-available"}]}`
+	data := `{"id":"msg-1","role":"assistant","parts":[{"type":"tool-foo","toolCallId":"c1","toolName":"bar","state":"input-available","input":{}}]}`
 	var got UIMessage
 	err := json.Unmarshal([]byte(data), &got)
 	assert.Error(t, err, "expected error for conflicting tool type prefix and toolName field")
@@ -292,8 +429,8 @@ func TestAllPartTypes(t *testing.T) {
 		Parts: []Part{
 			TextPart{Text: "hi"},
 			ReasoningPart{Text: "think"},
-			ToolInvocationPart{ToolCallID: "c1", ToolName: "w", State: ToolStateInputAvailable},
-			DynamicToolUIPart{ToolCallID: "c2", ToolName: "d", State: ToolStateInputAvailable},
+			ToolInvocationPart{ToolCallID: "c1", ToolName: "w", State: ToolStateInputAvailable, Input: json.RawMessage(`{}`)},
+			DynamicToolUIPart{ToolCallID: "c2", ToolName: "d", State: ToolStateInputAvailable, Input: json.RawMessage(`{}`)},
 			FilePart{MediaType: "image/png", URL: "https://example.com/img.png"},
 			ReasoningFilePart{MediaType: "image/png", URL: "https://example.com/reasoning.png"},
 			SourceURLPart{SourceID: "s1", URL: "https://example.com"},
@@ -351,7 +488,7 @@ func TestPartTypeWireCompat(t *testing.T) {
 			ID:   "msg-1",
 			Role: RoleAssistant,
 			Parts: []Part{
-				ToolInvocationPart{ToolCallID: "c1", ToolName: "searchWeb", State: ToolStateInputAvailable},
+				ToolInvocationPart{ToolCallID: "c1", ToolName: "searchWeb", State: ToolStateInputAvailable, Input: json.RawMessage(`{}`)},
 			},
 		}
 		b, err := json.Marshal(msg)

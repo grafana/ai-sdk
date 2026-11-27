@@ -94,18 +94,29 @@ func TestChatHandler(t *testing.T) {
 		assert.Equal(t, "invalid request\n", recorder.Body.String())
 	})
 
-	t.Run("rejects invalid messages", func(t *testing.T) {
+	t.Run("rejects invalid chat history", func(t *testing.T) {
 		tests := []struct {
 			name string
 			body string
+			want string
 		}{
-			{name: "empty history", body: `{"messages":[]}`},
-			{name: "unknown role", body: `{"messages":[{"id":"message-1","role":"unknown","parts":[]}]}`},
-			{name: "invalid tool state", body: `{"messages":[{"id":"assistant-1","role":"assistant","parts":[{"type":"tool-get_weather","toolCallId":"weather-1","state":"input-available"}]}]}`},
+			{name: "empty history", body: `{"messages":[]}`, want: "invalid messages\n"},
+			{name: "unknown role", body: `{"messages":[{"id":"message-1","role":"unknown","parts":[]}]}`, want: "invalid messages\n"},
+			{
+				name: "missing required tool input",
+				body: `{"messages":[{"id":"assistant-1","role":"assistant","parts":[{"type":"tool-get_weather","toolCallId":"weather-1","state":"input-available"}]}]}`,
+				want: "invalid request\n",
+			},
+			{
+				name: "tool input fails configured schema",
+				body: `{"messages":[{"id":"assistant-1","role":"assistant","parts":[{"type":"tool-get_weather","toolCallId":"weather-1","state":"input-available","input":{"city":42}}]}]}`,
+				want: "invalid messages\n",
+			},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				agent, err := newAgent(&scriptedModel{})
+				model := &scriptedModel{}
+				agent, err := newAgent(model)
 				require.NoError(t, err)
 
 				recorder := httptest.NewRecorder()
@@ -113,7 +124,8 @@ func TestChatHandler(t *testing.T) {
 				newChatHandler(agent).ServeHTTP(recorder, request)
 
 				assert.Equal(t, http.StatusBadRequest, recorder.Code)
-				assert.Equal(t, "invalid messages\n", recorder.Body.String())
+				assert.Equal(t, tc.want, recorder.Body.String())
+				assert.Zero(t, model.callCount)
 			})
 		}
 	})
