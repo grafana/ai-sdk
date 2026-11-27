@@ -1,0 +1,8 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011ChTzEwKw7UfqoepXfcPyC","model":"claude-haiku-4-5-20251001","usage":{"service_tier":"standard","input_tokens":31,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"inference_geo":"not_available","speed":"standard"}}}}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"Blue"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

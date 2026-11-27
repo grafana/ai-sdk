@@ -1,0 +1,11 @@
+model: claude-haiku-4-5-20251001
+maxRetries: 0
+stopWhenStepCount: 1
+messages:
+  - role: user
+    content:
+      - type: file
+        mediaType: image/png
+        data: iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAb0lEQVR4nO3PAQkAAAyEwO9feoshgnABdNvJ8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ3I8QUNyPEFDcjxBQ2oPcf88OIhvJ6vAAAAAElFTkSuQmCC
+      - type: text
+        text: "What color is the image? Answer with one word."
