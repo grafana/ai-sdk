@@ -7,10 +7,10 @@ Define provider conformance fixture formats, provider-independent core UI lifecy
 ## Requirements
 
 ### Requirement: Fixture format
-The system SHALL use `.chunks.txt` files as provider response fixtures, where each file contains one JSON object per line representing a single provider streaming event. The fixture files SHALL NOT contain SSE framing (`data:`, `event:`, blank lines) -- framing SHALL be added by the replay server at serve time. The same fixture format SHALL be used for both upstream and recorded fixtures.
+Streaming provider response fixtures SHALL use `.chunks.txt` files with one JSON object per provider event, without SSE framing (`data:`, `event:`, blank lines). The replay server SHALL add transport framing at serve time. The same streaming fixture format SHALL be used for both upstream and recorded fixtures.
 
 #### Scenario: Single-step fixture
-- **WHEN** a test case has one provider response
+- **WHEN** a streaming test case has one provider response
 - **THEN** the fixture is stored as `input.chunks.txt` in the test case directory
 
 #### Scenario: Multi-step fixture
@@ -18,7 +18,7 @@ The system SHALL use `.chunks.txt` files as provider response fixtures, where ea
 - **THEN** each step's provider response is stored as `input-1.chunks.txt`, `input-2.chunks.txt`, etc. in the test case directory
 
 #### Scenario: Fixture line format
-- **WHEN** a fixture file is read
+- **WHEN** a `.chunks.txt` fixture is read
 - **THEN** each non-empty line parses as a valid JSON object representing a provider streaming event (e.g., Anthropic's `message_start`, `content_block_delta`, etc.)
 
 ### Requirement: Fixture categories
@@ -139,7 +139,7 @@ Both Go and TypeScript SHALL support conformance YAML tool approval for upstream
 - **THEN** both paths SHALL seed the assistant call/request and tool response and replay the denied flow without manual code changes
 
 ### Requirement: Expected output format
-Each test case directory SHALL contain an `expected.jsonl` file with the expected UIMessageChunk sequence. The file SHALL contain one JSON object per line, each representing a single UIMessageChunk as produced by the upstream TypeScript SDK's `toUIMessageStream()`. For multi-step test cases, the file SHALL contain the full chunk sequence across all steps in a single file.
+Each streaming test case directory SHALL contain an `expected.jsonl` file with the expected UIMessageChunk sequence. The file SHALL contain one JSON object per line, each representing a single UIMessageChunk as produced by the upstream TypeScript SDK's `toUIMessageStream()`. For multi-step test cases, the file SHALL contain the full chunk sequence across all steps in a single file.
 
 #### Scenario: Expected output is complete
 - **WHEN** a multi-step test case produces chunks across 3 steps
@@ -209,19 +209,19 @@ The system SHALL provide `test/conformance/tools/record.mts` to capture real API
 - **THEN** only the named test case is recorded
 
 ### Requirement: TypeScript generation tool
-The system SHALL provide a TypeScript script (`test/conformance/tools/generate.mts`) that regenerates expected output from existing fixture files without making real API calls. The script SHALL operate on both `upstream/` and `recorded/` directories. It SHALL read `config.yaml` and `input-*.chunks.txt` files, serve them through a local test server, run the upstream TypeScript SDK's full pipeline against the test server, and write the resulting UIMessageChunk sequence to `expected.jsonl`.
+`test/conformance/tools/generate.mts` SHALL regenerate expectations from existing `upstream/` and `recorded/` fixtures without live API calls. For streaming cases it SHALL read `config.yaml` and `input-*.chunks.txt`, serve the input through a local test server, run the upstream TypeScript SDK pipeline, and write the resulting UIMessageChunk sequence to `expected.jsonl`.
 
 #### Scenario: Regenerating expected output
-- **WHEN** the generation tool runs for a test case with existing fixtures
+- **WHEN** the generation tool runs for a streaming test case with existing fixtures
 - **THEN** it produces `expected.jsonl` by piping the fixtures through the upstream TypeScript SDK with a deterministic ID generator
 
 #### Scenario: Regenerating all test cases
 - **WHEN** the generation tool is invoked without a `--scenario` flag
-- **THEN** it regenerates `expected.jsonl` for all test case directories across all providers
+- **THEN** it regenerates `expected.jsonl` for streaming cases and `expected-generate.json` for supported unary cases
 
 #### Scenario: Selective regeneration
 - **WHEN** the generation tool is invoked with `--scenario <name>`
-- **THEN** only the named test case's `expected.jsonl` is regenerated
+- **THEN** only matching test cases' expected outputs are regenerated
 
 ### Requirement: TypeScript request input capture
 The TypeScript conformance generation and recording tools SHALL capture provider request inputs while producing fixture output. The generation tool SHALL capture requests sent to its replay server. The recording tool SHALL capture requests sent through its provider proxy and SHALL redact secrets before writing request snapshots.
@@ -237,10 +237,10 @@ The TypeScript conformance generation and recording tools SHALL capture provider
 
 ### Requirement: Go replay server
 
-The system SHALL provide `test/conformance/runner.go` using `httptest.Server` to serve `input.chunks.txt` or `input-N.chunks.txt` as SSE with `Content-Type: text/event-stream`. Each line SHALL use framing `event: <type>\ndata: <json>\n\n`, taking event type from its JSON `type`. Go and TypeScript replay SHALL use the same SSE format as real Anthropic.
+The Go replay server in `test/conformance/runner.go` SHALL use `httptest.Server` to serve the fixture in the provider's transport format. For SSE streams, Go and TypeScript replay SHALL use `Content-Type: text/event-stream` and frame each event as `event: <type>\ndata: <json>\n\n`, taking the event type from its JSON `type`.
 
-#### Scenario: Single-step replay
-- **WHEN** the replay server receives a request for a single-step test case
+#### Scenario: Single-step SSE replay
+- **WHEN** the replay server receives a request for a single-step SSE streaming test case
 - **THEN** it serves `input.chunks.txt` with SSE framing and `Content-Type: text/event-stream`
 
 #### Scenario: Multi-step replay
@@ -265,10 +265,10 @@ For multi-step cases, the replay server SHALL be stateful: serve `input-1.chunks
 
 ### Requirement: Go conformance test runner
 
-The system SHALL provide per-provider Go tests (e.g. `test/conformance/anthropic/conformance_test.go`) auto-discovering cases in provider `upstream/` and `recorded/`. Each SHALL compare deterministic Go `StreamText` -> `ToUIMessageStream` output with `expected.jsonl`. Shared replay, comparison and helpers SHALL live in `test/conformance/runner.go`.
+The system SHALL provide per-provider Go tests (e.g. `test/conformance/anthropic/conformance_test.go`) auto-discovering cases in provider `upstream/` and `recorded/`. For streaming cases the runner SHALL compare deterministic Go `StreamText` -> `ToUIMessageStream` output with `expected.jsonl`. Shared replay, comparison and helpers SHALL live in `test/conformance/runner.go`.
 
 #### Scenario: Discovered provider case execution
-- **WHEN** a provider test discovers a test case directory
+- **WHEN** a provider test discovers a streaming test case directory
 - **THEN** it SHALL parse `config.yaml`, infer provider from directories, start fixture replay, instantiate the provider pointing at replay, configure mock execute functions for defined tools, run `StreamText` -> `ToUIMessageStream` with a deterministic ID generator, collect chunks and compare them with `expected.jsonl`
 
 #### Scenario: Conformance test passes for matching output
@@ -495,7 +495,7 @@ The replay server SHALL support a Bedrock framing mode that serves fixture lines
 
 ### Requirement: Bedrock conformance Go test runner
 
-The system SHALL provide `test/conformance/bedrock/conformance_test.go` that discovers test cases under `test/conformance/bedrock/{upstream,recorded}/`, instantiates `bedrock.New(modelID, bedrock.WithBaseURL(replay.BaseURL))`, runs `StreamText` -> `ToUIMessageStream` with a deterministic ID generator, and compares the resulting UIMessageChunk sequence against `expected.jsonl`.
+The system SHALL provide `test/conformance/bedrock/conformance_test.go` that discovers test cases under `test/conformance/bedrock/{upstream,recorded}/`, instantiates `bedrock.New(modelID, bedrock.WithBaseURL(replay.BaseURL))`, and, for streaming cases, runs `StreamText` -> `ToUIMessageStream` with a deterministic ID generator and compares the resulting UIMessageChunk sequence against `expected.jsonl`.
 
 #### Scenario: Bedrock conformance pass
 
@@ -519,7 +519,7 @@ The system SHALL provide `test/conformance/bedrock/conformance_test.go` that dis
 
 ### Requirement: TypeScript recording and generation support Bedrock
 
-The TypeScript tools (`record.mts`, `generate.mts`) SHALL operate on Bedrock fixture directories. `record.mts` SHALL capture fixtures from real Bedrock APIs into `test/conformance/bedrock/recorded/`. `generate.mts` SHALL pipe fixtures from `test/conformance/bedrock/{upstream,recorded}/` through the upstream `@ai-sdk/amazon-bedrock` SDK to regenerate `expected.jsonl`.
+The TypeScript tools (`record.mts`, `generate.mts`) SHALL operate on Bedrock fixture directories. `record.mts` SHALL capture fixtures from real Bedrock APIs into `test/conformance/bedrock/recorded/`. `generate.mts` SHALL pipe fixtures from `test/conformance/bedrock/{upstream,recorded}/` through the upstream `@ai-sdk/amazon-bedrock` SDK to regenerate the expected output for each fixture's operation.
 
 #### Scenario: Record against Bedrock
 
@@ -528,8 +528,8 @@ The TypeScript tools (`record.mts`, `generate.mts`) SHALL operate on Bedrock fix
 
 #### Scenario: Generate Bedrock expected output
 
-- **WHEN** the generator runs with `--provider bedrock`
-- **THEN** it regenerates `expected.jsonl` for each test case under `test/conformance/bedrock/{upstream,recorded}/` using the upstream `@ai-sdk/amazon-bedrock` SDK with a deterministic ID generator
+- **WHEN** the generator runs with `--scenario bedrock/`
+- **THEN** it regenerates `expected.jsonl` for streaming cases and `expected-generate.json` for unary cases under `test/conformance/bedrock/{upstream,recorded}/` using the registered `@ai-sdk/amazon-bedrock` SDK
 
 ### Requirement: Bedrock recorded coverage of core paths
 
@@ -967,7 +967,7 @@ Every streaming case of an enabled provider SHALL contain `expected-provider-par
 
 ### Requirement: Provider-parts golden scope
 
-Anthropic, Bedrock, OpenAI and OpenAI-compatible SHALL be enabled. Fixture inputs SHALL remain unmodified, and non-streaming operations SHALL NOT have a golden because they produce no stream parts.
+Anthropic, Bedrock, OpenAI and OpenAI-compatible SHALL be enabled. Fixture inputs SHALL remain unmodified, and non-streaming operations SHALL NOT have a provider-parts golden because they produce no stream parts.
 
 #### Scenario: Generate operation
 - **WHEN** a Bedrock case uses the non-streaming generate operation
@@ -996,3 +996,19 @@ Scenarios that no recorded or upstream fixture exhibits MAY be covered by synthe
 #### Scenario: Expectations are regenerated on baseline upgrade
 - **WHEN** the generation workflow runs against a new registered baseline
 - **THEN** synthetic case expectations SHALL be regenerated from the upstream packages declared by that baseline
+
+### Requirement: Unary provider-result golden
+
+For Bedrock `operation: generate` fixtures, Go and TypeScript replay SHALL serve the unchanged `input.response.json` as `application/json`. The registered upstream provider's `doGenerate` SHALL produce `expected-generate.json` offline. The Go runner SHALL compare ordered content, finish reason, usage, all provider metadata namespaces and warnings from `DoGenerate` against the golden. It SHALL compare request snapshots separately.
+
+#### Scenario: Unary result matches upstream
+- **WHEN** a unary fixture replays successfully
+- **THEN** the Go provider result matches the upstream golden, including both metadata namespaces when the provider emits both
+
+#### Scenario: Unary golden is missing or unreadable
+- **WHEN** replay discovers a unary fixture without a readable result golden
+- **THEN** the test fails before calling the provider and identifies the expected file and regeneration command instead of skipping the fixture
+
+#### Scenario: Unary golden differs from the result
+- **WHEN** the fixture's golden is invalid or differs from the Go provider result
+- **THEN** the test fails even if the request snapshot matches

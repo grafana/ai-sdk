@@ -32,6 +32,29 @@
     }
   },
   "providerMetadata": {
+    "amazonBedrock": {
+      "trace": {
+        "guardrail": {
+          "inputAssessment": {
+            "1abcd2ef34gh": {
+              "topicPolicy": {
+                "topics": [
+                  {
+                    "action": "BLOCKED",
+                    "name": "Restricted topic",
+                    "type": "DENY"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "usage": {
+        "cacheWriteInputTokens": 0
+      },
+      "stopSequence": null
+    },
     "bedrock": {
       "trace": {
         "guardrail": {

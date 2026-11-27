@@ -211,6 +211,10 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
+	compaction, err := resolveCompactionRequest(anthropicOpts.Compaction, extractRawJSON(opts.ProviderOptions))
+	if err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
+	}
 	if err := validateFallbackConfig(anthropicOpts.Fallbacks); err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
 	}
@@ -243,8 +247,12 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	}
 
 	p := anthropic.BetaMessageNewParams{
-		Model:     anthropic.Model(modelID),
-		MaxTokens: maxTok,
+		Model:      anthropic.Model(modelID),
+		MaxTokens:  maxTok,
+		Compaction: compaction,
+	}
+	if compaction.OfSummarize != nil {
+		p.Betas = appendBetaUnique(p.Betas, compactionBeta)
 	}
 
 	// Default eager_input_streaming on function tools when the request is
@@ -408,6 +416,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 					Role:    anthropic.BetaMessageParamRoleAssistant,
 					Content: moveToolUseBlocksToEnd(content),
 				})
+				if slices.ContainsFunc(content, func(block anthropic.BetaContentBlockParamUnion) bool {
+					return block.OfCompaction != nil && block.OfCompaction.Signature.Valid()
+				}) {
+					p.Betas = appendBetaUnique(p.Betas, compactionBeta)
+				}
 			}
 		}
 	}
@@ -1148,13 +1161,15 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		switch p.Type {
 		case provider.ContentPartTypeText:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			if isCompaction(p.ProviderOptions) {
-				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
-					OfCompaction: &anthropic.BetaCompactionBlockParam{
-						Content:      anthropic.String(p.Text),
-						CacheControl: cc,
-					},
-				})
+			if signature, compaction := compactionReplayMetadata(p.ProviderOptions); compaction {
+				block := &anthropic.BetaCompactionBlockParam{
+					Content:      anthropic.String(p.Text),
+					CacheControl: cc,
+				}
+				if signature != nil {
+					block.Signature = anthropic.String(*signature)
+				}
+				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{OfCompaction: block})
 			} else {
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{
 					OfText: &anthropic.BetaTextBlockParam{
@@ -3315,10 +3330,6 @@ func extractAnthropicType(opts provider.ProviderOptions) string {
 		return ""
 	}
 	return data.Type
-}
-
-func isCompaction(opts provider.ProviderOptions) bool {
-	return extractAnthropicType(opts) == "compaction"
 }
 
 func isMCPToolUse(opts provider.ProviderOptions) bool {

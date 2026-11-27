@@ -48,12 +48,10 @@ func TestConformance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("loading config: %v", err)
 			}
-			expectedName := "expected.jsonl"
-			if cfg.Operation == conformance.OperationGenerate {
-				expectedName = "expected-generate.json"
-			}
-			if _, err := os.Stat(filepath.Join(tc.Dir, expectedName)); err != nil {
-				t.Skipf("%s missing; run `mise run generate-conformance`", expectedName)
+			if cfg.Operation == conformance.OperationStream {
+				if _, err := os.Stat(filepath.Join(tc.Dir, "expected.jsonl")); err != nil {
+					t.Skip("expected.jsonl missing; run `mise run generate-conformance`")
+				}
 			}
 			conformance.RunTestCaseWithServer(t, tc, factory, conformance.BedrockTestServerFactory)
 		})
