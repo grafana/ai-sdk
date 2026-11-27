@@ -24,8 +24,13 @@ picker adds blocked IDs. To add a listed model, turn off **Serve every model**,
 choose or type an exact provider model ID, and select **Add model**. Manual
 entry works even if suggestions are empty, incomplete, or unavailable.
 Suggestions use the saved key on demand, never on save. The switch and
-blocklist edits save immediately. Use **Edit blocked IDs** to set exclusions
-before re-enabling. Existing listed models stay visible and editable.
+blocklist edits save immediately. Turning the switch off hides the editor but
+keeps the saved blocklist. Existing listed models stay visible and editable.
+
+Catalog discovery includes both configured models and qualified IDs from
+eligible provider listings. It omits blocked IDs and selectors already used
+by a listed ID or alias. Results can be incomplete: a qualified ID may still
+be callable even when it is absent from discovery.
 
 After saving, select **Check health** on the catalog page to see which provider
 model listings accepted the saved keys and which primary and fallback model

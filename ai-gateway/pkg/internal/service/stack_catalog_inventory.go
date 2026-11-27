@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 )
 
 const (
@@ -52,11 +54,14 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 	}
 	defer c.release(id)
 
+	return c.inventory(ctx, resolveStackProvider(configured, stack, provider), listingKeyMatcher(keys)), nil
+}
+
+func (c *CatalogHealthChecker) inventory(ctx context.Context, provider config.ResolvedProvider, containsKey func(string) bool) CatalogProviderModels {
 	result := CatalogProviderModels{ModelIDs: []string{}}
 	seen := make(map[string]struct{})
 	omitted := false
-	containsKey := listingKeyMatcher(keys)
-	status, complete := c.walkListing(ctx, resolveStackProvider(configured, stack, provider), containsKey, func(page listingPage) bool {
+	status, complete := c.walkListing(ctx, provider, containsKey, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			id := entry.ID
 			if _, duplicate := seen[id]; duplicate {
@@ -76,5 +81,5 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 		result.Status = ListingPartial
 	}
 	slices.Sort(result.ModelIDs)
-	return result, nil
+	return result
 }

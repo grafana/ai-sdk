@@ -43,6 +43,7 @@ func (handler *handler) ServeHTTP(w http.ResponseWriter, request *http.Request) 
 	case gatewayauth.ConfiguredAccounts:
 		lister = handler.configured
 	case gatewayauth.CatalogAccounts:
+		w.Header().Set("Cache-Control", "no-store")
 		lister = handler.stack
 	case gatewayauth.RequestBYOK:
 		handler.errors.WriteHostError(w, host.ErrorBYOKDiscovery)

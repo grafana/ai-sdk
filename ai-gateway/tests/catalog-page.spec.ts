@@ -126,7 +126,11 @@ test.describe('model catalog page', () => {
     }
   });
 
-  test('an Admin saves blocked IDs before enabling unlisted calls', async ({ gotoPage, page, accounts }) => {
+  test('an Admin discovers unlisted calls and retains blocked IDs when disabling serving', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
     const name = uniqueName();
     const seed = catalog(name, 'e2e-health-accepted-key');
     const created = await accounts.Admin.post(CATALOGS, { data: { ...seed, spec: { ...seed.spec, models: {} } } });
@@ -148,13 +152,9 @@ test.describe('model catalog page', () => {
     await expect(toggle).not.toBeChecked();
     await expect(addModelID).toBeVisible();
     await expect(blockedID).toHaveCount(0);
-    await editBlocked.click();
-    await expect(addModelID).toHaveCount(0);
-    await blockedID.fill('org/blocked');
-    await addBlockedID.click();
-    await expect(blocklist.getByText('org/blocked')).toBeVisible();
+    await expect(editBlocked).toHaveCount(0);
     const before = await stored();
-    expect(before.spec.providers.claude).toEqual({ type: 'anthropic', modelBlocklist: ['org/blocked'] });
+    expect(before.spec.providers.claude).toEqual({ type: 'anthropic' });
 
     const enable = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
     await toggle.press('Space');
@@ -165,6 +165,12 @@ test.describe('model catalog page', () => {
     expect(request).not.toHaveProperty('secure');
     await expect(toggle).toBeChecked();
     await expect(provider.getByRole('button', { name: 'Save serving settings' })).toHaveCount(0);
+    await expect(addModelID).toHaveCount(0);
+    await blockedID.click();
+    await expect(provider.getByRole('option', { name: 'claude-sonnet-4-6' })).toBeVisible();
+    await blockedID.fill('org/blocked');
+    await addBlockedID.click();
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
     const enabled = await stored();
     expect(enabled.spec.providers.claude).toEqual({
       type: 'anthropic',
@@ -175,7 +181,9 @@ test.describe('model catalog page', () => {
 
     const discovery = await accounts.Editor.get(`${CATALOGS}/${name}/config`);
     expect(discovery.status(), await discovery.text()).toBe(200);
-    expect(await discovery.json()).toEqual({ models: [] });
+    expect((await discovery.json()).models.map((model: { id: string }) => model.id)).toEqual([
+      'claude/claude-sonnet-4-6',
+    ]);
     const unlisted = await invoke(accounts.Editor, name, 'claude/org/new');
     expect(unlisted.status(), await unlisted.text()).toBe(200);
     expect(await unlisted.text()).toContain('org/new');
@@ -189,6 +197,8 @@ test.describe('model catalog page', () => {
     expect(disabledUpdate.status(), await disabledUpdate.text()).toBe(200);
     await expect(provider.getByText('No models yet.')).toBeVisible();
     await expect(toggle).toBeChecked({ checked: false });
+    await expect(editBlocked).toHaveCount(0);
+    await expect(blockedID).toHaveCount(0);
     expect((await stored()).spec.providers.claude).toEqual({
       type: 'anthropic',
       serveAllModels: false,
@@ -200,9 +210,11 @@ test.describe('model catalog page', () => {
 
     const listed = 'claude-sonnet-4-6';
     await addModel(page, 'claude', listed);
-    const beforeRefusal = await stored();
-    await editBlocked.click();
+    await toggle.press('Space');
+    await expect(toggle).toBeChecked();
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
     await expect(addModelID).toHaveCount(0);
+    const beforeRefusal = await stored();
     await blockedID.click();
     await provider.getByRole('option', { name: listed }).click();
     await expect(blockedID).toHaveValue(listed);
@@ -210,7 +222,7 @@ test.describe('model catalog page', () => {
     await expect(
       provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)
     ).toBeVisible();
-    await expect(toggle).not.toBeChecked();
+    await expect(toggle).toBeChecked();
     await expect(blockedID).toHaveValue(listed);
     await expect(blocklist.getByText('org/blocked')).toBeVisible();
     await expect(blocklist.getByText(listed)).toHaveCount(0);

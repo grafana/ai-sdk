@@ -22,6 +22,9 @@ type servingPolicy struct {
 	blocked map[string]int
 }
 
+// ServesUnlistedModels reports whether the provider opted in.
+func (c Catalog) ServesUnlistedModels(instance string) bool { return c.serving[instance].all }
+
 // AllowsUnlistedModel reports whether the named provider serves the exact backend ID.
 func (c Catalog) AllowsUnlistedModel(instance, modelID string) bool {
 	policy := c.serving[instance]

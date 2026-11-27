@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	maxModelRows   = 1024
-	maxAliases     = 128
-	maxStringBytes = 2048
+	// MaxDiscoveryModelIDs bounds discovery IDs, including aliases.
+	MaxDiscoveryModelIDs = 1024
+	maxAliases           = 128
+	maxStringBytes       = 2048
 )
 
 var publicIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
@@ -168,7 +169,7 @@ func (file File) validate(operator bool) error {
 	}
 	rowCount := 0
 	for _, model := range file.Models {
-		if len(model.Aliases) > maxAliases || len(model.Fallback)+1 > MaxProviderAttempts || len(model.Aliases)+1 > maxModelRows-rowCount {
+		if len(model.Aliases) > maxAliases || len(model.Fallback)+1 > MaxProviderAttempts || len(model.Aliases)+1 > MaxDiscoveryModelIDs-rowCount {
 			return fmt.Errorf("config: configured discovery cardinality exceeds limit")
 		}
 		rowCount += len(model.Aliases) + 1

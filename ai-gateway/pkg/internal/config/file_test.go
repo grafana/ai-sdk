@@ -301,7 +301,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 				switch field {
 				case "rows":
 					file.Models = map[string]Model{}
-					for i := range maxModelRows + extra {
+					for i := range MaxDiscoveryModelIDs + extra {
 						file.Models[fmt.Sprintf("model-%d", i)] = model
 					}
 				case "public IDs":

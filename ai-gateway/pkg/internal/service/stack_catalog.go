@@ -139,6 +139,8 @@ var errNoStackCatalog = errors.New("gateway service: the request carries no stac
 type StackCatalogLister struct {
 	// Endpoints are the custom endpoints a catalog may use.
 	Endpoints outbound.CustomEndpoints
+	// Listings supplies best-effort provider inventory for discovery.
+	Listings *CatalogHealthChecker
 }
 
 // ListModels implements [catalog.ModelLister]. A catalog that fails its checks
@@ -148,7 +150,7 @@ func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.Mode
 	if !ok {
 		return nil, errNoStackCatalog
 	}
-	file, _, err := parseStackCatalog(stack, lister.Endpoints)
+	file, keys, err := parseStackCatalog(stack, lister.Endpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +163,9 @@ func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.Mode
 			return nil, err
 		}
 		infos = append(infos, catalog.ModelInfo{ID: id, Name: model.Name, Description: model.Description, Aliases: slices.Clone(model.Aliases), Candidates: group.candidates})
+	}
+	if lister.Listings != nil {
+		infos = lister.Listings.appendUnlistedModels(ctx, stack, index, keys, infos)
 	}
 	return infos, nil
 }

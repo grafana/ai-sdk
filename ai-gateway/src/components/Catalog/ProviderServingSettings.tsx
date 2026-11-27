@@ -8,24 +8,13 @@ interface Props {
   name: string;
   provider: Provider;
   readOnly: boolean;
-  showBlocklist: boolean;
-  onEditBlockedIDs: (editing: boolean) => void;
   listModels?: () => Promise<ProviderModelListing>;
   listingRevision?: string;
   onSave: (provider: Provider) => Promise<void>;
 }
 
 /** ProviderServingSettings saves changes to a provider's serving mode and blocklist. */
-export function ProviderServingSettings({
-  name,
-  provider,
-  readOnly,
-  showBlocklist,
-  onEditBlockedIDs,
-  listModels,
-  listingRevision,
-  onSave,
-}: Props) {
+export function ProviderServingSettings({ name, provider, readOnly, listModels, listingRevision, onSave }: Props) {
   const switchID = useId();
   const [modelID, setModelID] = useState('');
   const [saving, setSaving] = useState(false);
@@ -39,7 +28,7 @@ export function ProviderServingSettings({
     return (
       <Stack direction="column" gap={0.5}>
         <Text>{serveAllModels ? 'Serves unlisted models' : 'Serves listed models only'}</Text>
-        <Text color="secondary">Blocked model IDs: {blocklist.join(', ') || 'None'}</Text>
+        {serveAllModels && <Text color="secondary">Blocked model IDs: {blocklist.join(', ') || 'None'}</Text>}
       </Stack>
     );
   }
@@ -63,7 +52,6 @@ export function ProviderServingSettings({
 
   const changeMode = async (enabled: boolean) => {
     if (await save({ ...provider, serveAllModels: enabled })) {
-      onEditBlockedIDs(false);
       setModelID('');
     }
   };
@@ -99,23 +87,7 @@ export function ProviderServingSettings({
           onChange={(event) => void changeMode(event.currentTarget.checked)}
         />
       </Field>
-      {!serveAllModels && (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={saving}
-          aria-expanded={showBlocklist}
-          onClick={() => {
-            onEditBlockedIDs(!showBlocklist);
-            setModelID('');
-            setError(undefined);
-          }}
-        >
-          {showBlocklist ? 'Close blocked IDs' : 'Edit blocked IDs'}
-        </Button>
-      )}
-      {showBlocklist && (
+      {serveAllModels && (
         <Field
           label="Blocked model IDs"
           description="Choose or enter an exact provider model ID. Adding or removing an ID saves immediately."

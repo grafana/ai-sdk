@@ -152,15 +152,37 @@ func TestCatalogRoutes_InvokeAndDiscover(t *testing.T) {
 func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
 	native := newFakeAnthropic(t)
-	useNativeAnthropic(t, native)
+	var probes atomic.Int32
+	useNativeAnthropicHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			probes.Add(1)
+			assert.Contains(t, []string{routeCatalogKey, editedCatalogKey}, r.Header.Get("X-Api-Key"))
+			_, _ = io.WriteString(w, `{"data":[{"id":"org/new"},{"id":"org/blocked"},{"id":"`+routeCatalogKey+`"}],"has_more":false}`)
+			return
+		}
+		native.server.Config.Handler.ServeHTTP(w, r)
+	}))
 	writer := h.serviceToken(t, testInternalService)
 	user := session(h.host.AddSession(types.TypeUser, "catalog-user", testNamespace))
 	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
 		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"second":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"},"second":{"create":"`+editedCatalogKey+`"}}}`)
 	require.Equal(t, http.StatusCreated, status, body)
-	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
-	require.Equal(t, http.StatusOK, status, body)
-	assert.JSONEq(t, `{"models":[]}`, body)
+	response, err := http.DefaultClient.Do(discoveryRequest(t, h.catalogURL("config"), user))
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, "no-store", response.Header.Get("Cache-Control"))
+	var discovery struct {
+		Models []struct {
+			ID string `json:"id"`
+		} `json:"models"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&discovery))
+	require.Len(t, discovery.Models, 3)
+	assert.Equal(t, "claude/org/new", discovery.Models[0].ID)
+	assert.Equal(t, "second/org/blocked", discovery.Models[1].ID)
+	assert.Equal(t, "second/org/new", discovery.Models[2].ID)
+	assert.EqualValues(t, 2, probes.Load())
 	for _, tc := range []struct{ id, body string }{
 		{"claude/org/blocked", unaryBody},
 		{"claude/org/new", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"providerOptions":{"gateway":{"models":["claude/org/blocked"]}}}`},
@@ -186,6 +208,7 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	assert.Contains(t, bodies[0], `"model":"org/new"`)
 	assert.Contains(t, bodies[1], `"model":"org/new"`)
 	assert.Contains(t, bodies[2], `"model":"org/blocked"`)
+	assert.EqualValues(t, 2, probes.Load(), "inference never lists provider models")
 }
 
 func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {

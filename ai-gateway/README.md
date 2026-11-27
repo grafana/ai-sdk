@@ -244,8 +244,9 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   named with lowercase letters, digits and `-`, and a custom `baseURL` must be
   [listed](#custom-endpoints).
 - `spec.providers` must contain at least one provider. `spec.models` can be an
-  empty map: discovery then returns `{"models":[]}`. Calls return the
-  unknown-model error unless a provider serves unlisted models. The operator
+  empty map. Without an eligible provider listing, discovery then returns
+  `{"models":[]}`. Calls return the unknown-model error unless a provider
+  serves unlisted models. The operator
   `model_catalog` setting still requires at least one provider and one model
   when set.
 - Each provider needs exactly one secure value with the provider's name. Reads
@@ -263,9 +264,9 @@ the first provider in a new catalog. You can change the mode on the provider
 card. This does not change existing providers: an omitted `serveAllModels`
 field still means listed models only. In **Serve every model** mode, the picker
 switches to **Blocked model IDs**; adding or removing an ID saves immediately.
-To set exclusions before enabling, select **Edit blocked IDs** while the
-switch is off. Existing listed models stay visible and editable. With the API,
-set `serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
+The editor is hidden while the switch is off, but saved exclusions are kept.
+Existing listed models stay visible and editable. To set exclusions and
+enable serving in one API update, set `serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
 on that provider in `spec.providers`.
 The blocklist applies to language-model routing and matches exact,
 case-sensitive backend IDs on that provider instance, not prefixes or other
@@ -281,9 +282,11 @@ Completions accepts the same selector in its `model` field. A listed ID or
 alias wins if it matches the full selector. If no listed ID or alias matches,
 a blocked selector returns `404 model_not_found`. Unlisted models have no
 implicit fallback, but can use or be named in explicit `gateway.models`
-fallbacks. `/config` still discovers only listed models. The provider still
-decides which requests and models its account supports. The provider model ID
-picker in either mode fetches suggestions separately, on demand.
+fallbacks. The catalog's `/config` includes configured models and eligible
+qualified IDs from opted-in providers' inventories. Listings are bounded
+and best-effort, and provider failures do not hide configured models. An ID
+can be callable even if discovery omits it. The provider model ID picker
+fetches suggestions separately, on demand.
 
 ### Custom endpoints
 

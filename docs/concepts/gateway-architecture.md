@@ -125,9 +125,10 @@ keys and passes the object, its resource
 version and the keys with the call. The Gateway checks that this parent is the
 catalog the path names before anything else, then decides catalog access. Its
 selector builds that catalog's models for the call with `SelectStackCatalog`,
-and discovery lists it without building models. Health and the provider model
-ID field's suggestions share the same catalog checks, saved keys, bounded
-provider listing and admission, outside the model execution pipeline. Health
+and discovery lists it without building models. Discovery can add qualified
+IDs from providers that serve unlisted models. This lookup, health, and the
+provider model ID field's suggestions share the same catalog checks, saved
+keys, bounded provider listing and admission, outside the execution pipeline. Health
 reports provider statuses even before models are configured, and target
 statuses only for configured primaries and fallbacks. Suggestions use IDs
 from one saved provider without caching them.
@@ -268,7 +269,8 @@ sequenceDiagram
    one stored catalog: it checks the catalog on every request, refuses
    `gateway.byok`, and constructs only the candidates its chain attempts, with
    that catalog's keys. An unmatched ID can name an enabled instance and an
-   unblocked backend model as `instance/model`; discovery remains listed-only.
+   unblocked backend model as `instance/model`. Catalog discovery can add those
+   qualified IDs from bounded provider listings without constructing models.
    A stack-catalog provider or request account may use a
    custom endpoint only when the operator's `custom_endpoints` list holds it,
    checked as a string before any model is built. Every selection names its
@@ -450,9 +452,9 @@ and the verified token, not from a caller choosing a different model name:
 - **Catalog:** on a `ModelCatalog`'s routes, any verified user, service account
   or service acting alone whose token covers the namespace gets catalog access,
   whatever the `access_mode`; Grafana's declared checks decide who may invoke.
-  A catalog with no listed models returns an empty discovery list. It can still
-  serve an unblocked `instance/model` selector if that provider serves unlisted
-  models; otherwise the call returns the unknown-model error. The selector uses
+  Catalog discovery keeps configured models and adds eligible qualified IDs
+  from opted-in providers' listings when available. An unblocked
+  `instance/model` can be called even if discovery does not list it. The selector uses
   only that catalog and the keys Grafana decrypted for the call. It checks the catalog again on every call, builds
   only the candidates the call's chain attempts, and refuses `gateway.byok`.
   It never reaches the configured catalog, server-held keys or request accounts.
