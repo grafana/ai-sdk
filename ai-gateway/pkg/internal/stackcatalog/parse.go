@@ -20,37 +20,27 @@ const (
 	providerCompatible = "openai-compatible"
 )
 
-// Catalog is a checked stack catalog without provider keys.
-type Catalog struct {
-	config.File
-	serving map[string]servingPolicy
-}
-
 // Parse validates a stack catalog spec whose providers have the secure keys
 // in keys. A baseURL equal to its type's native endpoint counts as unset;
 // any other must match one of endpoints, without a DNS lookup.
-func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints) (Catalog, error) {
+func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints) (config.File, error) {
 	if err := checkPolicy(spec); err != nil {
-		return Catalog{}, err
+		return config.File{}, err
 	}
 	file := convert(spec)
 	if err := file.ValidateShape(); err != nil {
-		return Catalog{}, err
+		return config.File{}, err
 	}
 	if spec.Models == nil {
-		return Catalog{}, fmt.Errorf("modelcatalog: spec.models must be a map")
-	}
-	serving, err := parseServingPolicies(spec, file)
-	if err != nil {
-		return Catalog{}, err
+		return config.File{}, fmt.Errorf("modelcatalog: spec.models must be a map")
 	}
 	if err := checkEndpoints(file, endpoints); err != nil {
-		return Catalog{}, err
+		return config.File{}, err
 	}
 	if err := checkKeys(file, keys); err != nil {
-		return Catalog{}, err
+		return config.File{}, err
 	}
-	return Catalog{File: file, serving: serving}, nil
+	return file, nil
 }
 
 func checkPolicy(spec v1alpha1.Spec) error {
@@ -91,7 +81,11 @@ func checkEndpoints(file config.File, endpoints outbound.CustomEndpoints) error 
 func convert(spec v1alpha1.Spec) config.File {
 	file := config.File{Providers: make(map[string]config.Provider, len(spec.Providers)), Models: make(map[string]config.Model, len(spec.Models))}
 	for name, provider := range spec.Providers {
-		file.Providers[name] = config.Provider{Type: provider.Type, BaseURL: deref(provider.BaseURL), ProviderName: deref(provider.ProviderName), SupportsStructuredOutputs: deref(provider.SupportsStructuredOutputs)}
+		file.Providers[name] = config.Provider{
+			Type: provider.Type, BaseURL: deref(provider.BaseURL), ProviderName: deref(provider.ProviderName),
+			SupportsStructuredOutputs: deref(provider.SupportsStructuredOutputs),
+			ServeAllModels:            deref(provider.ServeAllModels), ModelBlocklist: slices.Clone(provider.ModelBlocklist),
+		}
 	}
 	for id, model := range spec.Models {
 		converted := config.Model{Name: model.Name, Primary: target(model.Primary), Aliases: slices.Clone(model.Aliases)}

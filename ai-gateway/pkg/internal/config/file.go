@@ -46,7 +46,9 @@ type Provider struct {
 	ProviderName string `yaml:"providerName,omitempty"`
 	// SupportsStructuredOutputs enables JSON-schema response formats for an
 	// openai-compatible provider.
-	SupportsStructuredOutputs bool `yaml:"supportsStructuredOutputs,omitempty"`
+	SupportsStructuredOutputs bool     `yaml:"supportsStructuredOutputs,omitempty"`
+	ServeAllModels            bool     `yaml:"serveAllModels,omitempty"`
+	ModelBlocklist            []string `yaml:"modelBlocklist,omitempty"`
 }
 
 // Model configures one canonical public model and its aliases.
@@ -136,7 +138,9 @@ func (file File) validate(operator bool) error {
 	if len(file.Providers) == 0 {
 		return fmt.Errorf("config: at least one provider is required")
 	}
+	var servesUnlisted bool
 	for name, provider := range file.Providers {
+		servesUnlisted = servesUnlisted || provider.ServeAllModels
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("config: provider name must not be empty")
 		}
@@ -172,8 +176,11 @@ func (file File) validate(operator bool) error {
 			return fmt.Errorf("config: providers.%s.apiKeyEnv is required", name)
 		}
 	}
-	if operator && len(file.Models) == 0 {
-		return fmt.Errorf("config: at least one model is required")
+	if operator && file.Models == nil {
+		return fmt.Errorf("config: models must be a map")
+	}
+	if operator && len(file.Models) == 0 && !servesUnlisted {
+		return fmt.Errorf("config: at least one model is required unless a provider sets serveAllModels")
 	}
 	rowCount := 0
 	for _, model := range file.Models {
@@ -260,7 +267,7 @@ func (file File) validate(operator bool) error {
 			publicIDs[alias] = "alias"
 		}
 	}
-	return nil
+	return file.validateServing(operator)
 }
 
 // ResolveProviderSecrets resolves each unique referenced environment variable once.
@@ -385,6 +392,11 @@ func validateDocumentShape(document *yaml.Node) error {
 	for i := 0; i < len(root.Content); i += 2 {
 		if root.Content[i].Kind != yaml.ScalarNode || root.Content[i].Tag != "!!str" {
 			return fmt.Errorf("config: YAML root mapping keys must be strings")
+		}
+		if root.Content[i].Value == "providers" {
+			if err := validateServingYAML(root.Content[i+1]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

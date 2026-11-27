@@ -41,8 +41,9 @@ flowchart LR
   subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
     health[Health and model picker admission]
-    discovery[Catalog discovery admission]
+    discovery[Authorized catalog discovery]
     inventory[Discovery inventory cache]
+    probeAdmission[Separate operator and stack probe admission]
     listing[Bounded provider listing transport]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
@@ -77,9 +78,10 @@ flowchart LR
   host --> health
   health -->|shared catalog checks| stack
   host --> discovery
-  discovery -->|shared catalog checks| stack
+  discovery -->|checked parent| stack
+  discovery -->|startup catalog| catalog
   discovery --> inventory
-  inventory -->|cache miss| listing
+  inventory -->|cache miss| probeAdmission --> listing
   health --> listing
   listing -->|model listings only| apis
   host --> pw
@@ -137,13 +139,17 @@ and discovery lists it without building models. Discovery can add qualified
 IDs from providers that serve unlisted models. This lookup, health, and the
 provider model ID field's suggestions share the same catalog checks, saved
 keys, and bounded listing transport, outside the execution pipeline. Discovery
-has its own admission slots and caches provider inventory for up to 30 seconds
-per catalog revision. Health and suggestions use their own shared admission and
+checks its 30-second inventory cache before taking an admission slot to fetch
+missing inventories. Stack discovery caches by catalog revision; operator
+inventory is scoped to the startup catalog and uses a separate discovery slot.
+Health and suggestions use their own shared admission and
 stay uncached. Health reports provider statuses even before models are configured
 and target statuses only for configured primaries and fallbacks.
-Without the `model_catalog`
-setting the operator catalog is empty: the namespace routes list no configured
-models and every configured model ID is not found. The `Middleware` spec has
+The operator catalog also resolves eligible `instance/model` selectors after
+listed lookup misses, using only the opted-in startup account. The namespace
+`config` route can include the same eligible IDs from its provider inventory.
+Without the `model_catalog` setting, the operator catalog is empty: the
+namespace routes list no models and every model ID is not found. The `Middleware` spec has
 one typed member per public tenant type in the `tenanttype` registry, and its
 validator checks each member against the tenant extensions the distribution
 implements. The registry holds `default-instructions` and `default-settings`,
@@ -270,17 +276,16 @@ sequenceDiagram
    delegates to `CatalogSelector` to resolve `assistant` or an alias to its
    canonical model. When the call carries `gateway.models`, `order` or `only`,
    the selector instead resolves every named model through the catalog and
-   composes one request chain from the candidates built at startup: each
-   model's candidates in order, filtered by `only` and then moved to the front
-   by `order`, with repeated models and destinations skipped and at most 8
-   attempts. That chain carries the requested model's canonical identity, like
-   a configured route. A stack-catalog selection follows the same rules over
-   one stored catalog: it checks the catalog on every request, refuses
-   `gateway.byok`, and constructs only the candidates its chain attempts, with
-   that catalog's keys. An unmatched ID can name an enabled instance and an
-   unblocked backend model as `instance/model` when both the full selector and
-   backend ID fit the public-ID rule. Catalog discovery can add those
-   qualified IDs from bounded provider listings without constructing models.
+   composes one request chain: each model's candidates in order, filtered by
+   `only` and then moved to the front by `order`, with repeated models and
+   destinations skipped and at most 8 attempts. Both catalogs try an eligible
+   `instance/model` selector after listed lookup misses. Both the full selector
+   and the backend ID must fit the shared public-ID rule. The operator catalog
+   reuses prebuilt listed candidates and builds only unlisted candidates that
+   the plan retains. A stack-catalog selection checks its stored catalog on
+   every request, refuses `gateway.byok`, and builds its retained candidates
+   with that catalog's keys. Unlisted operator calls keep the qualified
+   canonical identity, but use the fixed Prometheus model label `unlisted`.
    A stack-catalog provider or request account may use a
    custom endpoint only when the operator's `custom_endpoints` list holds it,
    checked as a string before any model is built. Every selection names its

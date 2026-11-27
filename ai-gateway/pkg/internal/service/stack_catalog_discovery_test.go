@@ -234,6 +234,58 @@ func TestStackCatalogLister_ProcessAdmission(t *testing.T) {
 	})
 }
 
+func TestStackCatalogLister_WarmInventorySkipsAdmission(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var probes atomic.Int32
+		lister := NewStackCatalogLister(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			probes.Add(1)
+			return discoveryListingResponse(`{"data":[{"id":"new"}],"has_more":false}`), nil
+		}), outbound.CustomEndpoints{})
+		stack := discoveryStack()
+		ctx := WithStackCatalog(callerContext(t, gatewayauth.CatalogAccounts), stack)
+		warm, err := lister.ListModels(ctx)
+		require.NoError(t, err)
+		require.Len(t, warm, 2)
+		caller, ok := gatewayauth.CallerFromContext(ctx)
+		require.True(t, ok)
+		id := healthCatalogID{caller.Namespace, stack.Name}
+		require.True(t, lister.listings.checker.admit(id))
+		defer lister.listings.checker.release(id)
+		for range 2 {
+			go func() {
+				infos, err := lister.ListModels(ctx)
+				assert.NoError(t, err)
+				assert.Equal(t, warm, infos)
+			}()
+		}
+		synctest.Wait()
+		assert.EqualValues(t, 1, probes.Load())
+	})
+}
+
+func TestStackCatalogLister_CachedRowsSurviveBusyMiss(t *testing.T) {
+	stack := discoveryStack()
+	stack.Spec.Providers["cold"] = stack.Spec.Providers["claude"]
+	stack.Keys["cold"] = resource.RawSecureValue("dummy-cold-key")
+	ctx := WithStackCatalog(callerContext(t, gatewayauth.CatalogAccounts), stack)
+	caller, ok := gatewayauth.CallerFromContext(ctx)
+	require.True(t, ok)
+	id := healthCatalogID{caller.Namespace, stack.Name}
+	var probes atomic.Int32
+	lister := NewStackCatalogLister(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		probes.Add(1)
+		return nil, errors.New("unexpected probe")
+	}), outbound.CustomEndpoints{})
+	lister.listings.remember(discoveryInventoryKey{catalog: id, revision: stack.ResourceVersion, provider: "claude"}, []string{"warm"})
+	require.True(t, lister.listings.checker.admit(id))
+	defer lister.listings.checker.release(id)
+	infos, err := lister.ListModels(ctx)
+	require.NoError(t, err)
+	require.Len(t, infos, 2)
+	assert.Equal(t, "claude/warm", infos[1].ID)
+	assert.Zero(t, probes.Load())
+}
+
 func TestStackCatalogLister_InventoryCache(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var calls atomic.Int32

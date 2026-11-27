@@ -126,7 +126,8 @@ func TestHandler_ConfiguredCallerGetsTheProjection(t *testing.T) {
 	models := []catalog.ModelInfo{configuredInfo(), {ID: "middle", Name: "Middle"}}
 	response := serve(context.Background(), newTestHandler(&testLister{models: models}), gatewayauth.ConfiguredAccounts)
 	assert.Equal(t, http.StatusOK, response.Code)
-	assert.Equal(t, http.Header{"Content-Type": {"application/json"}}, response.Header())
+	assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", response.Header().Get("Cache-Control"))
 	expected, err := providerv4.DiscoveryProjection{}.ProjectDiscovery(models)
 	require.NoError(t, err)
 	assert.Equal(t, string(expected), response.Body.String())

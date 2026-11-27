@@ -88,6 +88,49 @@ select it by its ID, such as `balanced`, or by one of its `aliases`. When the
 primary model fails before it starts answering, the Gateway tries the
 `fallback` models in order.
 
+### Serve every model of an operator provider
+
+Set `serveAllModels: true` on a provider to serve its unlisted models. For
+example:
+
+```yaml
+providers:
+  team-openai:
+    type: openai
+    apiKeyEnv: GF_PLUGIN_OPENAI_API_KEY
+    serveAllModels: true
+    modelBlocklist: [gpt-example]
+models: {}
+```
+
+The Gateway checks listed IDs and aliases first. On a miss it splits
+`<provider-instance>/<model-id>` at the first slash, so a call to
+`team-openai/org/new-model` uses the server-held account for `team-openai` and
+sends `org/new-model` to that provider as-is. Instance names for opted-in
+providers cannot contain slashes. Unlisted models do not inherit fallbacks or
+Anthropic skills and server fallback permissions from listed models; callers
+can still add eligible models explicitly with `gateway.models`.
+
+Without the switch, a provider serves only its listed models. Omitting
+`modelBlocklist` or setting it to `[]` blocks nothing. List up to 128 distinct,
+case-sensitive backend IDs, not aliases or globs. Listed IDs, aliases,
+blocklist entries, and both parts of unlisted lookup (the full selector and
+its backend ID) use the same format: 1–320 ASCII bytes, starting with a letter
+or digit, then letters, digits, `.`, `_`, `:`, `/`, `@`, `+`, or `-`.
+A blocked or invalid unlisted selector returns model not found without a
+provider call.
+
+Include a `models` map; it can be empty only when at least one provider opts
+in. Even when the switch is off, startup refuses a blocked ID used by a
+primary, Gateway fallback, or `serverFallbacks.models` on the same instance.
+With a nonempty blocklist, it also refuses `serverFallbacks.allowDefault: true`
+because Anthropic chooses the model. Provider-hosted tool options are not
+covered by the blocklist.
+
+Authorized `/config` requests return listed models and any eligible IDs from a
+bounded provider inventory. Inventory is best effort and cached for 30 seconds;
+a model does not have to appear in discovery to be callable.
+
 ### Allow Anthropic server-side fallbacks
 
 Applications can ask Anthropic to retry a refused turn on another model with
@@ -246,8 +289,8 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 - `spec.providers` must contain at least one provider. `spec.models` can be an
   empty map. Without an eligible provider listing, discovery then returns
   `{"models":[]}`. Calls return the unknown-model error unless a provider
-  serves unlisted models. The operator
-  `model_catalog` setting still requires at least one provider and one model
+  serves unlisted models. The [operator catalog](#serve-every-model-of-an-operator-provider)
+  also allows an empty model map if a provider opts in
   when set.
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored

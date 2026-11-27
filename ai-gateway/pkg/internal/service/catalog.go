@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
@@ -30,9 +32,13 @@ type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provid
 // request's routing controls can compose them.
 type Catalog struct {
 	catalog.Catalog
-	routes   map[string]physicalRoute
-	factory  ModelFactory
-	physical *PhysicalAttemptSink
+	routes        map[string]physicalRoute
+	factory       ModelFactory
+	physical      *PhysicalAttemptSink
+	unlisted      config.File
+	accounts      map[string]config.ResolvedProvider
+	keys          []string
+	buildUnlisted func(config.Primary) (provider.LanguageModel, error)
 }
 
 // physicalRoute is one configured route's candidates in configured order.
@@ -111,7 +117,63 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 	if err != nil {
 		return nil, err
 	}
-	return &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}, nil
+	c := &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}
+	for name, configured := range file.Providers {
+		if !configured.ServeAllModels {
+			continue
+		}
+		account, ok := providers[name]
+		if !ok || account.APIKey == "" {
+			return nil, fmt.Errorf("gateway service: provider %q is unresolved", name)
+		}
+		if c.accounts == nil {
+			c.accounts = make(map[string]config.ResolvedProvider)
+			c.unlisted.Providers = make(map[string]config.Provider)
+		}
+		c.accounts[name] = account
+		configured.ModelBlocklist = slices.Clone(configured.ModelBlocklist)
+		c.unlisted.Providers[name] = configured
+	}
+	if len(c.accounts) != 0 {
+		for _, account := range providers {
+			c.keys = append(c.keys, account.APIKey)
+		}
+		c.buildUnlisted = func(descriptor config.Primary) (provider.LanguageModel, error) {
+			candidate, _, err := newCandidate(c.accounts[descriptor.Provider], descriptor, nativeoptions.AnthropicPolicy{}, client, construct)
+			return candidate, err
+		}
+	}
+	return c, nil
+}
+
+// IsListed reports whether id is a listed canonical ID.
+func (c *Catalog) IsListed(id string) bool {
+	_, listed := c.routes[id]
+	return listed
+}
+
+// ResolveModel returns a prebuilt listed model or constructs one eligible unlisted candidate.
+func (c *Catalog) ResolveModel(ctx context.Context, id string) (catalog.ResolvedModel, error) {
+	listed, err := c.Catalog.ResolveModel(ctx, id)
+	if !errors.Is(err, catalog.ErrUnknownModel) {
+		return listed, err
+	}
+	group, err := unlistedGroup(c.unlisted, id)
+	if err != nil {
+		return catalog.ResolvedModel{}, err
+	}
+	lower, err := c.buildUnlisted(group.descriptors[0])
+	if err != nil {
+		return catalog.ResolvedModel{}, err
+	}
+	model, err := c.factory(id, lower)
+	if err != nil {
+		return catalog.ResolvedModel{}, err
+	}
+	if model == nil {
+		return catalog.ResolvedModel{}, fmt.Errorf("gateway service: composing model %q returned nil", id)
+	}
+	return catalog.ResolvedModel{ID: id, Model: model, Candidates: group.candidates}, nil
 }
 
 var errNilCandidate = errors.New("gateway service: constructing a candidate returned nil")

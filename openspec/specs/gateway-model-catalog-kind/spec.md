@@ -36,7 +36,7 @@ Admission SHALL accept only provider types `anthropic`, `openai` and `openai-com
 - **THEN** the write SHALL be refused
 
 ### Requirement: Shared catalog shape validation
-A stack catalog SHALL require `spec.providers` and `spec.models` maps with at least one provider. The model map MAY be empty. Admission SHALL apply the shared checks to entries that are present: provider shape, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds. The operator catalog SHALL still require at least one provider and one model and SHALL retain its credential checks.
+A stack catalog SHALL require `spec.providers` and `spec.models` maps with at least one provider. The model map MAY be empty. Admission SHALL apply the shared checks to entries that are present: provider shape, required model fields, provider references, unique candidates, public ID and alias syntax and collisions, discovery cardinality and attempt bounds, and discovery text bounds. The operator catalog SHALL retain its own startup and credential checks.
 
 #### Scenario: No providers or models
 - **WHEN** a writer creates or updates a stack catalog without providers, even if it has no resulting secure keys
@@ -225,7 +225,7 @@ The kind schema SHALL keep `baseURL`, `providerName` and `supportsStructuredOutp
 - **THEN** the write SHALL be accepted, and the provider SHALL count as having no `baseURL`
 
 ### Requirement: Optional provider serving settings
-A `ModelCatalog` provider SHALL accept optional `serveAllModels` (boolean) and `modelBlocklist` (array of backend model ID strings). An omitted or false switch SHALL mean listed models only, and an omitted or empty blocklist SHALL block no IDs. A blocklist SHALL be accepted and retained while the switch is off. The operator catalog schema SHALL remain unchanged.
+A `ModelCatalog` provider SHALL accept optional `serveAllModels` (boolean) and `modelBlocklist` (array of backend model ID strings). An omitted or false switch SHALL mean listed models only, and an omitted or empty blocklist SHALL block no IDs. A blocklist SHALL be accepted and retained while the switch is off.
 
 #### Scenario: Existing catalog
 - **WHEN** an existing catalog omits both fields

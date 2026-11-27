@@ -14,7 +14,7 @@ var identityModelFactory ModelFactory = ConfiguredIdentity
 // directly from the production identities and [ModelObservers], as the runtime
 // composes them for configured and BYOK selections.
 func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (ModelFactory, ModelFactory, error) {
-	observers, err := NewModelObservers(telemetry, logger, runtime, drainTimeout)
+	observers, err := NewModelObservers(telemetry, logger, runtime, drainTimeout, nil)
 	if err != nil {
 		return nil, nil, err
 	}

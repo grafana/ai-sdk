@@ -188,23 +188,9 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	defer func() { _ = response.Body.Close() }()
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "no-store", response.Header.Get("Cache-Control"))
-	var discovery struct {
-		Models []struct {
-			ID string `json:"id"`
-		} `json:"models"`
-	}
 	document, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
-	schemaJSON, err := os.ReadFile("../../../providerwire/v4/schema/discovery.json")
-	require.NoError(t, err)
-	compiled, err := schema.CompileSchema(schemaJSON)
-	require.NoError(t, err)
-	require.NoError(t, compiled.Validate(json.RawMessage(document)))
-	require.NoError(t, json.Unmarshal(document, &discovery))
-	var ids []string
-	for _, row := range discovery.Models {
-		ids = append(ids, row.ID)
-	}
+	ids := validDiscoveryIDs(t, document)
 	assert.Equal(t, []string{
 		"claude/" + longBackendID, "claude/" + versioned, "claude/model+v2", "claude/org/new",
 		instance + "/" + longBackendID, instance + "/" + versioned, instance + "/model+v2", instance + "/org/blocked", instance + "/org/new",
@@ -262,6 +248,27 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), instance+"/"+id, unaryBody, false, user))
 		assert.Equal(t, http.StatusNotFound, status, body)
 	}
+}
+
+func validDiscoveryIDs(t *testing.T, document []byte) []string {
+	t.Helper()
+	schemaJSON, err := os.ReadFile("../../../providerwire/v4/schema/discovery.json")
+	require.NoError(t, err)
+	compiled, err := schema.CompileSchema(schemaJSON)
+	require.NoError(t, err)
+	require.NoError(t, compiled.Validate(json.RawMessage(document)))
+
+	var discovery struct {
+		Models []struct {
+			ID string `json:"id"`
+		} `json:"models"`
+	}
+	require.NoError(t, json.Unmarshal(document, &discovery))
+	ids := make([]string, len(discovery.Models))
+	for i, row := range discovery.Models {
+		ids[i] = row.ID
+	}
+	return ids
 }
 
 func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {

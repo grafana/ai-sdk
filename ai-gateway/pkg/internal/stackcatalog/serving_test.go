@@ -48,6 +48,7 @@ func TestParse_VersionedPublicID(t *testing.T) {
 }
 
 func TestParse_InvalidBlocklist(t *testing.T) {
+	const maxBlockedModelIDs = 128
 	ids := make([]string, 0, maxBlockedModelIDs)
 	for i := range maxBlockedModelIDs {
 		ids = append(ids, fmt.Sprintf("model-%d", i))
@@ -83,24 +84,6 @@ func TestParse_InvalidBlocklist(t *testing.T) {
 			}
 			require.ErrorContains(t, err, "providers.openai."+tc.want)
 			assert.NotContains(t, err.Error(), sentinel)
-		})
-	}
-}
-
-func TestParse_OperatorCatalogDoesNotAcceptServingFields(t *testing.T) {
-	for _, field := range []string{"serveAllModels: true", "modelBlocklist: [blocked]"} {
-		t.Run(field, func(t *testing.T) {
-			_, err := config.ParseModelCatalog(`providers:
-  openai:
-    type: openai
-    apiKeyEnv: OPENAI_API_KEY
-    ` + field + `
-models:
-  model:
-    name: Model
-    primary: {provider: openai, model: gpt-5}
-`)
-			assert.ErrorContains(t, err, "invalid YAML fields or values")
 		})
 	}
 }

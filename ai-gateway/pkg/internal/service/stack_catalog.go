@@ -8,12 +8,12 @@ import (
 	"maps"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/grafana/grafana-app-sdk/resource"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
@@ -110,7 +110,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 // parseStackCatalog checks a stack catalog with the keys that have values, and
 // returns it with those values. Any failure is [execution.ErrCatalogConfiguration],
 // without the reason, which names spec identifiers.
-func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (stackcatalog.Catalog, []string, error) {
+func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (config.File, []string, error) {
 	secureKeys := make([]string, 0, len(stack.Keys))
 	keys := make([]string, 0, len(stack.Keys))
 	for name, value := range stack.Keys {
@@ -122,7 +122,7 @@ func parseStackCatalog(stack StackCatalog, endpoints outbound.CustomEndpoints) (
 	}
 	file, err := stackcatalog.Parse(stack.Spec, secureKeys, endpoints)
 	if err != nil {
-		return stackcatalog.Catalog{}, nil, execution.ErrCatalogConfiguration
+		return config.File{}, nil, execution.ErrCatalogConfiguration
 	}
 	return file, keys, nil
 }
@@ -148,10 +148,7 @@ type StackCatalogLister struct {
 func NewStackCatalogLister(transport http.RoundTripper, endpoints outbound.CustomEndpoints) StackCatalogLister {
 	return StackCatalogLister{
 		Endpoints: endpoints,
-		listings: &catalogDiscoveryListings{
-			checker: NewCatalogHealthChecker(transport, endpoints),
-			entries: make(map[discoveryInventoryKey]discoveryInventoryEntry),
-		},
+		listings:  newCatalogDiscoveryListings(transport),
 	}
 }
 
@@ -166,18 +163,17 @@ func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.Mode
 	if err != nil {
 		return nil, err
 	}
-	index := newStackIndex(file)
 	infos := make([]catalog.ModelInfo, 0, len(file.Models))
 	for _, id := range slices.Sorted(maps.Keys(file.Models)) {
 		model := file.Models[id]
-		group, err := index.resolve(id)
-		if err != nil {
-			return nil, err
-		}
+		group := listedStackGroup(file, id, id)
 		infos = append(infos, catalog.ModelInfo{ID: id, Name: model.Name, Description: model.Description, Aliases: slices.Clone(model.Aliases), Candidates: group.candidates})
 	}
-	if lister.listings != nil {
-		infos = lister.listings.appendUnlistedModels(ctx, stack, index, keys, infos)
+	if caller, verified := gatewayauth.CallerFromContext(ctx); verified && lister.listings != nil {
+		key := discoveryInventoryKey{catalog: healthCatalogID{caller.Namespace, stack.Name}, revision: stack.ResourceVersion}
+		infos = lister.listings.appendUnlistedModels(ctx, key, file, keys, func(name string) config.ResolvedProvider {
+			return resolveStackProvider(file.Providers[name], stack, name)
+		}, infos)
 	}
 	return infos, nil
 }
@@ -185,11 +181,11 @@ func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.Mode
 // stackIndex resolves a checked stack catalog's public IDs without
 // constructing any model.
 type stackIndex struct {
-	file      stackcatalog.Catalog
+	file      config.File
 	canonical map[string]string
 }
 
-func newStackIndex(file stackcatalog.Catalog) stackIndex {
+func newStackIndex(file config.File) stackIndex {
 	canonical := make(map[string]string, len(file.Models))
 	for id, model := range file.Models {
 		canonical[id] = id
@@ -202,22 +198,19 @@ func newStackIndex(file stackcatalog.Catalog) stackIndex {
 
 func (index stackIndex) resolve(name string) (routedGroup, error) {
 	id, listed := index.canonical[name]
-	var descriptors []config.Primary
-	if listed {
-		model := index.file.Models[id]
-		descriptors = append([]config.Primary{model.Primary}, model.Fallback...)
-	} else {
-		instance, model, qualified := strings.Cut(name, "/")
-		if !qualified || !index.file.AllowsUnlistedModel(instance, model) {
-			return routedGroup{}, &catalog.UnknownModelError{ModelID: name}
-		}
-		id = name
-		descriptors = []config.Primary{{Provider: instance, Model: model}}
+	if !listed {
+		return unlistedGroup(index.file, name)
 	}
+	return listedStackGroup(index.file, name, id), nil
+}
+
+func listedStackGroup(file config.File, name, id string) routedGroup {
+	model := file.Models[id]
+	descriptors := append([]config.Primary{model.Primary}, model.Fallback...)
 	candidates := make([]catalog.ConfiguredCandidate, len(descriptors))
 	for i, descriptor := range descriptors {
-		configured := index.file.Providers[descriptor.Provider]
+		configured := file.Providers[descriptor.Provider]
 		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: providerSlug(configured.Type, configured.ProviderName), ModelID: descriptor.Model}
 	}
-	return routedGroup{name: name, canonical: id, candidates: candidates, descriptors: descriptors}, nil
+	return routedGroup{name: name, canonical: id, candidates: candidates, descriptors: descriptors}
 }
