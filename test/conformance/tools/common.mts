@@ -81,6 +81,7 @@ export interface Config {
   providerTools?: Record<string, ProviderToolConfig>;
   responseFormat?: ResponseFormatConfig;
   assertOutputValue?: boolean;
+  expectOutputValidationError?: boolean;
   approval?: ApprovalConfig;
   approvals?: ApprovalConfig[];
   expectStreamError?: boolean;
@@ -223,6 +224,9 @@ export function parseConfig(raw: string, source: string): Config {
   for (const [i, approval] of entries(value.approvals)) {
     assertKnownKeys(approval, APPROVAL_KEYS, `${source}: approvals[${i}]`);
   }
+  if (value.assertOutputValue === true && value.expectOutputValidationError === true) {
+    throw new Error(`${source}: assertOutputValue and expectOutputValidationError are mutually exclusive`);
+  }
   return value as unknown as Config;
 }
 
@@ -236,8 +240,8 @@ export const CONFIG_KEYS = keyList<Config>({
   operation: true, model: true, system: true, prompt: true, messages: true, uiMessages: true,
   allowSystemInMessages: true, stopWhenStepCount: true, toolChoice: true, activeTools: true,
   reasoning: true, headers: true, streamOptions: true, providerOptions: true, tools: true,
-  providerTools: true, responseFormat: true, assertOutputValue: true, approval: true,
-  approvals: true, expectStreamError: true, maxRetries: true,
+  providerTools: true, responseFormat: true, assertOutputValue: true, expectOutputValidationError: true,
+  approval: true, approvals: true, expectStreamError: true, maxRetries: true,
 });
 export const MESSAGE_KEYS = keyList<MessageConfig>({ role: true, content: true, providerOptions: true });
 export const MESSAGE_PART_KEYS = keyList<MessagePartConfig>({
@@ -418,6 +422,7 @@ export function unsupportedGenerateFields(cfg: Config): string[] {
     ["approval", cfg.approval],
     ["approvals", nonEmptyArray(cfg.approvals)],
     ["assertOutputValue", cfg.assertOutputValue || undefined],
+    ["expectOutputValidationError", cfg.expectOutputValidationError || undefined],
     ["expectStreamError", cfg.expectStreamError || undefined],
     ["maxRetries", cfg.maxRetries],
     [

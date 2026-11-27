@@ -42,6 +42,8 @@ func TestConfig_Operation(t *testing.T) {
 			want:      OperationGenerate,
 		},
 		{name: "rejects unknown", operation: "invalid", wantErr: true},
+		{name: "rejects output validation assertion for generate", operation: "generate", extra: "expectOutputValidationError: true\n", wantErr: true},
+		{name: "rejects conflicting output assertions", extra: "assertOutputValue: true\nexpectOutputValidationError: true\n", wantErr: true},
 		{
 			name:      "rejects unsupported generate fields",
 			operation: "generate",

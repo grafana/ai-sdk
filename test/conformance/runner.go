@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/ai-sdk/output"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -60,11 +61,13 @@ type Config struct {
 	Tools                 map[string]ToolConfig         `yaml:"tools,omitempty"`
 	ProviderTools         map[string]ProviderToolConfig `yaml:"providerTools,omitempty"`
 	ResponseFormat        *ResponseFormatConfig         `yaml:"responseFormat,omitempty"`
-	AssertOutputValue     bool                          `yaml:"assertOutputValue,omitempty"`
 	Approval              *ApprovalConfig               `yaml:"approval,omitempty"`
 	Approvals             []ApprovalConfig              `yaml:"approvals,omitempty"`
 	ExpectStreamError     bool                          `yaml:"expectStreamError,omitempty"`
 	MaxRetries            *int                          `yaml:"maxRetries,omitempty"`
+
+	AssertOutputValue           bool `yaml:"assertOutputValue,omitempty"`
+	ExpectOutputValidationError bool `yaml:"expectOutputValidationError,omitempty"`
 }
 
 type UIMessageConfig struct {
@@ -231,6 +234,9 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Operation != OperationStream && cfg.Operation != OperationGenerate {
 		return nil, fmt.Errorf("unknown operation %q", cfg.Operation)
 	}
+	if cfg.AssertOutputValue && cfg.ExpectOutputValidationError {
+		return nil, fmt.Errorf("assertOutputValue and expectOutputValidationError are mutually exclusive")
+	}
 	if cfg.Operation == OperationGenerate {
 		var unsupported []string
 		if len(cfg.UIMessages) > 0 {
@@ -262,6 +268,9 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		if cfg.AssertOutputValue {
 			unsupported = append(unsupported, "assertOutputValue")
+		}
+		if cfg.ExpectOutputValidationError {
+			unsupported = append(unsupported, "expectOutputValidationError")
 		}
 		if cfg.ExpectStreamError {
 			unsupported = append(unsupported, "expectStreamError")
@@ -1263,8 +1272,21 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	}
 
 	expectedObjectPath := filepath.Join(tc.Dir, "expected-object.json")
-	if _, err := os.Stat(expectedObjectPath); err == nil {
-		compareOutputObject(t, expectedObjectPath, result.OutputValue(), actual, cfg.AssertOutputValue)
+	if cfg.ExpectOutputValidationError {
+		_, err := os.Stat(expectedObjectPath)
+		require.ErrorIs(t, err, os.ErrNotExist, "expected-object.json must be absent when output validation fails")
+		require.Nil(t, result.OutputValue(), "unexpected parsed structured output")
+		var validationError *jsonschema.ValidationError
+		require.ErrorAs(t, result.OutputError(), &validationError, "expected output schema validation error")
+	} else {
+		expectedObj, present, err := loadExpectedOutputObject(expectedObjectPath, cfg.AssertOutputValue)
+		require.NoError(t, err)
+		if cfg.AssertOutputValue {
+			require.NoError(t, result.OutputError(), "parsed structured output")
+		}
+		if present {
+			compareOutputObject(t, expectedObj, result.OutputValue(), actual, cfg.AssertOutputValue)
+		}
 	}
 
 	if recorder != nil {
@@ -1364,14 +1386,26 @@ func BedrockTestServerFactory(_ *testing.T, tc TestCase) (*TestServer, error) {
 	}, nil
 }
 
-func compareOutputObject(t *testing.T, expectedPath string, actualObj any, chunks []map[string]any, assertOutputValue bool) {
+func loadExpectedOutputObject(path string, required bool) (any, bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) && !required {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("reading expected-object.json: %w", err)
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, false, fmt.Errorf("parsing expected-object.json: %w", err)
+	}
+	if required && value == nil {
+		return nil, false, fmt.Errorf("assertOutputValue requires a non-null expected-object.json")
+	}
+	return value, true, nil
+}
+
+func compareOutputObject(t *testing.T, expectedObj, actualObj any, chunks []map[string]any, assertOutputValue bool) {
 	t.Helper()
-
-	expectedData, err := os.ReadFile(expectedPath)
-	require.NoError(t, err, "reading expected-object.json")
-
-	var expectedObj any
-	require.NoError(t, json.Unmarshal(expectedData, &expectedObj), "parsing expected-object.json")
 
 	if actualObj == nil && !assertOutputValue {
 		var textBuilder string
