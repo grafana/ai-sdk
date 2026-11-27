@@ -1,9 +1,0 @@
-{"type":"start"}
-{"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"tooluse_GHQPnfax6o8Y8Lh4wyoK0c","toolName":"json","dynamic":false}
-{"type":"tool-input-delta","toolCallId":"tooluse_GHQPnfax6o8Y8Lh4wyoK0c","inputTextDelta":""}
-{"type":"tool-input-delta","toolCallId":"tooluse_GHQPnfax6o8Y8Lh4wyoK0c","inputTextDelta":"{\"status\": "}
-{"type":"tool-input-delta","toolCallId":"tooluse_GHQPnfax6o8Y8Lh4wyoK0c","inputTextDelta":"\"ok\"}"}
-{"type":"tool-input-error","toolCallId":"tooluse_GHQPnfax6o8Y8Lh4wyoK0c","toolName":"json","input":{"status":"ok"},"dynamic":true,"errorText":"AI_NoSuchToolError: Model tried to call unavailable tool 'json'. No tools are available."}
-{"type":"finish-step"}
-{"type":"finish","finishReason":"tool-calls"}

@@ -1,0 +1,10 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"tooluse_ryuITIrGU9Mj7dmeqQobtm","toolName":"lookup_label"}
+{"type":"tool-input-delta","toolCallId":"tooluse_ryuITIrGU9Mj7dmeqQobtm","inputTextDelta":""}
+{"type":"tool-input-delta","toolCallId":"tooluse_ryuITIrGU9Mj7dmeqQobtm","inputTextDelta":"{\"code\""}
+{"type":"tool-input-delta","toolCallId":"tooluse_ryuITIrGU9Mj7dmeqQobtm","inputTextDelta":": \"MINT"}
+{"type":"tool-input-delta","toolCallId":"tooluse_ryuITIrGU9Mj7dmeqQobtm","inputTextDelta":"-27\"}"}
+{"type":"tool-input-available","toolCallId":"tooluse_ryuITIrGU9Mj7dmeqQobtm","toolName":"lookup_label","input":{"code":"MINT-27"}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"tool-calls"}
