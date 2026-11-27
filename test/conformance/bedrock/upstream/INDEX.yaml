@@ -10,9 +10,9 @@ amazon-bedrock-tool-call.1: tool-call
 amazon-bedrock-tool-no-args: tool-no-args
 amazon-bedrock-json-only-text-first.1: json-only-text-first
 amazon-bedrock-json-other-tool.1: json-other-tool
-amazon-bedrock-json-tool.1: json-tool/input-1.chunks.txt
-amazon-bedrock-json-tool.2: json-tool/input-2.chunks.txt
-amazon-bedrock-json-tool.3: json-tool/input-3.chunks.txt
+amazon-bedrock-json-tool.1: json-tool
+amazon-bedrock-json-tool.2: json-tool-with-preamble
+amazon-bedrock-json-tool.3: json-tool-with-multiple-preamble-blocks
 amazon-bedrock-json-with-tool.1: json-with-tool
 amazon-bedrock-json-with-tools.1: json-with-tools
 amazon-bedrock-json-tool-text-then-weather-then-json.1: json-tool-text-then-weather-then-json

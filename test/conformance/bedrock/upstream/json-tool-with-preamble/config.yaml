@@ -1,0 +1,12 @@
+# At the provider layer, two preamble deltas in one block precede JSON text.
+# The caller stream buffers block 0 until step finish; complete object parsing fails.
+model: anthropic.claude-3-haiku-20240307-v1:0
+prompt: Generate JSON
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      value:
+        type: string
+    required: [value]

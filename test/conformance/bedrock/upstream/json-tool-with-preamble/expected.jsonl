@@ -1,0 +1,9 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"{\"value\":\"test\"}"}
+{"type":"text-end","id":"1"}
+{"type":"text-delta","id":"0","delta":"Let me generate that JSON for you."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}
