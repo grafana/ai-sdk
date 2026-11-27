@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	aisdk "github.com/grafana/ai-sdk"
@@ -22,6 +23,10 @@ type discoveryFixtureModel struct {
 		ID    string          `json:"id"`
 		Name  string          `json:"name"`
 		Input json.RawMessage `json:"input"`
+	}
+	Ranking *struct {
+		MaxResults int
+		Names      []string
 	}
 	requests []map[string]any
 }
@@ -57,7 +62,7 @@ func (m *discoveryFixtureModel) DoStream(_ context.Context, opts provider.CallOp
 }
 
 func TestUIConformance_DeferredToolDiscovery(t *testing.T) {
-	for _, mode := range []string{"direct", "nested"} {
+	for _, mode := range []string{"direct", "nested", "direct-ranked", "nested-ranked"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := filepath.Join("ui", "deferred-tool-discovery", mode)
 			model := &discoveryFixtureModel{}
@@ -75,8 +80,17 @@ func TestUIConformance_DeferredToolDiscovery(t *testing.T) {
 				}},
 				"unrelated": {DeferLoading: true, Description: "Send email", InputSchema: empty},
 			}
+			if ranking := model.Ranking; ranking != nil {
+				tools["search"] = aisdk.ToolSearch(aisdk.WithToolSearchMaxResults(ranking.MaxResults), aisdk.WithToolSearchFunc(func(_ context.Context, query string, candidates []aisdk.ToolSearchCandidate) ([]string, error) {
+					if query != "meteorology" || len(candidates) != 3 {
+						return nil, fmt.Errorf("unexpected search query or candidate count: %q (%d)", query, len(candidates))
+					}
+					return ranking.Names, nil
+				}))
+				tools["rainRisk"] = aisdk.Tool{DeferLoading: true, Description: "Chance of rain", InputSchema: empty}
+			}
 			options := []aisdk.StreamOption{aisdk.WithModelMessages(provider.UserText("Find the weather.")), aisdk.WithTools(tools), aisdk.WithStopWhen(aisdk.StepCountIs(3))}
-			if mode == "nested" {
+			if strings.HasPrefix(mode, "nested") {
 				inputSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"input":{"type":"object"}},"required":["name","input"],"additionalProperties":false}`))
 				require.NoError(t, err)
 				tools["code"] = aisdk.Tool{Description: "Stable code tool.", InputSchema: inputSchema, Caller: &aisdk.ToolCaller{Type: aisdk.ToolCallerLocal,
@@ -107,7 +121,13 @@ func TestUIConformance_DeferredToolDiscovery(t *testing.T) {
 						return &message
 					},
 				}}
-				options = append(options, aisdk.WithToolRoutes(aisdk.ToolRoutes{"search": {Callers: []string{"code"}}, "getWeather": {Callers: []string{"code"}}, "unrelated": {Callers: []string{"code"}}}))
+				routes := make(aisdk.ToolRoutes)
+				for name := range tools {
+					if name != "code" {
+						routes[name] = aisdk.ToolRoute{Callers: []string{"code"}}
+					}
+				}
+				options = append(options, aisdk.WithToolRoutes(routes))
 			}
 			result := aisdk.StreamText(t.Context(), model, options...)
 			var chunks []map[string]any

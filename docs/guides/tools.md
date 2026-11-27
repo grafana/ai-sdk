@@ -115,7 +115,8 @@ result := aisdk.StreamText(ctx, model,
 )
 ```
 
-Search returns up to five matching names and descriptions, not schemas. A match
+Search returns up to five matching names and descriptions by default, not schemas.
+Set a different positive limit with `ToolSearch(WithToolSearchMaxResults(n))`. A match
 becomes available only on the **next** model step. The default one-step limit is
 unchanged, so configure a multi-step stop condition. Undiscovered tools are absent
 from both model definitions and new-call execution bindings; a premature call
@@ -125,7 +126,12 @@ availability; an explicitly empty selection disables all step tools.
 
 Names score above descriptions, repeated query terms count once, and equal scores
 use sorted tool names because Go maps have no insertion order. This is keyword
-search, not semantic retrieval or an authorization policy.
+search, not semantic retrieval or an authorization policy. Use
+`WithToolSearchFunc` on the search tool to rank eligible candidates using your own
+logic. The callback sees the query and a detached catalog of names and resolved
+descriptions. Return names in rank order: the SDK skips duplicates and ineligible
+names before applying the cap. Return an empty list for no matches. A failed or
+canceled search does not activate results.
 
 By default, search discovers directly callable entries. To discover through a
 local caller, route search and deferred callees to the same active caller using

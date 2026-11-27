@@ -1,0 +1,38 @@
+{
+  "mode": "direct-ranked",
+  "steps": [
+    [
+      {
+        "id": "search",
+        "name": "search",
+        "input": {
+          "query": "meteorology"
+        }
+      },
+      {
+        "id": "too-early",
+        "name": "getWeather",
+        "input": {}
+      }
+    ],
+    [
+      {
+        "id": "weather",
+        "name": "getWeather",
+        "input": {}
+      }
+    ],
+    []
+  ],
+  "ranking": {
+    "maxResults": 2,
+    "names": [
+      "unknown",
+      "rainRisk",
+      "rainRisk",
+      "search",
+      "getWeather",
+      "unrelated"
+    ]
+  }
+}

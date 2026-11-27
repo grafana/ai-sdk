@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func executeSearch(t *testing.T, tool Tool, query string) []toolSearchMatch {
+func executeSearch(t *testing.T, tool Tool, query string) []ToolSearchCandidate {
 	t.Helper()
 	input, err := json.Marshal(toolSearchInput{Query: query})
 	require.NoError(t, err)
@@ -45,7 +45,27 @@ func discoveryCaller() Tool {
 func TestToolSearch_Contract(t *testing.T) {
 	tool := ToolSearch()
 	assert.Equal(t, UserToolFunction, tool.Type)
-	assert.Equal(t, toolSearchDescription, tool.Description)
+	assert.Equal(t, "Search for tools by keywords in their names and descriptions. Returns up to five matching tools. "+
+		"Matches become available on the next model step, after this execution finishes. "+
+		"Wait for their tool definitions before calling the discovered tools. If no tools match, try different keywords.", tool.Description)
+	t.Run("nil option is equivalent to default", func(t *testing.T) {
+		withNil := ToolSearch(nil)
+		assert.Equal(t, tool.Description, withNil.Description)
+		assert.Equal(t, tool.InputSchema.JSON(), withNil.InputSchema.JSON())
+		assert.Equal(t, tool.OutputSchema.JSON(), withNil.OutputSchema.JSON())
+
+		for _, search := range []Tool{tool, withNil} {
+			registry := ToolSet{"search": search}
+			for _, name := range []string{"a", "b", "c", "d", "e", "f"} {
+				registry[name] = Tool{DeferLoading: true, Description: "weather"}
+			}
+			state, err := newToolSearchState(registry, nil)
+			require.NoError(t, err)
+			matches := executeSearch(t, state.prepare(registry, nil, false, nil)["search"], "weather")
+			require.Len(t, matches, 5)
+			assert.Equal(t, []string{"a", "b", "c", "d", "e", "search"}, slices.Sorted(maps.Keys(state.prepare(registry, nil, false, nil))))
+		}
+	})
 	t.Run("upstream schema shapes", func(t *testing.T) {
 		assert.JSONEq(t, `{
 			"type": "object",
@@ -290,7 +310,7 @@ func TestToolSearch_Ranking(t *testing.T) {
 		})
 	}
 	t.Run("uneven duplicate terms", func(t *testing.T) {
-		matches := searchDeferredTools(ToolSet{"alpha": {}, "beta": {Description: "beta"}}, "alpha alpha beta", nil)
+		matches := searchDeferredTools([]ToolSearchCandidate{{Name: "alpha"}, {Name: "beta", Description: new("beta")}}, "alpha alpha beta", defaultToolSearchMaxResults)
 		require.Len(t, matches, 2)
 		assert.Equal(t, "beta", matches[0].Name)
 		assert.Equal(t, "alpha", matches[1].Name)
@@ -307,8 +327,212 @@ func TestToolSearch_Ranking(t *testing.T) {
 	}
 }
 
+func TestToolSearch_Options(t *testing.T) {
+	for _, limit := range []int{1, 3, 5, 8, 20} {
+		t.Run(strconv.Itoa(limit), func(t *testing.T) {
+			search := ToolSearch(WithToolSearchMaxResults(limit))
+			limitText := strconv.Itoa(limit)
+			if limit == 5 {
+				limitText = "five"
+			}
+			assert.Contains(t, search.Description, "Returns up to "+limitText+" matching tools.")
+			search.Description = "Copied search"
+			registry := ToolSet{"find": search, "defaultSearch": ToolSearch()}
+			names := []string{"alpha", "beta", "delta", "eta", "gamma", "iota", "theta", "zeta"}
+			for _, name := range names {
+				registry[name] = Tool{DeferLoading: true, Description: "Weather forecast"}
+			}
+			state, err := newToolSearchState(registry, nil)
+			require.NoError(t, err)
+			first := state.prepare(registry, nil, false, nil)
+			assert.Equal(t, "Copied search", first["find"].Description)
+			matches := executeSearch(t, first["find"], "weather")
+			next := state.prepare(registry, nil, false, nil)
+			want := min(limit, len(names))
+			require.Len(t, matches, want)
+			for i, name := range names {
+				_, discovered := next[name]
+				assert.Equal(t, i < want, discovered, name)
+				if i < want {
+					assert.Equal(t, name, matches[i].Name)
+				}
+			}
+			assert.Len(t, first, 2)
+			assert.Len(t, executeSearch(t, next["defaultSearch"], "weather"), 5)
+		})
+	}
+	t.Run("invalid inactive limits before model I/O", func(t *testing.T) {
+		for _, limit := range []int{0, -1} {
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				t.Error("model called with invalid search configuration")
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			tools := ToolSet{"badSearch": ToolSearch(WithToolSearchMaxResults(limit)), "other": {}}
+			_, err := GenerateText(t.Context(), model, WithTools(tools), WithActiveTools("other"))
+			require.ErrorContains(t, err, fmt.Sprintf(`search tool "badSearch" max results must be positive, got %d`, limit))
+		}
+	})
+}
+
+func TestToolSearch_CustomRanking(t *testing.T) {
+	t.Run("custom limit above five", func(t *testing.T) {
+		names := []string{"h", "g", "f", "e", "d", "c", "b", "a"}
+		registry := ToolSet{"search": ToolSearch(WithToolSearchMaxResults(7), WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+			return names, nil
+		}))}
+		for _, name := range names {
+			registry[name] = Tool{DeferLoading: true}
+		}
+		state, err := newToolSearchState(registry, nil)
+		require.NoError(t, err)
+		first := state.prepare(registry, nil, false, nil)
+		matches := executeSearch(t, first["search"], "meteorology")
+		got := make([]string, len(matches))
+		for i, match := range matches {
+			got[i] = match.Name
+		}
+		assert.Equal(t, names[:7], got)
+		assert.Equal(t, []string{"search"}, slices.Sorted(maps.Keys(first)))
+		assert.ElementsMatch(t, append([]string{"search"}, names[:7]...), slices.Collect(maps.Keys(state.prepare(registry, nil, false, nil))))
+	})
+	t.Run("detached descriptions and eligible ranked names", func(t *testing.T) {
+		const query = "  Meteorology?!  "
+		const stepDescription = "Current step description"
+		search := ToolSearch(WithToolSearchMaxResults(2), WithToolSearchFunc(func(_ context.Context, q string, candidates []ToolSearchCandidate) ([]string, error) {
+			assert.Equal(t, query, q)
+			require.Equal(t, []ToolSearchCandidate{{Name: "absent"}, {Name: "contextual", Description: new(stepDescription)}, {Name: "empty", Description: new("")}}, candidates)
+			*candidates[1].Description = "mutated"
+			candidates[1].Name = "renamed"
+			candidates = append(candidates, ToolSearchCandidate{Name: "invented"})
+			return []string{candidates[3].Name, "ordinary", "search", "inactive", "directOnly", "otherOnly", "renamed", "empty", "empty", "contextual", "absent"}, nil
+		}))
+		assert.Contains(t, search.Description, "Search for tools matching a query. Returns up to 2 matching tools.")
+		deferred := Tool{DeferLoading: true}
+		registry := ToolSet{
+			"search": search, "caller": discoveryCaller(), "other": discoveryCaller(), "ordinary": {},
+			"absent": deferred, "inactive": deferred, "otherOnly": deferred, "directOnly": deferred,
+			"contextual": {DeferLoading: true, Description: "static", DescriptionFunc: func(opts ToolDescriptionOptions) string { return opts.Context.(string) }},
+			"empty":      {DeferLoading: true, Description: "static", DescriptionFunc: func(ToolDescriptionOptions) string { return "" }},
+		}
+		routes := ToolRoutes{}
+		for _, name := range []string{"search", "absent", "inactive", "contextual", "empty"} {
+			routes[name] = ToolRoute{Callers: []string{"caller"}}
+		}
+		routes["otherOnly"] = ToolRoute{Callers: []string{"other"}}
+		state, err := newToolSearchState(registry, routes)
+		require.NoError(t, err)
+		active := []string{"search", "caller", "other", "ordinary", "contextual", "empty", "absent", "otherOnly", "directOnly"}
+		first := state.prepare(registry, active, true, stepDescription)
+		want := []ToolSearchCandidate{{Name: "empty", Description: new("")}, {Name: "contextual", Description: new(stepDescription)}}
+		assert.Equal(t, want, executeSearch(t, first["search"], query))
+		assert.Equal(t, []string{"caller", "ordinary", "other", "search"}, slices.Sorted(maps.Keys(first)))
+		assert.Equal(t, []string{"caller", "contextual", "empty", "ordinary", "other", "search"}, slices.Sorted(maps.Keys(state.prepare(registry, nil, false, nil))))
+		assert.Equal(t, want, executeSearch(t, state.prepare(registry, active, true, stepDescription)["search"], query))
+	})
+	rankErr := errors.New("ranker unavailable")
+	for _, tc := range []struct {
+		name string
+		rank []string
+		err  error
+	}{
+		{name: "empty results do not fall back"},
+		{name: "failure discards partial ranking", rank: []string{"weather"}, err: rankErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := ToolSet{"weather": discoveryTool(t), "search": ToolSearch(WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+				return tc.rank, tc.err
+			}))}
+			calls := 0
+			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				assert.Equal(t, []string{"search"}, toolNames(opts.Tools))
+				calls++
+				if calls == 1 {
+					return &provider.StreamResult{Stream: toolCallStreamParts("search", `{"query":"weather"}`)}, nil
+				}
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			result, err := GenerateText(t.Context(), model, WithTools(registry), WithStopWhen(StepCountIs(2)))
+			require.NoError(t, err)
+			require.Equal(t, 2, calls)
+			step := result.Steps[0]
+			require.Len(t, step.ToolResults, 1)
+			if tc.err == nil {
+				assert.JSONEq(t, `{"tools":[]}`, string(step.ToolResults[0].Output))
+			} else {
+				assert.True(t, step.ToolResults[0].IsError)
+				assert.ErrorIs(t, step.ToolResults[0].Error, rankErr)
+			}
+		})
+	}
+}
+
+type toolSearchObservedContext struct {
+	context.Context
+	observeErr func(error)
+}
+
+func (ctx toolSearchObservedContext) Err() error {
+	err := ctx.Context.Err()
+	ctx.observeErr(err)
+	return err
+}
+
+func TestToolSearch_CustomRankingCancellation(t *testing.T) {
+	t.Run("pre-canceled execution skips ranker", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		registry := ToolSet{"weather": discoveryTool(t), "search": ToolSearch(WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+			t.Error("ranker called after cancellation")
+			return []string{"weather"}, nil
+		}))}
+		state, err := newToolSearchState(registry, nil)
+		require.NoError(t, err)
+		_, err = state.prepare(registry, nil, false, nil)["search"].Execute(ctx, json.RawMessage(`{"query":"weather"}`), ToolExecutionOptions{})
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.NotContains(t, state.prepare(registry, nil, false, nil), "weather")
+	})
+	t.Run("canceled ranker cannot publish names", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		registry := ToolSet{"weather": discoveryTool(t), "search": ToolSearch(WithToolSearchFunc(func(execCtx context.Context, _ string, _ []ToolSearchCandidate) ([]string, error) {
+			assert.NoError(t, execCtx.Err())
+			cancel()
+			assert.ErrorIs(t, execCtx.Err(), context.Canceled)
+			return []string{"weather"}, nil
+		}))}
+		state, err := newToolSearchState(registry, nil)
+		require.NoError(t, err)
+		_, err = state.prepare(registry, nil, false, nil)["search"].Execute(ctx, json.RawMessage(`{"query":"weather"}`), ToolExecutionOptions{})
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.NotContains(t, state.prepare(registry, nil, false, nil), "weather")
+	})
+	t.Run("canceled after ranking check cannot publish names", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		ranked := false
+		observed := toolSearchObservedContext{Context: ctx, observeErr: func(err error) {
+			if ranked && err == nil {
+				cancel()
+			}
+		}}
+		registry := ToolSet{"weather": discoveryTool(t), "search": ToolSearch(WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+			ranked = true
+			return []string{"weather"}, nil
+		}))}
+		state, err := newToolSearchState(registry, nil)
+		require.NoError(t, err)
+		output, err := state.prepare(registry, nil, false, nil)["search"].Execute(observed, json.RawMessage(`{"query":"weather"}`), ToolExecutionOptions{})
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Empty(t, output)
+		assert.NotContains(t, state.prepare(registry, nil, false, nil), "weather")
+	})
+}
+
 func TestToolSearch_ConcurrentState(t *testing.T) {
-	registry := ToolSet{"search": ToolSearch(), "otherSearch": ToolSearch(), "weather": {DeferLoading: true}, "stock": {DeferLoading: true}}
+	ranked := ToolSearch(WithToolSearchMaxResults(1), WithToolSearchFunc(func(_ context.Context, query string, _ []ToolSearchCandidate) ([]string, error) {
+		return []string{query}, nil
+	}))
+	registry := ToolSet{"search": ranked, "otherSearch": ToolSearch(), "weather": {DeferLoading: true}, "stock": {DeferLoading: true}}
 	state, err := newToolSearchState(registry, nil)
 	require.NoError(t, err)
 	first := state.prepare(registry, nil, false, nil)
@@ -548,7 +772,10 @@ func TestToolSearch_ProviderLifecycle(t *testing.T) {
 
 func TestToolSearch_IndependentGenerations(t *testing.T) {
 	searchStarted, otherStarted, searchFinished := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	registry := ToolSet{"search": ToolSearch(), "weather": discoveryTool(t), "idle": {Execute: func(ctx context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
+	ranked := ToolSearch(WithToolSearchFunc(func(_ context.Context, _ string, _ []ToolSearchCandidate) ([]string, error) {
+		return []string{"weather"}, nil
+	}))
+	registry := ToolSet{"search": ranked, "weather": discoveryTool(t), "idle": {Execute: func(ctx context.Context, _ json.RawMessage, _ ToolExecutionOptions) (json.RawMessage, error) {
 		select {
 		case <-searchFinished:
 			return json.RawMessage(`"done"`), nil
@@ -619,9 +846,10 @@ func TestToolSearch_InvalidInputDoesNotDiscover(t *testing.T) {
 }
 
 func TestToolCallers_DeferredDiscovery(t *testing.T) {
-	for _, nested := range []bool{false, true} {
+	for _, route := range []string{"direct", "nested", "nested ranked"} {
+		nested := route != "direct"
 		for _, mode := range []string{"stream", "generate", "agent stream", "agent generate"} {
-			t.Run(fmt.Sprintf("%s/nested=%t", mode, nested), func(t *testing.T) {
+			t.Run(mode+"/"+route, func(t *testing.T) {
 				calls := 0
 				runs := 0
 				sameStepUnavailable := false
@@ -632,7 +860,15 @@ func TestToolCallers_DeferredDiscovery(t *testing.T) {
 					return json.RawMessage(`"sunny"`), nil
 				}
 				weather.NeedsApproval = ApprovalRequired()
-				tools := ToolSet{"search": ToolSearch(), "weather": weather, "unrelated": {DeferLoading: true}}
+				search := ToolSearch()
+				query := "weather"
+				if route == "nested ranked" {
+					query = "meteorology"
+					search = ToolSearch(WithToolSearchFunc(func(context.Context, string, []ToolSearchCandidate) ([]string, error) {
+						return []string{"weather"}, nil
+					}))
+				}
+				tools := ToolSet{"search": search, "weather": weather, "unrelated": {DeferLoading: true}}
 				routes := ToolRoutes(nil)
 				if nested {
 					callerSchema := testMustSchema(t, `{"type":"object","properties":{"name":{"type":"string"},"input":{"type":"object"}},"required":["name","input"],"additionalProperties":false}`)
@@ -692,7 +928,7 @@ func TestToolCallers_DeferredDiscovery(t *testing.T) {
 					case 1:
 						if nested {
 							return &provider.StreamResult{Stream: discoveryParts(
-								discoveryCall("nested-search", "code", `{"name":"search","input":{"query":"weather"}}`),
+								discoveryCall("nested-search", "code", fmt.Sprintf(`{"name":"search","input":{"query":%q}}`, query)),
 								discoveryCall("nested-early", "code", `{"name":"weather","input":{}}`),
 							)}, nil
 						}
@@ -954,7 +1190,7 @@ func TestToolSearch_HistoricalApproval(t *testing.T) {
 }
 
 func TestToolSearch_Cancellation(t *testing.T) {
-	for _, mode := range []string{"after completed search", "during search", "timeout"} {
+	for _, mode := range []string{"after completed search", "during search", "during custom ranking", "timeout"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -965,6 +1201,13 @@ func TestToolSearch_Cancellation(t *testing.T) {
 				weather.DescriptionFunc = func(ToolDescriptionOptions) string { cancel(); <-ctx.Done(); return "weather" }
 			}
 			registry := ToolSet{"search": ToolSearch(), "weather": weather}
+			if mode == "during custom ranking" {
+				registry["search"] = ToolSearch(WithToolSearchFunc(func(ctx context.Context, _ string, _ []ToolSearchCandidate) ([]string, error) {
+					cancel()
+					assert.ErrorIs(t, ctx.Err(), context.Canceled)
+					return []string{"weather"}, nil
+				}))
+			}
 			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				calls++
 				if mode == "timeout" {
