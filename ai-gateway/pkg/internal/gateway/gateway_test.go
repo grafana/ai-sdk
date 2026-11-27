@@ -111,7 +111,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		{name: "no signing keys with insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
 			env[plugin.EnvVarInsecureSkipAuthentication] = "true"
-		}, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
+		}, message: "GF_JWKS_URL or GF_JWKS"},
 		{name: "both signing key sources", change: func(env map[string]string) { env["GRAFANA_JWKS_URL"] = "https://auth.example/jwks" }, message: "only one"},
 		{name: "unparsable scalar", change: func(env map[string]string) {
 			env["GF_PLUGIN_AGENTO11Y_TLS"] = "password"

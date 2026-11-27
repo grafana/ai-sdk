@@ -164,7 +164,8 @@ The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.
 
 The Gateway serves requests only when Grafana gives it the platform signing
-keys, `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, to verify callers. Without them,
+keys, `GF_JWKS_URL` or `GF_JWKS`, to verify callers; older Grafana versions
+name them `GRAFANA_JWKS_URL` and `GRAFANA_JWKS`, which it also reads. Without them,
 it starts idle: it ignores its settings, serves nothing, and Grafana's log
 warns that plugin requests will be rejected. A Grafana Cloud stack's own Grafana
 runs the Gateway this way, because the platform serves the Gateway API
