@@ -266,15 +266,39 @@ func unsentAssistantToolResultWarning(toolName string) []provider.Warning {
 	}}
 }
 
-func convertProviderToolResult(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, []provider.Warning, error) {
+func appendProviderToolResult(items []responses.ResponseInputItemUnionParam, part provider.ContentPart, ctx inputConversionContext) ([]responses.ResponseInputItemUnionParam, []provider.Warning, error) {
 	if group := ctx.parallelGroup(part); group != nil {
 		id := group.metadata.ToolCallID
 		if ctx.emittedParallelResults[id] {
-			return nil, nil, nil
+			return items, nil, nil
 		}
 		ctx.emittedParallelResults[id] = true
-		return group.output(ctx)
+		item, warnings, err := group.output(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		items = append(items, *item)
+		for i := range group.metadata.Count {
+			items, err = appendAdditionalTools(items, group.results[i], ctx.providerOptionsName)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		return items, warnings, nil
 	}
+
+	item, warnings, err := convertProviderToolResult(part, ctx)
+	if err != nil || item == nil {
+		return items, warnings, err
+	}
+	items = append(items, *item)
+	if item.OfFunctionCallOutput != nil {
+		items, err = appendAdditionalTools(items, part, ctx.providerOptionsName)
+	}
+	return items, warnings, err
+}
+
+func convertProviderToolResult(part provider.ContentPart, ctx inputConversionContext) (*responses.ResponseInputItemUnionParam, []provider.Warning, error) {
 	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied {
 		if openAIPartOptionsFor(part.Output.ProviderOptions, providerName).ApprovalID != "" || ctx.outputOptions(part.Output).ApprovalID != "" {
 			return nil, nil, nil

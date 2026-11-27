@@ -277,7 +277,7 @@ type OpenAIToolCaller struct {
 
 // OpenAIPartOptions carries per-content-part and system-message OpenAI options
 // used for round-tripping item references, reasoning, approvals, image detail,
-// prompt cache breakpoints and positioned reasoning effort updates.
+// prompt cache breakpoints, replaying additional tool definitions, and positioned reasoning effort updates.
 type OpenAIPartOptions struct {
 	// ItemID is the OpenAI output item id used to emit item references.
 	ItemID string `json:"itemId,omitempty"`
@@ -301,6 +301,10 @@ type OpenAIPartOptions struct {
 	Caller *OpenAIToolCaller `json:"caller,omitempty"`
 	// Phase is the message phase ("commentary","final_answer").
 	Phase string `json:"phase,omitempty"`
+	// AdditionalTools loads definitions immediately after an ordinary function result.
+	// Use only with trusted application-supplied result history. A nil slice leaves
+	// the option absent; an empty slice suppresses fallback to the openai namespace.
+	AdditionalTools []OpenAIAdditionalTool `json:"additionalTools,omitzero"`
 	// ReasoningEffortUpdate, on a system message with empty content, emits a
 	// configuration update at that position in the Responses input. Unsupported
 	// updates fail the request instead of being omitted.
