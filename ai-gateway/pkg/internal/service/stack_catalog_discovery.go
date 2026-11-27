@@ -3,13 +3,14 @@ package service
 import (
 	"context"
 	"maps"
+	"net/http"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
-	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
 
 const (
@@ -32,6 +33,13 @@ type catalogDiscoveryListings struct {
 	checker *CatalogHealthChecker
 	mu      sync.Mutex
 	entries map[discoveryInventoryKey]discoveryInventoryEntry
+}
+
+func newCatalogDiscoveryListings(transport http.RoundTripper) *catalogDiscoveryListings {
+	return &catalogDiscoveryListings{
+		checker: NewCatalogHealthChecker(transport, outbound.CustomEndpoints{}),
+		entries: make(map[discoveryInventoryKey]discoveryInventoryEntry),
+	}
 }
 
 func (c *catalogDiscoveryListings) cached(key discoveryInventoryKey) ([]string, bool) {
@@ -80,58 +88,48 @@ func (c *catalogDiscoveryListings) inventoryIDs(ctx context.Context, key discove
 	return result.ModelIDs
 }
 
-func (c *catalogDiscoveryListings) appendUnlistedModels(ctx context.Context, stack StackCatalog, index stackIndex, keys []string, infos []catalog.ModelInfo) []catalog.ModelInfo {
-	remaining := config.MaxDiscoveryModelIDs - len(index.canonical)
+func (c *catalogDiscoveryListings) appendUnlistedModels(
+	ctx context.Context, key discoveryInventoryKey, file config.File, keys []string,
+	resolveProvider func(string) config.ResolvedProvider, infos []catalog.ModelInfo,
+) []catalog.ModelInfo {
+	if len(file.Providers) == 0 {
+		return infos
+	}
+	listed := make(map[string]struct{}, len(infos))
+	for _, info := range infos {
+		listed[info.ID] = struct{}{}
+		for _, alias := range info.Aliases {
+			listed[alias] = struct{}{}
+		}
+	}
+	remaining := config.MaxDiscoveryModelIDs - len(listed)
 	if remaining <= 0 {
 		return infos
 	}
 	containsKey := listingKeyMatcher(keys)
 	names := make([]string, 0, healthMaxProviders)
-	for _, name := range slices.Sorted(maps.Keys(index.file.Providers)) {
-		provider := index.file.Providers[name]
-		if index.file.ServesUnlistedModels(name) && !containsKey(name) && !containsKey(providerSlug(provider.Type, provider.ProviderName)) {
+	for _, name := range slices.Sorted(maps.Keys(file.Providers)) {
+		p := file.Providers[name]
+		if p.ServeAllModels && !containsKey(name) && !containsKey(providerSlug(p.Type, p.ProviderName)) {
 			names = append(names, name)
 			if len(names) == healthMaxProviders {
 				break
 			}
 		}
 	}
-	if len(names) == 0 {
-		return infos
-	}
-	caller, ok := gatewayauth.CallerFromContext(ctx)
-	id := healthCatalogID{caller.Namespace, stack.Name}
-	if !ok || !c.checker.admit(id) {
-		return infos
-	}
-	defer c.checker.release(id)
-	ctx, cancel := context.WithTimeout(ctx, discoveryListingTimeout)
-	defer cancel()
 
-	inventories := make([][]string, len(names))
-	var workers sync.WaitGroup
-	for worker := range min(healthProviderWorkers, len(names)) {
-		workers.Go(func() {
-			for i := worker; i < len(names); i += healthProviderWorkers {
-				name := names[i]
-				key := discoveryInventoryKey{catalog: id, revision: stack.ResourceVersion, provider: name}
-				inventories[i] = c.inventoryIDs(ctx, key, resolveStackProvider(index.file.Providers[name], stack, name), containsKey)
-			}
-		})
-	}
-	workers.Wait()
-
+	inventories := c.inventories(ctx, key, names, resolveProvider, containsKey)
 	for i, inventory := range inventories {
 		for _, model := range inventory {
 			selector := names[i] + "/" + model
-			if _, listed := index.canonical[selector]; listed || containsKey(selector) || config.ValidatePublicID(selector) != nil {
+			if _, shadowed := listed[selector]; shadowed || containsKey(selector) {
 				continue
 			}
-			group, err := index.resolve(selector)
-			if err != nil {
+			candidate, allowed := unlistedCandidate(file, names[i], model)
+			if !allowed {
 				continue
 			}
-			infos = append(infos, catalog.ModelInfo{ID: selector, Name: model, Candidates: group.candidates})
+			infos = append(infos, catalog.ModelInfo{ID: selector, Name: model, Candidates: []catalog.ConfiguredCandidate{candidate}})
 			remaining--
 			if remaining == 0 {
 				return infos
@@ -139,4 +137,43 @@ func (c *catalogDiscoveryListings) appendUnlistedModels(ctx context.Context, sta
 		}
 	}
 	return infos
+}
+
+func (c *catalogDiscoveryListings) inventories(
+	ctx context.Context, key discoveryInventoryKey, names []string,
+	resolveProvider func(string) config.ResolvedProvider, containsKey func(string) bool,
+) [][]string {
+	inventories := make([][]string, len(names))
+	var missing []int
+	for i, name := range names {
+		providerKey := key
+		providerKey.provider = name
+		if key.revision != "" {
+			if ids, cached := c.cached(providerKey); cached {
+				inventories[i] = ids
+				continue
+			}
+		}
+		missing = append(missing, i)
+	}
+	if len(missing) == 0 || !c.checker.admit(key.catalog) {
+		return inventories
+	}
+	defer c.checker.release(key.catalog)
+	ctx, cancel := context.WithTimeout(ctx, discoveryListingTimeout)
+	defer cancel()
+
+	var workers sync.WaitGroup
+	for worker := range min(healthProviderWorkers, len(missing)) {
+		workers.Go(func() {
+			for offset := worker; offset < len(missing) && ctx.Err() == nil; offset += healthProviderWorkers {
+				i := missing[offset]
+				providerKey := key
+				providerKey.provider = names[i]
+				inventories[i] = c.inventoryIDs(ctx, providerKey, resolveProvider(names[i]), containsKey)
+			}
+		})
+	}
+	workers.Wait()
+	return inventories
 }

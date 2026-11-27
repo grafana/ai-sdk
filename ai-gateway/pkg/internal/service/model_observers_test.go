@@ -46,7 +46,7 @@ func newObservedRuntime(t *testing.T, selector execution.RequestSelector) *obser
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	agent := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
-	observers, err := NewModelObservers(telemetry, logger, agent, 10*time.Millisecond)
+	observers, err := NewModelObservers(telemetry, logger, agent, 10*time.Millisecond, nil)
 	require.NoError(t, err)
 	runtime, err := execution.New(execution.Config{Selector: selector, Compose: observers.Compose, Limits: serviceTestLimits()})
 	require.NoError(t, err)
@@ -371,7 +371,7 @@ func TestModelObservers_MetricIdentityBySource(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			observers, err := NewModelObservers(telemetry, logger, nil, 10*time.Millisecond)
+			observers, err := NewModelObservers(telemetry, logger, nil, 10*time.Millisecond, nil)
 			require.NoError(t, err)
 			model, err := tc.identity(seamModel(false))
 			require.NoError(t, err)

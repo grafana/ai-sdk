@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -95,14 +96,35 @@ func planRoute(groups []routedGroup, controls routing.Controls) ([]routing.Place
 	return placements, expected, nil
 }
 
-// selectRouted composes one request chain from the configured candidates of
-// the requested model and each fallback model, filtered and ordered by
-// controls. It resolves every name through the catalog, so callers can name
-// only public IDs and aliases, and uses only the startup-constructed
-// candidates. The logical model keeps the requested model's canonical ID.
+func unlistedGroup(file config.File, name string) (routedGroup, error) {
+	instance, model, qualified := strings.Cut(name, "/")
+	candidate, allowed := unlistedCandidate(file, instance, model)
+	if !qualified || !allowed {
+		return routedGroup{}, &catalog.UnknownModelError{ModelID: name}
+	}
+	return routedGroup{
+		name: name, canonical: name,
+		descriptors: []config.Primary{{Provider: instance, Model: model}},
+		candidates:  []catalog.ConfiguredCandidate{candidate},
+	}, nil
+}
+
+func unlistedCandidate(file config.File, instance, model string) (catalog.ConfiguredCandidate, bool) {
+	if !file.AllowsUnlistedModel(instance, model) {
+		return catalog.ConfiguredCandidate{}, false
+	}
+	configured := file.Providers[instance]
+	return catalog.ConfiguredCandidate{ProviderInstance: instance, Provider: providerSlug(configured.Type, configured.ProviderName), ModelID: model}, true
+}
+
+// selectRouted composes the requested and explicit fallback models, constructing
+// only the unlisted candidates that survive planning.
 func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.Controls) (execution.Selection, error) {
 	groups, err := resolveGroups(id, controls.Models, func(name string) (routedGroup, error) {
-		model, err := c.ResolveModel(ctx, name)
+		model, err := c.Catalog.ResolveModel(ctx, name)
+		if errors.Is(err, catalog.ErrUnknownModel) {
+			return unlistedGroup(c.unlisted, name)
+		}
 		if err != nil {
 			return routedGroup{}, err
 		}
@@ -116,7 +138,10 @@ func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.
 		return execution.Selection{}, err
 	}
 	lower, expected, err := composeRoute(groups, controls, func(group routedGroup, candidate int) (provider.LanguageModel, error) {
-		return c.routes[group.canonical].candidates[candidate], nil
+		if route, listed := c.routes[group.canonical]; listed {
+			return route.candidates[candidate], nil
+		}
+		return c.buildUnlisted(group.descriptors[candidate])
 	}, c.physical)
 	if err != nil {
 		return execution.Selection{}, err

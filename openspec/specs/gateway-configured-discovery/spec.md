@@ -24,8 +24,8 @@ Configured-access-authorized discovery SHALL expose ordered canonical public row
 - **AND** discovery SHALL NOT derive these values from canonical middleware or provider responses
 
 #### Scenario: No inference is needed
-- **WHEN** raw HTTP, Go discovery or the TS helper inspects configured candidates
-- **THEN** no provider generation, streaming, inventory enumeration or credential-check inference SHALL run
+- **WHEN** discovery projects explicitly listed routes
+- **THEN** their metadata SHALL come from configuration, without provider generation, streaming, inventory enumeration or credential checks to determine listed candidate facts
 
 ### Requirement: Configured alias and fallback presence
 Alias and fallback order SHALL preserve configuration; empty aliases and fallbacks SHALL be `[]`. Aliases SHALL remain callable without appearing as separate rows.
@@ -261,7 +261,7 @@ A catalog route's `config` SHALL preserve the parent catalog's explicitly listed
 - **THEN** the row's ID and specification model ID SHALL be that selector, with one primary identifying the same provider instance, slug, and literal backend ID as invocation, and no aliases or fallbacks
 
 ### Requirement: Catalog provider discovery is bounded and best effort
-Discovery SHALL list only opted-in providers using the checked catalog's keys and the bounded provider listing transport. It SHALL admit at most one discovery per catalog and four per process, independently of health and provider inventory actions. It SHALL probe at most eight providers within two seconds and retain configured rows within the existing 1,024-ID budget including aliases. Inventory SHALL NOT be required for invocation.
+Discovery SHALL use the checked catalog's keys and bounded listing transport only for opted-in providers. It SHALL check the cache before admitting probe runs: at most one per catalog and four per process, separate from health and inventory actions. It SHALL probe at most eight providers within two seconds and preserve listed rows within the 1,024-ID budget including aliases. Invocation SHALL NOT depend on inventory.
 
 #### Scenario: Listing is unavailable or incomplete
 - **WHEN** a provider fails, returns a partial listing, or a discovery budget is exhausted
@@ -273,8 +273,12 @@ Discovery SHALL list only opted-in providers using the checked catalog's keys an
 
 #### Scenario: Discovery is busy
 - **WHEN** another discovery for the catalog is active or the process-wide discovery slots are occupied
-- **THEN** discovery SHALL return configured rows only
+- **THEN** discovery SHALL return configured rows and any eligible cached rows
 - **AND** discovery SHALL NOT occupy a health or provider inventory action slot
+
+#### Scenario: Concurrent discovery can use warm inventory
+- **WHEN** all eligible provider inventories are cached and another discovery occupies an admission slot
+- **THEN** discovery SHALL return the eligible cached rows alongside configured rows without taking a slot or contacting a provider
 
 ### Requirement: Short catalog discovery inventory cache
 Discovery SHALL cache complete and partial provider inventories for 30 seconds in process, keyed by namespace, catalog name, resource version and provider instance. It SHALL NOT cache a listing if any requested page fails or if the request has no verified revision. The cache SHALL retain at most 128 entries and evict expired entries before evicting the oldest. Health and provider inventory actions SHALL remain live and uncached.
@@ -286,3 +290,33 @@ Discovery SHALL cache complete and partial provider inventories for 30 seconds i
 #### Scenario: Catalog changes or inventory expires
 - **WHEN** discovery sees a new resource version or an expired entry
 - **THEN** discovery SHALL obtain inventory on demand using the current catalog, including its current key
+
+### Requirement: Operator discovery of qualified selectors
+
+After configured-account authorization, operator `/config` SHALL preserve listed rows and add eligible unshadowed selectors from opted-in providers' inventory within the discovery budget, without constructing models. Added rows SHALL use the qualified stack-catalog projection. Discovery SHALL NOT expose keys, secret references, blocklists, upstream errors or inventory IDs containing a key or its header form.
+
+#### Scenario: Operator inventory contains eligible, blocked and shadowed IDs
+- **WHEN** an authorized caller discovers an operator catalog with an opted-in provider that returns those IDs
+- **THEN** discovery SHALL skip blocked IDs, IDs or full selectors that fail the shared public-ID rule, and selectors shadowed by a listed ID or alias
+- **AND** added rows SHALL use the qualified selector as public and specification ID, and one primary with the same instance, slug and literal backend ID as invocation, without aliases or fallbacks
+
+#### Scenario: Operator catalog is listed-only or caller lacks configured access
+- **WHEN** no operator provider opts in or the caller lacks configured-account authorization
+- **THEN** the request SHALL make no provider inventory requests
+
+### Requirement: Bounded operator discovery inventory
+
+Operator discovery SHALL reuse stack discovery's listing transport, bounds and short inventory cache rules, using startup-validated destinations and cache keys scoped to the current startup catalog and provider instance. It SHALL check the cache before admitting missing inventories, with at most one operator probe run at a time independent of stack discovery and admin actions. The response SHALL retain `Cache-Control: no-store`; invocation SHALL NOT depend on inventory.
+
+#### Scenario: Repeated discovery
+- **WHEN** an authorized caller discovers the same startup catalog within 30 seconds of a cached listing
+- **THEN** discovery SHALL reuse that inventory without contacting the provider again
+- **AND** the cache SHALL keep at most 128 entries and SHALL NOT store a listing if a requested page failed
+
+#### Scenario: Concurrent discovery can use warm inventory
+- **WHEN** all eligible provider inventories are cached and the operator probe slot is occupied
+- **THEN** discovery SHALL return the eligible cached rows without taking a slot or contacting a provider
+
+#### Scenario: Inventory is unavailable or discovery is busy
+- **WHEN** provider listing fails, discovery hits a resource bound, or the operator discovery slot is occupied
+- **THEN** discovery SHALL still return all listed rows and any eligible IDs collected within the two-second, eight-provider and 1,024-total-public-ID limits (including aliases), without upstream error details

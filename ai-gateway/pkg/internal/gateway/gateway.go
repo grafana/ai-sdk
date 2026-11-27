@@ -244,11 +244,11 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	observers, err := service.NewModelObservers(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
+	catalog, err := service.BuildCatalog(file, providers, nativeClient, service.ConfiguredIdentity, sinks.attempts)
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := service.BuildCatalog(file, providers, nativeClient, service.ConfiguredIdentity, sinks.attempts)
+	observers, err := service.NewModelObservers(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration, catalog.IsListed)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	}
 	probeTransport := outbound.NewProbeTransport(config.ProviderResponseHeaderTimeout)
 	listings := service.NewCatalogHealthChecker(probeTransport, settings.Endpoints)
-	discoveryHandler := discovery.New(catalog, service.NewStackCatalogLister(probeTransport, settings.Endpoints), providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	discoveryHandler := discovery.New(catalog.DiscoveryLister(probeTransport), service.NewStackCatalogLister(probeTransport, settings.Endpoints), providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat, messages, catalogHealth(listings), catalogAvailableModels(listings)))
 }
 

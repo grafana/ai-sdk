@@ -238,13 +238,14 @@ var sourceMetricModels = map[execution.Source]string{
 // Its middleware and collectors are constructed once; each call only wraps its
 // selected model in the chain of the selection's source.
 type ModelObservers struct {
-	chains map[execution.Source]modelObservationChain
+	chains         map[execution.Source]modelObservationChain
+	listedOperator func(string) bool
 }
 
 // NewModelObservers constructs the shared observer middleware once, registers
 // the model metrics with telemetry's registerer, and returns one chain for each
 // selection source.
-func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (*ModelObservers, error) {
+func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration, listedOperator func(string) bool) (*ModelObservers, error) {
 	if telemetry == nil || logger == nil || drainTimeout <= 0 {
 		return nil, fmt.Errorf("gateway service: invalid model observability dependency")
 	}
@@ -291,7 +292,7 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 		chain.metricModel = metricModel
 		chains[source] = chain
 	}
-	return &ModelObservers{chains: chains}, nil
+	return &ModelObservers{chains: chains, listedOperator: listedOperator}, nil
 }
 
 // Compose is the runtime's [execution.ModelComposer]: it wraps the selected
@@ -302,6 +303,9 @@ func (o *ModelObservers) Compose(selected execution.Selection) (provider.Languag
 	chain, ok := o.chains[selected.Source]
 	if !ok {
 		return nil, errUnobservedSource
+	}
+	if selected.Source == execution.SourceOperatorCatalog && o.listedOperator != nil && !o.listedOperator(selected.ID) {
+		chain.metricModel = "unlisted"
 	}
 	observed := chain.observe(selected.Model)
 	if selected.Catalog == "" {

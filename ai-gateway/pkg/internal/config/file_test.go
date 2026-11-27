@@ -364,7 +364,7 @@ func TestParseModelCatalog_RequiresProvidersAndModels(t *testing.T) {
 	_, err := ParseModelCatalog("providers: {}\nmodels: {}\n")
 	assert.EqualError(t, err, "config: at least one provider is required")
 	_, err = ParseModelCatalog("providers:\n  claude: {type: anthropic, apiKeyEnv: EXAMPLE_KEY}\nmodels: {}\n")
-	assert.EqualError(t, err, "config: at least one model is required")
+	assert.ErrorContains(t, err, "at least one model is required unless a provider sets serveAllModels")
 }
 
 func TestFileValidateShape(t *testing.T) {

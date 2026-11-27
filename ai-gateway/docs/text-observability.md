@@ -20,6 +20,8 @@ Each request writes one `http request completed` line:
 
 Each model call also writes a start line and an end line with the model, the
 outcome, usage, timing and the same `correlation_id` and `caller_identity`.
+Unlisted operator calls use the qualified model ID. Model log fields omit it
+if it exceeds 128 bytes or contains anything outside printable non-space ASCII.
 
 When a request has more than one candidate, from a model's fallbacks or from
 routing controls, each model the Gateway tries writes a
@@ -36,8 +38,10 @@ lines. It appears in the metrics only after the first drop.
 ## Metrics
 
 Grafana serves the Gateway's metrics at
-`/metrics/plugins/grafana-aigateway-app`. Model metrics use the model ID that
-applications select, so calls through an alias count under their model.
+`/metrics/plugins/grafana-aigateway-app`. Listed operator calls use the canonical
+model ID, so calls through an alias count under their model. Unlisted operator
+calls share the fixed model label `unlisted` to keep series cardinality bounded.
+Use another ID for any listed model you want to distinguish from that bucket.
 
 | Metric | Measures |
 |---|---|
