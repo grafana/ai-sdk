@@ -22,7 +22,9 @@ No browser performance comparison is required for this change, and no controlled
 
 ## 5. Integrated validation
 
-- [ ] 5.1 Run focused classifier and workflow tests and strict OpenSpec validation; verify ordinary hosted source and plugin checks at the pushed head. Record revision-tagged results and limitations.
+- [x] 5.1 Run focused classifier and workflow tests and strict OpenSpec validation; verify ordinary hosted source and plugin checks at the pushed head. Record revision-tagged results and limitations.
+
+At implementation head `0b4e4f9601ec9b295c190202185db99806b29c78`, `mise run test-ci-workflow` passed all 12 classifier and 21 workflow tests, strict OpenSpec validation passed, and Build & Test run `45819868759` passed all 13 jobs, including hosted plugin validation and E2E. This is correctness evidence for that revision, not a browser benchmark or a hosted performance comparison.
 
 ## Workflow follow-up
 
