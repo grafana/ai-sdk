@@ -166,3 +166,25 @@ func TestNormalizeOpenAIJSONSchema_RemovedPropertyNamesDoesNotWarnForPattern(t *
 	require.Len(t, warnings, 1)
 	assert.Equal(t, "JSON Schema propertyNames", warnings[0].Feature)
 }
+
+func TestNormalizeOpenAIJSONSchema_UntypedPropertyNamesAreRemovedWithWarning(t *testing.T) {
+	for _, tc := range []struct {
+		name, schema, want string
+	}{
+		{"enum", `{"type":"object","propertyNames":{"enum":["a","b"]}}`, `{"type":"object"}`},
+		{"pattern", `{"type":"object","propertyNames":{"pattern":"^[a-z]+$"}}`, `{"type":"object"}`},
+		{"min length", `{"type":"object","propertyNames":{"minLength":1},"additionalProperties":{"type":"number"}}`, `{"type":"object","additionalProperties":{"type":"number"}}`},
+		{"null type", `{"type":"object","propertyNames":{"type":null}}`, `{"type":"object"}`},
+		{"nested pattern", `{"type":"object","properties":{"x":{"type":"object","propertyNames":{"pattern":"^[a-z]+$"}}}}`, `{"type":"object","properties":{"x":{"type":"object"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warnings, err := normalizeOpenAIJSONSchema(json.RawMessage(tc.schema))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(encoded))
+			require.Len(t, warnings, 1)
+			assert.Equal(t, "JSON Schema propertyNames", warnings[0].Feature)
+		})
+	}
+}
