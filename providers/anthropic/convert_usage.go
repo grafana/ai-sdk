@@ -131,6 +131,23 @@ func filterUsageIterations(raw json.RawMessage) (json.RawMessage, error) {
 	return filtered, nil
 }
 
+func projectUnaryUsage(raw json.RawMessage) (json.RawMessage, json.RawMessage, error) {
+	var usage map[string]json.RawMessage
+	if json.Unmarshal(raw, &usage) != nil || usage["iterations"] == nil {
+		return raw, nil, nil
+	}
+	iterations, err := filterUsageIterations(usage["iterations"])
+	if err != nil {
+		return nil, nil, err
+	}
+	usage["iterations"] = iterations
+	data, err := json.Marshal(usage)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshaling usage metadata: %w", err)
+	}
+	return data, iterations, nil
+}
+
 func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 	inputTokens := usage.inputTokens
 	outputTokens := usage.outputTokens

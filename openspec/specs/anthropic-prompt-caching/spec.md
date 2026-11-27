@@ -171,3 +171,12 @@ When usage contains one or more `message` or `compaction` iterations and no `fal
 #### Scenario: Fallback or absent executor iterations retain top-level usage
 - **WHEN** any `fallback_message` iteration exists, or there are no executor iterations
 - **THEN** all normalized input and output counters SHALL continue to use top-level usage
+
+### Requirement: Unary raw usage iterations keep declared fields
+
+Unary `Usage.Raw` and `ProviderMetadata.anthropic.usage` SHALL retain only `type`, `model`, `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` for each usage iteration. They SHALL preserve iteration order, absent and null fields, and all top-level usage fields. The projection SHALL NOT change the raw response body or normalized token counts.
+
+#### Scenario: Nested cache creation breakdown
+- **WHEN** a unary response includes `cache_creation` both at the top level of usage and within an iteration
+- **THEN** both raw usage views SHALL keep the top-level breakdown and omit the per-iteration breakdown
+- **AND** the original response body SHALL keep both breakdowns

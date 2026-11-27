@@ -14,6 +14,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestModel_DoGenerateProjectsRawUsageIterations(t *testing.T) {
+	const response = `{
+		"id": "msg_usage", "type": "message", "role": "assistant", "model": "claude-sonnet-4-6",
+		"content": [{"type": "text", "text": "Hello"}], "stop_reason": "end_turn",
+		"usage": {
+			"input_tokens": 19, "output_tokens": 2,
+			"cache_creation_input_tokens": 8, "cache_read_input_tokens": 7,
+			"cache_creation": {"ephemeral_5m_input_tokens": 8},
+			"extra": {"count": 1},
+			"iterations": [
+				{"type": "message", "input_tokens": 5, "output_tokens": 2,
+				 "cache_creation_input_tokens": 3, "cache_read_input_tokens": 4,
+				 "cache_creation": {"ephemeral_5m_input_tokens": 3}},
+				{"type": "advisor_message", "model": "claude-haiku-4-5", "input_tokens": 30, "output_tokens": 10,
+				 "cache_creation_input_tokens": null, "extra": {"count": 2}}
+			]
+		}
+	}`
+	const wantRaw = `{
+		"input_tokens": 19, "output_tokens": 2,
+		"cache_creation_input_tokens": 8, "cache_read_input_tokens": 7,
+		"cache_creation": {"ephemeral_5m_input_tokens": 8},
+		"extra": {"count": 1},
+		"iterations": [
+			{"type": "message", "input_tokens": 5, "output_tokens": 2,
+			 "cache_creation_input_tokens": 3, "cache_read_input_tokens": 4},
+			{"type": "advisor_message", "model": "claude-haiku-4-5", "input_tokens": 30, "output_tokens": 10,
+			 "cache_creation_input_tokens": null}
+		]
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, response)
+	}))
+	defer server.Close()
+	model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+	result, err := model.DoGenerate(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: ptrInt(1024)})
+	require.NoError(t, err)
+
+	assert.JSONEq(t, wantRaw, string(result.Usage.Raw), "Usage.Raw")
+	var metadata map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(result.ProviderMetadata["anthropic"], &metadata))
+	assert.JSONEq(t, wantRaw, string(metadata["usage"]), "providerMetadata.anthropic.usage")
+	assert.JSONEq(t, `[
+		{"type": "message", "inputTokens": 5, "outputTokens": 2, "cacheCreationInputTokens": 3, "cacheReadInputTokens": 4},
+		{"type": "advisor_message", "model": "claude-haiku-4-5", "inputTokens": 30, "outputTokens": 10}
+	]`, string(metadata["iterations"]))
+	assert.Equal(t, provider.InputTokenUsage{
+		Total: ptrInt(12), NoCache: ptrInt(5), CacheRead: ptrInt(4), CacheWrite: ptrInt(3),
+	}, result.Usage.InputTokens)
+	assert.Equal(t, ptrInt(2), result.Usage.OutputTokens.Total)
+	require.NotNil(t, result.Response)
+	assert.Equal(t, response, string(result.Response.Body))
+}
+
 func TestModel_IterationUsage(t *testing.T) {
 	for _, tc := range []struct {
 		name           string

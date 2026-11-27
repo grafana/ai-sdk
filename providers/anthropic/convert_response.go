@@ -479,6 +479,10 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 		}
 	}
 
+	usageRaw, iterationsRaw, err := projectUnaryUsage(json.RawMessage(msg.Usage.RawJSON()))
+	if err != nil {
+		return nil, err
+	}
 	usage := convertAnthropicUsage(anthropicUsage{
 		inputTokens:              msg.Usage.InputTokens,
 		outputTokens:             msg.Usage.OutputTokens,
@@ -486,14 +490,14 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 		cacheReadInputTokens:     msg.Usage.CacheReadInputTokens,
 		reasoningTokens:          thinkingTokenCount(msg.Usage.OutputTokensDetails),
 		iterations:               msg.Usage.Iterations,
-		raw:                      json.RawMessage(msg.Usage.RawJSON()),
+		raw:                      usageRaw,
 	})
 
 	fr := mapFinishReason(msg.StopReason)
 	if isJsonResponseFromTool && msg.StopReason == anthropic.BetaStopReasonToolUse {
 		fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(msg.StopReason)}
 	}
-	providerMetadata, err := buildAnthropicProviderMetadata(messageMetadataFields(msg.RawJSON()), json.RawMessage(msg.Usage.RawJSON()), usageIterationsField(json.RawMessage(msg.Usage.RawJSON())))
+	providerMetadata, err := buildAnthropicProviderMetadata(messageMetadataFields(msg.RawJSON()), usageRaw, iterationsRaw)
 	if err != nil {
 		return nil, err
 	}
