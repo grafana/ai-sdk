@@ -349,10 +349,12 @@ that discovery is unsupported with your own key.
 | Response | Likely cause |
 |---|---|
 | `401 Unauthorized` | The token is missing, expired or revoked. |
+| `403` Gateway `forbidden` error when Grafana allows anonymous sign-in | The token is missing, expired or revoked, so Grafana sends the request as the anonymous user. |
 | `403 Forbidden` from Grafana | The token does not belong to the stack in the URL. On namespace routes, the caller may lack `plugins.app:access` on `plugins:id:grafana-aigateway-app`, or the app's manifest may not [declare the namespace routes](#call-from-an-app-platform-app). On catalog routes, check the [catalog's subresource permissions](#call-a-stored-stack-catalog). |
 | `403` Gateway permission error on a Grafana Cloud namespace route | A service calls as itself and is not [allowed](#get-your-service-allowed-in-grafana-cloud) yet. |
 | `403` Gateway permission error on a self-hosted namespace route | A service or app calls without a user or service account. Call on behalf of a user instead. |
-| `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
+| `400` unsupported gateway control | You sent your own provider key in `providerOptions.gateway.byok` to a Gateway that uses its configured provider accounts, such as a self-hosted Gateway or a stored model catalog, or you sent a control other than `models`, `order` and `only`. The message lists `byok` as supported, but only Gateways that accept request credentials take it. |
+| `429 Too Many Requests` from Grafana with `received message larger than max` | The request body is over Grafana's 16 MiB limit. Retrying sends the same body, so make it smaller. |
 | Request ends after 60 seconds | Grafana limits how long a request can run, including a streamed response. |
 
 Grafana answers some of these before the request reaches the Gateway, in its own
