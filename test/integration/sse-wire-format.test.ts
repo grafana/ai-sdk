@@ -216,11 +216,16 @@ describe("SSE wire format", () => {
       stream: new ReadableStream<UIMessageChunk>({ start(controller) { chunks.forEach(chunk => controller.enqueue(chunk)); controller.close(); } }),
       terminateOnError: true,
     })) message = next;
-    const toolPart = message?.parts.find(part => "toolCallId" in part && part.toolCallId === "image-1");
+    if (!message) {
+      throw new Error("Expected an assembled UI message");
+    }
+    const toolPart = message.parts.find(part => "toolCallId" in part && part.toolCallId === "image-1");
     expect(toolPart).toMatchObject({ state: "output-available", output: { stage: "final" } });
     expect(toolPart).not.toHaveProperty("preliminary", true);
-    const results = (await convertToModelMessages([message!])).flatMap(m => Array.isArray(m.content) ? m.content : [])
-      .filter(content => content.type === "tool-result");
+    const history = await convertToModelMessages([message]);
+    const results = history.flatMap(({ content }) =>
+      Array.isArray(content) ? content.filter(part => part.type === "tool-result") : [],
+    );
     expect(results).toMatchObject([{ toolCallId: "image-1", output: { type: "json", value: { stage: "final" } } }]);
 
     expect(chunks).toContainEqual({
