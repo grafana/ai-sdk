@@ -242,7 +242,7 @@ Selection SHALL return the selected model with its logical identity and no logic
 
 ### Requirement: Qualified unlisted operator selectors
 
-On both selection paths, after listed ID and alias lookup misses, an unlisted selector SHALL be `<provider-instance>/<model-id>` split at the first slash. Both the full selector and literal suffix SHALL meet the shared public-ID rule. The named instance SHALL have `serveAllModels` true and SHALL NOT block the suffix. The full selector SHALL be canonical and the suffix SHALL be the backend ID, served only by that startup-resolved account at its authorized destination, without consulting inventory.
+On both selection paths, after listed lookup misses, split `<instance>/<model-id>` at the first slash. Both the full selector and suffix SHALL meet the shared public-ID rule. The instance SHALL have `serveAllModels` enabled and SHALL NOT block the suffix. Use the full selector as canonical ID and the suffix as backend ID, with only that instance's startup-resolved account and destination. Selection SHALL NOT consult inventory.
 
 #### Scenario: Qualified selector uses the named account
 - **WHEN** a caller requests `team-openai/org/new-model` and the named provider opts in

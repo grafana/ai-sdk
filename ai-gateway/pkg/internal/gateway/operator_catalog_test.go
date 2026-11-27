@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
@@ -167,34 +168,42 @@ models:
 }
 
 func TestOperatorCatalog_DiscoveryUsesCompatibleBaseURL(t *testing.T) {
-	const key = "dummy-compatible-key"
+	const (
+		key       = "dummy-compatible-key"
+		versioned = "claude-sonnet-4@20250514"
+	)
+	instance := strings.Repeat("p", config.MaxPublicIDBytes-config.MaxListedModelIDBytes)
+	atLimit := strings.Repeat("a", config.MaxListedModelIDBytes-1)
+	overLimit := atLimit + "a"
+	require.NoError(t, config.ValidatePublicID(overLimit))
+	require.Error(t, config.ValidatePublicID(instance+"/"+overLimit))
 	var probes atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /custom/v1/models", func(w http.ResponseWriter, r *http.Request) {
 		probes.Add(1)
 		assert.Equal(t, "Bearer "+key, r.Header.Get("Authorization"))
-		_, _ = io.WriteString(w, `{"data":[{"id":"org/new"}]}`)
+		_, _ = fmt.Fprintf(w, `{"data":[{"id":%q},{"id":%q},{"id":%q},{"id":"has space"},{"id":"org/new+v2"}]}`, versioned, atLimit, overLimit)
 	})
 	backend := httptest.NewServer(mux)
 	t.Cleanup(backend.Close)
 	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{
 		"COMPATIBLE_KEY": key,
 		"GF_PLUGIN_MODEL_CATALOG": fmt.Sprintf(`providers:
-  compatible:
+  %s:
     type: openai-compatible
     apiKeyEnv: COMPATIBLE_KEY
     baseURL: %s/custom/v1
     providerName: vendor
     serveAllModels: true
 models: {}
-`, backend.URL),
+`, instance, backend.URL),
 	}})
 	internal := accessToken(h.serviceToken(t, testInternalService))
 	status, body := do(t, discoveryRequest(t, h.url("config"), internal))
 	require.Equal(t, http.StatusOK, status, body)
-	assert.JSONEq(t, `{"models":[{"id":"compatible/org/new","name":"org/new",
-		"specification":{"specificationVersion":"v4","provider":"grafana","modelId":"compatible/org/new"},
-		"gateway":{"aliases":[],"primary":{"providerInstance":"compatible","provider":"vendor","providerModelId":"org/new"},"fallbacks":[]}}]}`, body)
+	assert.Equal(t, []string{instance + "/" + atLimit, instance + "/" + versioned, instance + "/org/new+v2"}, validDiscoveryIDs(t, []byte(body)))
+	assert.Contains(t, body, `"providerModelId":"`+versioned+`"`)
+	assert.Contains(t, body, `"provider":"vendor"`)
 	assert.EqualValues(t, 1, probes.Load())
 }
 
