@@ -18,6 +18,7 @@ messages:
       - type: tool-approval-response
         approvalId: mcpr_04a97b4fce127879006949a83ac9308195a7f7b69ea82e91fe
         approved: false
+        providerExecuted: true
 providerTools:
   MCP:
     id: openai.mcp
