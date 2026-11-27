@@ -726,8 +726,41 @@ func responseMeta(providerName string, resp *responses.Response, logprobs [][]re
 	if context := reasoningContext(resp); context != "" {
 		m["reasoningContext"] = context
 	}
+	if transformations := responseInputTransformations(resp); transformations != nil {
+		m["inputTransformations"] = transformations
+	}
 	b, _ := json.Marshal(m)
 	return provider.ProviderMetadata{providerName: b}
+}
+
+type responseInputTransformation struct {
+	ID     json.RawMessage `json:"id,omitempty"`
+	Type   *string         `json:"type"`
+	Action *string         `json:"action"`
+	Reason *string         `json:"reason"`
+}
+
+func responseInputTransformations(resp *responses.Response) []responseInputTransformation {
+	raw := resp.JSON.ExtraFields["input_transformations"].Raw()
+	if raw == "" {
+		return nil
+	}
+	var entries []responseInputTransformation
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if entry.Type == nil || entry.Action == nil || entry.Reason == nil {
+			return nil
+		}
+		if len(entry.ID) > 0 {
+			var id string
+			if err := json.Unmarshal(entry.ID, &id); err != nil {
+				return nil
+			}
+		}
+	}
+	return entries
 }
 
 func reasoningContext(resp *responses.Response) string {

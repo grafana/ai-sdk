@@ -59,6 +59,7 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 	assert.Equal(t, "bedrock-mantle.responses", first.Response.Provider)
 	require.Contains(t, first.ProviderMetadata, "openai")
 	assert.NotContains(t, first.ProviderMetadata, "bedrock-mantle.responses")
+	assert.JSONEq(t, `{"responseId":"resp_123","inputTransformations":[]}`, string(first.ProviderMetadata["openai"]))
 	require.Contains(t, first.Content[0].ProviderMetadata, "openai")
 
 	partOptions := make(provider.ProviderOptions, len(first.Content[0].ProviderMetadata))
@@ -693,7 +694,7 @@ func TestNewResponses_StreamAttributionAndMetadata(t *testing.T) {
 				"event: response.output_item.done\n" +
 				`data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"answer","annotations":[]}]}}` + "\n\n" +
 				"event: response.completed\n" +
-				`data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_123","created_at":1700000000,"model":"openai.gpt-5.6-luna","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}` + "\n\n")),
+				`data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_123","created_at":1700000000,"model":"openai.gpt-5.6-luna","object":"response","status":"completed","output":[],"input_transformations":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}` + "\n\n")),
 			Request: req,
 		}, nil
 	})}
@@ -730,6 +731,7 @@ func TestNewResponses_StreamAttributionAndMetadata(t *testing.T) {
 	require.Equal(t, provider.PartFinish, finish.Type)
 	require.Contains(t, finish.ProviderMetadata, "openai")
 	assert.NotContains(t, finish.ProviderMetadata, "bedrock-mantle.responses")
+	assert.JSONEq(t, `{"responseId":"resp_123","inputTransformations":[]}`, string(finish.ProviderMetadata["openai"]))
 }
 
 func findInput(body map[string]any, itemType string) map[string]any {
@@ -770,6 +772,7 @@ const responseWithMessage = `{
 		"status":"completed",
 		"content":[{"type":"output_text","text":"first answer","annotations":[]}]
 	}],
+	"input_transformations":[],
 	"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
 }`
 
