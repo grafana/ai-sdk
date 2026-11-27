@@ -48,6 +48,7 @@ func newAgent(model provider.LanguageModel) (*aisdk.ToolLoopAgent, error) {
 			aisdk.WithInstructions("You are a helpful assistant. Use the weather tool when the answer depends on current weather."),
 			aisdk.WithTools(aisdk.ToolSet{"get_weather": weather}),
 			aisdk.WithStopWhen(aisdk.StepCountIs(5)),
+			aisdk.OnError(func(err error) { log.Printf("agent stream: %v", err) }),
 		),
 	), nil
 }

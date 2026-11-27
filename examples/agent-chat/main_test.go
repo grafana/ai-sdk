@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -51,6 +55,12 @@ func (m *scriptedModel) DoStream(_ context.Context, opts provider.CallOptions) (
 			Usage:        testUsage(12, 7),
 		},
 	)}, nil
+}
+
+type failingModel struct{ scriptedModel }
+
+func (m *failingModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+	return nil, errors.New("provider rejected the request")
 }
 
 func streamParts(parts ...provider.StreamPart) <-chan provider.StreamPart {
@@ -116,6 +126,24 @@ func TestChatHandler(t *testing.T) {
 				assert.Equal(t, "invalid messages\n", recorder.Body.String())
 			})
 		}
+	})
+
+	t.Run("logs model errors", func(t *testing.T) {
+		var logs bytes.Buffer
+		log.SetOutput(&logs)
+		t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+		agent, err := newAgent(&failingModel{})
+		require.NoError(t, err)
+
+		body := `{"messages":[{"id":"user-1","role":"user","parts":[{"type":"text","text":"Hi"}]}]}`
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+		newChatHandler(agent).ServeHTTP(recorder, request)
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), `"type":"error"`)
+		assert.Contains(t, logs.String(), "agent stream: provider rejected the request")
 	})
 
 	t.Run("executes tool and streams final answer", func(t *testing.T) {
