@@ -411,7 +411,12 @@ func TestModel_VertexTransportContext(t *testing.T) {
 			var body []byte
 			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
 				assert.Equal(t, "Bearer vertex-token", r.Header.Get("Authorization"))
-				assert.Contains(t, r.URL.Path, "/projects/project/locations/us-east5/publishers/anthropic/models/")
+				action := "rawPredict"
+				if streaming {
+					action = "streamRawPredict"
+				}
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/v1/projects/project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-6:"+action, r.URL.EscapedPath())
 				var err error
 				body, err = io.ReadAll(r.Body)
 				assert.NoError(t, err)
@@ -423,23 +428,57 @@ func TestModel_VertexTransportContext(t *testing.T) {
 			m, err := NewVertex(t.Context(), "us-east5", "project", "claude-sonnet-4-6", WithRequestOptions(option.WithMaxRetries(0)))
 			require.NoError(t, err)
 			maxTokens := 64
+			opts := provider.CallOptions{MaxOutputTokens: &maxTokens, Prompt: []provider.Message{provider.UserText("hello")}}
 			var request *provider.RequestMetadata
+			var usage provider.Usage
+			var finish provider.FinishReason
 			if streaming {
-				result, err := m.DoStream(t.Context(), provider.CallOptions{MaxOutputTokens: &maxTokens})
+				result, err := m.DoStream(t.Context(), opts)
 				require.NoError(t, err)
 				request = result.Request
-				for range result.Stream {
+				var parts []provider.StreamPart
+				var types []provider.StreamPartType
+				for part := range result.Stream {
+					parts = append(parts, part)
+					types = append(types, part.Type)
 				}
+				require.Equal(t, []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartCustom, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartFinish}, types)
+				assert.Equal(t, "anthropic.vertex", parts[1].Provider)
+				assert.Equal(t, "claude-sonnet-4-6", parts[1].ModelID)
+				assert.Equal(t, "anthropic.message_start", parts[2].Kind)
+				assert.Equal(t, "hello", parts[4].Delta)
+				require.NotNil(t, parts[6].Usage)
+				require.NotNil(t, parts[6].FinishReason)
+				usage, finish = *parts[6].Usage, *parts[6].FinishReason
 			} else {
-				result, err := m.DoGenerate(t.Context(), provider.CallOptions{MaxOutputTokens: &maxTokens})
+				result, err := m.DoGenerate(t.Context(), opts)
 				require.NoError(t, err)
 				request = result.Request
+				require.NotNil(t, result.Response)
+				assert.Equal(t, "anthropic.vertex", result.Response.Provider)
+				assert.Equal(t, "claude-sonnet-4-6", result.Response.ModelID)
+				require.Len(t, result.Content, 1)
+				assert.Equal(t, provider.ContentText, result.Content[0].Type)
+				assert.Equal(t, "hello", result.Content[0].Text)
+				usage, finish = result.Usage, result.FinishReason
 			}
+			assert.Equal(t, provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}, finish)
+			require.NotNil(t, usage.InputTokens.Total)
+			require.NotNil(t, usage.OutputTokens.Total)
+			assert.Equal(t, 1, *usage.InputTokens.Total)
+			assert.Equal(t, 1, *usage.OutputTokens.Total)
+			require.NotNil(t, request)
 			assert.JSONEq(t, string(body), string(request.Body))
-			var wire map[string]any
+			var wire map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal(body, &wire))
 			assert.NotContains(t, wire, "model")
-			assert.Equal(t, vertexsdk.DefaultVersion, wire["anthropic_version"])
+			assert.JSONEq(t, `"`+vertexsdk.DefaultVersion+`"`, string(wire["anthropic_version"]))
+			assert.JSONEq(t, `[{"role":"user","content":[{"type":"text","text":"hello"}]}]`, string(wire["messages"]))
+			if streaming {
+				assert.JSONEq(t, `true`, string(wire["stream"]))
+			} else {
+				assert.NotContains(t, wire, "stream")
+			}
 		})
 	}
 }
