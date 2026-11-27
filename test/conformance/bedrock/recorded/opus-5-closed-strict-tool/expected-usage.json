@@ -1,0 +1,20 @@
+[
+  {
+    "inputTokens": {
+      "total": 522,
+      "noCache": 522,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 43,
+      "text": 43
+    },
+    "raw": {
+      "inputTokens": 522,
+      "outputTokens": 43,
+      "totalTokens": 565,
+      "serverToolUsage": {}
+    }
+  }
+]

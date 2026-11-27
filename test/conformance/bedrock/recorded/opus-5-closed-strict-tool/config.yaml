@@ -1,0 +1,18 @@
+# Recorded from Bedrock ConverseStream in us-east-2 on 2026-11-27.
+model: us.anthropic.claude-opus-5
+prompt: 'Call lookup_label with the fictional inventory code "MINT-27".'
+stopWhenStepCount: 1
+maxRetries: 0
+toolChoice:
+  type: required
+tools:
+  lookup_label:
+    description: Find the label for a fictional inventory code.
+    strict: true
+    inputSchema:
+      type: object
+      properties:
+        code:
+          type: string
+      required: [code]
+      additionalProperties: false

@@ -1,0 +1,15 @@
+# Recorded from Bedrock ConverseStream in us-east-2 on 2026-11-27.
+model: us.anthropic.claude-opus-5
+prompt: 'Return an object with status "ready" and a second field label "MINT-27".'
+stopWhenStepCount: 1
+maxRetries: 0
+assertOutputValue: true
+responseFormat:
+  type: json
+  schema:
+    type: object
+    properties:
+      status:
+        type: string
+    required: [status]
+    additionalProperties: true
