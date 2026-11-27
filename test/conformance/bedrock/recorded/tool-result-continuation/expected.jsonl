@@ -1,0 +1,17 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","toolName":"lookup_bin"}
+{"type":"tool-input-delta","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","inputTextDelta":""}
+{"type":"tool-input-delta","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","inputTextDelta":"{\"item\""}
+{"type":"tool-input-delta","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","inputTextDelta":": \"pape"}
+{"type":"tool-input-delta","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","inputTextDelta":"r crane"}
+{"type":"tool-input-delta","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","toolName":"lookup_bin","input":{"item":"paper crane"}}
+{"type":"tool-output-available","toolCallId":"tooluse_2lOar73m3FN22MwL8eKmS8","output":{"bin":"CRANE-71"}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-delta","id":"0","delta":"CRANE-71"}
+{"type":"text-end","id":"0"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

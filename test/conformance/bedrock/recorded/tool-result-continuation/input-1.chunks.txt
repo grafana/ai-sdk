@@ -1,0 +1,10 @@
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN","role":"assistant"}}
+{"contentBlockStart":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK","start":{"toolUse":{"name":"lookup_bin","toolUseId":"tooluse_2lOar73m3FN22MwL8eKmS8","type":"tool_use"}}}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"item\""}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":": \"pape"}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"r crane"}},"p":"ab"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"\"}"}},"p":"abcdefghijklmnopqrstuvwxyzABCD"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFG","stopReason":"tool_use"}}
+{"metadata":{"metrics":{"latencyMs":499},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM","usage":{"inputTokens":606,"outputTokens":55,"serverToolUsage":{},"totalTokens":661}}}

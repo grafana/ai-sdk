@@ -545,6 +545,12 @@ The recorded Bedrock fixtures SHALL cover at minimum: simple text generation, si
 - **WHEN** `mise run test-conformance` runs the `bedrock/recorded/tool-call` case
 - **THEN** the Go UIMessageChunk sequence exactly matches the upstream TypeScript `expected.jsonl` and includes a tool call chunk
 
+#### Scenario: Recorded ConverseStream tool result continuation
+
+- **WHEN** the replay runs a recorded two-step scenario in which ConverseStream first returns a function tool call and the SDK executes the fixture's deterministic tool
+- **THEN** the replay compares both requests, including the matching assistant `toolUse` and user `toolResult` with the same tool use ID in the second request
+- **AND** provider stream parts and UI chunks are compared against the pinned upstream, covering the tool input, UI tool output, and final text response
+
 #### Scenario: Parallel tool calls recorded fixture
 
 - **WHEN** `mise run test-conformance` runs the `bedrock/recorded/parallel-tool-calls` case
