@@ -361,7 +361,7 @@ func TestPrepareTools_MCPRequireApprovalDefault(t *testing.T) {
 			Type: provider.ToolTypeProvider,
 			ID:   toolIDMCP,
 			Name: "mcp",
-			Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`)},
+			Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)},
 		}},
 	})
 	tools := toolsArray(t, body)
@@ -388,11 +388,7 @@ func TestPrepareTools_MCPConnector(t *testing.T) {
 			assert.Empty(t, warnings)
 			tools := toolsArray(t, body)
 			require.Len(t, tools, 1)
-			if connectorID == "" {
-				assert.NotContains(t, tools[0], "connector_id")
-			} else {
-				assert.Equal(t, connectorID, tools[0]["connector_id"])
-			}
+			assert.Equal(t, connectorID, tools[0]["connector_id"])
 			assert.Equal(t, "srv", tools[0]["server_label"])
 			assert.Equal(t, "never", tools[0]["require_approval"])
 		})
@@ -566,7 +562,7 @@ func TestPrepareTools_ProviderToolChoiceVariants(t *testing.T) {
 		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDImageGeneration, Name: "draw"}, "image_generation", map[string]any{"type": "image_generation"}},
 		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDWebSearchPreview, Name: "preview"}, "web_search_preview", map[string]any{"type": "web_search_preview"}},
 		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search"}, "web_search", map[string]any{"type": "web_search"}},
-		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "server"}, "mcp", map[string]any{"type": "mcp"}},
+		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDMCP, Name: "server", Args: map[string]json.RawMessage{"serverLabel": json.RawMessage(`"srv"`), "serverUrl": json.RawMessage(`"https://mcp.example.test"`)}}, "mcp", map[string]any{"type": "mcp"}},
 		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDApplyPatch, Name: "patch"}, "apply_patch", map[string]any{"type": "apply_patch"}},
 		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDComputer, Name: "browser"}, "computer", map[string]any{"type": "computer"}},
 		{provider.Tool{Type: provider.ToolTypeProvider, ID: toolIDProgrammatic, Name: "program"}, "programmatic_tool_calling", map[string]any{"type": "programmatic_tool_calling"}},

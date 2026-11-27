@@ -11,7 +11,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 )
 
-func captureRequestBody(body *json.RawMessage) option.Middleware {
+func captureRequestBody(body *json.RawMessage, diagnostics *hostedToolDiagnostics) option.Middleware {
 	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
 		*body = nil
 		if req.Body != nil {
@@ -28,6 +28,7 @@ func captureRequestBody(body *json.RawMessage) option.Middleware {
 				req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(payload)), nil }
 			}
 			if json.Valid(payload) {
+				diagnostics.observeBody(payload)
 				*body = append(json.RawMessage(nil), payload...)
 			}
 		}

@@ -689,6 +689,8 @@ func sanitizeTools(tools []provider.Tool, capture CaptureOptions) []provider.Too
 			out[i].InputSchema = nil
 			out[i].InputExamples = nil
 			out[i].Args = nil
+		} else if tool.Type == provider.ToolTypeProvider {
+			out[i].Args = toolArgsForLog(tool)
 		}
 		if !capture.ProviderOptions {
 			out[i].ProviderOptions = nil

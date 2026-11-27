@@ -214,13 +214,15 @@ func providerTool(t provider.Tool, caps modelCapabilities, br *buildResult) (res
 
 	case toolIDCodeInterpreter:
 		br.hasCodeInterpreterTool = true
-		return codeInterpreterTool(t), nil, true, nil
+		tool, err := codeInterpreterTool(t)
+		return tool, nil, err == nil, err
 
 	case toolIDFileSearch:
 		return fileSearchTool(t), nil, true, nil
 
 	case toolIDMCP:
-		return responses.ToolUnionParam{OfMcp: mcpTool(t)}, nil, true, nil
+		tool, err := mcpTool(t)
+		return responses.ToolUnionParam{OfMcp: tool}, nil, err == nil, err
 
 	case toolIDCustom:
 		tool, warnings, err := customTool(t, caps)
@@ -333,26 +335,152 @@ func fileSearchTool(t provider.Tool) responses.ToolUnionParam {
 	return responses.ToolUnionParam{OfFileSearch: &fs}
 }
 
-func codeInterpreterTool(t provider.Tool) responses.ToolUnionParam {
+func codeInterpreterTool(t provider.Tool) (responses.ToolUnionParam, error) {
 	var tool responses.ToolCodeInterpreterParam
+	container := &responses.ToolCodeInterpreterContainerCodeInterpreterContainerAutoParam{}
+	tool.Container.OfCodeInterpreterToolAuto = container
+	result := responses.ToolUnionParam{OfCodeInterpreter: &tool}
 	raw, ok := rawArg(t.Args, "container")
 	if !ok {
-		tool.Container.OfCodeInterpreterToolAuto = &responses.ToolCodeInterpreterContainerCodeInterpreterContainerAutoParam{}
-		return responses.ToolUnionParam{OfCodeInterpreter: &tool}
+		return result, nil
 	}
-	var containerID string
-	if err := json.Unmarshal(raw, &containerID); err == nil {
-		tool.Container.OfString = param.NewOpt(containerID)
-		return responses.ToolUnionParam{OfCodeInterpreter: &tool}
+	var containerID *string
+	if json.Unmarshal(raw, &containerID) == nil && containerID != nil {
+		tool.Container = responses.ToolCodeInterpreterContainerUnionParam{OfString: param.NewOpt(*containerID)}
+		return result, nil
 	}
-	var container struct {
-		FileIDs []string `json:"fileIds"`
+	args, err := decodeHostedToolArg[struct {
+		FileIDs       json.RawMessage `json:"fileIds"`
+		MemoryLimit   json.RawMessage `json:"memoryLimit"`
+		NetworkPolicy json.RawMessage `json:"networkPolicy"`
+	}](raw, "codeInterpreter.container")
+	if err != nil {
+		return responses.ToolUnionParam{}, err
 	}
-	_ = json.Unmarshal(raw, &container)
-	tool.Container.OfCodeInterpreterToolAuto = &responses.ToolCodeInterpreterContainerCodeInterpreterContainerAutoParam{
-		FileIDs: container.FileIDs,
+	if args.FileIDs != nil {
+		container.FileIDs, err = hostedToolStringArray(args.FileIDs, "codeInterpreter.container.fileIds")
+		if err != nil {
+			return responses.ToolUnionParam{}, err
+		}
 	}
-	return responses.ToolUnionParam{OfCodeInterpreter: &tool}
+	if args.MemoryLimit != nil {
+		const path = "codeInterpreter.container.memoryLimit"
+		memory, err := decodeHostedToolArg[responses.ContainerAutoMemoryLimit](args.MemoryLimit, path)
+		if err != nil {
+			return responses.ToolUnionParam{}, err
+		}
+		switch memory {
+		case responses.ContainerAutoMemoryLimit1g, responses.ContainerAutoMemoryLimit4g,
+			responses.ContainerAutoMemoryLimit16g, responses.ContainerAutoMemoryLimit64g:
+			container.MemoryLimit = string(memory)
+		default:
+			return responses.ToolUnionParam{}, fmt.Errorf("openai: %s must be one of 1g, 4g, 16g, or 64g", path)
+		}
+	}
+	if args.NetworkPolicy != nil {
+		container.NetworkPolicy, err = codeInterpreterNetworkPolicy(args.NetworkPolicy)
+		if err != nil {
+			return responses.ToolUnionParam{}, err
+		}
+	}
+	return result, nil
+}
+
+type codeInterpreterNetworkPolicyType string
+
+const (
+	codeInterpreterNetworkDisabled  codeInterpreterNetworkPolicyType = "disabled"
+	codeInterpreterNetworkAllowlist codeInterpreterNetworkPolicyType = "allowlist"
+)
+
+func codeInterpreterNetworkPolicy(raw json.RawMessage) (responses.ResponseToolSearchOutputItemParamToolCodeInterpreterContainerCodeInterpreterToolAutoNetworkPolicyUnion, error) {
+	const path = "codeInterpreter.container.networkPolicy"
+	var result responses.ResponseToolSearchOutputItemParamToolCodeInterpreterContainerCodeInterpreterToolAutoNetworkPolicyUnion
+	policy, err := decodeHostedToolArg[struct {
+		Type           codeInterpreterNetworkPolicyType `json:"type"`
+		AllowedDomains json.RawMessage                  `json:"allowedDomains"`
+		DomainSecrets  json.RawMessage                  `json:"domainSecrets"`
+	}](raw, path)
+	if err != nil {
+		return result, err
+	}
+	switch policy.Type {
+	case codeInterpreterNetworkDisabled:
+		result.OfDisabled = &responses.ContainerNetworkPolicyDisabledParam{}
+	case codeInterpreterNetworkAllowlist:
+		domains, err := hostedToolStringArray(policy.AllowedDomains, path+".allowedDomains")
+		if err != nil {
+			return result, err
+		}
+		allowlist := &responses.ContainerNetworkPolicyAllowlistParam{AllowedDomains: domains}
+		if policy.DomainSecrets != nil {
+			allowlist.DomainSecrets, err = codeInterpreterDomainSecrets(policy.DomainSecrets, path+".domainSecrets")
+			if err != nil {
+				return result, err
+			}
+		}
+		result.OfAllowlist = allowlist
+	default:
+		return result, fmt.Errorf("openai: %s.type must be disabled or allowlist", path)
+	}
+	return result, nil
+}
+
+func codeInterpreterDomainSecrets(raw json.RawMessage, path string) ([]responses.ContainerNetworkPolicyDomainSecretParam, error) {
+	entries, err := decodeHostedToolArg[[]json.RawMessage](raw, path)
+	if err != nil {
+		return nil, err
+	}
+	secrets := make([]responses.ContainerNetworkPolicyDomainSecretParam, len(entries))
+	for i, entry := range entries {
+		entryPath := fmt.Sprintf("%s[%d]", path, i)
+		secret, err := decodeHostedToolArg[struct {
+			Domain json.RawMessage `json:"domain"`
+			Name   json.RawMessage `json:"name"`
+			Value  json.RawMessage `json:"value"`
+		}](entry, entryPath)
+		if err != nil {
+			return nil, err
+		}
+		domain, err := decodeHostedToolArg[string](secret.Domain, entryPath+".domain")
+		if err != nil {
+			return nil, err
+		}
+		name, err := decodeHostedToolArg[string](secret.Name, entryPath+".name")
+		if err != nil {
+			return nil, err
+		}
+		value, err := decodeHostedToolArg[string](secret.Value, entryPath+".value")
+		if err != nil {
+			return nil, err
+		}
+		secrets[i] = responses.ContainerNetworkPolicyDomainSecretParam{Domain: domain, Name: name, Value: value}
+	}
+	return secrets, nil
+}
+
+func hostedToolStringArray(raw json.RawMessage, path string) ([]string, error) {
+	entries, err := decodeHostedToolArg[[]*string](raw, path)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, len(entries))
+	for i, entry := range entries {
+		if entry == nil {
+			return nil, fmt.Errorf("openai: %s[%d] must be a string", path, i)
+		}
+		values[i] = *entry
+	}
+	return values, nil
+}
+
+func decodeHostedToolArg[T any](raw json.RawMessage, path string) (T, error) {
+	var value *T
+	if json.Unmarshal(raw, &value) != nil || value == nil {
+		var zero T
+		return zero, fmt.Errorf("openai: invalid %s", path)
+	}
+	return *value, nil
 }
 
 func imageGenerationTool(t provider.Tool) *responses.ToolImageGenerationParam {
@@ -433,22 +561,45 @@ func supportedAsyncToolOption(value *bool, caps modelCapabilities, name string) 
 	}
 }
 
-func mcpTool(t provider.Tool) *responses.ToolMcpParam {
+func mcpTool(t provider.Tool) (*responses.ToolMcpParam, error) {
 	mcp := responses.ToolMcpParam{ServerLabel: stringArg(t.Args, "serverLabel")}
-	if url := stringArg(t.Args, "serverUrl"); url != "" {
-		mcp.ServerURL = param.NewOpt(url)
+	_, hasURL := rawArg(t.Args, "serverUrl")
+	_, hasConnector := rawArg(t.Args, "connectorId")
+	_, hasTunnel := rawArg(t.Args, "tunnelId")
+	if !hasURL && !hasConnector && !hasTunnel {
+		return nil, fmt.Errorf("openai: mcp requires one of serverUrl, connectorId, or tunnelId")
 	}
-	if auth := stringArg(t.Args, "authorization"); auth != "" {
-		mcp.Authorization = param.NewOpt(auth)
+	if hasTunnel && (hasURL || hasConnector) {
+		return nil, fmt.Errorf("openai: mcp.tunnelId cannot be combined with serverUrl or connectorId")
 	}
-	if connectorID := stringArg(t.Args, "connectorId"); connectorID != "" {
-		mcp.SetExtraFields(map[string]any{"connector_id": connectorID})
+	if hasURL {
+		value, err := decodeHostedToolArg[string](t.Args["serverUrl"], "mcp.serverUrl")
+		if err != nil {
+			return nil, err
+		}
+		mcp.ServerURL = param.NewOpt(value)
+	}
+	if hasConnector {
+		value, err := decodeHostedToolArg[string](t.Args["connectorId"], "mcp.connectorId")
+		if err != nil {
+			return nil, err
+		}
+		mcp.SetExtraFields(map[string]any{"connector_id": value})
+	}
+	if hasTunnel {
+		if err := setMCPTunnelArgs(&mcp, t.Args); err != nil {
+			return nil, err
+		}
+	} else {
+		if auth := stringArg(t.Args, "authorization"); auth != "" {
+			mcp.Authorization = param.NewOpt(auth)
+		}
+		if headers := stringMapArg(t.Args, "headers"); len(headers) > 0 {
+			mcp.Headers = headers
+		}
 	}
 	if desc := stringArg(t.Args, "serverDescription"); desc != "" {
 		mcp.ServerDescription = param.NewOpt(desc)
-	}
-	if headers := stringMapArg(t.Args, "headers"); len(headers) > 0 {
-		mcp.Headers = headers
 	}
 	if allowedTools, ok := mcpAllowedToolsArg(t.Args); ok {
 		mcp.AllowedTools = allowedTools
@@ -460,7 +611,40 @@ func mcpTool(t provider.Tool) *responses.ToolMcpParam {
 			OfMcpToolApprovalSetting: param.NewOpt("never"),
 		}
 	}
-	return &mcp
+	return &mcp, nil
+}
+
+func setMCPTunnelArgs(mcp *responses.ToolMcpParam, args map[string]json.RawMessage) error {
+	tunnelID, err := decodeHostedToolArg[string](args["tunnelId"], "mcp.tunnelId")
+	if err != nil {
+		return err
+	}
+	mcp.TunnelID = param.NewOpt(tunnelID)
+	mcp.ServerLabel, err = decodeHostedToolArg[string](args["serverLabel"], "mcp.serverLabel")
+	if err != nil {
+		return err
+	}
+	if raw, ok := args["authorization"]; ok {
+		auth, err := decodeHostedToolArg[string](raw, "mcp.authorization")
+		if err != nil {
+			return err
+		}
+		mcp.Authorization = param.NewOpt(auth)
+	}
+	if raw, ok := args["headers"]; ok {
+		headers, err := decodeHostedToolArg[map[string]*string](raw, "mcp.headers")
+		if err != nil {
+			return err
+		}
+		mcp.Headers = make(map[string]string, len(headers))
+		for key, value := range headers {
+			if value == nil {
+				return fmt.Errorf("openai: invalid mcp.headers")
+			}
+			mcp.Headers[key] = *value
+		}
+	}
+	return nil
 }
 
 func shellTool(t provider.Tool) *responses.FunctionShellToolParam {

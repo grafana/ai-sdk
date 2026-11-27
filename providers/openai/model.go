@@ -90,24 +90,46 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	}
 	var rawResponse *http.Response
 	var requestBody json.RawMessage
-	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse), option.WithMiddleware(captureRequestBody(&requestBody)))
+	diagnostics := newHostedToolDiagnostics(body)
+	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse), option.WithMiddleware(captureRequestBody(&requestBody, diagnostics)))
 	resp, err := m.client.New(ctx, body, requestOpts...)
-	if err != nil {
-		return nil, wrapAPIError(err, body)
+	protectCredentials := diagnostics.protected()
+	if protectCredentials {
+		requestBody = nil
 	}
-	if resp.JSON.Error.Valid() {
-		return nil, responseBodyError(resp, rawResponse, body, http.StatusBadRequest, resp.Error.Message)
-	}
-	if !resp.JSON.Output.Valid() {
-		return nil, missingOutputError(resp, rawResponse, body)
+	if err != nil || resp.JSON.Error.Valid() || !resp.JSON.Output.Valid() {
+		var resultErr error
+		switch {
+		case err != nil:
+			resultErr = wrapAPIError(err, body)
+		case resp.JSON.Error.Valid():
+			resultErr = responseBodyError(resp, rawResponse, body, http.StatusBadRequest, resp.Error.Message)
+		default:
+			resultErr = missingOutputError(resp, rawResponse, body)
+		}
+		if protectCredentials {
+			resultErr = diagnostics.safeError(resultErr)
+		}
+		return nil, resultErr
 	}
 	result, err := convertResponse(resp, br, m.generateID, m.provider)
 	if err != nil {
+		if protectCredentials {
+			err = diagnostics.safeError(err)
+		}
 		return nil, err
+	}
+	headers := rawResponse.Header
+	if protectCredentials {
+		result.Response.Body = nil
+		result.Usage.Raw = nil
+		result.ProviderMetadata = nil
+		result.FinishReason.Raw = ""
+		headers = diagnostics.safeHeaders(headers)
 	}
 	result.Warnings = append(result.Warnings, warnings...)
 	result.Request = &provider.RequestMetadata{Body: requestBody}
-	result.Response.Headers = flattenHeaders(rawResponse.Header)
+	result.Response.Headers = flattenHeaders(headers)
 	return result, nil
 }
 
@@ -152,13 +174,26 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	}
 	var rawResponse *http.Response
 	var requestBody json.RawMessage
-	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true), option.WithMiddleware(captureRequestBody(&requestBody)))
+	diagnostics := newHostedToolDiagnostics(body)
+	requestOptions := append(m.requestOptions(params.Headers), option.WithResponseBodyInto(&rawResponse), option.WithJSONSet("stream", true), option.WithMiddleware(captureRequestBody(&requestBody, diagnostics)))
 	streamCtx, cancel := context.WithCancel(ctx)
 	_, err = m.client.New(streamCtx, body, requestOptions...)
-	items := pumpResponseStream(streamCtx, rawResponse, err, params.IncludeRawChunks)
+	protectCredentials := diagnostics.protected()
+	var headers http.Header
+	if rawResponse != nil {
+		headers = rawResponse.Header
+	}
+	if protectCredentials {
+		requestBody = nil
+		headers = diagnostics.safeHeaders(headers)
+	}
+	items := pumpResponseStream(streamCtx, rawResponse, err, params.IncludeRawChunks && !protectCredentials)
 	buffered, err := preflightResponseStream(streamCtx, items, body, rawResponse)
 	if err != nil {
 		cancel()
+		if protectCredentials {
+			err = diagnostics.safeError(err)
+		}
 		return nil, err
 	}
 
@@ -166,9 +201,9 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	go func() {
 		defer close(ch)
 		defer cancel()
-		consumeStream(streamCtx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider)
+		consumeStream(streamCtx, items, buffered, ch, warnings, br, body, rawResponse, m.generateID, m.provider, diagnostics)
 	}()
-	return &provider.StreamResult{Stream: ch, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: flattenHeaders(rawResponse.Header)}}, nil
+	return &provider.StreamResult{Stream: ch, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: flattenHeaders(headers)}}, nil
 }
 
 func (m *model) buildParams(params provider.CallOptions) (responses.ResponseNewParams, []provider.Warning, buildResult, error) {
