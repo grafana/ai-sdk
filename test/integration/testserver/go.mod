@@ -8,7 +8,9 @@ require (
 	github.com/grafana/ai-sdk/middleware/logger v0.1.0-alpha.2
 	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.3
 	github.com/grafana/ai-sdk/providers/grafana v0.1.0-alpha.2
+	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.2
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.2
+	github.com/openai/openai-go/v3 v3.76.0
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -19,6 +21,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -65,6 +68,8 @@ replace github.com/grafana/ai-sdk => ../../..
 replace github.com/grafana/ai-sdk/middleware/logger => ../../../middleware/logger
 
 replace github.com/grafana/ai-sdk/providers/grafana => ../../../providers/grafana
+
+replace github.com/grafana/ai-sdk/providers/openai => ../../../providers/openai
 
 replace github.com/grafana/ai-sdk/providers/openai-compatible => ../../../providers/openai-compatible
 
