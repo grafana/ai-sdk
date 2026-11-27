@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	asdk "github.com/anthropics/anthropic-sdk-go"
+	asdk "github.com/anthropics/anthropic-sdk-go/v2"
 	agento11yanthropic "github.com/grafana/agento11y/go-providers/anthropic"
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/ai-sdk/provider"

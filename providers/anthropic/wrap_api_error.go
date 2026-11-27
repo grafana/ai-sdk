@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	sdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/shared"
+	sdk "github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/shared"
 	"github.com/grafana/ai-sdk/provider"
 )
 
