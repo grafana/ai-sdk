@@ -23,6 +23,8 @@ class DocsOnlyTest(unittest.TestCase):
         self.write('README.md')
         self.write('docs/guides/tools.md')
         self.write('main.go')
+        self.write('ai-gateway/README.md')
+        self.write('ai-gateway/docs/model-catalog.md')
         self.base = self.commit()
 
     def git(self, *args):
@@ -52,6 +54,27 @@ class DocsOnlyTest(unittest.TestCase):
         self.write('CONTRIBUTING.md')
         self.assertTrue(self.classify())
 
+    def test_gateway_prose(self):
+        self.write('ai-gateway/README.md', 'updated\n')
+        self.write('ai-gateway/docs/sources.md')
+        self.write('ai-gateway/docs/text-observability.md')
+        (self.root / 'ai-gateway/docs/model-catalog.md').unlink()
+        self.assertTrue(self.classify())
+
+    def test_gateway_readme_add_delete_rename_and_type_change(self):
+        readme = self.root / 'ai-gateway/README.md'
+        readme.unlink()
+        without_readme = self.commit()
+        self.assertFalse(ci_docs_only.docs_only(self.base, without_readme))
+        self.assertFalse(ci_docs_only.docs_only(without_readme, self.base))
+        self.git('reset', '--hard', self.base)
+        self.git('mv', 'ai-gateway/README.md', 'docs/renamed.md')
+        self.assertFalse(self.classify())
+        self.git('reset', '--hard', self.base)
+        readme.unlink()
+        readme.symlink_to('../README.md')
+        self.assertFalse(self.classify())
+
     def test_delete_prose(self):
         (self.root / 'docs/guides/tools.md').unlink()
         self.assertTrue(self.classify())
@@ -67,7 +90,9 @@ class DocsOnlyTest(unittest.TestCase):
     def test_unknown_paths_and_mixed_changes(self):
         for path in ['main.go', 'mise.toml', '.github/workflows/ci.yml', 'docs/generate.py',
                      'docs/example.go', 'docs/guides/page.mdx', 'test/fixture.md',
-                     'examples/README.md', 'docs-like/page.md', 'README.md\nmain.go']:
+                     'examples/README.md', 'docs-like/page.md', 'README.md\nmain.go',
+                     'ai-gateway/src/README.md', 'ai-gateway/docs/unreviewed.md',
+                     'ai-gateway/docs/nested/model-catalog.md', 'ai-gateway/docs/generate.py']:
             with self.subTest(path=path):
                 self.git('reset', '--hard', self.base)
                 self.write('README.md', 'updated\n')

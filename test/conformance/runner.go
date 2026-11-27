@@ -1292,6 +1292,10 @@ func runGenerateTestCase(
 ) {
 	t.Helper()
 
+	expectedPath := filepath.Join(tc.Dir, "expected-generate.json")
+	expectedJSON, err := os.ReadFile(expectedPath)
+	require.NoError(t, err, "loading expected generate result %s; run `mise run generate-conformance`", expectedPath)
+
 	if cfg.System != "" {
 		messages = append(
 			[]provider.Message{provider.NewSystemMessage(cfg.System)},
@@ -1309,25 +1313,16 @@ func runGenerateTestCase(
 	require.NoError(t, err, "generate error")
 	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
 
-	metadata := make(provider.ProviderMetadata)
-	if bedrockMetadata, ok := result.ProviderMetadata["bedrock"]; ok {
-		metadata["bedrock"] = bedrockMetadata
-	}
-	if len(metadata) == 0 {
-		metadata = nil
-	}
 	actual := generateResultSnapshot{
 		Content:          result.Content,
 		FinishReason:     result.FinishReason,
 		Usage:            result.Usage,
-		ProviderMetadata: metadata,
+		ProviderMetadata: result.ProviderMetadata,
 		Warnings:         result.Warnings,
 	}
 	actualJSON, err := json.Marshal(actual)
 	require.NoError(t, err, "marshaling generate result")
-	expectedJSON, err := os.ReadFile(filepath.Join(tc.Dir, "expected-generate.json"))
-	require.NoError(t, err, "loading expected generate result")
-	require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch")
+	require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch: %s", expectedPath)
 
 	expectedRequests, err := LoadExpectedRequests(filepath.Join(tc.Dir, "expected-requests.jsonl"))
 	require.NoError(t, err, "loading expected request inputs")

@@ -1,3 +1,5 @@
+//go:build !ci_separate_chat_completions_contract
+
 package chatcompletionsadapter_test
 
 import (
@@ -6,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +26,12 @@ import (
 const catalogKey = "fake-stack-chat-key"
 
 func TestOfficialSDK_StackCatalog(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "gateway-catalog")
+	build := exec.Command("go", "build", "-race", "-mod=readonly", "-tags=gatewaytest", "-o", binary, "../../pkg")
+	build.Env = append(os.Environ(), "GOWORK=off")
+	output, err := build.CombinedOutput()
+	require.NoError(t, err, string(output))
+
 	for _, mode := range []platformhost.Topology{platformhost.TopologySelfHosted, platformhost.TopologyCloud} {
 		t.Run(string(mode), func(t *testing.T) {
 			stack := &upstream{key: catalogKey}
@@ -36,7 +45,7 @@ func TestOfficialSDK_StackCatalog(t *testing.T) {
 			operatorServer := httptest.NewServer(http.HandlerFunc(operator.handle))
 			t.Cleanup(operatorServer.Close)
 			base := startCommandWithOptions(t, operatorServer.URL, string(mode), commandOptions{
-				pluginBuildTag: "gatewaytest",
+				pluginBinary: binary,
 				environment: []string{
 					"GATEWAY_TEST_CA_FILE=" + ca,
 					"GODEBUG=x509usefallbackroots=1",

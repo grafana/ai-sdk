@@ -51,11 +51,25 @@ type AnthropicOptions struct {
 	// is treated as true, matching upstream's `?? true` semantics.
 	// Per-tool AnthropicToolOptions.EagerInputStreaming always wins over
 	// this model-level default.
-	ToolStreaming *bool           `json:"toolStreaming,omitempty"`
-	Fallbacks     *FallbackConfig `json:"fallbacks,omitempty"`
+	ToolStreaming *bool             `json:"toolStreaming,omitempty"`
+	Fallbacks     *FallbackConfig   `json:"fallbacks,omitempty"`
+	Compaction    *CompactionConfig `json:"compaction,omitempty"`
 }
 
 func (AnthropicOptions) ProviderKey() string { return "anthropic" }
+
+// CompactionType identifies an on-demand compaction operation.
+type CompactionType string
+
+// CompactionSummarize requests an authenticated conversation summary.
+const CompactionSummarize CompactionType = "summarize"
+
+// CompactionConfig requests on-demand compaction and adds the compact-2026-09-04
+// beta. It cannot be combined with the raw contextManagement call option.
+type CompactionConfig struct {
+	Type         CompactionType `json:"type"`
+	Instructions *string        `json:"instructions,omitempty"`
+}
 
 // AnthropicSafeguardType identifies an Anthropic safeguard classifier.
 type AnthropicSafeguardType string
