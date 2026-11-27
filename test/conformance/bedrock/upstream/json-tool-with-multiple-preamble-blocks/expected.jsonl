@@ -1,0 +1,13 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"0"}
+{"type":"text-start","id":"1"}
+{"type":"text-delta","id":"1","delta":"Second text block."}
+{"type":"text-start","id":"2"}
+{"type":"text-delta","id":"2","delta":"Third block."}
+{"type":"text-start","id":"3"}
+{"type":"text-delta","id":"3","delta":"{\"result\":42}"}
+{"type":"text-end","id":"3"}
+{"type":"text-delta","id":"0","delta":"First text block."}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}
