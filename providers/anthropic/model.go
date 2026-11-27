@@ -67,6 +67,7 @@ func NewVertex(ctx context.Context, location, projectID, modelID string, opts ..
 	}
 	m := &model{
 		client:       anthropic.NewClient(authOpt),
+		requestOpts:  []option.RequestOption{option.WithQueryDel("beta")},
 		modelID:      modelID,
 		providerName: "anthropic.vertex",
 		resolveModel: ResolveVertexModelID,
