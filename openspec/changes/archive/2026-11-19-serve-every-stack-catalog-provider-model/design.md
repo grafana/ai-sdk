@@ -2,7 +2,7 @@
 
 ## Context
 
-`stackcatalog.Parse` validates the stored kind's spec and keys, and projects it into the shared catalog shape. Admission and the four catalog routes use the same checks. Selection indexes listed IDs and aliases, and discovery projects only configured rows. The saved provider card already supports an explicit, permission-gated inventory lookup for **Add model**.
+`stackcatalog.Parse` validates the stored kind's spec and keys, and projects it into the shared catalog shape. Admission, catalog invocation, and catalog listing routes use the same checks. Selection indexes listed IDs and aliases before considering unlisted selectors. The saved provider card already supports an explicit, permission-gated inventory lookup for **Add model**.
 
 ## Goals / Non-Goals
 
@@ -17,13 +17,15 @@ Use `<provider-instance>/<model-id>` for unlisted models. Split at the first `/`
 
 After shared preflight, a qualified lookup must name an enabled instance and a valid, unblocked ID. Otherwise return the existing unknown-model error without constructing any candidate. A match produces one candidate with the same attribution and credential path as a listed candidate. Use the full selector as the logical canonical ID and the suffix as the backend ID.
 
-### Discovery: list configured models only
+### Discovery: add eligible inventory without gating calls
 
-Keep `/config` local and deterministic, even if a provider serves unlisted IDs and the catalog advertises none. Calling `available-models` from discovery would run provider traffic on the user's stored key, add latency and partial results, and make account inventory visible to catalog invokers. Do not call it from inference, saves, or rendering the new settings either. Reuse the on-demand model ID picker for writers with listing permission. It adds listed models or edits blocked IDs, with only one picker shown at a time. Suggestions reflect account inventory, not what the Gateway serves. Writers may still enter an exact ID by hand.
+Keep configured rows in `/config` and use the bounded provider listing transport for opted-in providers only. Add valid, unblocked `<instance>/<id>` selectors that do not collide with listed IDs or aliases. Keep one primary per added row, use the existing ID budget, and probe up to eight providers within two seconds. Omit key echoes and provider error details. Provider or admission failures must not hide configured rows or gate inference.
+
+Discovery admits one run per catalog and four per process, independently of health and the model picker. Cache safe inventory for 30 seconds per namespace, catalog, resource version, and provider instance. Keep at most 128 entries and evict expired entries before evicting the oldest. Missing revisions and failed pages are not cached. Catalog saves change the revision, so subsequent discovery looks up fresh inventory. Health and the picker stay live.
 
 ### Blocklist: exact IDs scoped to the instance
 
-Use optional `serveAllModels` (boolean) and `modelBlocklist` (list of strings) in the existing `ModelCatalog` provider object. Store a blocklist even when the switch is off so a writer can prepare it and re-enable serving without losing it. Limit it to 128 distinct IDs per instance. IDs are literal, case-sensitive backend IDs, not selectors, aliases, globs or prefixes. Use the same ID check for each entry and each unlisted selector suffix: valid UTF-8, 1–2,048 bytes, no control characters and no leading or trailing whitespace. Do not rewrite any existing listed IDs or target rules. Provider families and vendor aliases are not a stable basis for pattern matching.
+Use optional `serveAllModels` (boolean) and `modelBlocklist` (list of strings) in the existing `ModelCatalog` provider object. Keep the blocklist when the switch is off so disabling and re-enabling does not lose exclusions. The API can set the mode and exclusions together. Limit it to 128 distinct IDs per instance. IDs are literal, case-sensitive backend IDs, not selectors, aliases, globs or prefixes. Use the same ID check for each entry and each unlisted selector suffix: valid UTF-8, 1–2,048 bytes, no control characters and no leading or trailing whitespace. Do not rewrite any existing listed IDs or target rules. Provider families and vendor aliases are not a stable basis for pattern matching.
 
 Extend `stackcatalog.Parse` to validate the stack-only policy and reject an exact `(instance, model ID)` match against any listed primary or fallback, even when the switch is off. Report the offending field without echoing the entry. Keep that policy alongside the shared shape, not in the operator config type or YAML schema. The checked policy used by runtime selection must be the one admission validates; an invalid stored spec still fails preflight on every catalog route.
 
@@ -37,14 +39,14 @@ Do not define provider-wide policy defaults or copy policy from a listed candida
 
 ### Provider settings: save each deliberate action
 
-On a saved provider card, toggling the switch or adding or removing an ID writes once through the versioned catalog update. Writing a switch change preserves saved blocked IDs. A writer who needs exclusions before enabling can edit the blocklist while the switch is off. This keeps one-click enable for empty blocklists without requiring other writers to expose models they intend to block. Reflect only successful writes, omit secure values, and retain an ID if its add is refused. Readers see saved settings without editing controls.
+The shared provider form enables unlisted serving for newly created or connected providers and discloses that default. It does not change existing providers or the listed-only API default. On a saved provider card, toggling the switch or adding or removing an ID writes once through the versioned update. Switching off preserves exclusions but hides the editor. The on-demand picker adds listed models or edits blocked IDs according to the saved mode; typed IDs remain supported. Reflect only successful writes, omit secure values, and retain an ID if its add is refused. Readers see saved settings without editing controls.
 
 ## Risks / Trade-offs
 
 - **Opt-in can expose new provider models and spend.** Explain that the provider still decides access, capability, and quota, and that unknown provider IDs can fail at the provider. Leave the setting off for a strict allowlist.
 - **A blocked ID is not a whole model family.** An upstream alias or another provider account is a different ID or destination. An explicit catalog ID that looks like a selector still wins, but cannot route to a blocked target. Removing a listed row does not necessarily stop access to its backend ID; block it separately if needed.
-- **Discovery won't guide callers to an unlisted model.** Show an example using the actual provider instance name, and document that callers must know and request the qualified ID.
-- **Not parity-sensitive.** At the pinned Vercel `@ai-sdk/gateway` 4.0.146 baseline (`0e8e0543`), model creation uses the supplied ID on `/language-model` and metadata is a separate call. Grafana's saved catalog policy changes which selectors this server can route, not the clients, ProviderWire, or provider conformance.
+- **Discovery may be incomplete or stale.** Document the qualified selector and the 30-second inventory window. An eligible ID can still be callable when discovery omits it.
+- **Not parity-sensitive.** At the pinned Vercel `@ai-sdk/gateway` 4.0.152 baseline (`9b8c25e5`), model creation uses the supplied ID on `/language-model` and metadata is a separate call. Grafana's saved catalog policy changes which selectors this server can route, not the clients, ProviderWire, or provider conformance.
 
 ## Migration Plan
 

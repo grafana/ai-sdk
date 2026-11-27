@@ -27,11 +27,15 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 
 #### Scenario: Primary fails and the fallback succeeds
 - **WHEN** the primary candidate fails with a fallback-eligible error and the fallback succeeds
-- **THEN** the call SHALL succeed with two provider requests and an overview listing both attempts
+- **THEN** the call SHALL succeed with two provider requests; for ProviderWire the overview SHALL list both attempts
 
 #### Scenario: Composed chain above the bound
 - **WHEN** routing controls compose more than 8 candidates
 - **THEN** the call SHALL fail with the attempt-bound document, with zero constructed models and zero provider requests
+
+#### Scenario: Compatible provider slug
+- **WHEN** a catalog has an `openai-compatible` provider with `providerName: acme` and a call sends `only: ["acme"]`
+- **THEN** the selection SHALL keep that provider's candidates, and `only: ["openai-compatible"]` SHALL exclude them
 
 ## ADDED Requirements
 
