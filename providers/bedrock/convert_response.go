@@ -32,18 +32,50 @@ func parseResponse(body []byte, headers map[string][]string, modelID string, met
 	if meta.usesJSONInstruction {
 		jsonExtractor = &jsonObjectTextExtractor{}
 	}
+	appendText := func(text string) {
+		if jsonExtractor != nil {
+			text = jsonExtractor.process(text)
+		}
+		content = append(content, provider.GenerateContentPart{
+			Type: provider.ContentText,
+			Text: text,
+		})
+	}
 	for _, part := range resp.Output.Message.Content {
-		switch {
-		case part.Text != "":
-			text := part.Text
-			if jsonExtractor != nil {
-				text = jsonExtractor.process(text)
+		if part.Text != nil {
+			appendText(*part.Text)
+		} else if part.CitationsContent != nil {
+			for _, fragment := range part.CitationsContent.Content {
+				if fragment.Text != nil {
+					appendText(*fragment.Text)
+				}
 			}
-			content = append(content, provider.GenerateContentPart{
-				Type: provider.ContentText,
-				Text: text,
-			})
-		case part.ToolUse != nil:
+		}
+		if part.ReasoningContent != nil {
+			rc := part.ReasoningContent
+			cp := provider.GenerateContentPart{Type: provider.ContentReasoning}
+			switch {
+			case rc.ReasoningText != nil:
+				cp.Text = rc.ReasoningText.Text
+				if rc.ReasoningText.Signature != "" {
+					cp.ProviderMetadata = provider.ProviderMetadata{
+						"amazonBedrock": jsonRawOrZero(ReasoningMetadata{Signature: rc.ReasoningText.Signature}),
+						"bedrock":       jsonRawOrZero(ReasoningMetadata{Signature: rc.ReasoningText.Signature}),
+					}
+				}
+			case rc.RedactedContent != nil:
+				metadata := jsonRawOrZero(map[string]string{"redactedContent": *rc.RedactedContent})
+				cp.ProviderMetadata = provider.ProviderMetadata{"amazonBedrock": metadata, "bedrock": metadata}
+			case rc.RedactedReasoning != nil:
+				cp.Text = ""
+				cp.ProviderMetadata = provider.ProviderMetadata{
+					"amazonBedrock": jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data}),
+					"bedrock":       jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data}),
+				}
+			}
+			content = append(content, cp)
+		}
+		if part.ToolUse != nil {
 			// JSON-response-tool collapse: when the synthetic json tool is
 			// invoked, emit a text part carrying the stringified input so
 			// downstream output parsers receive the JSON.
@@ -75,29 +107,6 @@ func parseResponse(body []byte, headers map[string][]string, modelID string, met
 				ToolName:   toolName,
 				Input:      part.ToolUse.Input,
 			})
-		case part.ReasoningContent != nil:
-			rc := part.ReasoningContent
-			cp := provider.GenerateContentPart{Type: provider.ContentReasoning}
-			switch {
-			case rc.ReasoningText != nil:
-				cp.Text = rc.ReasoningText.Text
-				if rc.ReasoningText.Signature != "" {
-					cp.ProviderMetadata = provider.ProviderMetadata{
-						"amazonBedrock": jsonRawOrZero(ReasoningMetadata{Signature: rc.ReasoningText.Signature}),
-						"bedrock":       jsonRawOrZero(ReasoningMetadata{Signature: rc.ReasoningText.Signature}),
-					}
-				}
-			case rc.RedactedContent != nil:
-				metadata := jsonRawOrZero(map[string]string{"redactedContent": *rc.RedactedContent})
-				cp.ProviderMetadata = provider.ProviderMetadata{"amazonBedrock": metadata, "bedrock": metadata}
-			case rc.RedactedReasoning != nil:
-				cp.Text = ""
-				cp.ProviderMetadata = provider.ProviderMetadata{
-					"amazonBedrock": jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data}),
-					"bedrock":       jsonRawOrZero(ReasoningMetadata{RedactedData: rc.RedactedReasoning.Data}),
-				}
-			}
-			content = append(content, cp)
 		}
 	}
 
