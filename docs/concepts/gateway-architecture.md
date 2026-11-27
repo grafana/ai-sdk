@@ -170,8 +170,8 @@ supported request subset into the same execution runtime. Tenant defaults fill
 unset call fields before its call-scoped translator applies defaults per native
 fallback candidate. Chat supplies its own response and error projection without
 the ProviderWire execution overview. The namespace route uses the operator
-catalog for self-hosted users and service accounts and allowlisted cloud-mode
-internal services. It refuses cloud-mode user and service-account calls with
+catalog for self-hosted users and service accounts and allowlisted internal
+services in either mode. It refuses cloud-mode user and service-account calls with
 HTTP 400 (`ErrInvalidBYOK`) before native I/O because Chat exposes no BYOK controls.
 Catalog Chat uses the named catalog instead, subject to the same parent and
 access checks as catalog ProviderWire. Selection, extensions, execution,
@@ -431,9 +431,9 @@ runtime. The access decision chooses the path from the route, the `access_mode`
 and the verified token, not from a caller choosing a different model name:
 
 - **Configured:** callers granted configured access use configured models and
-  server-held provider credentials. In `self-hosted` mode this is any verified
-  user or service account; in `cloud` mode it is an allowlisted internal
-  service. They cannot switch to request accounts.
+  server-held provider credentials. In either mode this is an allowlisted
+  internal service; in `self-hosted` mode it is also any verified user or
+  service account. They cannot switch to request accounts.
 - **BYOK:** in `cloud` mode, other verified identities get request-scoped
   access; the selector decodes the provider/model destination and credentials
   from the call-level `gateway.byok` controls, plus one destination per
