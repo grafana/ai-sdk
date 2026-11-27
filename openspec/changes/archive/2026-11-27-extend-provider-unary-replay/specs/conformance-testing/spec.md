@@ -32,9 +32,6 @@ committed inputs without API keys.
 - **WHEN** the recording tool runs an OpenAI scenario without `OPENAI_API_KEY`
 - **THEN** the tool reports the missing key and does not record
 
-
-[276 more lines in file. Use offset=740 to continue.]
-
 ### Requirement: Unary provider-result golden
 
 For Anthropic, Bedrock, OpenAI Responses and OpenAI-compatible Chat Completions, unary replay SHALL serve unchanged `input.response.json` as `application/json`. The registered `doGenerate` SHALL produce `expected-generate.json` offline. Go `DoGenerate` SHALL match ordered content, finish reason, usage, all provider metadata namespaces and warnings. The runner SHALL compare the single captured request with `expected-requests.jsonl`.

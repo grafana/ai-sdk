@@ -738,8 +738,6 @@ committed inputs without API keys.
 - **WHEN** the recording tool runs an OpenAI scenario without `OPENAI_API_KEY`
 - **THEN** the tool reports the missing key and does not record
 
-[276 more lines in file. Use offset=740 to continue.]
-
 ### Requirement: OpenAI conformance fixture coverage
 
 OpenAI fixtures SHALL cover at least simple text, function calls, reasoning summaries, JSON-schema output, provider-executed built-ins (e.g. web search) with citations, `previous_response_id` continuation, and provider-tool continuation taxonomy for shell, local-shell, tool-search, apply-patch and custom tools. `upstream/INDEX.yaml` SHALL map upstream Vercel fixture names to local directories.
