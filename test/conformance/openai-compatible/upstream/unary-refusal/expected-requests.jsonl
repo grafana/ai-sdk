@@ -1,0 +1,1 @@
+{"body":{"messages":[{"content":"Hello","role":"user"}],"model":"grok-3"},"headers":{"authorization":"<redacted>","content-type":"application/json"},"method":"POST","path":"/v1/chat/completions"}

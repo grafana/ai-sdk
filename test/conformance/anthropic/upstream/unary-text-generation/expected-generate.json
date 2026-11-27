@@ -1,0 +1,56 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello! I'm doing well, thanks for asking. How are you doing today? Is there anything I can help you with?"
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "end_turn"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 12,
+      "noCache": 12,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 29
+    },
+    "raw": {
+      "service_tier": "standard",
+      "input_tokens": 12,
+      "output_tokens": 29,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "inference_geo": "not_available"
+    }
+  },
+  "providerMetadata": {
+    "anthropic": {
+      "usage": {
+        "service_tier": "standard",
+        "input_tokens": 12,
+        "output_tokens": 29,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "inference_geo": "not_available"
+      },
+      "stopSequence": null,
+      "serviceTier": "standard",
+      "iterations": null,
+      "container": null,
+      "contextManagement": null
+    }
+  }
+}

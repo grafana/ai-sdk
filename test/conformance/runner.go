@@ -794,6 +794,8 @@ func NewReplayServerWithFraming(fixtureDir string, providerName string, framing 
 	generatePath := filepath.Join(fixtureDir, "input.response.json")
 	if data, err := os.ReadFile(generatePath); err == nil {
 		rs.generateResponse = data
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading unary replay input: %w", err)
 	} else {
 		singlePath := filepath.Join(fixtureDir, "input.chunks.txt")
 		if data, err := os.ReadFile(singlePath); err == nil {
@@ -1160,6 +1162,9 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 
 	cfg, err := LoadConfig(filepath.Join(tc.Dir, "config.yaml"))
 	require.NoError(t, err, "loading config")
+	if cfg.Operation == OperationGenerate {
+		require.FileExists(t, filepath.Join(tc.Dir, "input.response.json"), "unary replay input is required")
+	}
 
 	ts, err := serverFactory(t, tc)
 	require.NoError(t, err, "creating replay server")
@@ -1194,7 +1199,6 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	}
 
 	if cfg.Operation == OperationGenerate {
-		require.Equal(t, "bedrock", tc.Provider, "operation generate is currently supported only for Bedrock")
 		runGenerateTestCase(t, tc, cfg, ts, model, messages, providerOpts, responseFormat)
 		return
 	}
@@ -1311,7 +1315,7 @@ func runGenerateTestCase(
 
 	result, err := model.DoGenerate(t.Context(), callOpts)
 	require.NoError(t, err, "generate error")
-	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
+	require.Equal(t, 1, ts.RequestCount(), "unary replay must receive exactly one request")
 
 	actual := generateResultSnapshot{
 		Content:          result.Content,
@@ -1324,8 +1328,11 @@ func runGenerateTestCase(
 	require.NoError(t, err, "marshaling generate result")
 	require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch: %s", expectedPath)
 
-	expectedRequests, err := LoadExpectedRequests(filepath.Join(tc.Dir, "expected-requests.jsonl"))
-	require.NoError(t, err, "loading expected request inputs")
+	expectedRequestsPath := filepath.Join(tc.Dir, "expected-requests.jsonl")
+	expectedRequests, err := LoadExpectedRequests(expectedRequestsPath)
+	require.NoError(t, err, "loading expected request inputs %s", expectedRequestsPath)
+	require.Len(t, expectedRequests, 1, "unary replay requires one expected request in %s", expectedRequestsPath)
+	require.NotNil(t, ts.Requests, "test server does not expose captured request inputs")
 	CompareRequestSnapshots(t, expectedRequests, ts.Requests())
 }
 

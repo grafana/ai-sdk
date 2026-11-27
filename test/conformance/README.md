@@ -213,13 +213,21 @@ skipped silently. The list is empty today.
 
 ### Unary provider results
 
-Each supported `operation: generate` fixture (currently Bedrock) replays
-`input.response.json` through the registered upstream provider's `doGenerate`
-to produce `expected-generate.json`. Go replay requires that file and compares
-the ordered content, finish reason, usage, all provider metadata (including
-both Bedrock namespaces), and warnings from `DoGenerate`. Requests are
-compared separately against `expected-requests.jsonl`. Missing or mismatched
-result evidence fails replay; regenerate with `mise run generate-conformance`.
+Anthropic, Bedrock, OpenAI Responses, and OpenAI-compatible Chat Completions
+support offline `operation: generate` replay. Both SDKs receive the unchanged
+`input.response.json` as `application/json`. The generator writes
+`expected-generate.json` from the registered upstream `doGenerate` result. Go compares the golden with the
+ordered content, finish reason, usage, all provider metadata (including both
+Bedrock namespaces), and warnings from `DoGenerate`. The single captured HTTP
+request is compared separately against `expected-requests.jsonl`. Either
+missing or mismatched golden fails replay; regenerate with
+`mise run generate-conformance`.
+
+The unary golden excludes debug request and response envelopes. If the upstream
+adapter emits a `structuredOutputText` selection, generation fails rather than
+silently omitting it: the Go result type does not yet represent that field.
+Successful unary imports establish offline parity for those scenarios, not
+live API acceptance. The live recorder remains streaming-only.
 
 ### Synthetic provider cases
 
@@ -347,7 +355,7 @@ approval:
 
 Fields:
 
-- `operation` (optional, default `stream`): provider operation (`stream` or `generate`); unary `generate` is currently Bedrock-only and supports prompt/configured messages, system text, headers, provider options, and response format
+- `operation` (optional, default `stream`): provider operation (`stream` or `generate`); unary `generate` supports prompt/configured messages, system text, headers, provider options, and JSON response format (`responseFormat.type: json`)
 - `model` (required): model ID used for the provider
 - `system` (optional): system prompt text passed as a system-role model message
 - `prompt` (optional): prompt text; recording requires it unless `messages` or `uiMessages` is configured
@@ -429,6 +437,12 @@ same field in `generate.mts` / `record.mts`.
 ## Guide: Importing a Test from Upstream
 
 Copy a fixture from the Vercel AI SDK and generate expected output:
+
+For a unary import, copy the pinned `.json` as `input.response.json`, set
+`operation: generate`, and reproduce the upstream `doGenerate` call options.
+Index the imported file (using the `.json` suffix if a streaming fixture has
+the same stem) and generate both unary goldens offline. Do not modify the
+input to resolve a result or request mismatch.
 
 ### 1. Find the fixture
 

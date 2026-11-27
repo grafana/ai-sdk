@@ -6,7 +6,7 @@ xai-tool-call: xai-tool-call
 
 # Streaming fixtures not yet imported, with their non-streaming counterparts:
 openai-compatible-refusal: refusal
-openai-compatible-refusal.json: null
+openai-compatible-refusal.json: unary-refusal
 
 # Non-streaming counterparts to imported streaming fixtures:
 xai-text.json: null

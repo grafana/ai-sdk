@@ -15,7 +15,11 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
+import type {
+  LanguageModelV4CallOptions,
+  LanguageModelV4GenerateResult,
+  LanguageModelV4Prompt,
+} from "@ai-sdk/provider";
 import {
   convertToModelMessages,
   streamText,
@@ -73,10 +77,6 @@ function extractEventType(json: string): string {
   } catch {
     return "unknown";
   }
-}
-
-function loadGenerateFixture(dir: string): string {
-  return readFileSync(join(dir, "input.response.json"), "utf8");
 }
 
 function fixtureToSSE(fixture: string): string {
@@ -221,7 +221,7 @@ async function startReplayServer(
 
 async function startGenerateReplayServer(
   providerName: string,
-  fixture: string,
+  fixture: Buffer,
 ): Promise<{ port: number; close: () => Promise<void>; requests: RequestSnapshot[] }> {
   const requests: RequestSnapshot[] = [];
   let served = false;
@@ -359,18 +359,15 @@ function generateResultSnapshot(result: LanguageModelV4GenerateResult): Record<s
 
 async function generateExpectedResponse(tc: TestCase): Promise<void> {
   const cfg = loadConfig(tc.dir);
-  if (tc.provider !== "bedrock") {
-    throw new Error("operation: generate is currently supported only for Bedrock");
-  }
   const unsupported = unsupportedGenerateFields(cfg);
   if (unsupported.length > 0) {
     throw new Error(`operation: generate does not support: ${unsupported.join(", ")}`);
   }
-  const fixture = loadGenerateFixture(tc.dir);
+  const fixture = readFileSync(join(tc.dir, "input.response.json"));
   const { port, close, requests } = await startGenerateReplayServer(tc.provider, fixture);
 
   try {
-    const model = createModel(tc.provider, cfg.model, port) as any;
+    const model = createModel(tc.provider, cfg.model, port);
     const prompt = cfg.messages
       ? [
           ...(cfg.system ? [{ role: "system", content: cfg.system }] : []),
@@ -383,7 +380,7 @@ async function generateExpectedResponse(tc: TestCase): Promise<void> {
             content: [{ type: "text", text: cfg.prompt ?? "test" }],
           },
         ];
-    const responseFormat = cfg.responseFormat
+    const responseFormat: LanguageModelV4CallOptions["responseFormat"] = cfg.responseFormat
       ? {
           type: "json",
           schema: cfg.responseFormat.schema,
@@ -395,12 +392,20 @@ async function generateExpectedResponse(tc: TestCase): Promise<void> {
       : undefined;
 
     const result = await model.doGenerate({
-      prompt,
+      prompt: prompt as LanguageModelV4Prompt,
       ...(responseFormat ? { responseFormat } : {}),
-      ...(cfg.providerOptions ? { providerOptions: cfg.providerOptions } : {}),
+      ...(cfg.providerOptions
+        ? { providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"] }
+        : {}),
       ...(cfg.headers ? { headers: cfg.headers } : {}),
     });
 
+    if (requests.length !== 1) {
+      throw new Error(`expected one unary request, got ${requests.length}`);
+    }
+    if (result.structuredOutputText !== undefined) {
+      throw new Error("unary result field structuredOutputText is not supported by the golden projection");
+    }
     writeFileSync(
       join(tc.dir, "expected-generate.json"),
       JSON.stringify(generateResultSnapshot(result), null, 2) + "\n",

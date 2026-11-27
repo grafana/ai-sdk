@@ -1,0 +1,45 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "I'm very sorry, but I can't assist with that."
+    }
+  ],
+  "finishReason": {
+    "unified": "content-filter",
+    "raw": "stop"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 74,
+      "noCache": 74,
+      "cacheRead": 0
+    },
+    "outputTokens": {
+      "total": 12,
+      "text": 12,
+      "reasoning": 0
+    },
+    "raw": {
+      "prompt_tokens": 74,
+      "completion_tokens": 12,
+      "total_tokens": 86,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  "providerMetadata": {
+    "openai-compatible": {
+      "acceptedPredictionTokens": 0,
+      "rejectedPredictionTokens": 0
+    }
+  }
+}
