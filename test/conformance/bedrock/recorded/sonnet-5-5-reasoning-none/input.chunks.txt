@@ -1,0 +1,5 @@
+{"messageStart":{"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST","role":"assistant"}}
+{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"teal"},"p":"abcd"}}
+{"contentBlockStop":{"contentBlockIndex":0,"p":"abcdefghijklmno"}}
+{"messageStop":{"additionalModelResponseFields":{"delta":{"stop_sequence":null}},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345","stopReason":"end_turn"}}
+{"metadata":{"metrics":{"latencyMs":575},"p":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY","usage":{"inputTokens":24,"outputTokens":4,"serverToolUsage":{},"totalTokens":28}}}

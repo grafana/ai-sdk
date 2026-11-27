@@ -1,0 +1,6 @@
+# Live-recorded from Amazon Bedrock on 2026-11-27 with record-conformance.
+model: us.anthropic.claude-sonnet-5-5
+maxRetries: 0
+stopWhenStepCount: 1
+reasoning: none
+prompt: "Reply with exactly the word teal, without punctuation."
