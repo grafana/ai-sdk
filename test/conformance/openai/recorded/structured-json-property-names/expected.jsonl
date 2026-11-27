@@ -1,0 +1,13 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","providerMetadata":{"openai":{"itemId":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f"}}}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"{\""}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"STATUS\":\""}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"ready"}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"\",\"DETAIL\":{\""}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"CODE\":\""}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"GREEN"}
+{"type":"text-delta","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","delta":"\"}}"}
+{"type":"text-end","id":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f","providerMetadata":{"openai":{"itemId":"msg_02e0c18d5e50e692016b09be3cf01487d285eec69c15f5821f"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

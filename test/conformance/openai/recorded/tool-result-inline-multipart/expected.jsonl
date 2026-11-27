@@ -1,0 +1,24 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"tool-input-start","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","toolName":"get_weather"}
+{"type":"tool-input-delta","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","inputTextDelta":"{\""}
+{"type":"tool-input-delta","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","inputTextDelta":"location"}
+{"type":"tool-input-delta","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","inputTextDelta":"\":\""}
+{"type":"tool-input-delta","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","inputTextDelta":"San"}
+{"type":"tool-input-delta","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","inputTextDelta":" Francisco"}
+{"type":"tool-input-delta","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","inputTextDelta":"\"}"}
+{"type":"tool-input-available","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","toolName":"get_weather","input":{"location":"San Francisco"},"providerMetadata":{"openai":{"itemId":"fc_053d438443fbbca9016b09bf2fe30887d2963235c474198d14"}}}
+{"type":"tool-output-available","toolCallId":"call_yBdCPvcWrTbVNVcCxrOTfxZY","output":{"attachments":["text","image","pdf"]},"providerMetadata":{"openai":{"itemId":"fc_053d438443fbbca9016b09bf2fe30887d2963235c474198d14"}}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","providerMetadata":{"openai":{"itemId":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee"}}}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":"MAP"}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":"LE"}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":","}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":" blue"}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":","}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":" OR"}
+{"type":"text-delta","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","delta":"BIT"}
+{"type":"text-end","id":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee","providerMetadata":{"openai":{"itemId":"msg_084c82ca1ebb5551016b09bf3105a087d2b870bc4606588bee"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}
