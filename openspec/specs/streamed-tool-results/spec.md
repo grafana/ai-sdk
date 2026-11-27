@@ -24,7 +24,7 @@ Tools SHALL support opting into streamed execution instead of single-result Exec
 
 ### Requirement: Preliminary outputs do not finalize a call
 
-Preliminary local results SHALL appear in full/UI streams with Preliminary true, but SHALL NOT enter final StepResult.ToolResults, ToModelOutput, continuation prompts, completion checks or terminal execution callbacks. Only final output/error SHALL be terminal for those purposes. GenerateText SHALL inherit final-result collection through StreamText.
+Preliminary local results SHALL appear in full/UI streams with Preliminary true, but SHALL NOT enter recorded result content, StepResult.ToolResults, ToModelOutput, continuation prompts, completion checks or terminal execution callbacks. A final tool error SHALL resolve the call for continuation and reach the terminal execution callback without becoming a public ToolResults entry. GenerateText SHALL inherit final-result collection through StreamText.
 
 #### Scenario: No premature continuation
 - **WHEN** a streaming tool yields a preliminary result and waits before completing
@@ -47,7 +47,7 @@ A streaming tool that fails after yielding preliminary values SHALL emit a termi
 #### Scenario: Error after preliminary output
 - **WHEN** a tool emits one preliminary value and then returns an error
 - **THEN** the stream SHALL contain that preliminary result followed by a tool error
-- **AND** no successful final tool result SHALL be produced for the call
+- **AND** the error SHALL be recorded in Content and provided to the model on continuation, without adding an entry to ToolResults
 
 #### Scenario: Cancellation during streaming
 - **WHEN** the parent context is canceled while a streaming tool is yielding

@@ -173,6 +173,23 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 - **WHEN** content is built from manually constructed step fields without a recorded provider sequence
 - **THEN** reasoning, text, tools, sources, and files SHALL be emitted in that deterministic grouped order
 
+### Requirement: ToolResults lists final result outcomes
+
+StepResult.ToolResults SHALL contain final tool-result outcomes from local and provider execution. It SHALL NOT include tool errors, invalid-call errors, synthetic approval denials, or preliminary outputs. Membership SHALL be independent of the output payload and its model-facing encoding. Retained results SHALL follow Go's existing tool-call order for completed steps.
+
+#### Scenario: Failed call still resolves the tool loop
+
+- **WHEN** local tool execution returns an error
+- **THEN** the step and collection SHALL expose it as tool-error content, not as a ToolResults entry
+- **AND** stream events and the terminal execution callback SHALL retain the call ID and error
+- **AND** history and continuation SHALL still use its correlated execution outcome
+- **AND** step callbacks, final callbacks, and StopWhen SHALL see the same ToolResults membership as the public result
+
+#### Scenario: Ordinary tool result with error-looking data
+
+- **WHEN** an ordinary result contains error-looking data or has an error-shaped model-facing encoding
+- **THEN** it SHALL still appear in ToolResults
+
 ### Requirement: Collected results project all recorded steps
 
 StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCalls, ToolResults, Files and Sources by concatenating every recorded step's values in step order, mirroring upstream `steps.flatMap`. Text, Reasoning, FinishReason, Response and ProviderMetadata SHALL describe the final recorded step. StreamTextResult accessors on error and cancellation SHALL project the steps recorded before termination.

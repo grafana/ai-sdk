@@ -158,6 +158,7 @@ const (
 
 // StepResult contains per-step data from the StreamText orchestration loop.
 // StepNumber is the zero-based index in the recorded steps for this call.
+// ToolResults lists final results, not tool errors, denials, or preliminary outputs.
 type StepResult struct {
 	StepNumber            int               `json:"stepNumber"`
 	StepType              StepType          `json:"stepType"`

@@ -76,9 +76,10 @@ func TestToUIMessageStream_ToolErrorText(t *testing.T) {
 			assert.Equal(t, tc.want.ErrorText, got[0].ErrorText)
 
 			steps := result.Steps()
-			require.Len(t, steps[0].ToolResults, 1)
-			require.NotNil(t, steps[0].ToolResults[0].ModelOutput)
-			modelText := steps[0].ToolResults[0].ModelOutput.Text
+			assert.Empty(t, steps[0].ToolResults)
+			output := promptToolOutputs(steps[0].Response.Messages)[got[0].ToolCallID]
+			require.NotNil(t, output)
+			modelText := output.Text
 			if tc.want.ErrorText != callbackText && tc.want.ErrorText != maskedText {
 				assert.Equal(t, modelText, got[0].ErrorText)
 			}

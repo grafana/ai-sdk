@@ -46,7 +46,7 @@ Tool.NeedsApproval SHALL configure local approval: unset requires none; static a
 - **WHEN** call-level approval policy returns denied for a local tool call
 - **THEN** `StreamText` SHALL emit automatic approval request and approval response events
 - **AND** it SHALL NOT execute the tool
-- **AND** the synthetic execution-denied result SHALL preserve the denial reason
+- **AND** the synthetic execution-denied result SHALL preserve the denial reason in model history without adding a public StepResult.ToolResults entry
 
 ### Requirement: Call-level approval policy overrides tool approval
 

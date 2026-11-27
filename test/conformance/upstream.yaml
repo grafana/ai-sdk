@@ -410,11 +410,11 @@ knownGaps:
   - id: step-tool-results-call-order
     surface: core-streamtext
     status: documented-deviation
-    description: Upstream step.toolResults lists results in arrival order. Go
-      orders StepResult.ToolResults by the step's tool calls for every mix of
-      provider-executed, rejected, denied and executed calls, so the field is
-      deterministic across runs. UI chunks, step content and the next provider
-      request keep their existing order.
+    description: Upstream step.toolResults lists final tool-result outcomes in
+      arrival order. Go orders the same included outcomes by the step's tool
+      calls when completing the step. This is an order deviation only. UI
+      chunks, step content and the next provider request keep their existing
+      order.
   - id: telemetry-integration-surface
     surface: core-streamtext
     status: gap
