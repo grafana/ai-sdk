@@ -356,8 +356,8 @@ importers:
   ai-gateway/test/openai-chat-completions-adapter:
     dependencies:
       openai:
-        specifier: 6.49.0
-        version: 6.49.0(ws@8.22.0)(zod@4.6.7)
+        specifier: 7.64.0
+        version: 7.64.0(undici@8.10.2)(ws@8.22.0)(zod@4.6.7)
     devDependencies:
       '@types/node':
         specifier: 25.9.9
@@ -4573,13 +4573,16 @@ packages:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
 
-  openai@6.49.0:
-    resolution: {integrity: sha512-aYCc0C6L864eR6WSYIwQGyXriw/nIyZx0ObvhzOEVuk0zoBDpynjSbrionWI7q65B5H8jJX0DXR9snEzM6bfPg==}
+  openai@7.64.0:
+    resolution: {integrity: sha512-2CpWvKic4bayEcX1uHhYc1KWauVIlV9e/8K8VVnvbosqL4En0OtesbY2qFCZHFF9X4dT1BKW4Dr+ncep9bh3Dw==}
+    engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
-      ws: ^8.18.0
+      google-auth-library: '>=9.15.1 <12'
+      undici: '>=5 <9'
+      ws: ^8.21.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
       '@aws-sdk/credential-provider-node':
@@ -4587,6 +4590,10 @@ packages:
       '@smithy/hash-node':
         optional: true
       '@smithy/signature-v4':
+        optional: true
+      google-auth-library:
+        optional: true
+      undici:
         optional: true
       ws:
         optional: true
@@ -10748,8 +10755,9 @@ snapshots:
     dependencies:
       mimic-fn: 2.1.0
 
-  openai@6.49.0(ws@8.22.0)(zod@4.6.7):
+  openai@7.64.0(undici@8.10.2)(ws@8.22.0)(zod@4.6.7):
     optionalDependencies:
+      undici: 8.10.2
       ws: 8.22.0
       zod: 4.6.7
 
