@@ -257,6 +257,49 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 	}
 }
 
+func TestWebTool_HTTPNumberProjectionAfterForcedChoiceFallback(t *testing.T) {
+	tools := []provider.Tool{
+		{Type: provider.ToolTypeProvider, ID: "anthropic.web_search_20250305", Name: "web_search", Args: map[string]json.RawMessage{"maxUses": json.RawMessage(`1.5`)}},
+		{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	}
+	for _, stream := range []bool{false, true} {
+		requests := make(chan map[string]json.RawMessage, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			requests <- body
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+		}))
+		model := New("test-key", "claude-sonnet-5-5", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+		maxTokens := 1024
+		opts := provider.CallOptions{
+			MaxOutputTokens: &maxTokens,
+			Prompt:          []provider.Message{provider.UserText("hello")},
+			Tools:           tools,
+			ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: "lookup"},
+		}
+		if stream {
+			_, err := model.DoStream(context.Background(), opts)
+			require.Error(t, err)
+		} else {
+			_, err := model.DoGenerate(context.Background(), opts)
+			require.Error(t, err)
+		}
+		body := <-requests
+		want := `[{"name":"lookup","input_schema":{"type":"object"}}]`
+		if stream {
+			want = `[{"name":"lookup","input_schema":{"type":"object"},"eager_input_streaming":true}]`
+		}
+		assert.JSONEq(t, want, string(body["tools"]), "stream=%v", stream)
+		server.Close()
+	}
+}
+
 func TestToolChoiceNone_HTTPJSONFallbackDropsCallerToolNamedJSON(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
