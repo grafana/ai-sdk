@@ -1,0 +1,4 @@
+# "should include phase in provider metadata for message output items" in openai-responses-language-model.test.ts
+operation: generate
+model: gpt-5.3-codex
+prompt: Hello

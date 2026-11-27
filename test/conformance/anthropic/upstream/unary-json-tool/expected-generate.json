@@ -1,0 +1,54 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"elements\":[{\"location\":\"San Francisco\",\"temperature\":-5,\"condition\":\"snowy\"},{\"location\":\"London\",\"temperature\":0,\"condition\":\"snowy\"},{\"location\":\"Paris\",\"temperature\":23,\"condition\":\"cloudy\"},{\"location\":\"Berlin\",\"temperature\":-9,\"condition\":\"snowy\"}]}"
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "tool_use"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 1151,
+      "noCache": 1151,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 87
+    },
+    "raw": {
+      "service_tier": "standard",
+      "input_tokens": 1151,
+      "output_tokens": 87,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    }
+  },
+  "providerMetadata": {
+    "anthropic": {
+      "usage": {
+        "service_tier": "standard",
+        "input_tokens": 1151,
+        "output_tokens": 87,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        }
+      },
+      "stopSequence": null,
+      "serviceTier": "standard",
+      "iterations": null,
+      "container": null,
+      "contextManagement": null
+    }
+  }
+}

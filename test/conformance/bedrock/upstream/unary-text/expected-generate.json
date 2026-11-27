@@ -1,0 +1,48 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Let me count the \"r\"s in \"strawberry\":\n\ns-t-**r**-a-w-b-e-**r**-**r**-y\n\nThere are **3** \"r\"s in \"strawberry.\""
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "end_turn"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 22,
+      "noCache": 22,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 57,
+      "text": 57
+    },
+    "raw": {
+      "inputTokens": 22,
+      "outputTokens": 57,
+      "totalTokens": 79,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "cacheReadInputTokenCount": 0,
+      "cacheWriteInputTokenCount": 0,
+      "serverToolUsage": {}
+    }
+  },
+  "providerMetadata": {
+    "amazonBedrock": {
+      "usage": {
+        "cacheWriteInputTokens": 0
+      },
+      "stopSequence": null
+    },
+    "bedrock": {
+      "usage": {
+        "cacheWriteInputTokens": 0
+      },
+      "stopSequence": null
+    }
+  }
+}

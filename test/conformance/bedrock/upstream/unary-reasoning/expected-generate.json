@@ -1,0 +1,60 @@
+{
+  "content": [
+    {
+      "type": "reasoning",
+      "text": "Let me count the r's in \"strawberry\":\n\ns-t-r-a-w-b-e-r-r-y\n\nThere are 3 r's.",
+      "providerMetadata": {
+        "amazonBedrock": {
+          "signature": "EvYBCkgICxABGAIqQA9E9VC377UnbjdfXCw4RwQaaIXsqocZKzI3WwWtXT/wBjzAkBOfIiVkP/mhvsPGb5oQW/2j+E1tZcNFoXIb26YSDBTSbDrbHwXJoAl3/hoMA/Qo4rIHvObP/yBrIjAT+l69mh9k7evFO+w+ransSD5YGq4hYrieOyJH3k/zHv8nBJwiz3Nlrb3jNFi2Ib0qXJH7BIK0hR85yYIoccReoJUpeLEMxeWbsO6f0EpOSMSi3YDLd1U9NAw7Itjeay1fEBPHwvawt2M4e/rn52SsuEz3p2DfOZm+N3bnL63rg0Cb9lFcp3k5kuU1h6hcGAE="
+        },
+        "bedrock": {
+          "signature": "EvYBCkgICxABGAIqQA9E9VC377UnbjdfXCw4RwQaaIXsqocZKzI3WwWtXT/wBjzAkBOfIiVkP/mhvsPGb5oQW/2j+E1tZcNFoXIb26YSDBTSbDrbHwXJoAl3/hoMA/Qo4rIHvObP/yBrIjAT+l69mh9k7evFO+w+ransSD5YGq4hYrieOyJH3k/zHv8nBJwiz3Nlrb3jNFi2Ib0qXJH7BIK0hR85yYIoccReoJUpeLEMxeWbsO6f0EpOSMSi3YDLd1U9NAw7Itjeay1fEBPHwvawt2M4e/rn52SsuEz3p2DfOZm+N3bnL63rg0Cb9lFcp3k5kuU1h6hcGAE="
+        }
+      }
+    },
+    {
+      "type": "text",
+      "text": "There are **3** r's in \"strawberry\":\n\n1. st**r**awbe**r****r**y"
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "end_turn"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 51,
+      "noCache": 51,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 78,
+      "text": 78
+    },
+    "raw": {
+      "inputTokens": 51,
+      "outputTokens": 78,
+      "totalTokens": 129,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "cacheReadInputTokenCount": 0,
+      "cacheWriteInputTokenCount": 0,
+      "serverToolUsage": {}
+    }
+  },
+  "providerMetadata": {
+    "amazonBedrock": {
+      "usage": {
+        "cacheWriteInputTokens": 0
+      },
+      "stopSequence": null
+    },
+    "bedrock": {
+      "usage": {
+        "cacheWriteInputTokens": 0
+      },
+      "stopSequence": null
+    }
+  }
+}
