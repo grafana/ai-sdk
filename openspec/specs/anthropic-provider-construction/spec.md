@@ -1,6 +1,6 @@
 ## Purpose
 
-Define construction constraints for direct Anthropic providers and ensure explicit configuration remains authoritative over ambient SDK environment defaults.
+Define construction and request-target requirements for direct and Vertex Anthropic providers, and keep explicit direct configuration authoritative over ambient SDK environment defaults.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ Define construction constraints for direct Anthropic providers and ensure explic
 
 ### Requirement: Direct Anthropic requests use the upstream Messages target
 
-Direct unary and streaming models SHALL use `/v1/messages` without implicit `beta=true`, preserving beta headers and body conversion. The SDK beta query SHALL be removed before explicit caller options, retaining other query parameters, repeated-value order and raw SDK overrides. Vertex SHALL remain unchanged. Snapshots SHALL compare the full target against registered TypeScript expectations without filtering beta or rewriting expectations.
+Direct unary and streaming models SHALL use `/v1/messages` without implicit `beta=true`, preserving beta headers and body conversion. The SDK beta query SHALL be removed before explicit caller options, retaining other query parameters, repeated-value order and raw SDK overrides. Snapshots SHALL compare the full target against registered TypeScript expectations without filtering beta or rewriting expectations.
 
 #### Scenario: Default unary and streaming targets
 - **WHEN** a direct Anthropic model sends a unary or streaming request without explicit query options
@@ -50,3 +50,18 @@ Direct unary and streaming models SHALL use `/v1/messages` without implicit `bet
 #### Scenario: Deliberate caller beta override
 - **WHEN** a caller explicitly sets the beta query using the existing raw SDK request options
 - **THEN** that explicit value is retained rather than removed by the provider's default
+
+### Requirement: Vertex Anthropic requests use the upstream Vertex targets
+
+Vertex Anthropic SHALL send unary requests to `:rawPredict` and streaming requests to `:streamRawPredict` with no implicit query, matching the registered TypeScript Vertex adapter. The provider SHALL remove the SDK's implicit `beta=true` before applying explicit caller request options. Existing Vertex routing, authentication, beta feature headers, and body conversion SHALL remain intact.
+
+#### Scenario: Default Vertex unary and streaming targets
+- **WHEN** a Vertex Anthropic model sends a unary or streaming request without explicit query options
+- **THEN** the target uses the Vertex project, location, and resolved model route, ends in the corresponding operation, and has no query
+- **AND** the request uses Google bearer authentication, preserves `anthropic-beta` features as headers, and sends `anthropic_version` in the body instead of a `model` field
+
+#### Scenario: Explicit Vertex caller query options
+- **WHEN** a caller supplies raw SDK request options with unrelated query parameters or an explicit `beta` query
+- **THEN** unary and streaming requests retain those values, including repeated-value order, without an extra SDK-supplied `beta=true`
+
+Credential-free transport tests compare the complete request target without filtering. They do not establish live Vertex acceptance.
