@@ -167,21 +167,21 @@ type chatChoice struct {
 }
 
 type chatResponseMessage struct {
-	Role             string         `json:"role"`
-	Content          string         `json:"content"`
-	ReasoningContent string         `json:"reasoning_content"`
-	Reasoning        string         `json:"reasoning"`
-	Refusal          refusalText    `json:"refusal"`
-	ToolCalls        []chatToolCall `json:"tool_calls"`
+	Role             string               `json:"role"`
+	Content          chatResponseContent  `json:"content"`
+	ReasoningContent chatReasoningContent `json:"reasoning_content"`
+	Reasoning        string               `json:"reasoning"`
+	Refusal          refusalText          `json:"refusal"`
+	ToolCalls        []chatToolCall       `json:"tool_calls"`
 }
 
 type chatDeltaMessage struct {
-	Role             string              `json:"role"`
-	Content          string              `json:"content"`
-	ReasoningContent string              `json:"reasoning_content"`
-	Reasoning        string              `json:"reasoning"`
-	Refusal          refusalText         `json:"refusal"`
-	ToolCalls        []chatToolCallDelta `json:"tool_calls"`
+	Role             string               `json:"role"`
+	Content          chatResponseContent  `json:"content"`
+	ReasoningContent chatReasoningContent `json:"reasoning_content"`
+	Reasoning        string               `json:"reasoning"`
+	Refusal          refusalText          `json:"refusal"`
+	ToolCalls        []chatToolCallDelta  `json:"tool_calls"`
 }
 
 // refusalText is the text a model sends instead of content when it refuses to

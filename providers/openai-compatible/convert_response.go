@@ -20,12 +20,20 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 	}
 
 	choice := parsed.Choices[0]
-	content := make([]provider.GenerateContentPart, 0, 2+len(choice.Message.ToolCalls))
-	if choice.Message.Content != "" {
-		content = append(content, provider.GenerateContentPart{
-			Type: provider.ContentText,
-			Text: choice.Message.Content,
-		})
+	nativeContent := choice.Message.Content
+	isArray := nativeContent.array != nil
+	content := make([]provider.GenerateContentPart, 0, 2+len(nativeContent.array)+len(choice.Message.ToolCalls))
+	reasoning := provider.GenerateContentPart{
+		Type: provider.ContentReasoning,
+		Text: choice.Message.ReasoningContent.selectText(choice.Message.Reasoning, isArray),
+	}
+	if isArray {
+		if reasoning.Text != "" {
+			content = append(content, reasoning)
+		}
+		content = append(content, nativeContent.array...)
+	} else if nativeContent.text != "" {
+		content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: nativeContent.text})
 	}
 	hasRefusal := choice.Message.Refusal != ""
 	if hasRefusal {
@@ -34,16 +42,8 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 			Text: string(choice.Message.Refusal),
 		})
 	}
-	if choice.Message.ReasoningContent != "" {
-		content = append(content, provider.GenerateContentPart{
-			Type: provider.ContentReasoning,
-			Text: choice.Message.ReasoningContent,
-		})
-	} else if choice.Message.Reasoning != "" {
-		content = append(content, provider.GenerateContentPart{
-			Type: provider.ContentReasoning,
-			Text: choice.Message.Reasoning,
-		})
+	if !isArray && reasoning.Text != "" {
+		content = append(content, reasoning)
 	}
 	for _, toolCall := range choice.Message.ToolCalls {
 		id := toolCall.ID
