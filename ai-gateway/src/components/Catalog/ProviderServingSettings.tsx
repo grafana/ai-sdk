@@ -3,6 +3,7 @@ import { Alert, Button, Field, IconButton, Input, Stack, Switch, Text } from '@g
 import { errorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 import { Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
 import { ModelPicker } from './ModelPicker';
+import { publicIDError } from './catalogSpec';
 
 interface Props {
   name: string;
@@ -21,14 +22,20 @@ export function ProviderServingSettings({ name, provider, readOnly, listModels, 
   const [error, setError] = useState<string>();
   const serveAllModels = provider.serveAllModels === true;
   const blocklist = provider.modelBlocklist ?? [];
-  const duplicate = blocklist.includes(modelID);
-  const canAdd = modelID.trim() !== '' && !duplicate;
+  const inputError = blocklist.includes(modelID)
+    ? 'This ID is already blocked.'
+    : modelID === ''
+      ? undefined
+      : publicIDError(modelID);
+  const canAdd = serveAllModels && modelID !== '' && !inputError;
 
   if (readOnly) {
     return (
       <Stack direction="column" gap={0.5}>
         <Text>{serveAllModels ? 'Serves unlisted models' : 'Serves listed models only'}</Text>
-        {serveAllModels && <Text color="secondary">Blocked model IDs: {blocklist.join(', ') || 'None'}</Text>}
+        {(serveAllModels || blocklist.length > 0) && (
+          <Text color="secondary">Blocked model IDs: {blocklist.join(', ') || 'None'}</Text>
+        )}
       </Stack>
     );
   }
@@ -77,7 +84,7 @@ export function ProviderServingSettings({ name, provider, readOnly, listModels, 
       <Field
         label="Serve every model"
         htmlFor={switchID}
-        description={`Allows all models this provider account can use, except blocked IDs. Apps request unlisted models as ${name}/<model-id>.`}
+        description={`Apps can request unlisted models as ${name}/<model-id>. The selector and model ID must fit the model ID format and the model must not be blocked.`}
       >
         <Switch
           id={switchID}
@@ -87,37 +94,43 @@ export function ProviderServingSettings({ name, provider, readOnly, listModels, 
           onChange={(event) => void changeMode(event.currentTarget.checked)}
         />
       </Field>
-      {serveAllModels && (
+      {(serveAllModels || blocklist.length > 0) && (
         <Field
           label="Blocked model IDs"
-          description="Choose or enter an exact provider model ID. Adding or removing an ID saves immediately."
-          invalid={duplicate}
-          error={duplicate ? 'This ID is already blocked.' : undefined}
+          description={
+            serveAllModels
+              ? 'Choose or enter an exact provider model ID. Adding or removing an ID saves immediately.'
+              : 'These IDs still cannot be added as listed models. Remove an ID here to allow it.'
+          }
+          invalid={serveAllModels && inputError !== undefined}
+          error={serveAllModels ? inputError : undefined}
         >
           <Stack direction="column" gap={1}>
-            <Stack alignItems="flex-start" gap={1}>
-              {listModels ? (
-                <ModelPicker
-                  key={listingRevision}
-                  label="Add a blocked model ID"
-                  value={modelID}
-                  onChange={setModelID}
-                  disabled={saving}
-                  listModels={listModels}
-                />
-              ) : (
-                <Input
-                  aria-label="Add a blocked model ID"
-                  placeholder="Provider model ID"
-                  value={modelID}
-                  disabled={saving}
-                  onChange={(event) => setModelID(event.currentTarget.value)}
-                />
-              )}
-              <Button type="submit" variant="secondary" disabled={saving || !canAdd}>
-                Add blocked ID
-              </Button>
-            </Stack>
+            {serveAllModels && (
+              <Stack alignItems="flex-start" gap={1}>
+                {listModels ? (
+                  <ModelPicker
+                    key={listingRevision}
+                    label="Add a blocked model ID"
+                    value={modelID}
+                    onChange={setModelID}
+                    disabled={saving}
+                    listModels={listModels}
+                  />
+                ) : (
+                  <Input
+                    aria-label="Add a blocked model ID"
+                    placeholder="Provider model ID"
+                    value={modelID}
+                    disabled={saving}
+                    onChange={(event) => setModelID(event.currentTarget.value)}
+                  />
+                )}
+                <Button type="submit" variant="secondary" disabled={saving || !canAdd}>
+                  Add blocked ID
+                </Button>
+              </Stack>
+            )}
             {blocklist.length > 0 && (
               <ul aria-label="Blocked model IDs">
                 {blocklist.map((id) => (

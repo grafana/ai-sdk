@@ -24,12 +24,15 @@ picker adds blocked IDs. To add a listed model, turn off **Serve every model**,
 choose or type an exact provider model ID, and select **Add model**. Manual
 entry works even if suggestions are empty, incomplete, or unavailable.
 Suggestions use the saved key on demand, never on save. The switch and
-blocklist edits save immediately. Turning the switch off hides the editor but
-keeps the saved blocklist. Existing listed models stay visible and editable.
+blocklist edits save immediately. Turning the switch off keeps the saved blocklist and lets you remove blocked
+IDs without adding new ones. Existing listed models stay visible and editable.
 
 Catalog discovery includes both configured models and qualified IDs from
 eligible provider listings. It omits blocked IDs and selectors already used
-by a listed ID or alias. Results can be incomplete or up to 30 seconds stale:
+by a listed ID or alias. Public IDs, aliases, and blocked IDs use up to 320
+ASCII bytes, start with a letter or digit, and can include `._:/@+-` after it.
+For example, `claude-sonnet-4@20250514` is valid. Results can be incomplete or
+up to 30 seconds stale:
 a qualified ID may still be callable when discovery omits it. A catalog save
 invalidates discovery's inventory cache; health and model suggestions stay live.
 

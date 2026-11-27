@@ -14,14 +14,14 @@
 
 ## 3. Catalog page
 
-- [x] 3.1 Add the switch and blocklist to the saved provider card. Use one versioned update per toggle, add, or remove action, hide blocklist editing while off, keep keys untouched, and distinguish no listed models from no callable models. Ensure removal copy does not promise that a listed model's backend becomes inaccessible. Cover the update body, retained blocklist, errors, no automatic health or listing, and update permission checks with Jest.
-- [x] 3.2 Extend Playwright against the pinned Grafana image and fake provider. Enable a provider with no listed models, check discovery and unlisted invocation, and add a blocked ID. Disable the setting and verify unlisted calls now fail and blocklist editing stays hidden. Re-enable and verify that the saved blocklist is retained. Exercise admission's primary/fallback conflict and verify read-only presentation.
+- [x] 3.1 Add the switch and blocklist to the saved provider card. Use one versioned update per toggle, add, or remove action, allow only removal of blocked IDs while off, keep keys untouched, and distinguish no listed models from no callable models. Ensure removal copy does not promise that a listed model's backend becomes inaccessible. Cover the update body, retained blocklist, errors, no automatic health or listing, and update permission checks with Jest.
+- [x] 3.2 Extend Playwright against the pinned Grafana image and fake provider. Enable a provider with no listed models, check discovery and unlisted invocation, and add a blocked ID. Disable the setting and verify unlisted calls now fail and saved blocked IDs can be removed without enabling. Exercise admission's primary/fallback conflict and verify read-only presentation.
 
 - [x] 3.3 Set and disclose the UI-only default in the shared provider form. Verify create and connect payloads, existing providers, and immediate invocation without listed models.
 
 ## 4. Discovery inventory
 
-- [x] 4.1 Share the bounded provider listing transport and cover filtering, partial results, collisions, and discovery budgets in Go tests.
+- [x] 4.1 Share the bounded provider listing transport and cover schema-valid IDs, partial results, collisions, and discovery budgets in Go tests.
 - [x] 4.2 Separate discovery admission and add the 30-second revision-scoped cache. Verify writer isolation, expiry and revision misses, uncached failures, and eviction.
 
 ## 5. Integration checks

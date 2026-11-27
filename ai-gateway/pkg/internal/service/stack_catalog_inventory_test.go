@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 )
@@ -23,9 +24,9 @@ func TestAvailableModels_ListsAllPagesRatherThanOnlyHealthTargets(t *testing.T) 
 		assert.Equal(t, "/v1/models", r.URL.Path)
 		assert.Equal(t, "claude-catalog-key", r.Header.Get("X-Api-Key"))
 		if r.URL.Query().Get("after_id") == "" {
-			return listingResponse(200, `{"data":[{"id":"claude-sonnet"},{"id":"Z"}],"has_more":true,"last_id":"cursor&literal"}`), nil
+			return listingResponse(200, `{"data":[{"id":"claude-sonnet"},{"id":"Z"}],"has_more":true,"last_id":"cursor+literal@v2&more"}`), nil
 		}
-		assert.Equal(t, "cursor&literal", r.URL.Query().Get("after_id"))
+		assert.Equal(t, "cursor+literal@v2&more", r.URL.Query().Get("after_id"))
 		return listingResponse(200, `{"data":[{"id":"Z"},{"id":"a/B"}],"has_more":false}`), nil
 	}), outbound.CustomEndpoints{})
 	for range 2 {
@@ -52,7 +53,7 @@ func TestAvailableModels_CompletionAndSecretHandling(t *testing.T) {
 		{"missing cursor", 200, `{"data":[],"has_more":true}`, CatalogProviderModels{ListingPartial, []string{}}},
 		{"unsafe cursor", 200, `{"data":[{"id":"safe"}],"has_more":true,"last_id":"prefix-claude-catalog-key"}`, CatalogProviderModels{ListingPartial, []string{"safe"}}},
 		{"oversized cursor", 200, `{"data":[],"has_more":true,"last_id":"` + strings.Repeat("a", listingCursorBytes+1) + `"}`, CatalogProviderModels{ListingPartial, []string{}}},
-		{"unsafe IDs", 200, `{"data":[{"id":"safe"},{"id":"claude-catalog-key"},{"id":"embed-gpt-catalog-key"},{"id":"a\u0000b"},{"id":"` + strings.Repeat("a", maxListedModelBytes+1) + `"}],"has_more":false}`, CatalogProviderModels{ListingPartial, []string{"safe"}}},
+		{"unsafe IDs", 200, `{"data":[{"id":"safe"},{"id":"claude-catalog-key"},{"id":"embed-gpt-catalog-key"},{"id":"a\u0000b"},{"id":"` + strings.Repeat("a", config.MaxListedModelIDBytes+1) + `"}],"has_more":false}`, CatalogProviderModels{ListingPartial, []string{"safe"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0

@@ -67,6 +67,16 @@ func TestDiscoverySchema_ClosedDraft202012(t *testing.T) {
 	require.NoError(t, err)
 	valid := `{"models":[{"id":"model","name":"Model","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"model"}}]}`
 	require.NoError(t, compiled.Validate(json.RawMessage(valid)))
+	for _, n := range []int{320, 321} {
+		id := "model@v2+" + strings.Repeat("a", n-len("model@v2+"))
+		data := projectDiscovery(t, []catalog.ModelInfo{{ID: id, Name: "Model"}})
+		err := compiled.Validate(json.RawMessage(data))
+		if n == 320 {
+			assert.NoError(t, err)
+		} else {
+			assert.Error(t, err)
+		}
+	}
 
 	invalid := []string{
 		`{}`,

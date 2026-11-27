@@ -278,7 +278,8 @@ sequenceDiagram
    one stored catalog: it checks the catalog on every request, refuses
    `gateway.byok`, and constructs only the candidates its chain attempts, with
    that catalog's keys. An unmatched ID can name an enabled instance and an
-   unblocked backend model as `instance/model`. Catalog discovery can add those
+   unblocked backend model as `instance/model` when both the full selector and
+   backend ID fit the public-ID rule. Catalog discovery can add those
    qualified IDs from bounded provider listings without constructing models.
    A stack-catalog provider or request account may use a
    custom endpoint only when the operator's `custom_endpoints` list holds it,

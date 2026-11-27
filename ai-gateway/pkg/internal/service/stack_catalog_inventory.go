@@ -10,10 +10,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 )
 
-const (
-	maxListedModelIDs   = 512
-	maxListedModelBytes = 256
-)
+const maxListedModelIDs = 512
 
 // ErrCatalogProviderNotFound reports that the checked catalog has no provider by that name.
 var ErrCatalogProviderNotFound = errors.New("gateway service: catalog provider not found")
@@ -68,7 +65,7 @@ func (c *CatalogHealthChecker) inventory(ctx context.Context, provider config.Re
 			if _, duplicate := seen[id]; duplicate {
 				continue
 			}
-			if len(seen) == maxListedModelIDs || len(id) > maxListedModelBytes || strings.ContainsFunc(id, unicode.IsControl) || containsKey(id) {
+			if len(seen) == maxListedModelIDs || len(id) > config.MaxListedModelIDBytes || strings.ContainsFunc(id, unicode.IsControl) || containsKey(id) {
 				omitted = true
 				continue
 			}

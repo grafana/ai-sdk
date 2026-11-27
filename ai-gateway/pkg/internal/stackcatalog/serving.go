@@ -4,18 +4,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 )
 
-const (
-	maxBlockedModelIDs = 128
-	maxBackendIDBytes  = 2048
-)
+const maxBlockedModelIDs = 128
 
 type servingPolicy struct {
 	all     bool
@@ -29,12 +23,7 @@ func (c Catalog) ServesUnlistedModels(instance string) bool { return c.serving[i
 func (c Catalog) AllowsUnlistedModel(instance, modelID string) bool {
 	policy := c.serving[instance]
 	_, blocked := policy.blocked[modelID]
-	return policy.all && !blocked && validBackendID(modelID)
-}
-
-func validBackendID(id string) bool {
-	return len(id) > 0 && len(id) <= maxBackendIDBytes && utf8.ValidString(id) &&
-		strings.TrimSpace(id) == id && !strings.ContainsFunc(id, unicode.IsControl)
+	return policy.all && !blocked && config.ValidatePublicID(modelID) == nil && config.ValidatePublicID(instance+"/"+modelID) == nil
 }
 
 func parseServingPolicies(spec v1alpha1.Spec, file config.File) (map[string]servingPolicy, error) {
@@ -50,8 +39,8 @@ func parseServingPolicies(spec v1alpha1.Spec, file config.File) (map[string]serv
 		}
 		blocked := make(map[string]int, len(provider.ModelBlocklist))
 		for index, id := range provider.ModelBlocklist {
-			if !validBackendID(id) {
-				return nil, fmt.Errorf("modelcatalog: %s must be 1-%d UTF-8 bytes without control characters or leading or trailing whitespace", blocklistPath(name, index), maxBackendIDBytes)
+			if err := config.ValidatePublicID(id); err != nil {
+				return nil, fmt.Errorf("modelcatalog: %s: %w", blocklistPath(name, index), err)
 			}
 			if _, exists := blocked[id]; exists {
 				return nil, fmt.Errorf("modelcatalog: %s repeats an earlier entry", blocklistPath(name, index))

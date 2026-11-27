@@ -79,7 +79,7 @@ Authorized route, candidate, provider-instance, provider and model identifiers S
 - **THEN** discovery SHALL retain that identifier without introducing account provisioning or a new policy engine
 
 ### Requirement: Atomic discovery resource and consistency limits
-Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 8 candidates per route (the shared provider attempt bound), 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics.
+Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 8 candidates per route (the shared provider attempt bound), 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. Public IDs SHALL follow the shared header-safe grammar and 320-byte bound. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics.
 
 #### Scenario: Server policy dimensions reach their boundaries
 - **WHEN** a configured catalog reaches an exact public-ID, candidate, alias or string ceiling
@@ -253,8 +253,8 @@ A catalog route's `config` SHALL preserve the parent catalog's explicitly listed
 - **THEN** discovery SHALL also list qualified selectors from that provider's saved account inventory, subject to eligibility and the discovery limits
 
 #### Scenario: Inventory contains a blocked or shadowed selector
-- **WHEN** an inventory ID is blocked for its provider, is invalid for an unlisted selector, or forms a qualified selector matching a listed ID or alias
-- **THEN** discovery SHALL NOT add a row for that ID and SHALL preserve the listed route
+- **WHEN** an inventory ID is blocked for its provider, is invalid for unlisted invocation, or forms a qualified selector that violates the existing public-ID syntax or length bound or matches a listed ID or alias
+- **THEN** discovery SHALL NOT add a row for that ID and SHALL preserve any listed route. The public-ID discovery check SHALL NOT restrict direct invocation
 
 #### Scenario: Qualified row projection
 - **WHEN** discovery adds a qualified selector

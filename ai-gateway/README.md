@@ -264,7 +264,8 @@ the first provider in a new catalog. You can change the mode on the provider
 card. This does not change existing providers: an omitted `serveAllModels`
 field still means listed models only. In **Serve every model** mode, the picker
 switches to **Blocked model IDs**; adding or removing an ID saves immediately.
-The editor is hidden while the switch is off, but saved exclusions are kept.
+While the switch is off, you can remove saved exclusions but cannot add new
+ones. A blocked ID still cannot be added as a listed model.
 Existing listed models stay visible and editable. To set exclusions and
 enable serving in one API update, set `serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
 on that provider in `spec.providers`.
@@ -283,9 +284,13 @@ alias wins if it matches the full selector. If no listed ID or alias matches,
 a blocked selector returns `404 model_not_found`. Unlisted models have no
 implicit fallback, but can use or be named in explicit `gateway.models`
 fallbacks. The catalog's `/config` includes configured models and eligible
-qualified IDs from opted-in providers' inventories. Listings are bounded
+qualified IDs from opted-in providers' inventories that fit the discovery
+ID format: up to 320 ASCII bytes, starting with a letter or digit, then letters,
+digits, or `._:/@+-`. Listed IDs, aliases, and blocked IDs use the same format.
+Listings are bounded
 and best-effort, and provider failures do not hide configured models. An ID
-can be callable even if discovery omits it. Discovery reuses provider inventory
+can be callable even if discovery omits it, as long as both the full selector
+and its backend ID fit the model ID format. Discovery reuses provider inventory
 for up to 30 seconds per catalog revision. The next admitted discovery after
 saving the catalog fetches fresh inventory. Health and the model picker query
 providers live and use separate
@@ -390,7 +395,7 @@ format, not the Gateway's.
 | 16 MiB per provider response that is not streamed, after decompression | Gateway |
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
-| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
+| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 320 ASCII bytes per public model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
 | The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved and each time a call uses it |
 
 ### Request duration

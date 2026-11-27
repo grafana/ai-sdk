@@ -124,7 +124,7 @@ func (c *catalogDiscoveryListings) appendUnlistedModels(ctx context.Context, sta
 	for i, inventory := range inventories {
 		for _, model := range inventory {
 			selector := names[i] + "/" + model
-			if _, listed := index.canonical[selector]; listed || containsKey(selector) {
+			if _, listed := index.canonical[selector]; listed || containsKey(selector) || config.ValidatePublicID(selector) != nil {
 				continue
 			}
 			group, err := index.resolve(selector)

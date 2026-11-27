@@ -208,11 +208,24 @@ test.describe('model catalog page', () => {
     expect(disabled.status(), await disabled.text()).toBe(404);
     expect((await disabled.json()).error.code).toBe('model_not_found');
 
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
+    const removeBlocked = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await provider.getByRole('button', { name: 'Remove blocked ID org/blocked' }).click();
+    const removal = await removeBlocked;
+    expect(removal.status(), await removal.text()).toBe(200);
+    expect(removal.request().postDataJSON().spec.providers.claude).toEqual({
+      type: 'anthropic',
+      serveAllModels: false,
+      modelBlocklist: [],
+    });
+    await expect(blocklist).toHaveCount(0);
+    await expect(toggle).toBeChecked({ checked: false });
+
     const listed = 'claude-sonnet-4-6';
     await addModel(page, 'claude', listed);
     await toggle.press('Space');
     await expect(toggle).toBeChecked();
-    await expect(blocklist.getByText('org/blocked')).toBeVisible();
+    await expect(blocklist).toHaveCount(0);
     await expect(addModelID).toHaveCount(0);
     const beforeRefusal = await stored();
     await blockedID.click();
@@ -220,12 +233,11 @@ test.describe('model catalog page', () => {
     await expect(blockedID).toHaveValue(listed);
     await addBlockedID.click();
     await expect(
-      provider.getByText(/providers\.claude\.modelBlocklist\[1\] conflicts with a listed target/)
+      provider.getByText(/providers\.claude\.modelBlocklist\[0\] conflicts with a listed target/)
     ).toBeVisible();
     await expect(toggle).toBeChecked();
     await expect(blockedID).toHaveValue(listed);
-    await expect(blocklist.getByText('org/blocked')).toBeVisible();
-    await expect(blocklist.getByText(listed)).toHaveCount(0);
+    await expect(blocklist).toHaveCount(0);
     const afterRefusal = await stored();
     expect(afterRefusal.metadata.resourceVersion).toBe(beforeRefusal.metadata.resourceVersion);
     expect(afterRefusal.spec).toEqual(beforeRefusal.spec);

@@ -2,6 +2,38 @@
 
 ## MODIFIED Requirements
 
+### Requirement: Atomic discovery resource and consistency limits
+Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 8 candidates per route (the shared provider attempt bound), 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. Public IDs SHALL follow the shared header-safe grammar and 320-byte bound. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics.
+
+#### Scenario: Server policy dimensions reach their boundaries
+- **WHEN** a configured catalog reaches an exact public-ID, candidate, alias or string ceiling
+- **THEN** configuration loading SHALL accept it if semantic constraints hold
+- **WHEN** any policy dimension exceeds its ceiling by one
+- **THEN** configuration loading SHALL fail before readiness
+
+#### Scenario: Invalid routes fail startup
+- **WHEN** configuration contains invalid IDs, duplicate aliases/candidate tuples, canonical/alias collisions or blank required identifiers
+- **THEN** startup SHALL fail before serving requests or provider inference
+- **AND** response building SHALL NOT repeat those checks
+
+#### Scenario: Configured catalog exceeds the former response budget
+- **WHEN** a valid configured discovery document exceeds 1 MiB after JSON encoding and escaping
+- **THEN** the server SHALL serve every visible configured row without a discovery response-size rejection
+
+#### Scenario: Consumers do not duplicate configuration policy
+- **WHEN** a document fits the consumer byte budget and decodes into its typed metadata
+- **THEN** the consumer SHALL retain supplied facts without checking route semantics, uniqueness or numeric configuration policy
+- **WHEN** the document exceeds the consumer byte budget by one
+- **THEN** the consumer SHALL fail without returning any rows
+
+#### Scenario: Escaped lone surrogates use standard JSON semantics
+- **WHEN** a display or candidate string contains an escaped lone UTF-16 surrogate
+- **THEN** Go SHALL decode it as U+FFFD and TS SHALL retain its standard decoded UTF-16 value
+
+#### Scenario: Client receives a late type error
+- **WHEN** a bounded document contains valid initial rows followed by a field that cannot decode into its declared type
+- **THEN** configured access SHALL fail atomically without exposing the initial rows
+
 ### Requirement: Catalog route discovery
 A catalog route's `config` SHALL preserve the parent catalog's explicitly listed models with the configured route projection: canonical rows, aliases, primary and fallbacks, with each provider name as the provider instance and its provider slug as the provider: an `openai-compatible` provider's `providerName` when set, otherwise its type. It SHALL construct no model and contain no key, secure value name or object metadata. The successful document SHALL use `Cache-Control: no-store`.
 
@@ -26,8 +58,8 @@ A catalog route's `config` SHALL preserve the parent catalog's explicitly listed
 - **THEN** discovery SHALL also list qualified selectors from that provider's saved account inventory, subject to eligibility and the discovery limits
 
 #### Scenario: Inventory contains a blocked or shadowed selector
-- **WHEN** an inventory ID is blocked for its provider, is invalid for an unlisted selector, or forms a qualified selector matching a listed ID or alias
-- **THEN** discovery SHALL NOT add a row for that ID and SHALL preserve the listed route
+- **WHEN** an inventory ID is blocked for its provider, is invalid for unlisted invocation, or forms a qualified selector that violates the existing public-ID syntax or length bound or matches a listed ID or alias
+- **THEN** discovery SHALL NOT add a row for that ID and SHALL preserve any listed route. The public-ID discovery check SHALL NOT restrict direct invocation
 
 #### Scenario: Qualified row projection
 - **WHEN** discovery adds a qualified selector

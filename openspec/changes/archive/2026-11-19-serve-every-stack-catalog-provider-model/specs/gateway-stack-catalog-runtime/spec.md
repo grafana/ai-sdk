@@ -40,7 +40,7 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 ## ADDED Requirements
 
 ### Requirement: Qualified unlisted stack-catalog selectors
-After listed lookup misses, an eligible unlisted selector SHALL be `<provider-instance>/<model-id>`, split at its first slash. The instance SHALL be named in the catalog with `serveAllModels` true, and the suffix SHALL meet blocklist ID validation without matching an entry. Selection SHALL use the full selector as its canonical ID and the literal suffix as the backend ID, with the named instance's saved key and destination. It SHALL NOT consult provider inventory.
+After listed lookup misses, split `<instance>/<model-id>` at the first slash. Both the full selector and suffix SHALL meet the shared public-ID rule. The named instance SHALL have `serveAllModels` enabled and the suffix SHALL NOT be blocked. Use the full selector as the canonical ID and the literal suffix as the backend ID, with that instance's saved key and destination. Selection SHALL NOT consult inventory.
 
 #### Scenario: Two instances of the same provider type are enabled
 - **WHEN** a call requests `team-openai/org/new-model` and the catalog has enabled `team-openai` and `other-openai` instances but has no listed models

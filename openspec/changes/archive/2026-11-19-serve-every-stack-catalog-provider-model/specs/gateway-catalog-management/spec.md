@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Provider serving settings on the catalog page
-Each saved provider card SHALL show its saved serving mode and explain the qualified selector. It SHALL offer one model picker at a time: to add listed models in listed-only mode, or to edit **Blocked model IDs** in serve-every mode. In listed-only mode the card SHALL hide blocklist editing. Existing listed models SHALL remain visible and editable in either mode.
+Each saved provider card SHALL show its saved serving mode and explain the qualified selector. It SHALL offer one model picker at a time: to add listed models in listed-only mode, or to edit **Blocked model IDs** in serve-every mode. In listed-only mode the card SHALL hide the add-blocked-ID control and offer removal of retained blocked IDs. Existing listed models SHALL remain visible and editable in either mode.
 
 #### Scenario: Provider connected without listed models
 - **WHEN** a writer opens a saved provider's card before listing a model
@@ -11,7 +11,7 @@ Each saved provider card SHALL show its saved serving mode and explain the quali
 
 #### Scenario: Writer disables unlisted serving
 - **WHEN** a writer turns the switch off and the update succeeds
-- **THEN** the provider SHALL serve only listed models, the editor SHALL be hidden, and the saved blocklist SHALL be retained
+- **THEN** the provider SHALL serve only listed models, the blocked-ID picker SHALL be hidden, and the saved blocklist SHALL be retained
 
 #### Scenario: Writer enables unlisted serving
 - **WHEN** a writer turns on **Serve every model** and the update succeeds
@@ -19,7 +19,7 @@ Each saved provider card SHALL show its saved serving mode and explain the quali
 
 #### Scenario: Writer edits the blocklist while listed-only
 - **WHEN** a writer opens a provider card in listed-only mode
-- **THEN** the card SHALL offer to add listed models and SHALL NOT offer to edit blocked IDs
+- **THEN** the card SHALL offer to add listed models and, when there are retained blocked IDs, display them with a removal control and explain that they still restrict listed targets. It SHALL NOT offer to add blocked IDs
 
 #### Scenario: Writer edits the blocklist in serve-every mode
 - **WHEN** a writer opens a provider card in serve-every mode
@@ -27,7 +27,7 @@ Each saved provider card SHALL show its saved serving mode and explain the quali
 
 #### Scenario: Read-only catalog
 - **WHEN** a user can read but not update the catalog
-- **THEN** the card SHALL show its serving mode and, only in serve-every mode, its blocked IDs read-only
+- **THEN** the card SHALL show its serving mode and any saved blocked IDs read-only
 
 ### Requirement: Save each serving action without key changes
 Toggling **Serve every model**, adding an ID, or removing an ID SHALL each send one versioned update without secure values or changes to listed models. Typing or choosing a suggestion SHALL NOT save. A write SHALL NOT start a provider listing or health check. The card SHALL display the saved settings until the write succeeds.

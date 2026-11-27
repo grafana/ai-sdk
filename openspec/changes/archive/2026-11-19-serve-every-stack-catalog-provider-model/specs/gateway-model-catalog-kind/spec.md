@@ -14,7 +14,7 @@ A `ModelCatalog` provider SHALL accept optional `serveAllModels` (boolean) and `
 - **THEN** the write SHALL be accepted and a read SHALL return those IDs without enabling unlisted models
 
 ### Requirement: Validate provider blocklists
-Each provider's `modelBlocklist` SHALL contain at most 128 distinct, exact, case-sensitive backend IDs. An ID SHALL be valid UTF-8, 1 to 2,048 bytes, with no control characters or leading or trailing whitespace. Admission SHALL reject invalid fields and a blocklist entry that equals a listed primary or fallback target's backend ID for that provider instance, regardless of the switch. Refusals SHALL identify the field without echoing the blocked ID or keys.
+Each provider's `modelBlocklist` SHALL contain at most 128 distinct, exact, case-sensitive backend IDs. Each ID SHALL meet the shared public model-ID grammar and 320-byte bound. Admission SHALL reject invalid fields and a blocklist entry that equals a listed primary or fallback target's backend ID for that provider instance, regardless of the switch. Refusals SHALL identify the field without echoing the blocked ID or keys.
 
 #### Scenario: Wrong field type
 - **WHEN** a write supplies either setting with the wrong type

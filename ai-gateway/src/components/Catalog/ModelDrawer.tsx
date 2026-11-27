@@ -11,6 +11,7 @@ import {
   CatalogChange,
   fallbackSuggestions,
   MAX_FALLBACKS,
+  MAX_PUBLIC_ID_LENGTH,
   modelDraft,
   ModelDraft,
   modelErrors,
@@ -21,8 +22,6 @@ import {
   withModel,
 } from './catalogSpec';
 import { Spec, Target } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
-
-const MAX_ALIAS_LENGTH = 128;
 
 interface Props {
   spec: Spec;
@@ -129,7 +128,7 @@ export function ModelDrawer({ spec, id, fallbackHealth, readOnly, onSave, onClos
               id="model-aliases"
               tags={draft.aliases}
               placeholder="Add an alias and press Enter"
-              maxLength={MAX_ALIAS_LENGTH}
+              maxLength={MAX_PUBLIC_ID_LENGTH}
               disabled={readOnly}
               addOnBlur
               onChange={(aliases) => {
@@ -147,7 +146,9 @@ export function ModelDrawer({ spec, id, fallbackHealth, readOnly, onSave, onClos
               const title = `Fallback ${index + 1}`;
               const saved = stored.fallback?.[index];
               const status =
-                saved?.provider === target.provider && saved.model === target.model ? fallbackHealth?.[index] : undefined;
+                saved?.provider === target.provider && saved.model === target.model
+                  ? fallbackHealth?.[index]
+                  : undefined;
               return (
                 <TargetFields
                   key={index}

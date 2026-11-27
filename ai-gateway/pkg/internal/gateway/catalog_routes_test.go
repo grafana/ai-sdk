@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,8 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
+	"github.com/grafana/ai-sdk/schema"
 )
 
 const (
@@ -153,11 +156,24 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
 	native := newFakeAnthropic(t)
 	var probes atomic.Int32
+	instance := strings.Repeat("z", config.MaxPublicIDBytes-1-config.MaxListedModelIDBytes)
+	longBackendID := strings.Repeat("a", config.MaxListedModelIDBytes)
+	const versioned = "claude-sonnet-4@20250514"
+	listing := []string{"org/new", "org/blocked", routeCatalogKey, versioned, "model+v2", longBackendID, longBackendID + "a", "/leading-slash", "has space", "modèle"}
+	var inventory struct {
+		Data    []map[string]string `json:"data"`
+		HasMore bool                `json:"has_more"`
+	}
+	for _, id := range listing {
+		inventory.Data = append(inventory.Data, map[string]string{"id": id})
+	}
+	payload, err := json.Marshal(inventory)
+	require.NoError(t, err)
 	useNativeAnthropicHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 			probes.Add(1)
 			assert.Contains(t, []string{routeCatalogKey, editedCatalogKey}, r.Header.Get("X-Api-Key"))
-			_, _ = io.WriteString(w, `{"data":[{"id":"org/new"},{"id":"org/blocked"},{"id":"`+routeCatalogKey+`"}],"has_more":false}`)
+			_, _ = w.Write(payload)
 			return
 		}
 		native.server.Config.Handler.ServeHTTP(w, r)
@@ -165,7 +181,7 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	writer := h.serviceToken(t, testInternalService)
 	user := session(h.host.AddSession(types.TypeUser, "catalog-user", testNamespace))
 	status, body := sendObject(t, t.Context(), http.MethodPost, catalogURL(h.server.URL, ""), writer,
-		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"second":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"},"second":{"create":"`+editedCatalogKey+`"}}}`)
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"`+instance+`":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+routeCatalogKey+`"},"`+instance+`":{"create":"`+editedCatalogKey+`"}}}`)
 	require.Equal(t, http.StatusCreated, status, body)
 	response, err := http.DefaultClient.Do(discoveryRequest(t, h.catalogURL("config"), user))
 	require.NoError(t, err)
@@ -177,11 +193,23 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"models"`
 	}
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&discovery))
-	require.Len(t, discovery.Models, 3)
-	assert.Equal(t, "claude/org/new", discovery.Models[0].ID)
-	assert.Equal(t, "second/org/blocked", discovery.Models[1].ID)
-	assert.Equal(t, "second/org/new", discovery.Models[2].ID)
+	document, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	schemaJSON, err := os.ReadFile("../../../providerwire/v4/schema/discovery.json")
+	require.NoError(t, err)
+	compiled, err := schema.CompileSchema(schemaJSON)
+	require.NoError(t, err)
+	require.NoError(t, compiled.Validate(json.RawMessage(document)))
+	require.NoError(t, json.Unmarshal(document, &discovery))
+	var ids []string
+	for _, row := range discovery.Models {
+		ids = append(ids, row.ID)
+	}
+	assert.Equal(t, []string{
+		"claude/" + longBackendID, "claude/" + versioned, "claude/model+v2", "claude/org/new",
+		instance + "/" + longBackendID, instance + "/" + versioned, instance + "/model+v2", instance + "/org/blocked", instance + "/org/new",
+	}, ids)
+	assert.Len(t, instance+"/"+longBackendID, config.MaxPublicIDBytes)
 	assert.EqualValues(t, 2, probes.Load())
 	for _, tc := range []struct{ id, body string }{
 		{"claude/org/blocked", unaryBody},
@@ -199,9 +227,9 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 		assert.Contains(t, body, `"modelId":"org/new"`)
 		assert.Contains(t, body, `"providerInstance":"claude"`)
 	}
-	status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), "second/org/blocked", unaryBody, false, user))
+	status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), instance+"/org/blocked", unaryBody, false, user))
 	require.Equal(t, http.StatusOK, status, body)
-	assert.Contains(t, body, `"providerInstance":"second"`)
+	assert.Contains(t, body, `"providerInstance":"`+instance+`"`)
 	keys, bodies := native.nativeCalls()
 	assert.Equal(t, []string{routeCatalogKey, routeCatalogKey, editedCatalogKey}, keys)
 	require.Len(t, bodies, 3)
@@ -215,12 +243,25 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	assert.EqualValues(t, 2, probes.Load(), "the platform-supplied revision enables cache hits")
 
 	status, body = sendObject(t, t.Context(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), writer,
-		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"second":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+editedCatalogKey+`"}}}`)
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"`+instance+`":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+editedCatalogKey+`"}}}`)
 	require.Equal(t, http.StatusOK, status, body)
 	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
 	require.Equal(t, http.StatusOK, status, body)
 	assert.Contains(t, body, `"id":"claude/org/new"`)
 	assert.EqualValues(t, 4, probes.Load(), "a catalog write invalidates every provider's cached listing")
+
+	for _, id := range []string{versioned, "model+v2", longBackendID} {
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), instance+"/"+id, unaryBody, false, user))
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Contains(t, body, `"modelId":"`+id+`"`)
+	}
+	_, bodies = native.nativeCalls()
+	require.Len(t, bodies, 6)
+	assert.Contains(t, bodies[4], `"model":"model+v2"`)
+	for _, id := range []string{longBackendID + "a", "/leading-slash", "has space", "modèle"} {
+		status, body = do(t, catalogLanguageRequest(t, h.catalogURL("language-model"), instance+"/"+id, unaryBody, false, user))
+		assert.Equal(t, http.StatusNotFound, status, body)
+	}
 }
 
 func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {
