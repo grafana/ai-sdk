@@ -236,7 +236,7 @@ func mapRequest(data []byte) (mappedRequest, error) {
 		}
 		r.options.Prompt = append(r.options.Prompt, p)
 	}
-	if len(pending) > 0 {
+	if len(pending) > 0 || !hasContent(r.options.Prompt) {
 		return r, errRequest
 	}
 	names := map[string]bool{}
@@ -327,4 +327,15 @@ func mapRequest(data []byte) (mappedRequest, error) {
 func jsonObject(raw []byte) bool {
 	var object map[string]json.RawMessage
 	return json.Unmarshal(raw, &object) == nil && object != nil
+}
+
+func hasContent(prompt []provider.Message) bool {
+	for _, m := range prompt {
+		for _, part := range m.Content {
+			if part.Type != provider.ContentPartTypeText || part.Text != "" {
+				return true
+			}
+		}
+	}
+	return false
 }

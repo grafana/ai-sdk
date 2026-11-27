@@ -54,6 +54,7 @@ func TestHandler_RequestBoundary(t *testing.T) {
 		{"query", "POST", Path + "?x=1", "application/json", basic, 404},
 		{"media", "POST", Path, "text/plain", basic, 415},
 		{"invalid utf8", "POST", Path, "application/json", string([]byte{255}), 400},
+		{"empty prompt", "POST", Path, "application/json", `{"model":"alias","messages":[{"role":"user","content":""}]}`, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := testHandler(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
