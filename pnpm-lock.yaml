@@ -466,6 +466,9 @@ importers:
 
   test/integration:
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: 4.0.107
+        version: 4.0.107(zod@4.6.7)
       '@ai-sdk/provider-utils':
         specifier: 5.0.83
         version: 5.0.83(zod@4.6.7)
