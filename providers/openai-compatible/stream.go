@@ -213,24 +213,26 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	}
 
 	delta := choice.Delta
-	reasoning := delta.ReasoningContent
-	if reasoning == "" {
-		reasoning = delta.Reasoning
-	}
-	if reasoning != "" {
-		if !s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
-				return false
-			}
-			s.reasoningActive = true
-		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: reasoning}) {
-			return false
-		}
+	isArray := delta.Content.array != nil
+	reasoning := delta.ReasoningContent.selectText(delta.Reasoning, isArray)
+	if reasoning != "" && !s.sendReasoningDelta(reasoning) {
+		return false
 	}
 
-	if delta.Content != "" && !s.sendTextDelta(delta.Content) {
+	if text := delta.Content.text; text != "" && !s.sendTextDelta(text) {
 		return false
+	}
+	for _, part := range delta.Content.array {
+		switch part.Type {
+		case provider.ContentReasoning:
+			if !s.sendReasoningDelta(part.Text) {
+				return false
+			}
+		case provider.ContentText:
+			if !s.sendTextDelta(part.Text) {
+				return false
+			}
+		}
 	}
 	if delta.Refusal != "" {
 		s.hasRefusal = true
@@ -256,8 +258,24 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	return true
 }
 
-// sendTextDelta appends to the stream's single text part, ending active
-// reasoning first. Content and refusal deltas share the part.
+func (s *streamState) sendReasoningDelta(delta string) bool {
+	if s.textActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextEnd, ID: "txt-0"}) {
+			return false
+		}
+		s.textActive = false
+	}
+	if !s.reasoningActive {
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
+			return false
+		}
+		s.reasoningActive = true
+	}
+	return sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: delta})
+}
+
+// sendTextDelta appends to the active text part, ending active reasoning first.
+// Adjacent content and refusal deltas share the part.
 func (s *streamState) sendTextDelta(delta string) bool {
 	if s.reasoningActive {
 		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {

@@ -91,6 +91,14 @@ Per-call `OpenAIOptions` cover compatible reasoning and schema settings where
 the server supports them. Unsupported values may be ignored or rejected by the
 server, so include the target implementation in integration tests.
 
+## Read array-valued response content
+
+Some compatible servers return an array instead of a string in assistant
+`message.content` or streaming `delta.content`. The adapter emits supported
+blocks in order: `text` becomes text, and the text fragments inside a
+`thinking` block are joined into reasoning. Unsupported block types are
+ignored. This applies to responses only; it does not change request formatting.
+
 ## Recognize refusals
 
 A refusal the server returns instead of content arrives as text, and a `stop`
