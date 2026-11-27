@@ -349,6 +349,14 @@ knownGaps:
       finish, preserving Go's incomplete-stream distinction, where the registered
       upstream reference emits finish with interrupted; complete upstream EOF
       parity is not claimed.
+  - id: pre-model-approval-tool-step-attribution
+    surface: core-streamtext
+    status: documented-deviation
+    description: Pinned upstream tool execution callbacks have no step number
+      or model. Go reports the originating model step for in-loop tool execution
+      and -1 with an empty model when executing approved tools from input history
+      before the first model call. The resume execution is not a recorded step
+      in either implementation.
   - id: provider-stream-ping
     surface: provider-contract
     status: gap

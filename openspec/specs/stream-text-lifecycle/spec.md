@@ -6,6 +6,24 @@ Define `StreamText` step completion, premature provider-stream closure, partial-
 
 ## Requirements
 
+### Requirement: Model step numbers are zero-based
+
+Each model step SHALL use the number of previously recorded steps in the current invocation as its `StepNumber`. Preparation, step start, step finish, and tool execution callbacks for that model step SHALL use the same number. Result and stop/abort step lists SHALL retain these numbers; `OnFinish` SHALL report the final recorded step's number. `StepCountIs` SHALL compare the number of recorded steps, not their index.
+
+#### Scenario: A tool loop advances to another model call
+
+- **WHEN** the first model response requests a local tool and its result leads to another model call
+- **THEN** the first model step and its tool callbacks report step `0`, and the next model step reports step `1`
+- **AND** the first model step remains `StepTypeInitial` and the next remains `StepTypeToolResult`
+- **AND** the stop condition sees one and then two recorded steps
+
+#### Scenario: Approval from input history is resumed before the first model call
+
+- **WHEN** an approved local tool call in the input history executes before the model
+- **THEN** its Go tool start and finish callbacks SHALL report step `-1` with a zero `StepModel`, representing no model step
+- **AND** the execution SHALL NOT add a recorded step, run step lifecycle callbacks, or count toward the step limit
+- **AND** the result of that execution SHALL still reach the first model call, which is step `0`
+
 ### Requirement: Provider stream terminal recognition
 
 StreamText SHALL distinguish terminal parts from model/admin output. Finish SHALL complete the model call: semantically valid responses SHALL complete normally; effective tool-choice violations SHALL use completed semantic-failure finalization. Provider error SHALL be terminal for premature-closure detection with existing handling. Closure without finish/error SHALL be incomplete.

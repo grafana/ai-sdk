@@ -157,6 +157,7 @@ const (
 )
 
 // StepResult contains per-step data from the StreamText orchestration loop.
+// StepNumber is the zero-based index in the recorded steps for this call.
 type StepResult struct {
 	StepNumber            int               `json:"stepNumber"`
 	StepType              StepType          `json:"stepType"`
@@ -186,6 +187,7 @@ type StepResult struct {
 type OnStartState struct{}
 
 // OnStepStartState is passed to the OnStepStart callback.
+// StepNumber is the zero-based index of the model step about to start.
 type OnStepStartState struct {
 	StepNumber int
 	Model      StepModel
@@ -219,6 +221,9 @@ type OnChunkState struct {
 }
 
 // OnToolCallStartState is passed to the OnToolCallStart callback.
+// StepNumber is the zero-based index of the model step that requested the
+// tool call. If an approved call from the input history executes before the
+// first model step, StepNumber is -1 and Model is the zero StepModel.
 type OnToolCallStartState struct {
 	StepNumber int
 	Model      StepModel
@@ -227,6 +232,7 @@ type OnToolCallStartState struct {
 }
 
 // OnToolCallFinishState is passed to the OnToolCallFinish callback.
+// StepNumber and Model use the same attribution as OnToolCallStartState.
 // Either Output+Success=true or Error+Success=false.
 type OnToolCallFinishState struct {
 	StepNumber int
@@ -273,6 +279,7 @@ func HasToolCall(toolNames ...string) StopCondition {
 }
 
 // PrepareStepState is passed to the PrepareStep callback.
+// StepNumber is the zero-based index of the step being prepared, equal to len(Steps).
 type PrepareStepState struct {
 	Steps      []StepResult
 	StepNumber int

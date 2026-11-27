@@ -29,6 +29,21 @@ Use `WithPrepareStep` when later steps need different active tools, messages,
 model settings, or runtime context. Keep ordinary loops simple; step preparation
 is most useful for staged workflows and policy enforcement.
 
+### Migrate step-indexed telemetry
+
+Model step numbers now start at `0`, matching Vercel's SDK and Go's existing
+`PrepareStep` numbering. If you filter for the first model step, change `== 1`
+to `== 0`. Add `1` only for human-readable step labels. When comparing persisted
+telemetry across versions, subtract `1` from old model step numbers; leave
+`StepCountIs(n)` unchanged.
+
+An approved tool from input history can execute before the first model call.
+Go's `OnToolCallStart` and `OnToolCallFinish` report `-1` (formerly `0`) and an
+empty model for that execution. Use a separate resume bucket: `-1` is not a
+valid index into the recorded steps. Vercel's tool execution callbacks do not
+carry a step number. These changes do not affect the UI stream or provider
+requests.
+
 ## Create a reusable agent
 
 ```go

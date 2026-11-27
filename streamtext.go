@@ -521,11 +521,10 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 	}
 
 	retryCfg := buildRetryConfig(&cfg.baseConfig)
-	stepNum := 0
 	currentRuntimeContext := cfg.runtimeContext
 
 	for {
-		stepNum++
+		stepNum := len(r.steps)
 		currentModel := model
 		currentMsgs := msgs
 		toolChoice := cfg.toolChoice
@@ -550,7 +549,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		if cfg.prepareStep != nil {
 			result, err := cfg.prepareStep(PrepareStepState{
 				Steps:            r.steps,
-				StepNumber:       len(r.steps),
+				StepNumber:       stepNum,
 				Model:            currentModel,
 				Messages:         currentMsgs,
 				InitialMessages:  initialMessages,
@@ -885,7 +884,7 @@ func (r *StreamTextResult) processStep(
 		StepType:   StepTypeInitial,
 		Model:      stepModel,
 	}
-	if stepNum > 1 {
+	if stepNum > 0 {
 		step.StepType = StepTypeToolResult
 	}
 
@@ -1860,7 +1859,7 @@ func (r *StreamTextResult) executeTools(
 	outcomes := make([]toolExecOutcome, len(executable))
 	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, step, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index, emit)
+		r.executeSingleTool(ctx, step.StepNumber, step.Model, cfg, et.tc, et.tool, stepContext, currentMsgs, outcomes, et.index, emit)
 	})
 
 	// Events went out as each tool completed; results stay in call order.
@@ -1950,7 +1949,8 @@ func (r *StreamTextResult) emitToolApprovalResponse(cfg *streamConfig, resp Tool
 
 func (r *StreamTextResult) executeSingleTool(
 	ctx context.Context,
-	step *StepResult,
+	stepNumber int,
+	model StepModel,
 	cfg *streamConfig,
 	tc ToolCall,
 	tool Tool,
@@ -1962,8 +1962,8 @@ func (r *StreamTextResult) executeSingleTool(
 ) {
 	if cfg.onToolCallStart != nil {
 		cfg.onToolCallStart(OnToolCallStartState{
-			StepNumber: step.StepNumber,
-			Model:      step.Model,
+			StepNumber: stepNumber,
+			Model:      model,
 			ToolCall:   tc,
 		})
 	}
@@ -2018,8 +2018,8 @@ func (r *StreamTextResult) executeSingleTool(
 
 		if cfg.onToolCallFinish != nil {
 			cfg.onToolCallFinish(OnToolCallFinishState{
-				StepNumber: step.StepNumber,
-				Model:      step.Model,
+				StepNumber: stepNumber,
+				Model:      model,
 				ToolCall:   tc,
 				DurationMs: durationMs,
 				Success:    false,
@@ -2061,8 +2061,8 @@ func (r *StreamTextResult) executeSingleTool(
 
 			if cfg.onToolCallFinish != nil {
 				cfg.onToolCallFinish(OnToolCallFinishState{
-					StepNumber: step.StepNumber,
-					Model:      step.Model,
+					StepNumber: stepNumber,
+					Model:      model,
 					ToolCall:   tc,
 					DurationMs: durationMs,
 					Success:    false,
@@ -2094,8 +2094,8 @@ func (r *StreamTextResult) executeSingleTool(
 
 	if cfg.onToolCallFinish != nil {
 		cfg.onToolCallFinish(OnToolCallFinishState{
-			StepNumber: step.StepNumber,
-			Model:      step.Model,
+			StepNumber: stepNumber,
+			Model:      model,
 			ToolCall:   tc,
 			DurationMs: durationMs,
 			Success:    true,
@@ -2232,6 +2232,8 @@ type collectedToolApproval struct {
 	hasExistingToolResult bool
 }
 
+const approvalResumeStepNumber = -1
+
 func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *streamConfig, msgs []provider.Message) ([]provider.Message, error) {
 	approved, denied, err := collectToolApprovals(msgs)
 	if err != nil {
@@ -2286,17 +2288,10 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		})
 	}
 
-	// Resume tool execution mirrors upstream's Promise.all fan-out:
-	// approved tools run concurrently and each event is emitted as its tool
-	// completes. The synthetic StepResult uses
-	// StepNumber 0 to signal "pre-step resume execution"; consumers that bucket
-	// telemetry by step should treat it as a resume bucket, not as the first
-	// model step (which uses StepNumber 1).
 	outcomes := make([]toolExecOutcome, len(executable))
-	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
 	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, cfg.runtimeContext, msgs, outcomes, et.index, emit)
+		r.executeSingleTool(ctx, approvalResumeStepNumber, StepModel{}, cfg, et.tc, et.tool, cfg.runtimeContext, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
