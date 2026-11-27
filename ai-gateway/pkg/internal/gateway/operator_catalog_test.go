@@ -166,6 +166,38 @@ models:
 	assert.NotContains(t, metrics, longID)
 }
 
+func TestOperatorCatalog_DiscoveryUsesCompatibleBaseURL(t *testing.T) {
+	const key = "dummy-compatible-key"
+	var probes atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /custom/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		probes.Add(1)
+		assert.Equal(t, "Bearer "+key, r.Header.Get("Authorization"))
+		_, _ = io.WriteString(w, `{"data":[{"id":"org/new"}]}`)
+	})
+	backend := httptest.NewServer(mux)
+	t.Cleanup(backend.Close)
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{env: map[string]string{
+		"COMPATIBLE_KEY": key,
+		"GF_PLUGIN_MODEL_CATALOG": fmt.Sprintf(`providers:
+  compatible:
+    type: openai-compatible
+    apiKeyEnv: COMPATIBLE_KEY
+    baseURL: %s/custom/v1
+    providerName: vendor
+    serveAllModels: true
+models: {}
+`, backend.URL),
+	}})
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	status, body := do(t, discoveryRequest(t, h.url("config"), internal))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.JSONEq(t, `{"models":[{"id":"compatible/org/new","name":"org/new",
+		"specification":{"specificationVersion":"v4","provider":"grafana","modelId":"compatible/org/new"},
+		"gateway":{"aliases":[],"primary":{"providerInstance":"compatible","provider":"vendor","providerModelId":"org/new"},"fallbacks":[]}}]}`, body)
+	assert.EqualValues(t, 1, probes.Load())
+}
+
 func unlistedRequestCount(t *testing.T, h *harness) float64 {
 	t.Helper()
 	families, err := h.registry.Gather()
