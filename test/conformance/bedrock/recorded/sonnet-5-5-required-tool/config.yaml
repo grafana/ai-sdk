@@ -1,0 +1,20 @@
+# Live-recorded from Amazon Bedrock on 2026-11-27 with record-conformance.
+model: us.anthropic.claude-sonnet-5-5
+maxRetries: 0
+stopWhenStepCount: 1
+reasoning: none
+prompt: "Call lookup_label once with code MINT-27 to look up its label. Do not guess the label or answer in text."
+toolChoice:
+  type: required
+tools:
+  lookup_label:
+    description: "Look up the label for a synthetic code."
+    inputSchema:
+      type: object
+      properties:
+        code:
+          type: string
+      required: [code]
+      additionalProperties: false
+    mockResults:
+      - label: Mint
