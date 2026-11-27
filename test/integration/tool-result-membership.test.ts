@@ -58,12 +58,13 @@ describe("pinned step tool-result membership", () => {
           yield "tentative value";
           throw new Error("failed execution");
         } }),
-        denied: tool({ inputSchema, execute: () => { throw new Error("must not execute"); } }),
+        denied: tool({ inputSchema, execute: (): string => { throw new Error("must not execute"); } }),
       },
       toolApproval: { denied: { type: "denied", reason: "not authorized" } },
     });
 
-    const full = await Array.fromAsync(result.fullStream);
+    const full = [];
+    for await (const part of result.fullStream) full.push(part);
     const [step] = await result.steps;
     const ids = ["hosted-ok", "ordinary"];
     expect(step.toolResults.map(part => part.toolCallId).sort()).toEqual(ids);
