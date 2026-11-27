@@ -353,10 +353,25 @@ Fields:
 - `providerTools` (optional): provider-defined tools (e.g. `code_execution`, `web_search`) with `id` and optional `args`
 - `providerTools.<name>.providerOptions` (optional): provider-specific options for a provider-defined tool
 - `responseFormat` (optional): JSON mode config with `type: json` and `schema`
-- `assertOutputValue` (optional): requires `expected-object.json` to match the parsed `OutputValue` instead of reconstructed text
+- `assertOutputValue` (optional, stream only): requires a non-null `expected-object.json` matching the parsed Go `OutputValue`; never falls back to reconstructed text
+- `expectOutputValidationError` (optional, stream only): requires Go to reject the streamed JSON at schema validation, not just return a nil `OutputValue`. Incompatible with `assertOutputValue`; regeneration keeps the request and stream snapshots but omits `expected-object.json`.
 - `approval` (optional): seeds a prior tool call, approval request, and approval response for replaying approved/denied second-call flows
 - `expectStreamError` (optional): requires the Go replay to end with an error while still comparing emitted UI chunks
 - `maxRetries` (optional): core replay retry count; live recording defaults to zero retries unless this is explicitly set
+
+### Anthropic structured output evidence
+
+- `upstream/json-output-format` uses the `characters` schema from the pinned
+  Anthropic `doStream` test (`class` is a string). The replay also checks the
+  parsed Go result against the TypeScript core output.
+- `upstream/json-tool-1` and `upstream/json-tool-2` use the pinned adapter
+  tests’ required `name` schema. The captured JSON contains `elements`
+  instead. Requests, provider parts and UI chunks still test the adapter
+  conversion (including suppression of the text prelude in `json-tool-2`).
+  Go asserts schema rejection; TypeScript `jsonSchema(...)` without a validator
+  only parses JSON, so its result is not an object golden for these cases.
+- `upstream/json-other-tool` ends with an application tool call, not a JSON
+  result. Its request and stream snapshots make no parsed output claim.
 
 ## Request Input Assertions
 

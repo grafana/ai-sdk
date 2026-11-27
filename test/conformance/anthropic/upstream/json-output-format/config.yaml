@@ -1,4 +1,5 @@
 model: claude-sonnet-4-5
+assertOutputValue: true
 responseFormat:
   type: json
   schema:
@@ -13,7 +14,6 @@ responseFormat:
               type: string
             class:
               type: string
-              enum: [warrior, mage, rogue]
             description:
               type: string
           required: [name, class, description]

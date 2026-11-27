@@ -535,8 +535,11 @@ async function generateExpected(tc: TestCase): Promise<void> {
     const chunks: unknown[] = [];
     const normalizeSourceId =
       tc.provider === "openai" ? createSourceIdNormalizer() : (chunk: unknown) => chunk;
-    const objectPromise = output
-      ? Promise.resolve(result.output).catch((err: unknown) => ({ __error: String(err) }))
+    const objectPromise = output && !cfg.expectOutputValidationError
+      ? Promise.resolve(result.output).then(
+          value => ({ value }),
+          (err: unknown) => ({ error: String(err) }),
+        )
       : undefined;
     const usagePath = join(tc.dir, "expected-usage.json");
     const usagePromise = existsSync(usagePath)
@@ -559,18 +562,25 @@ async function generateExpected(tc: TestCase): Promise<void> {
       writeFileSync(usagePath, JSON.stringify(await usagePromise, null, 2) + "\n");
     }
 
-    if (objectPromise) {
-      const obj = await objectPromise;
-      const objectPath = join(tc.dir, "expected-object.json");
-      if (obj && typeof obj === "object" && "__error" in obj) {
-        rmSync(objectPath, { force: true });
-        console.log(`  OK: ${chunks.length} chunks, ${requests.length} request(s) -> expected.jsonl + expected-requests.jsonl (output validation failed: ${obj.__error})`);
-      } else {
-        writeFileSync(objectPath, JSON.stringify(obj, null, 2) + "\n");
-        console.log(`  OK: ${chunks.length} chunks, ${requests.length} request(s) -> expected.jsonl + expected-requests.jsonl + expected-object.json`);
-      }
+    const objectPath = join(tc.dir, "expected-object.json");
+    const objectResult = await objectPromise;
+    const outputError = objectResult && "error" in objectResult ? objectResult.error : undefined;
+    const obj = objectResult && "value" in objectResult ? objectResult.value : undefined;
+    const snapshots = `  OK: ${chunks.length} chunks, ${requests.length} request(s) -> expected.jsonl + expected-requests.jsonl`;
+    if (cfg.expectOutputValidationError) {
+      rmSync(objectPath, { force: true });
+      console.log(`${snapshots} (no parsed output golden; Go asserts schema rejection)`);
+    } else if (cfg.assertOutputValue && (obj == null || outputError !== undefined)) {
+      rmSync(objectPath, { force: true });
+      throw new Error(`assertOutputValue requires non-null parsed output: ${outputError ?? "none produced"}`);
+    } else if (outputError !== undefined) {
+      rmSync(objectPath, { force: true });
+      console.log(`${snapshots} (output validation failed: ${outputError})`);
+    } else if (objectPromise) {
+      writeFileSync(objectPath, JSON.stringify(obj, null, 2) + "\n");
+      console.log(`${snapshots} + expected-object.json`);
     } else {
-      console.log(`  OK: ${chunks.length} chunks, ${requests.length} request(s) -> expected.jsonl + expected-requests.jsonl`);
+      console.log(snapshots);
     }
   } finally {
     await close();

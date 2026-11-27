@@ -370,6 +370,13 @@ describe("fixture config keys", () => {
     });
   }
 
+  it("rejects conflicting structured output assertions", () => {
+    assert.throws(
+      () => parseConfig("model: test\nassertOutputValue: true\nexpectOutputValidationError: true\n", "conflict.yaml"),
+      /assertOutputValue and expectOutputValidationError are mutually exclusive/,
+    );
+  });
+
   it("accepts every key and keeps payload maps open", () => {
     // Every TypeScript key must appear in all-keys.yaml, which the Go loader
     // also accepts, so the tools cannot accept a key Go replay would drop.

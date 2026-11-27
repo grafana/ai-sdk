@@ -68,7 +68,7 @@ Each provider-backed test case SHALL contain `config.yaml` declaring replay conf
 - `stopWhenStepCount` (integer, default 1)
 - `providerOptions` (nested map)
 - `tools` (map of tool name to definition with `description`, `inputSchema` JSON schema, `mockResults` list, optional declarative `modelOutput`, and optional approval configuration)
-- `providerTools`, `responseFormat`, `assertOutputValue`
+- `providerTools`, `responseFormat`, `assertOutputValue`, `expectOutputValidationError`
 - approval-resumption setup for scenarios replaying a second approval call
 - `expectStreamError` (boolean, default false)
 
@@ -117,10 +117,9 @@ Each provider-backed test case SHALL contain `config.yaml` declaring replay conf
 - **WHEN** a config sets `expectStreamError: true`
 - **THEN** the Go runner SHALL require `StreamTextResult.Err()` to be non-nil while still comparing every emitted UI chunk against `expected.jsonl`
 
-#### Scenario: Parsed output assertion config
-- **WHEN** a config sets `assertOutputValue: true` and the test case contains `expected-object.json`
-- **THEN** the Go runner SHALL compare `expected-object.json` directly with `StreamTextResult.OutputValue()`
-- **AND** it SHALL NOT reconstruct a missing output value from text chunks
+#### Scenario: Conflicting structured output expectations
+- **WHEN** a config sets both `assertOutputValue: true` and `expectOutputValidationError: true`
+- **THEN** the Go runner and the TypeScript tools SHALL reject the config
 
 ### Requirement: Configured message content shapes
 
@@ -155,9 +154,17 @@ A conformance test case MAY contain `expected-object.json` with the complete str
 
 #### Scenario: Parsed output matches upstream
 
-- **WHEN** a test case contains `expected-object.json` and sets `assertOutputValue: true`
-- **THEN** the Go test SHALL compare the decoded expected value with `StreamTextResult.OutputValue()`
-- **AND** the test SHALL fail when `OutputValue()` is nil but the expected value is non-nil
+- **WHEN** a test case sets `assertOutputValue: true`
+- **THEN** the Go test SHALL require a non-null `expected-object.json` and compare its decoded value directly with `StreamTextResult.OutputValue()`
+- **AND** the test SHALL fail if parsing fails or produces no value, without reconstructing it from text chunks
+- **AND** regeneration SHALL fail and remove any stale object golden if upstream produces no parsed output
+
+#### Scenario: Adapter output fails schema validation
+
+- **WHEN** a test case sets `expectOutputValidationError: true`
+- **THEN** the Go runner SHALL require a nil `StreamTextResult.OutputValue()` and a schema validation error from `StreamTextResult.OutputError()`
+- **AND** the TypeScript generator SHALL omit or remove `expected-object.json` without claiming upstream schema validation
+- **AND** the Go runner SHALL reject an object golden for the case and continue to compare the request and stream snapshots as usual
 
 #### Scenario: Legacy response-format fixture has no OutputValue
 
