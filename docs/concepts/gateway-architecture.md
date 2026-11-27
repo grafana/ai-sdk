@@ -232,7 +232,8 @@ sequenceDiagram
    telemetry wraps dispatch. Route and method checks happen before the access
    decision; the decision happens before body decoding. The plugin host verifies
    the platform-delegated token against the platform signing keys
-   (`GRAFANA_JWKS_URL` or `GRAFANA_JWKS`). `Decide` then maps the verified token
+   (`GF_JWKS_URL` or `GF_JWKS`, or their legacy names `GRAFANA_JWKS_URL` and
+   `GRAFANA_JWKS`). `Decide` then maps the verified token
    and route namespace to account access under the configured `access_mode`
    (`cloud` or `self-hosted`): the token namespace must cover the route
    namespace, then the mode and the token's actor chain select configured, BYOK,

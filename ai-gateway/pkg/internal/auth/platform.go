@@ -26,11 +26,19 @@ const (
 // ErrNoSigningKeys reports that neither signing key source is configured.
 var ErrNoSigningKeys = errors.New("gateway auth: no platform signing keys configured")
 
+// legacySigningKeyEnvVars maps each signing key variable to the name Grafana
+// used before it, which is read when the variable is unset.
+var legacySigningKeyEnvVars = map[string]string{
+	plugin.EnvVarGrafanaJWKSURL: "GRAFANA_JWKS_URL",
+	plugin.EnvVarGrafanaJWKS:    "GRAFANA_JWKS",
+}
+
 // SigningKeys returns the platform signing keys from exactly one of
-// GRAFANA_JWKS_URL or GRAFANA_JWKS, following the plugin host's rules.
+// GF_JWKS_URL or GF_JWKS, following the plugin host's rules. Each falls back
+// to its legacy name, GRAFANA_JWKS_URL or GRAFANA_JWKS, when unset.
 func SigningKeys(lookupEnv func(string) (string, bool)) (authn.KeyRetriever, error) {
-	keysURL, _ := lookupEnv(plugin.EnvVarGrafanaJWKSURL)
-	keysJSON, _ := lookupEnv(plugin.EnvVarGrafanaJWKS)
+	keysURL := signingKeyEnv(lookupEnv, plugin.EnvVarGrafanaJWKSURL)
+	keysJSON := signingKeyEnv(lookupEnv, plugin.EnvVarGrafanaJWKS)
 	switch {
 	case keysURL == "" && keysJSON == "":
 		return nil, ErrNoSigningKeys
@@ -45,6 +53,14 @@ func SigningKeys(lookupEnv func(string) (string, bool)) (authn.KeyRetriever, err
 	default:
 		return parseSigningKeys(keysJSON)
 	}
+}
+
+func signingKeyEnv(lookupEnv func(string) (string, bool), name string) string {
+	if value, _ := lookupEnv(name); value != "" {
+		return value
+	}
+	value, _ := lookupEnv(legacySigningKeyEnvVars[name])
+	return value
 }
 
 type staticKeys map[string]*jose.JSONWebKey

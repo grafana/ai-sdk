@@ -41,9 +41,10 @@ var appManifestData = app.ManifestData{
 				{
 					Kind:         "ModelCatalog",
 					Plural:       "ModelCatalogs",
+					Resource:     "modelcatalogs",
 					Scope:        "Namespaced",
 					Conversion:   false,
-					FolderScoped: func(b bool) *bool { return &b }(false),
+					FolderScoped: new(false),
 					Admission: &app.AdmissionCapabilities{
 						Validation: &app.ValidationCapability{
 							Operations: []app.AdmissionOperation{
@@ -68,9 +69,10 @@ var appManifestData = app.ManifestData{
 				{
 					Kind:         "Middleware",
 					Plural:       "Middlewares",
+					Resource:     "middlewares",
 					Scope:        "Namespaced",
 					Conversion:   false,
-					FolderScoped: func(b bool) *bool { return &b }(false),
+					FolderScoped: new(false),
 					Admission: &app.AdmissionCapabilities{
 						Validation: &app.ValidationCapability{
 							Operations: []app.AdmissionOperation{
