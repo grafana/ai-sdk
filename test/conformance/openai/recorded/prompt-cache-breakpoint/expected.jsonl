@@ -1,0 +1,7 @@
+{"type":"start"}
+{"type":"start-step"}
+{"type":"text-start","id":"msg_052711e1bfd774a6016b09c1481cf087d29558db630b4e4e54","providerMetadata":{"openai":{"itemId":"msg_052711e1bfd774a6016b09c1481cf087d29558db630b4e4e54","phase":"final_answer"}}}
+{"type":"text-delta","id":"msg_052711e1bfd774a6016b09c1481cf087d29558db630b4e4e54","delta":"READY"}
+{"type":"text-end","id":"msg_052711e1bfd774a6016b09c1481cf087d29558db630b4e4e54","providerMetadata":{"openai":{"itemId":"msg_052711e1bfd774a6016b09c1481cf087d29558db630b4e4e54","phase":"final_answer"}}}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}
