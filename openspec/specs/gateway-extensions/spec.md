@@ -164,6 +164,14 @@ Observe SHALL run once per call for each applicable extension that implements it
 - **WHEN** a model stream delivers an error part, before or after its finish
 - **THEN** the outcome SHALL be error, also when the call is then cancelled, unless it is denied or its output is invalid
 
+#### Scenario: Caller cancellation ends an unfinished stream
+- **WHEN** the model stream closes before the current response segment has finished and the caller's context has already ended
+- **THEN** the outcome SHALL be cancelled even if the host observes the close before it handles the cancellation, unless the call is denied, the output is invalid, or the host has observed an in-band error part
+
+#### Scenario: Stream closes unexpectedly
+- **WHEN** the host observes the model stream close before the current response segment has finished and the caller's context is still active at that point
+- **THEN** the outcome SHALL be error unless the call is denied or its output is invalid
+
 #### Scenario: Observer fails
 - **WHEN** observe returns an error or panics
 - **THEN** the call's result, error and stream SHALL be unchanged, other observers SHALL still run, and the failure SHALL be counted

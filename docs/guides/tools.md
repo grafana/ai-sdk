@@ -63,7 +63,10 @@ Some providers also supply provider-executed tools such as web search or code
 execution. Those are configured through the provider package and run by the
 provider, not by your `Execute` function. A provider-defined tool may also
 return a call for your application to execute. Check `ProviderExecuted` on each
-call to determine who owns execution.
+call to determine who owns execution. Some provider tools, such as OpenAI image
+generation, stream previews before the final result. Those results have
+`Preliminary` set, in the stream and in the UI chunk, and only the final result
+enters the next model prompt.
 
 ## Route tools through callers
 

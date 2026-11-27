@@ -164,7 +164,8 @@ The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.
 
 The Gateway serves requests only when Grafana gives it the platform signing
-keys, `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, to verify callers. Without them,
+keys, `GF_JWKS_URL` or `GF_JWKS`, to verify callers; older Grafana versions
+name them `GRAFANA_JWKS_URL` and `GRAFANA_JWKS`, which it also reads. Without them,
 it starts idle: it ignores its settings, serves nothing, and Grafana's log
 warns that plugin requests will be rejected. A Grafana Cloud stack's own Grafana
 runs the Gateway this way, because the platform serves the Gateway API
@@ -182,12 +183,20 @@ elsewhere.
   permission from the basic roles and grant it on the Gateway's scope only to
   the roles that need it, as described in
   [Prevent Viewers from accessing an app plugin](https://grafana.com/docs/grafana/latest/administration/roles-and-permissions/access-control/plan-rbac-rollout-strategy/#prevent-viewers-from-accessing-an-app-plugin).
-  Changing basic roles needs Grafana Enterprise.
+  Changing basic roles needs Grafana Enterprise. A plugin calling as itself,
+  with no user, is refused unless it is listed in `access_internal_services`.
 - **`cloud`:** for Grafana Cloud. Only the Grafana services listed in
-  `access_internal_services` get the configured models. Each entry is the
-  service identity a caller presents, the `serviceIdentity` claim of its access
-  token, matched exactly. Every other user and service account brings its own
-  provider key with each request.
+  `access_internal_services` get the configured models. Every other user and
+  service account brings its own provider key with each request.
+
+Each `access_internal_services` entry is the service identity a caller
+presents, the `serviceIdentity` claim of its access token, matched exactly. A
+listed service gets the configured models in either mode, as itself and on
+behalf of a user. In self-hosted Grafana, a plugin's service identity is
+`plugin:<plugin ID>`, which needs a Grafana version that signs it
+([grafana/grafana#139015](https://github.com/grafana/grafana/pull/139015)). List
+only the plugins that may use the configured models without a user: a plugin
+calling as itself has no Grafana role, so `plugins.app:access` doesn't limit it.
 
 ## Store model catalogs in Grafana
 
@@ -275,11 +284,18 @@ mode, any user or service account can use a listed endpoint.
 
 ### Call a stored catalog
 
-With a service account or caller-managed access token, use the catalog's URL
-as the client's base URL, for example
+With a service account or caller-managed access token, use the catalog URL,
+for example
 `https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/default`.
-With Go token exchange, keep the Gateway API root and select the catalog with
-`WithCatalog`. See the [authentication guide](../docs/guides/gateway-authentication.md#call-a-stored-stack-catalog).
+
+- ProviderWire clients use the catalog URL as the base URL and append
+  `/config` or `/language-model`.
+- With Go ProviderWire token exchange, keep the Gateway API root and select the
+  catalog with `WithCatalog`. See the
+  [authentication guide](../docs/guides/gateway-authentication.md#call-a-stored-stack-catalog).
+- For an [OpenAI client](../docs/guides/openai-chat-completions.md), append
+  `/v1` to the catalog base URL so the SDK calls
+  `POST .../modelcatalogs/{name}/v1/chat/completions`.
 
 - Editors and Admins can list and call catalog models (`aigateway:modelinvoker`).
   Viewers can read catalogs but not call them, and anonymous access can't
@@ -317,7 +333,7 @@ With Go token exchange, keep the Gateway API root and select the catalog with
 |---|---|
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
-| `access_internal_services` | Comma-separated service identities of the Grafana services that get the configured models in `cloud` mode. |
+| `access_internal_services` | Comma-separated service identities of the Grafana services and plugins that get the configured models, in either mode; see [Choose who can use it](#choose-who-can-use-it). |
 | `custom_endpoints` | Comma-separated base URLs that catalogs and BYOK accounts may use; see [Custom endpoints](#custom-endpoints). |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 | `extensions` | Optional YAML configuration of a distribution's operator extensions; see [Extend Grafana AI Gateway](../docs/guides/gateway-extensions.md). |

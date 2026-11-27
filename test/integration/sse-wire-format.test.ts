@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseJsonEventStream } from "@ai-sdk/provider-utils";
-import { readUIMessageStream, uiMessageChunkSchema, type UIMessage, type UIMessageChunk } from "ai";
+import { convertToModelMessages, readUIMessageStream, uiMessageChunkSchema, type UIMessage, type UIMessageChunk } from "ai";
 import { fetchScenario } from "./helpers.js";
 
 describe("SSE wire format", () => {
@@ -182,7 +182,7 @@ describe("SSE wire format", () => {
     });
   });
 
-  it("provider tool output omits absent dynamic and preliminary metadata", async () => {
+  it("provider tool output marks only the preview as preliminary and omits absent dynamic", async () => {
     const res = await fetchScenario("provider-tool-metadata");
     const stream = parseJsonEventStream({
       stream: res.body!,
@@ -206,8 +206,22 @@ describe("SSE wire format", () => {
     expect(toolOutputs).toHaveLength(2);
     for (const chunk of toolOutputs) {
       expect(chunk).not.toHaveProperty("dynamic");
-      expect(chunk).not.toHaveProperty("preliminary");
     }
+    expect(toolOutputs[0]).toMatchObject({ output: { stage: "preview" }, providerExecuted: true, preliminary: true });
+    expect(toolOutputs[1]).toMatchObject({ output: { stage: "final" }, providerExecuted: true });
+    expect(toolOutputs[1]).not.toHaveProperty("preliminary");
+
+    let message: UIMessage | undefined;
+    for await (const next of readUIMessageStream({
+      stream: new ReadableStream<UIMessageChunk>({ start(controller) { chunks.forEach(chunk => controller.enqueue(chunk)); controller.close(); } }),
+      terminateOnError: true,
+    })) message = next;
+    const toolPart = message?.parts.find(part => "toolCallId" in part && part.toolCallId === "image-1");
+    expect(toolPart).toMatchObject({ state: "output-available", output: { stage: "final" } });
+    expect(toolPart).not.toHaveProperty("preliminary", true);
+    const results = (await convertToModelMessages([message!])).flatMap(m => Array.isArray(m.content) ? m.content : [])
+      .filter(content => content.type === "tool-result");
+    expect(results).toMatchObject([{ toolCallId: "image-1", output: { type: "json", value: { stage: "final" } } }]);
 
     expect(chunks).toContainEqual({
       type: "custom",

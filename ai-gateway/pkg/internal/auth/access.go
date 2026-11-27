@@ -21,7 +21,8 @@ const (
 	// AccessModeCloud grants the catalog to allowlisted internal services and
 	// request-scoped BYOK to other users and service accounts.
 	AccessModeCloud AccessMode = "cloud"
-	// AccessModeSelfHosted grants the catalog to users and service accounts.
+	// AccessModeSelfHosted grants the catalog to allowlisted internal services
+	// and to users and service accounts.
 	AccessModeSelfHosted AccessMode = "self-hosted"
 )
 
@@ -48,7 +49,7 @@ type AccessPolicy struct {
 }
 
 // ParseAccessPolicy validates the access mode and the comma-separated
-// internal service allowlist, which only cloud mode accepts.
+// internal service allowlist, which both modes accept.
 func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 	policy := AccessPolicy{Mode: AccessMode(mode)}
 	switch policy.Mode {
@@ -60,9 +61,6 @@ func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 	}
 	if internalServices == "" {
 		return policy, nil
-	}
-	if policy.Mode != AccessModeCloud {
-		return AccessPolicy{}, errors.New("config: the internal service allowlist requires cloud access mode")
 	}
 	for entry := range strings.SplitSeq(internalServices, ",") {
 		entry = strings.TrimSpace(entry)
@@ -94,7 +92,7 @@ type Caller struct {
 func (caller Caller) AccountAccess() AccountAccess { return caller.access }
 
 // AttributedService returns the service identity that observations may
-// attribute, which is set for configured access in cloud mode and for catalog
+// attribute, which is set for allowlisted internal services and for catalog
 // access.
 func (caller Caller) AttributedService() string { return caller.attributedService }
 
@@ -113,7 +111,7 @@ func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) Caller 
 	service := single(info.GetExtra()[DirectCallerServiceKey])
 	caller := Caller{Namespace: namespace, Identity: identityActor(info), callerType: identityActorType(info)}
 	switch {
-	case policy.Mode == AccessModeCloud && service != "" && slices.Contains(policy.InternalServices, service):
+	case service != "" && slices.Contains(policy.InternalServices, service):
 		caller.access, caller.attributedService, caller.callerType = ConfiguredAccounts, service, extension.CallerInternalService
 	case caller.Identity == "":
 		return refused

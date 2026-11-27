@@ -26,6 +26,7 @@ func TestAccessPolicy_Decide(t *testing.T) {
 	allowlisted := AccessPolicy{Mode: AccessModeCloud, InternalServices: []string{"svc-a"}}
 	emptyAllowlist := AccessPolicy{Mode: AccessModeCloud}
 	selfHosted := AccessPolicy{Mode: AccessModeSelfHosted}
+	selfHostedAllowlisted := AccessPolicy{Mode: AccessModeSelfHosted, InternalServices: []string{"svc-a"}}
 
 	tests := []struct {
 		name       string
@@ -55,6 +56,13 @@ func TestAccessPolicy_Decide(t *testing.T) {
 		{name: "self-hosted service with a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-a", self.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, identity: "user:u1"},
 		{name: "self-hosted anonymous", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeAnonymous, "anon")), access: Refused},
 		{name: "self-hosted service without a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), access: Refused},
+		{name: "self-hosted allowlisted direct service", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), access: ConfiguredAccounts, attributed: "svc-a"},
+		{name: "self-hosted allowlisted service for a user", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-a", self.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, identity: "user:u1", attributed: "svc-a"},
+		{name: "self-hosted service off the allowlist", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-b", testNamespace)), access: Refused},
+		{name: "self-hosted user off the allowlist", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-b", self.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, identity: "user:u1"},
+		{name: "self-hosted relay without a user", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("relay", self.service("svc-a", testNamespace))), access: Refused},
+		{name: "self-hosted case near-match", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("SVC-A", testNamespace)), access: Refused},
+		{name: "self-hosted allowlisted service for another namespace", policy: selfHostedAllowlisted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), namespace: otherNamespace, access: Refused},
 		{name: "missing route namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: "-", access: Refused},
 		{name: "cloud allowlisted service for another namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: otherNamespace, access: Refused},
 		{name: "cloud front-door user for another namespace", policy: allowlisted, token: cloud.frontDoor(types.TypeUser, "u1"), namespace: otherNamespace, access: Refused},
