@@ -285,8 +285,11 @@ implicit fallback, but can use or be named in explicit `gateway.models`
 fallbacks. The catalog's `/config` includes configured models and eligible
 qualified IDs from opted-in providers' inventories. Listings are bounded
 and best-effort, and provider failures do not hide configured models. An ID
-can be callable even if discovery omits it. The provider model ID picker
-fetches suggestions separately, on demand.
+can be callable even if discovery omits it. Discovery reuses provider inventory
+for up to 30 seconds per catalog revision. The next admitted discovery after
+saving the catalog fetches fresh inventory. Health and the model picker query
+providers live and use separate
+admission from discovery.
 
 ### Custom endpoints
 

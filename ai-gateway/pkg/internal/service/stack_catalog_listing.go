@@ -46,7 +46,7 @@ func listingKeyMatcher(keys []string) func(string) bool {
 	}
 }
 
-func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.ResolvedProvider, containsKey func(string) bool, visit func(listingPage) bool) (status HealthStatus, complete bool) {
+func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.ResolvedProvider, containsKey func(string) bool, visit func(listingPage) bool) (status HealthStatus, complete, failed bool) {
 	ctx, cancel := context.WithTimeout(ctx, listingProviderTimeout)
 	defer cancel()
 
@@ -64,14 +64,14 @@ func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.Resolve
 		}
 	case "openai-compatible":
 		if !custom {
-			return HealthRefused, false
+			return HealthRefused, false, true
 		}
 	default:
-		return HealthRefused, false
+		return HealthRefused, false, true
 	}
 	endpoint, err := url.JoinPath(base, path)
 	if err != nil {
-		return HealthRefused, false
+		return HealthRefused, false, true
 	}
 
 	seen := make(map[string]struct{}, pages)
@@ -80,25 +80,25 @@ func (c *CatalogHealthChecker) walkListing(ctx context.Context, p config.Resolve
 		page, outcome := c.listPage(ctx, p, endpoint, cursor, custom)
 		if outcome != HealthOK {
 			if status == "" {
-				return outcome, false
+				return outcome, false, true
 			}
-			return status, false
+			return status, false, true
 		}
 		status = HealthOK
 		more := visit(page)
 		if page.HasMore == nil || !*page.HasMore {
-			return status, true
+			return status, true, false
 		}
 		if !more || p.Type != "anthropic" || page.LastID == "" || len(page.LastID) > listingCursorBytes || containsKey(page.LastID) {
-			return status, false
+			return status, false, false
 		}
 		if _, repeated := seen[page.LastID]; repeated {
-			return status, false
+			return status, false, false
 		}
 		cursor = page.LastID
 		seen[cursor] = struct{}{}
 	}
-	return status, false
+	return status, false, false
 }
 
 func (c *CatalogHealthChecker) listPage(ctx context.Context, p config.ResolvedProvider, endpoint, cursor string, custom bool) (listingPage, HealthStatus) {

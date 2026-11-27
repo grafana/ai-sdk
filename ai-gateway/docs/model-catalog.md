@@ -29,8 +29,9 @@ keeps the saved blocklist. Existing listed models stay visible and editable.
 
 Catalog discovery includes both configured models and qualified IDs from
 eligible provider listings. It omits blocked IDs and selectors already used
-by a listed ID or alias. Results can be incomplete: a qualified ID may still
-be callable even when it is absent from discovery.
+by a listed ID or alias. Results can be incomplete or up to 30 seconds stale:
+a qualified ID may still be callable when discovery omits it. A catalog save
+invalidates discovery's inventory cache; health and model suggestions stay live.
 
 After saving, select **Check health** on the catalog page to see which provider
 model listings accepted the saved keys and which primary and fallback model

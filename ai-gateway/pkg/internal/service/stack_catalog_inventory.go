@@ -54,14 +54,15 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 	}
 	defer c.release(id)
 
-	return c.inventory(ctx, resolveStackProvider(configured, stack, provider), listingKeyMatcher(keys)), nil
+	result, _ := c.inventory(ctx, resolveStackProvider(configured, stack, provider), listingKeyMatcher(keys))
+	return result, nil
 }
 
-func (c *CatalogHealthChecker) inventory(ctx context.Context, provider config.ResolvedProvider, containsKey func(string) bool) CatalogProviderModels {
-	result := CatalogProviderModels{ModelIDs: []string{}}
+func (c *CatalogHealthChecker) inventory(ctx context.Context, provider config.ResolvedProvider, containsKey func(string) bool) (result CatalogProviderModels, cacheable bool) {
+	result = CatalogProviderModels{ModelIDs: []string{}}
 	seen := make(map[string]struct{})
 	omitted := false
-	status, complete := c.walkListing(ctx, provider, containsKey, func(page listingPage) bool {
+	status, complete, failed := c.walkListing(ctx, provider, containsKey, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			id := entry.ID
 			if _, duplicate := seen[id]; duplicate {
@@ -81,5 +82,5 @@ func (c *CatalogHealthChecker) inventory(ctx context.Context, provider config.Re
 		result.Status = ListingPartial
 	}
 	slices.Sort(result.ModelIDs)
-	return result
+	return result, !failed
 }

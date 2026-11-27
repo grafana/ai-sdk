@@ -40,7 +40,10 @@ flowchart LR
   admin[Grafana catalog page]
   subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
-    health[Stored catalog health check]
+    health[Health and model picker admission]
+    discovery[Catalog discovery admission]
+    inventory[Discovery inventory cache]
+    listing[Bounded provider listing transport]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
       chat[Chat Completions decoder and response encoder]
@@ -73,7 +76,12 @@ flowchart LR
   admin -->|Check health after create or on request; open model suggestions| host
   host --> health
   health -->|shared catalog checks| stack
-  health -->|model listings only| apis
+  host --> discovery
+  discovery -->|shared catalog checks| stack
+  discovery --> inventory
+  inventory -->|cache miss| listing
+  health --> listing
+  listing -->|model listings only| apis
   host --> pw
   host --> chat --> runtime
   host --> messages --> runtime
@@ -128,10 +136,11 @@ selector builds that catalog's models for the call with `SelectStackCatalog`,
 and discovery lists it without building models. Discovery can add qualified
 IDs from providers that serve unlisted models. This lookup, health, and the
 provider model ID field's suggestions share the same catalog checks, saved
-keys, bounded provider listing and admission, outside the execution pipeline. Health
-reports provider statuses even before models are configured, and target
-statuses only for configured primaries and fallbacks. Suggestions use IDs
-from one saved provider without caching them.
+keys, and bounded listing transport, outside the execution pipeline. Discovery
+has its own admission slots and caches provider inventory for up to 30 seconds
+per catalog revision. Health and suggestions use their own shared admission and
+stay uncached. Health reports provider statuses even before models are configured
+and target statuses only for configured primaries and fallbacks.
 Without the `model_catalog`
 setting the operator catalog is empty: the namespace routes list no configured
 models and every configured model ID is not found. The `Middleware` spec has

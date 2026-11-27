@@ -126,7 +126,8 @@ func TestParentCatalog(t *testing.T) {
 		stack  *service.StackCatalog
 	}{
 		{name: "matching parent", info: func(t *testing.T) *resource.RouteRequestInfo { return testCatalogInfo(testCatalogParent(t, nil)) }, status: http.StatusNoContent, stack: &service.StackCatalog{
-			Name: testCatalogName,
+			Name:            testCatalogName,
+			ResourceVersion: "7",
 			Spec: v1alpha1.Spec{
 				Providers: map[string]v1alpha1.Provider{"claude": {Type: "anthropic"}},
 				Models:    map[string]v1alpha1.Model{"balanced": {Name: "Balanced", Primary: v1alpha1.Target{Provider: "claude", Model: "claude-sonnet"}}},

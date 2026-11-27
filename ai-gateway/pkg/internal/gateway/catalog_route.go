@@ -51,6 +51,7 @@ func parentCatalog(errors host.ErrorWriter, next http.Handler) http.Handler {
 		var parent v1alpha1.ModelCatalog
 		if json.Unmarshal(info.Parent, &parent) == nil {
 			stack.Spec, stack.Keys = parent.Spec, info.DecryptedSecureValues
+			stack.ResourceVersion = info.ResourceVersion
 		}
 		next.ServeHTTP(w, request.WithContext(service.WithStackCatalog(request.Context(), stack)))
 	})

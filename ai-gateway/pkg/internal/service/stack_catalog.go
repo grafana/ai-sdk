@@ -28,6 +28,8 @@ import (
 type StackCatalog struct {
 	// Name is the catalog's object name.
 	Name string
+	// ResourceVersion is the verified route parent's revision, if supplied.
+	ResourceVersion string
 	// Spec is the stored spec, checked again on every selection.
 	Spec v1alpha1.Spec
 	// Keys are the catalog's decrypted secure values. Each key is a provider
@@ -139,8 +141,18 @@ var errNoStackCatalog = errors.New("gateway service: the request carries no stac
 type StackCatalogLister struct {
 	// Endpoints are the custom endpoints a catalog may use.
 	Endpoints outbound.CustomEndpoints
-	// Listings supplies best-effort provider inventory for discovery.
-	Listings *CatalogHealthChecker
+	listings  *catalogDiscoveryListings
+}
+
+// NewStackCatalogLister creates a lister with its own provider inventory admission and cache.
+func NewStackCatalogLister(transport http.RoundTripper, endpoints outbound.CustomEndpoints) StackCatalogLister {
+	return StackCatalogLister{
+		Endpoints: endpoints,
+		listings: &catalogDiscoveryListings{
+			checker: NewCatalogHealthChecker(transport, endpoints),
+			entries: make(map[discoveryInventoryKey]discoveryInventoryEntry),
+		},
+	}
 }
 
 // ListModels implements [catalog.ModelLister]. A catalog that fails its checks
@@ -164,8 +176,8 @@ func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.Mode
 		}
 		infos = append(infos, catalog.ModelInfo{ID: id, Name: model.Name, Description: model.Description, Aliases: slices.Clone(model.Aliases), Candidates: group.candidates})
 	}
-	if lister.Listings != nil {
-		infos = lister.Listings.appendUnlistedModels(ctx, stack, index, keys, infos)
+	if lister.listings != nil {
+		infos = lister.listings.appendUnlistedModels(ctx, stack, index, keys, infos)
 	}
 	return infos, nil
 }

@@ -209,6 +209,18 @@ func TestCatalogRoutes_UnlistedModels(t *testing.T) {
 	assert.Contains(t, bodies[1], `"model":"org/new"`)
 	assert.Contains(t, bodies[2], `"model":"org/blocked"`)
 	assert.EqualValues(t, 2, probes.Load(), "inference never lists provider models")
+	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"id":"claude/org/new"`)
+	assert.EqualValues(t, 2, probes.Load(), "the platform-supplied revision enables cache hits")
+
+	status, body = sendObject(t, t.Context(), http.MethodPut, catalogURL(h.server.URL, testCatalogName), writer,
+		`{"metadata":{"name":"team"},"spec":{"providers":{"claude":{"type":"anthropic","serveAllModels":true,"modelBlocklist":["org/blocked"]},"second":{"type":"anthropic","serveAllModels":true}},"models":{}},"secure":{"claude":{"create":"`+editedCatalogKey+`"}}}`)
+	require.Equal(t, http.StatusOK, status, body)
+	status, body = do(t, discoveryRequest(t, h.catalogURL("config"), user))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"id":"claude/org/new"`)
+	assert.EqualValues(t, 4, probes.Load(), "a catalog write invalidates every provider's cached listing")
 }
 
 func TestCatalogRoutes_ProviderWithoutModels(t *testing.T) {
