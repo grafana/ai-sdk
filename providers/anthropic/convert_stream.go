@@ -12,17 +12,18 @@ import (
 )
 
 type blockState struct {
-	blockType        string
-	toolCallID       string
-	toolName         string
-	accumulatedInput string
-	providerExecuted bool
-	callerType       string
-	callerToolID     string
-	firstDelta       bool
-	providerToolName string
-	citations        []json.RawMessage
-	heldBackText     *strings.Builder
+	blockType          string
+	toolCallID         string
+	toolName           string
+	accumulatedInput   string
+	providerExecuted   bool
+	callerType         string
+	callerToolID       string
+	firstDelta         bool
+	providerToolName   string
+	citations          []json.RawMessage
+	heldBackText       *strings.Builder
+	compactionComplete bool
 }
 
 type heldBackTextBlock struct {
@@ -240,13 +241,21 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			meta := provider.ProviderMetadata{"anthropic": metaJSON}
 			ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: blockID(idx), ProviderMetadata: meta}
 		case "compaction":
-			a.blocks[idx] = &blockState{blockType: "text"}
-			metaJSON, err := json.Marshal(map[string]string{"type": "compaction"})
+			compaction, err := decodeCompactionBlock(cb.RawJSON())
 			if err != nil {
-				return fmt.Errorf("marshaling compaction metadata: %w", err)
+				return err
 			}
-			meta := provider.ProviderMetadata{"anthropic": metaJSON}
-			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: blockID(idx), ProviderMetadata: meta}
+			metadata, err := compaction.metadata()
+			if err != nil {
+				return err
+			}
+			complete := compaction.Signature != nil && compaction.Content != ""
+			a.blocks[idx] = &blockState{blockType: "text", compactionComplete: complete}
+			id := blockID(idx)
+			ch <- provider.StreamPart{Type: provider.PartTextStart, ID: id, ProviderMetadata: metadata}
+			if complete {
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: id, Delta: compaction.Content}
+			}
 		case "tool_use":
 			if a.usesJsonResponseTool && cb.Name == jsonResponseToolName {
 				a.isJsonResponseFromTool = true
@@ -396,7 +405,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if delta.Type == "citations_delta" {
 			return a.handleCitationDelta(ch, bs, delta.AsCitationsDelta().Citation)
 		}
-		if bs == nil {
+		if bs == nil || (bs.compactionComplete && (delta.Type == "text_delta" || delta.Type == "compaction_delta")) {
 			return nil
 		}
 		switch delta.Type {
@@ -430,11 +439,15 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 				}
 			}
 		case "compaction_delta":
-			if delta.Content != "" {
+			content, err := decodeCompactionContent(json.RawMessage(delta.JSON.Content.Raw()))
+			if err != nil {
+				return err
+			}
+			if content != "" {
 				ch <- provider.StreamPart{
 					Type:  provider.PartTextDelta,
 					ID:    blockID(idx),
-					Delta: delta.Content,
+					Delta: content,
 				}
 			}
 		case "input_json_delta":
