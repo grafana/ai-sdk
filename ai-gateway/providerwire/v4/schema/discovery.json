@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "publicID": { "type": "string", "minLength": 1, "maxLength": 320, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$" },
     "configuredCandidate": {
       "type": "object", "additionalProperties": false,
       "required": ["providerInstance", "provider", "providerModelId"],
@@ -23,7 +24,7 @@
         "additionalProperties": false,
         "required": ["id", "name", "specification"],
         "properties": {
-          "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
+          "id": { "$ref": "#/$defs/publicID" },
           "name": { "type": "string", "minLength": 1, "maxLength": 2048 },
           "description": { "type": "string", "maxLength": 2048 },
           "gateway": {
@@ -31,7 +32,7 @@
             "additionalProperties": false,
             "required": ["aliases", "primary", "fallbacks"],
             "properties": {
-              "aliases": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" } },
+              "aliases": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "$ref": "#/$defs/publicID" } },
               "primary": { "$ref": "#/$defs/configuredCandidate" },
               "fallbacks": { "type": "array", "maxItems": 15, "items": { "$ref": "#/$defs/configuredCandidate" } }
             }
@@ -43,7 +44,7 @@
             "properties": {
               "specificationVersion": { "const": "v4" },
               "provider": { "const": "grafana" },
-              "modelId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" }
+              "modelId": { "$ref": "#/$defs/publicID" }
             }
           }
         }

@@ -245,7 +245,7 @@ A bounded strict YAML document SHALL own named providers and public model routes
 - **THEN** startup SHALL fail before secret resolution, provider construction, or serving requests
 
 #### Scenario: Unsafe public ID is configured
-- **WHEN** a canonical ID or alias contains whitespace, control bytes, commas, non-ASCII bytes, or exceeds 128 bytes
+- **WHEN** a canonical ID or alias contains whitespace, control bytes, commas, non-ASCII bytes, or exceeds 320 bytes
 - **THEN** startup SHALL fail before catalog construction
 
 #### Scenario: Referenced credential is unavailable
@@ -272,11 +272,11 @@ A model route SHALL contain one required direct `primary` reference and zero or 
 - **THEN** startup SHALL fail with the existing repeated-candidate diagnostic, because the policy names server-side fallback models rather than public routes or candidates
 
 ### Requirement: Header-safe public route ID grammar
-Every canonical public ID and alias SHALL be 1-128 ASCII bytes and SHALL match `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`. This grammar SHALL be the only accepted model-ID surface for discovery and the `ai-language-model-id` header.
+Every canonical public ID and alias SHALL be 1–320 ASCII bytes and match `^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$`. The limit is the 63-byte stack provider label plus a slash plus a 256-byte inventory ID. The grammar SHALL also apply to qualified stack selectors and their backend suffixes, blocklist entries, and discovery IDs.
 
 #### Scenario: Header-safe public route ID grammar
 - **WHEN** startup configures a non-ASCII, overlong or grammar-invalid public ID for discovery and ai-language-model-id
-- **THEN** startup SHALL reject the ID under the sole 1-128 ASCII-byte public model-ID grammar
+- **THEN** startup SHALL reject the ID under the shared public model-ID grammar
 
 ### Requirement: Immutable direct-Anthropic construction
 The service SHALL construct each configured provider/backend candidate once with the hardened HTTP client and build one immutable static catalog once at startup. Direct construction SHALL follow anthropic-provider-construction so ambient SDK environment defaults cannot alter service-owned endpoint, credential, auth mechanism, profile/federation behavior or headers.

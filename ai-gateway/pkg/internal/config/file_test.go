@@ -105,19 +105,21 @@ func TestValidatePublicID(t *testing.T) {
 	}{
 		{name: "simple", value: "assistant", valid: true},
 		{name: "planned", value: "grafana/assistant:model-v1.2", valid: true},
-		{name: "maximum", value: "a" + strings.Repeat("-", 127), valid: true},
+		{name: "maximum", value: "a" + strings.Repeat("-", MaxPublicIDBytes-1), valid: true},
 		{name: "empty", value: ""},
-		{name: "too long", value: "a" + strings.Repeat("-", 128)},
+		{name: "too long", value: "a" + strings.Repeat("-", MaxPublicIDBytes)},
 		{name: "leading punctuation", value: "/assistant"},
 		{name: "space", value: "grafana assistant"},
 		{name: "control", value: "grafana\nassistant"},
 		{name: "comma", value: "grafana,assistant"},
 		{name: "non ascii", value: "grafaná"},
-		{name: "invalid punctuation", value: "grafana@assistant"},
+		{name: "version", value: "claude-sonnet-4@20250514", valid: true},
+		{name: "literal plus", value: "model+version", valid: true},
+		{name: "invalid punctuation", value: "grafana!assistant"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validatePublicID(tc.value)
+			err := ValidatePublicID(tc.value)
 			if tc.valid {
 				require.NoError(t, err)
 			} else {
@@ -301,7 +303,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 				switch field {
 				case "rows":
 					file.Models = map[string]Model{}
-					for i := range maxModelRows + extra {
+					for i := range MaxDiscoveryModelIDs + extra {
 						file.Models[fmt.Sprintf("model-%d", i)] = model
 					}
 				case "public IDs":

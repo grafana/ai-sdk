@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Field, Input, RadioButtonGroup, SecretInput, Stack } from '@grafana/ui';
+import { Field, Input, RadioButtonGroup, SecretInput, Stack, Text } from '@grafana/ui';
 import { useFieldErrors } from './useFieldErrors';
 import {
   defaultProviderName,
@@ -40,7 +40,7 @@ export function useProviderFields(providers: Spec['providers']) {
       return;
     }
     const baseURL = endpoint.trim();
-    const provider: Provider = { type, ...(baseURL ? { baseURL } : {}) };
+    const provider: Provider = { type, ...(baseURL ? { baseURL } : {}), serveAllModels: true };
     return { name, provider, key };
   };
 
@@ -119,6 +119,9 @@ export function useProviderFields(providers: Spec['providers']) {
           onBlur={() => checks.leave('key')}
         />
       </Field>
+      <Text color="secondary">
+        This provider will serve every model its account can use. You can change this on the saved provider card.
+      </Text>
     </Stack>
   );
   return { fields, submit };

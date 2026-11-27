@@ -22,7 +22,11 @@ const MAX_CATALOG_NAME_LENGTH = 253;
 const CATALOG_NAME_PATTERN = /^[A-Za-z0-9:_.-]+$/;
 const RESERVED_CATALOG_NAMES = ['search', 'trash', 'history', 'query', 'list-keys'];
 const PROVIDER_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
-const PUBLIC_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+const MAX_PROVIDER_NAME_LENGTH = 63;
+const MAX_LISTED_MODEL_ID_LENGTH = 256;
+/** MAX_PUBLIC_ID_LENGTH bounds a public model ID or alias. */
+export const MAX_PUBLIC_ID_LENGTH = MAX_PROVIDER_NAME_LENGTH + '/'.length + MAX_LISTED_MODEL_ID_LENGTH;
+const PUBLIC_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
 /** FieldErrors maps a field to the reason its value can't be saved. */
 export type FieldErrors = Record<string, string>;
@@ -164,9 +168,9 @@ export function providerNameError(name: string, taken: string[]): string | undef
 
 /** publicIDError returns why a model ID or alias can't be served, or undefined. */
 export function publicIDError(id: string): string | undefined {
-  return PUBLIC_ID_PATTERN.test(id)
+  return id.length <= MAX_PUBLIC_ID_LENGTH && PUBLIC_ID_PATTERN.test(id)
     ? undefined
-    : "Use up to 128 letters, digits and '.', '_', ':', '/' or '-', starting with a letter or digit.";
+    : `Use up to ${MAX_PUBLIC_ID_LENGTH} ASCII letters, digits and '.', '_', ':', '/', '@', '+', or '-', starting with a letter or digit.`;
 }
 
 /** quickAddError returns why a provider model can't be added under its own ID, or undefined. */

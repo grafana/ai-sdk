@@ -20,28 +20,37 @@ const (
 	providerCompatible = "openai-compatible"
 )
 
+// Catalog is a checked stack catalog without provider keys.
+type Catalog struct {
+	config.File
+	serving map[string]servingPolicy
+}
+
 // Parse validates a stack catalog spec whose providers have the secure keys
-// in keys, and returns it as a config.File without provider keys. A baseURL
-// equal to its type's native endpoint counts as unset; any other must match
-// one of endpoints, without a DNS lookup.
-func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints) (config.File, error) {
+// in keys. A baseURL equal to its type's native endpoint counts as unset;
+// any other must match one of endpoints, without a DNS lookup.
+func Parse(spec v1alpha1.Spec, keys []string, endpoints outbound.CustomEndpoints) (Catalog, error) {
 	if err := checkPolicy(spec); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
 	}
 	file := convert(spec)
 	if err := file.ValidateShape(); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
 	}
 	if spec.Models == nil {
-		return config.File{}, fmt.Errorf("modelcatalog: spec.models must be a map")
+		return Catalog{}, fmt.Errorf("modelcatalog: spec.models must be a map")
+	}
+	serving, err := parseServingPolicies(spec, file)
+	if err != nil {
+		return Catalog{}, err
 	}
 	if err := checkEndpoints(file, endpoints); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
 	}
 	if err := checkKeys(file, keys); err != nil {
-		return config.File{}, err
+		return Catalog{}, err
 	}
-	return file, nil
+	return Catalog{File: file, serving: serving}, nil
 }
 
 func checkPolicy(spec v1alpha1.Spec) error {

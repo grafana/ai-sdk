@@ -6,12 +6,11 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 )
 
-const (
-	maxListedModelIDs   = 512
-	maxListedModelBytes = 256
-)
+const maxListedModelIDs = 512
 
 // ErrCatalogProviderNotFound reports that the checked catalog has no provider by that name.
 var ErrCatalogProviderNotFound = errors.New("gateway service: catalog provider not found")
@@ -52,17 +51,21 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 	}
 	defer c.release(id)
 
-	result := CatalogProviderModels{ModelIDs: []string{}}
+	result, _ := c.inventory(ctx, resolveStackProvider(configured, stack, provider), listingKeyMatcher(keys))
+	return result, nil
+}
+
+func (c *CatalogHealthChecker) inventory(ctx context.Context, provider config.ResolvedProvider, containsKey func(string) bool) (result CatalogProviderModels, cacheable bool) {
+	result = CatalogProviderModels{ModelIDs: []string{}}
 	seen := make(map[string]struct{})
 	omitted := false
-	containsKey := listingKeyMatcher(keys)
-	status, complete := c.walkListing(ctx, resolveStackProvider(configured, stack, provider), containsKey, func(page listingPage) bool {
+	status, complete, failed := c.walkListing(ctx, provider, containsKey, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			id := entry.ID
 			if _, duplicate := seen[id]; duplicate {
 				continue
 			}
-			if len(seen) == maxListedModelIDs || len(id) > maxListedModelBytes || strings.ContainsFunc(id, unicode.IsControl) || containsKey(id) {
+			if len(seen) == maxListedModelIDs || len(id) > config.MaxListedModelIDBytes || strings.ContainsFunc(id, unicode.IsControl) || containsKey(id) {
 				omitted = true
 				continue
 			}
@@ -76,5 +79,5 @@ func (c *CatalogHealthChecker) AvailableModels(ctx context.Context, namespace st
 		result.Status = ListingPartial
 	}
 	slices.Sort(result.ModelIDs)
-	return result, nil
+	return result, !failed
 }

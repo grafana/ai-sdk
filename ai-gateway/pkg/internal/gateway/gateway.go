@@ -272,8 +272,9 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{Endpoints: settings.Endpoints}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	listings := service.NewCatalogHealthChecker(outbound.NewProbeTransport(config.ProviderResponseHeaderTimeout), settings.Endpoints)
+	probeTransport := outbound.NewProbeTransport(config.ProviderResponseHeaderTimeout)
+	listings := service.NewCatalogHealthChecker(probeTransport, settings.Endpoints)
+	discoveryHandler := discovery.New(catalog, service.NewStackCatalogLister(probeTransport, settings.Endpoints), providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat, messages, catalogHealth(listings), catalogAvailableModels(listings)))
 }
 

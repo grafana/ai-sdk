@@ -17,11 +17,24 @@ stores with its own provider keys and manages from the app. They use the
 Gateway's catalog format, and you don't need this package to use them. See
 [Store model catalogs in Grafana](../README.md#store-model-catalogs-in-grafana).
 
-When creating a catalog, enter the initial provider model IDs by hand. After
-saving, open or type in the provider model ID field to see matching models from
-that account. Choose a result or type an exact ID, then select **Add model** to
-save it. You can enter a custom ID even if the list is empty, incomplete, or
-unavailable. Listing uses the saved key only; it never runs on save.
+Creating a catalog in the app saves the first provider without listed models.
+Providers connected in the app start with **Serve every model** on, so apps can
+call them as `instance/model` without listing a model first. In this mode, the
+picker adds blocked IDs. To add a listed model, turn off **Serve every model**,
+choose or type an exact provider model ID, and select **Add model**. Manual
+entry works even if suggestions are empty, incomplete, or unavailable.
+Suggestions use the saved key on demand, never on save. The switch and
+blocklist edits save immediately. Turning the switch off keeps the saved blocklist and lets you remove blocked
+IDs without adding new ones. Existing listed models stay visible and editable.
+
+Catalog discovery includes both configured models and qualified IDs from
+eligible provider listings. It omits blocked IDs and selectors already used
+by a listed ID or alias. Public IDs, aliases, and blocked IDs use up to 320
+ASCII bytes, start with a letter or digit, and can include `._:/@+-` after it.
+For example, `claude-sonnet-4@20250514` is valid. Results can be incomplete or
+up to 30 seconds stale:
+a qualified ID may still be callable when discovery omits it. A catalog save
+invalidates discovery's inventory cache; health and model suggestions stay live.
 
 After saving, select **Check health** on the catalog page to see which provider
 model listings accepted the saved keys and which primary and fallback model

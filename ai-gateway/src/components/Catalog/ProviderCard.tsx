@@ -5,6 +5,7 @@ import { Badge, Button, Field, IconButton, Input, Stack, Text, useStyles2 } from
 import { CatalogHealth, errorMessage, ProviderModelListing } from '../../api/modelCatalogs';
 import { CatalogHealthBadge } from './CatalogHealthBadge';
 import { ModelPicker } from './ModelPicker';
+import { ProviderServingSettings } from './ProviderServingSettings';
 import { fieldErrors, providerTypeLabel, targetLabel } from './catalogSpec';
 import { useFieldErrors } from './useFieldErrors';
 import { Model, Provider } from '../../generated/modelcatalog/v1alpha1/types.spec.gen';
@@ -23,6 +24,7 @@ interface Props {
   listModels?: () => Promise<ProviderModelListing>;
   onAddModel: (providerModel: string) => Promise<void>;
   addError: (providerModel: string) => string | undefined;
+  onSaveServing: (provider: Provider) => Promise<void>;
   onReplaceKey: () => void;
   onRemove: () => void;
 }
@@ -35,6 +37,7 @@ export function ProviderCard(props: Props) {
   const { name, provider, models, hasKey, health, readOnly, removeBlocked } = props;
   const s = useStyles2(getStyles);
   const label = providerTypeLabel(provider.type);
+  const serveAllModels = provider.serveAllModels === true;
 
   return (
     <section className={s.card} aria-label={name}>
@@ -61,10 +64,20 @@ export function ProviderCard(props: Props) {
           </Stack>
         )}
       </div>
+      <div className={s.serving}>
+        <ProviderServingSettings
+          name={name}
+          provider={provider}
+          readOnly={readOnly}
+          listModels={props.listModels}
+          listingRevision={props.listingRevision}
+          onSave={props.onSaveServing}
+        />
+      </div>
       <ul className={s.models}>
         {models.length === 0 && (
           <li className={s.model}>
-            <Text color="secondary">No models yet.</Text>
+            <Text color="secondary">{provider.serveAllModels ? 'No listed models yet.' : 'No models yet.'}</Text>
           </li>
         )}
         {models.map(([id, model]) => (
@@ -97,7 +110,7 @@ export function ProviderCard(props: Props) {
           </li>
         ))}
       </ul>
-      {!readOnly && (
+      {!readOnly && !serveAllModels && (
         <QuickAdd
           name={name}
           label={label}
@@ -210,6 +223,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   name: css({
     fontFamily: theme.typography.fontFamilyMonospace,
     color: theme.colors.text.secondary,
+  }),
+  serving: css({
+    padding: theme.spacing(1.5, 2),
+    borderBottom: `1px solid ${theme.colors.border.weak}`,
   }),
   models: css({
     listStyle: 'none',

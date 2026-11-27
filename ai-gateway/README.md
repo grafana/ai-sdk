@@ -244,9 +244,11 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   named with lowercase letters, digits and `-`, and a custom `baseURL` must be
   [listed](#custom-endpoints).
 - `spec.providers` must contain at least one provider. `spec.models` can be an
-  empty map: discovery then returns `{"models":[]}` and calls return the
-  unknown-model error. The operator `model_catalog` setting still requires at
-  least one provider and one model when set.
+  empty map. Without an eligible provider listing, discovery then returns
+  `{"models":[]}`. Calls return the unknown-model error unless a provider
+  serves unlisted models. The operator
+  `model_catalog` setting still requires at least one provider and one model
+  when set.
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.
@@ -254,6 +256,45 @@ deletes the old secret, and deleting the catalog deletes its secrets.
   and Admins can write them (`aigateway:catalogwriter`).
 - The Gateway validates every create and update, so writes fail while the
   plugin is unavailable. Deletes always work.
+
+### Serve every model of a provider
+
+Providers connected in the app start with **Serve every model** on, including
+the first provider in a new catalog. You can change the mode on the provider
+card. This does not change existing providers: an omitted `serveAllModels`
+field still means listed models only. In **Serve every model** mode, the picker
+switches to **Blocked model IDs**; adding or removing an ID saves immediately.
+While the switch is off, you can remove saved exclusions but cannot add new
+ones. A blocked ID still cannot be added as a listed model.
+Existing listed models stay visible and editable. To set exclusions and
+enable serving in one API update, set `serveAllModels: true` and optionally `modelBlocklist: ["model-to-block"]`
+on that provider in `spec.providers`.
+The blocklist applies to language-model routing and matches exact,
+case-sensitive backend IDs on that provider instance, not prefixes or other
+accounts. It does not cover provider-hosted tool options that name their own
+model. The blocklist stays saved when you turn unlisted serving off. A listed
+model's primary or fallback cannot use a blocked target. Removing a listed
+model does not block its backend ID; add the ID to the blocklist to stop
+serving it through that instance.
+
+Call an unlisted model as `<provider-instance>/<model-id>`, for example
+`team-openai/gpt-5` for the instance named `team-openai`. Catalog Chat
+Completions accepts the same selector in its `model` field. A listed ID or
+alias wins if it matches the full selector. If no listed ID or alias matches,
+a blocked selector returns `404 model_not_found`. Unlisted models have no
+implicit fallback, but can use or be named in explicit `gateway.models`
+fallbacks. The catalog's `/config` includes configured models and eligible
+qualified IDs from opted-in providers' inventories that fit the discovery
+ID format: up to 320 ASCII bytes, starting with a letter or digit, then letters,
+digits, or `._:/@+-`. Listed IDs, aliases, and blocked IDs use the same format.
+Listings are bounded
+and best-effort, and provider failures do not hide configured models. An ID
+can be callable even if discovery omits it, as long as both the full selector
+and its backend ID fit the model ID format. Discovery reuses provider inventory
+for up to 30 seconds per catalog revision. The next admitted discovery after
+saving the catalog fetches fresh inventory. Health and the model picker query
+providers live and use separate
+admission from discovery.
 
 ### Custom endpoints
 
@@ -354,7 +395,7 @@ format, not the Gateway's.
 | 16 MiB per provider response that is not streamed, after decompression | Gateway |
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
-| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
+| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 320 ASCII bytes per public model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
 | The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved and each time a call uses it |
 
 ### Request duration

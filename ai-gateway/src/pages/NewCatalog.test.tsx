@@ -60,6 +60,7 @@ describe('pages/NewCatalog', () => {
     expect(screen.queryByRole('button', { name: 'Connect a provider' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add model' })).not.toBeInTheDocument();
     type(screen.getByLabelText(/^API key/), 'typed-key');
+    expect(screen.getByText(/This provider will serve every model/)).toBeInTheDocument();
     expect(createModelCatalog).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Create catalog' }));
 
@@ -68,7 +69,7 @@ describe('pages/NewCatalog', () => {
     expect(createModelCatalog).toHaveBeenCalledWith(
       'ops',
       {
-        providers: { anthropic: { type: 'anthropic' } },
+        providers: { anthropic: { type: 'anthropic', serveAllModels: true } },
         models: {},
       },
       { anthropic: { create: 'typed-key' } }
@@ -117,7 +118,13 @@ describe('pages/NewCatalog', () => {
     expect(createModelCatalog).toHaveBeenCalledWith(
       'local',
       {
-        providers: { 'openai-compatible': { type: 'openai-compatible', baseURL: 'https://gateway.example/v1' } },
+        providers: {
+          'openai-compatible': {
+            type: 'openai-compatible',
+            baseURL: 'https://gateway.example/v1',
+            serveAllModels: true,
+          },
+        },
         models: {},
       },
       { 'openai-compatible': { create: 'typed-key' } }

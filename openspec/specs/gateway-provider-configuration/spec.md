@@ -33,7 +33,7 @@ The Gateway command model configuration SHALL accept `providers.<name>` instance
 - **AND** its models SHALL send requests to `https://api.openai.com/v1/responses`
 
 ### Requirement: Strict OpenAI startup configuration failures
-Configuration SHALL remain strict YAML, and every failure SHALL occur during startup before readiness.
+Configuration SHALL remain strict YAML, and every failure SHALL occur during startup before readiness. Operator model IDs and aliases SHALL follow the shared public-ID grammar, including `@` and `+` after the first character and the 320-byte bound.
 
 #### Scenario: Strict OpenAI startup configuration failures
 - **WHEN** an OpenAI provider YAML contains an unknown key

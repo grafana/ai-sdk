@@ -157,7 +157,7 @@ func (health providerHealth) model(id string) HealthStatus {
 
 func (c *CatalogHealthChecker) list(ctx context.Context, p config.ResolvedProvider, targets map[string]struct{}, containsKey func(string) bool) providerHealth {
 	found := make(map[string]struct{})
-	status, complete := c.walkListing(ctx, p, containsKey, func(page listingPage) bool {
+	status, complete, _ := c.walkListing(ctx, p, containsKey, func(page listingPage) bool {
 		for _, entry := range page.Data {
 			if _, wanted := targets[entry.ID]; wanted {
 				found[entry.ID] = struct{}{}

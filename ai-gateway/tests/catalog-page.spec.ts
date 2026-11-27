@@ -101,6 +101,17 @@ async function addModel(page: Page, provider: string, providerModel: string) {
   await expect(card.getByRole('listitem', { name: providerModel, exact: true })).toBeVisible();
 }
 
+function invoke(request: APIRequestContext, name: string, id: string) {
+  return request.post(`${CATALOGS}/${name}/language-model`, {
+    headers: {
+      'ai-language-model-id': id,
+      'ai-language-model-specification-version': '4',
+      'ai-language-model-streaming': 'false',
+    },
+    data: { prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }], maxOutputTokens: 16 },
+  });
+}
+
 function card(page: Page, provider: string) {
   return page.getByRole('region', { name: provider, exact: true });
 }
@@ -113,6 +124,123 @@ test.describe('model catalog page', () => {
         await accounts.Admin.delete(`${CATALOGS}/${item.metadata.name}`);
       }
     }
+  });
+
+  test('an Admin discovers unlisted calls and retains blocked IDs when disabling serving', async ({
+    gotoPage,
+    page,
+    accounts,
+  }) => {
+    const name = uniqueName();
+    const seed = catalog(name, 'e2e-health-accepted-key');
+    const created = await accounts.Admin.post(CATALOGS, { data: { ...seed, spec: { ...seed.spec, models: {} } } });
+    expect(created.status(), await created.text()).toBe(201);
+    const stored = async () => {
+      const response = await accounts.Admin.get(`${CATALOGS}/${name}`);
+      expect(response.ok(), await response.text()).toBe(true);
+      return response.json();
+    };
+
+    await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
+    const provider = card(page, 'claude');
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    const blockedID = provider.getByRole('combobox', { name: 'Add a blocked model ID' });
+    const blocklist = provider.getByRole('list', { name: 'Blocked model IDs' });
+    const addBlockedID = provider.getByRole('button', { name: 'Add blocked ID' });
+    const addModelID = provider.getByRole('combobox', { name: 'Add a model to claude' });
+    const editBlocked = provider.getByRole('button', { name: 'Edit blocked IDs' });
+    await expect(toggle).not.toBeChecked();
+    await expect(addModelID).toBeVisible();
+    await expect(blockedID).toHaveCount(0);
+    await expect(editBlocked).toHaveCount(0);
+    const before = await stored();
+    expect(before.spec.providers.claude).toEqual({ type: 'anthropic' });
+
+    const enable = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await toggle.press('Space');
+    const saved = await enable;
+    expect(saved.status(), await saved.text()).toBe(200);
+    const request = saved.request().postDataJSON();
+    expect(request.metadata.resourceVersion).toBe(before.metadata.resourceVersion);
+    expect(request).not.toHaveProperty('secure');
+    await expect(toggle).toBeChecked();
+    await expect(provider.getByRole('button', { name: 'Save serving settings' })).toHaveCount(0);
+    await expect(addModelID).toHaveCount(0);
+    await blockedID.click();
+    await expect(provider.getByRole('option', { name: 'claude-sonnet-4-6' })).toBeVisible();
+    await blockedID.fill('org/blocked');
+    await addBlockedID.click();
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
+    const enabled = await stored();
+    expect(enabled.spec.providers.claude).toEqual({
+      type: 'anthropic',
+      serveAllModels: true,
+      modelBlocklist: ['org/blocked'],
+    });
+    await expect(provider.getByText('No listed models yet.')).toBeVisible();
+
+    const discovery = await accounts.Editor.get(`${CATALOGS}/${name}/config`);
+    expect(discovery.status(), await discovery.text()).toBe(200);
+    expect((await discovery.json()).models.map((model: { id: string }) => model.id)).toEqual([
+      'claude/claude-sonnet-4-6',
+    ]);
+    const unlisted = await invoke(accounts.Editor, name, 'claude/org/new');
+    expect(unlisted.status(), await unlisted.text()).toBe(200);
+    expect(await unlisted.text()).toContain('org/new');
+    const blocked = await invoke(accounts.Editor, name, 'claude/org/blocked');
+    expect(blocked.status(), await blocked.text()).toBe(404);
+    expect((await blocked.json()).error.code).toBe('model_not_found');
+
+    const disable = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await toggle.press('Space');
+    const disabledUpdate = await disable;
+    expect(disabledUpdate.status(), await disabledUpdate.text()).toBe(200);
+    await expect(provider.getByText('No models yet.')).toBeVisible();
+    await expect(toggle).toBeChecked({ checked: false });
+    await expect(editBlocked).toHaveCount(0);
+    await expect(blockedID).toHaveCount(0);
+    expect((await stored()).spec.providers.claude).toEqual({
+      type: 'anthropic',
+      serveAllModels: false,
+      modelBlocklist: ['org/blocked'],
+    });
+    const disabled = await invoke(accounts.Editor, name, 'claude/org/new');
+    expect(disabled.status(), await disabled.text()).toBe(404);
+    expect((await disabled.json()).error.code).toBe('model_not_found');
+
+    await expect(blocklist.getByText('org/blocked')).toBeVisible();
+    const removeBlocked = page.waitForResponse((response) => isCatalogWrite('PUT', name)(response.request()));
+    await provider.getByRole('button', { name: 'Remove blocked ID org/blocked' }).click();
+    const removal = await removeBlocked;
+    expect(removal.status(), await removal.text()).toBe(200);
+    expect(removal.request().postDataJSON().spec.providers.claude).toEqual({
+      type: 'anthropic',
+      serveAllModels: false,
+      modelBlocklist: [],
+    });
+    await expect(blocklist).toHaveCount(0);
+    await expect(toggle).toBeChecked({ checked: false });
+
+    const listed = 'claude-sonnet-4-6';
+    await addModel(page, 'claude', listed);
+    await toggle.press('Space');
+    await expect(toggle).toBeChecked();
+    await expect(blocklist).toHaveCount(0);
+    await expect(addModelID).toHaveCount(0);
+    const beforeRefusal = await stored();
+    await blockedID.click();
+    await provider.getByRole('option', { name: listed }).click();
+    await expect(blockedID).toHaveValue(listed);
+    await addBlockedID.click();
+    await expect(
+      provider.getByText(/providers\.claude\.modelBlocklist\[0\] conflicts with a listed target/)
+    ).toBeVisible();
+    await expect(toggle).toBeChecked();
+    await expect(blockedID).toHaveValue(listed);
+    await expect(blocklist).toHaveCount(0);
+    const afterRefusal = await stored();
+    expect(afterRefusal.metadata.resourceVersion).toBe(beforeRefusal.metadata.resourceVersion);
+    expect(afterRefusal.spec).toEqual(beforeRefusal.spec);
   });
 
   test('an Admin creates with a provider and can remove the last model but not that provider', async ({
@@ -128,12 +256,25 @@ test.describe('model catalog page', () => {
     const watch = keyWatch(page);
     const created = await createCatalog(page, name, key);
     const createBody = created.request().postDataJSON();
-    expect(createBody.spec).toEqual({ providers: { anthropic: { type: 'anthropic' } }, models: {} });
+    expect(createBody.spec).toEqual({
+      providers: { anthropic: { type: 'anthropic', serveAllModels: true } },
+      models: {},
+    });
     expect(createBody.secure).toEqual({ anthropic: { create: key } });
 
     const provider = card(page, 'anthropic');
-    await expect(provider.getByText('No models yet.')).toBeVisible();
+    await expect(provider.getByText('No listed models yet.')).toBeVisible();
+    const toggle = provider.getByRole('switch', { name: 'Serve every model' });
+    await expect(toggle).toBeChecked();
     await expect(provider.getByText('Key rejected')).toBeVisible();
+    const unlisted = await invoke(accounts.Editor, name, 'anthropic/claude-sonnet-4-6');
+    expect(unlisted.status(), await unlisted.text()).toBe(200);
+    expect(await unlisted.text()).toContain('claude-sonnet-4-6');
+    const discovery = await accounts.Editor.get(`${CATALOGS}/${name}/config`);
+    expect(discovery.status(), await discovery.text()).toBe(200);
+    expect(await discovery.json()).toEqual({ models: [] });
+    await toggle.press('Space');
+    await expect(provider.getByRole('button', { name: 'Add model' })).toBeVisible();
     const lastProvider = provider.getByRole('button', { name: 'Delete the catalog to remove its last provider.' });
     await expect(lastProvider).toBeDisabled();
     const model = 'claude-sonnet-4-6';
@@ -145,7 +286,7 @@ test.describe('model catalog page', () => {
     await expect(provider.getByText('No models yet.')).toBeVisible();
     expect((await removedModel).postDataJSON()).not.toHaveProperty('secure');
     const stored = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
-    expect(stored.spec).toEqual(createBody.spec);
+    expect(stored.spec).toEqual({ providers: { anthropic: { type: 'anthropic', serveAllModels: false } }, models: {} });
     expect(Object.keys(stored.secure.anthropic)).toEqual(['name']);
     await expect(lastProvider).toBeDisabled();
     await watch.nowhere(key);
@@ -216,8 +357,14 @@ test.describe('model catalog page', () => {
     await dialog.getByLabel(/^API key/).fill(key);
     const added = page.waitForRequest(isCatalogWrite('PUT', name));
     await dialog.getByRole('button', { name: 'Connect' }).click();
-    expect((await added).postDataJSON().secure).toEqual({ openai: { create: key } });
-    await expect(card(page, 'openai')).toBeVisible();
+    const addedBody = (await added).postDataJSON();
+    expect(addedBody.secure).toEqual({ openai: { create: key } });
+    expect(addedBody.spec.providers).toEqual({
+      claude: { type: 'anthropic' },
+      openai: { type: 'openai', serveAllModels: true },
+    });
+    await expect(card(page, 'openai').getByRole('switch', { name: 'Serve every model' })).toBeChecked();
+    await expect(card(page, 'claude').getByRole('switch', { name: 'Serve every model' })).not.toBeChecked();
 
     await card(page, 'openai').getByRole('button', { name: 'Remove openai' }).click();
     const removed = page.waitForRequest(isCatalogWrite('PUT', name));
@@ -373,10 +520,11 @@ test.describe('model catalog page', () => {
     await createCatalog(page, name, accepted);
 
     const provider = card(page, 'anthropic');
-    await expect(provider.getByText('No models yet.')).toBeVisible();
+    await expect(provider.getByText('No listed models yet.')).toBeVisible();
     expect(await (await health).json()).toEqual({ providers: { anthropic: 'ok' }, models: {} });
     await expect(page.getByRole('region', { name: 'Providers' }).getByRole('status')).toHaveText('No problems found');
     await expect(provider.getByText(SUCCESS_BADGES)).toHaveCount(0);
+    await provider.getByRole('switch', { name: 'Serve every model' }).press('Space');
     const field = provider.getByRole('combobox', { name: 'Add a model to anthropic' });
     await expect(field).toBeVisible();
     await field.focus();
@@ -433,6 +581,8 @@ test.describe('model catalog page', () => {
       await page.getByRole('link', { name }).click();
       await expect(card(page, 'claude')).toBeVisible();
       await expect(page.getByText('Read-only')).toBeVisible();
+      await expect(card(page, 'claude').getByText('Serves listed models only')).toBeVisible();
+      await expect(card(page, 'claude').getByRole('switch', { name: 'Serve every model' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Replace key' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Delete catalog' })).toHaveCount(0);

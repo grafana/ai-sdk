@@ -134,7 +134,13 @@ describe('components/Catalog/catalogSpec', () => {
     ['anthropic/claude:latest', true],
     ['bad id', false],
     ['-leading', false],
-    ['x'.repeat(129), false],
+    ['claude-sonnet-4@20250514', true],
+    ['model+version', true],
+    ['x'.repeat(320), true],
+    ['x'.repeat(321), false],
+    ['/model', false],
+    ['modèle', false],
+    ['line\n', false],
   ])('checks the public ID %p as the Gateway does', (id, valid) => {
     expect(publicIDError(id) === undefined).toBe(valid);
   });

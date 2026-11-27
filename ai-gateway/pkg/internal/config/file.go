@@ -9,18 +9,27 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 
 	"go.yaml.in/yaml/v4"
 )
 
 const (
-	maxModelRows   = 1024
-	maxAliases     = 128
-	maxStringBytes = 2048
+	// MaxDiscoveryModelIDs bounds discovery IDs, including aliases.
+	MaxDiscoveryModelIDs = 1024
+	maxAliases           = 128
+	maxStringBytes       = 2048
 )
 
-var publicIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+// MaxListedModelIDBytes is the inventory limit for a provider model ID.
+const MaxListedModelIDBytes = 256
+
+// MaxPublicIDBytes fits a qualified selector from the largest supported inventory ID.
+const MaxPublicIDBytes = validation.DNS1123LabelMaxLength + len("/") + MaxListedModelIDBytes
+
+var publicIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$`)
 
 // File contains strict named provider and model configuration.
 type File struct {
@@ -168,7 +177,7 @@ func (file File) validate(operator bool) error {
 	}
 	rowCount := 0
 	for _, model := range file.Models {
-		if len(model.Aliases) > maxAliases || len(model.Fallback)+1 > MaxProviderAttempts || len(model.Aliases)+1 > maxModelRows-rowCount {
+		if len(model.Aliases) > maxAliases || len(model.Fallback)+1 > MaxProviderAttempts || len(model.Aliases)+1 > MaxDiscoveryModelIDs-rowCount {
 			return fmt.Errorf("config: configured discovery cardinality exceeds limit")
 		}
 		rowCount += len(model.Aliases) + 1
@@ -183,7 +192,7 @@ func (file File) validate(operator bool) error {
 	}
 	publicIDs := make(map[string]string, len(file.Models))
 	for id, model := range file.Models {
-		if err := validatePublicID(id); err != nil {
+		if err := ValidatePublicID(id); err != nil {
 			return fmt.Errorf("config: model %q: %w", id, err)
 		}
 		if strings.TrimSpace(model.Name) == "" {
@@ -238,7 +247,7 @@ func (file File) validate(operator bool) error {
 	for id, model := range file.Models {
 		seenAliases := make(map[string]struct{}, len(model.Aliases))
 		for _, alias := range model.Aliases {
-			if err := validatePublicID(alias); err != nil {
+			if err := ValidatePublicID(alias); err != nil {
 				return fmt.Errorf("config: model %q alias %q: %w", id, alias, err)
 			}
 			if _, exists := seenAliases[alias]; exists {
@@ -357,9 +366,10 @@ func validDiscoveryText(value string) bool {
 	return len(value) <= maxStringBytes && utf8.ValidString(value)
 }
 
-func validatePublicID(value string) error {
-	if len(value) < 1 || len(value) > 128 || !publicIDPattern.MatchString(value) {
-		return fmt.Errorf("public ID must be 1-128 ASCII bytes matching %s", publicIDPattern.String())
+// ValidatePublicID checks the public model ID or alias against the discovery contract.
+func ValidatePublicID(value string) error {
+	if len(value) < 1 || len(value) > MaxPublicIDBytes || !publicIDPattern.MatchString(value) {
+		return fmt.Errorf("public ID must be 1-%d ASCII bytes matching %s", MaxPublicIDBytes, publicIDPattern.String())
 	}
 	return nil
 }

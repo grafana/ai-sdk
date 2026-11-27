@@ -4,10 +4,12 @@ package v1alpha1
 
 // +k8s:openapi-gen=true
 type Provider struct {
-	Type                      string  `json:"type"`
-	BaseURL                   *string `json:"baseURL,omitempty"`
-	ProviderName              *string `json:"providerName,omitempty"`
-	SupportsStructuredOutputs *bool   `json:"supportsStructuredOutputs,omitempty"`
+	Type                      string   `json:"type"`
+	BaseURL                   *string  `json:"baseURL,omitempty"`
+	ProviderName              *string  `json:"providerName,omitempty"`
+	SupportsStructuredOutputs *bool    `json:"supportsStructuredOutputs,omitempty"`
+	ServeAllModels            *bool    `json:"serveAllModels,omitempty"`
+	ModelBlocklist            []string `json:"modelBlocklist,omitempty"`
 }
 
 // NewProvider creates a new Provider object.
