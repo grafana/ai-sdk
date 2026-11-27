@@ -568,7 +568,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 				warnings = append(warnings, forcedToolChoiceWarning(*tc))
 				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
 				if tc.Type == provider.ToolChoiceTool {
-					p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(tc.ToolName))
+					name := mapping.toProviderToolName(tc.ToolName)
+					p.Tools = toolsNamed(p.Tools, name)
+					tools = providerToolsNamed(tools, name)
 				}
 			default:
 				if tc.Type != provider.ToolChoiceAuto || len(opts.Tools) > 0 {
@@ -2973,6 +2975,18 @@ func toolsNamed(tools []anthropic.BetaToolUnionParam, name string) []anthropic.B
 		}
 	}
 	return kept
+}
+
+// providerToolsNamed returns the tools whose converted form toolsNamed keeps,
+// so that index-based request patches stay aligned with the narrowed list.
+func providerToolsNamed(tools []provider.Tool, name string) []provider.Tool {
+	return slices.DeleteFunc(slices.Clone(tools), func(tool provider.Tool) bool {
+		if tool.Type != provider.ToolTypeProvider {
+			return tool.Name != name
+		}
+		converted, _, _ := convertProviderTool(tool)
+		return len(toolsNamed([]anthropic.BetaToolUnionParam{converted}, name)) == 0
+	})
 }
 
 func convertToolChoice(tc provider.ToolChoice, mapping toolNameMapping) anthropic.BetaToolChoiceUnionParam {
