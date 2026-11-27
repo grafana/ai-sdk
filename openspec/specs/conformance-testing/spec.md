@@ -262,6 +262,23 @@ For multi-step cases, the replay server SHALL be stateful: serve `input-1.chunks
 #### Scenario: Replay request sequencing
 - **WHEN** a third request arrives when a case contains only two numbered input files
 - **THEN** the server SHALL return an HTTP error after serving those files in request order
+- **AND** the runner SHALL reject the extra request attempt
+
+### Requirement: Complete replay evidence
+
+The Go runner SHALL validate the complete input layout for each discovered provider case and require one HTTP request attempt, one captured Go request, and one upstream request snapshot per input response. The provider-parts comparison is separate: an HTTP response may cause an error before a provider stream is returned.
+
+#### Scenario: Valid input layout
+- **WHEN** a case declares its replay operation
+- **THEN** unary replay SHALL use only `input.response.json` and streaming replay SHALL use `input.chunks.txt` alone or a contiguous numbered sequence starting at 1
+
+#### Scenario: Unserved response
+- **WHEN** replay uses only the first two responses of a three-input fixture
+- **THEN** the runner SHALL identify the first unserved input and fail even if the requests and output so far match upstream
+
+#### Scenario: Ambiguous or incomplete input layout
+- **WHEN** a fixture mixes input layouts or leaves a gap in its numbered inputs
+- **THEN** the runner SHALL reject the fixture before replay
 
 ### Requirement: Go conformance test runner
 

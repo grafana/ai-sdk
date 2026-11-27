@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -767,6 +768,8 @@ func (ptc *ProviderToolConfig) buildTool() (aisdk.Tool, error) {
 
 // --- Replay Server ---
 
+const replayUnaryInput = "input.response.json"
+
 type ReplayServer struct {
 	Server           *httptest.Server
 	providerName     string
@@ -776,6 +779,57 @@ type ReplayServer struct {
 	framing          Framing
 	requestsMu       sync.Mutex
 	requests         []RequestSnapshot
+}
+
+func replayInputFiles(dir string, operation Operation) ([]string, error) {
+	const single = "input.chunks.txt"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		name := entry.Name()
+		isStreamInput := strings.HasPrefix(name, "input") && strings.HasSuffix(name, ".chunks.txt")
+		if name != replayUnaryInput && !isStreamInput {
+			continue
+		}
+		if !entry.Type().IsRegular() {
+			return nil, fmt.Errorf("replay input %s is not a regular file", filepath.Join(dir, name))
+		}
+		names = append(names, name)
+	}
+	hasUnary := slices.Contains(names, replayUnaryInput)
+	if operation == OperationGenerate || (operation == "" && hasUnary) {
+		if !hasUnary {
+			return nil, fmt.Errorf("unary replay input is required: missing %s (found %v)", replayUnaryInput, names)
+		}
+		if len(names) != 1 {
+			return nil, fmt.Errorf("unary replay requires only %s; found %v", replayUnaryInput, names)
+		}
+		return names, nil
+	}
+	if hasUnary {
+		return nil, fmt.Errorf("stream replay cannot include %s", replayUnaryInput)
+	}
+	if slices.Contains(names, single) {
+		if len(names) != 1 {
+			return nil, fmt.Errorf("%s cannot be combined with other replay inputs: %v", single, names)
+		}
+		return names, nil
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no streaming replay inputs found in %s", dir)
+	}
+	ordered := make([]string, len(names))
+	for i := range ordered {
+		name := fmt.Sprintf("input-%d.chunks.txt", i+1)
+		if !slices.Contains(names, name) {
+			return nil, fmt.Errorf("numbered replay inputs must be contiguous: missing %s (found %v)", name, names)
+		}
+		ordered[i] = name
+	}
+	return ordered, nil
 }
 
 // NewReplayServer creates a replay server using the default SSE framing used by
@@ -789,30 +843,22 @@ func NewReplayServer(fixtureDir string, providerName string) (*ReplayServer, err
 // response body matches the AWS Smithy event-stream binary format the Go
 // Bedrock provider expects.
 func NewReplayServerWithFraming(fixtureDir string, providerName string, framing Framing) (*ReplayServer, error) {
+	names, err := replayInputFiles(fixtureDir, "")
+	if err != nil {
+		return nil, err
+	}
 	rs := &ReplayServer{providerName: providerName, framing: framing}
-
-	generatePath := filepath.Join(fixtureDir, "input.response.json")
-	if data, err := os.ReadFile(generatePath); err == nil {
-		rs.generateResponse = data
-	} else {
-		singlePath := filepath.Join(fixtureDir, "input.chunks.txt")
-		if data, err := os.ReadFile(singlePath); err == nil {
-			rs.fixtures = append(rs.fixtures, data)
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(fixtureDir, name))
+		if err != nil {
+			return nil, fmt.Errorf("reading replay input: %w", err)
+		}
+		if name == replayUnaryInput {
+			rs.generateResponse = data
 		} else {
-			for i := 1; ; i++ {
-				path := filepath.Join(fixtureDir, fmt.Sprintf("input-%d.chunks.txt", i))
-				data, err := os.ReadFile(path)
-				if err != nil {
-					if i == 1 {
-						return nil, fmt.Errorf("no fixture files found in %s", fixtureDir)
-					}
-					break
-				}
-				rs.fixtures = append(rs.fixtures, data)
-			}
+			rs.fixtures = append(rs.fixtures, data)
 		}
 	}
-
 	rs.Server = httptest.NewServer(http.HandlerFunc(rs.handler))
 	return rs, nil
 }
@@ -1161,6 +1207,9 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	cfg, err := LoadConfig(filepath.Join(tc.Dir, "config.yaml"))
 	require.NoError(t, err, "loading config")
 
+	inputFiles, err := replayInputFiles(tc.Dir, cfg.Operation)
+	require.NoError(t, err, "validating replay inputs")
+
 	ts, err := serverFactory(t, tc)
 	require.NoError(t, err, "creating replay server")
 	defer ts.Close()
@@ -1195,7 +1244,7 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 
 	if cfg.Operation == OperationGenerate {
 		require.Equal(t, "bedrock", tc.Provider, "operation generate is currently supported only for Bedrock")
-		runGenerateTestCase(t, tc, cfg, ts, model, messages, providerOpts, responseFormat)
+		runGenerateTestCase(t, tc, cfg, ts, inputFiles, model, messages, providerOpts, responseFormat)
 		return
 	}
 
@@ -1228,25 +1277,13 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	expected, err := LoadExpected(filepath.Join(tc.Dir, "expected.jsonl"))
 	require.NoError(t, err, "loading expected output")
 
-	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
+	assertReplayRequests(t, tc, ts, inputFiles)
 	if cfg.ExpectStreamError {
 		require.Error(t, result.Err(), "expected stream error")
 	} else {
 		require.NoError(t, result.Err(), "stream error")
 	}
 	CompareChunks(t, expected, actual)
-
-	// Request-input assertions are opt-in per fixture: when a fixture ships an
-	// expected-requests.jsonl snapshot, the provider request is compared
-	// semantically. Fixtures without the file (e.g. provider suites that have
-	// not regenerated request snapshots yet) skip this assertion.
-	expectedRequestsPath := filepath.Join(tc.Dir, "expected-requests.jsonl")
-	if _, statErr := os.Stat(expectedRequestsPath); statErr == nil {
-		expectedRequests, err := LoadExpectedRequests(expectedRequestsPath)
-		require.NoError(t, err, "loading expected request inputs")
-		require.NotNil(t, ts.Requests, "test server does not expose captured request inputs")
-		CompareRequestSnapshots(t, expectedRequests, ts.Requests())
-	}
 
 	expectedUsagePath := filepath.Join(tc.Dir, "expected-usage.json")
 	if expectedUsage, readErr := os.ReadFile(expectedUsagePath); readErr == nil {
@@ -1285,6 +1322,7 @@ func runGenerateTestCase(
 	tc TestCase,
 	cfg *Config,
 	ts *TestServer,
+	inputFiles []string,
 	model provider.LanguageModel,
 	messages []provider.Message,
 	providerOpts []provider.ProviderOption,
@@ -1310,8 +1348,8 @@ func runGenerateTestCase(
 	}
 
 	result, err := model.DoGenerate(t.Context(), callOpts)
+	assertReplayRequests(t, tc, ts, inputFiles)
 	require.NoError(t, err, "generate error")
-	require.Positive(t, ts.RequestCount(), "replay server received no requests — check provider URL configuration")
 
 	actual := generateResultSnapshot{
 		Content:          result.Content,
@@ -1323,10 +1361,26 @@ func runGenerateTestCase(
 	actualJSON, err := json.Marshal(actual)
 	require.NoError(t, err, "marshaling generate result")
 	require.JSONEq(t, string(expectedJSON), string(actualJSON), "generate result mismatch: %s", expectedPath)
+}
 
-	expectedRequests, err := LoadExpectedRequests(filepath.Join(tc.Dir, "expected-requests.jsonl"))
-	require.NoError(t, err, "loading expected request inputs")
-	CompareRequestSnapshots(t, expectedRequests, ts.Requests())
+func assertReplayRequests(t *testing.T, tc TestCase, ts *TestServer, inputFiles []string) {
+	t.Helper()
+
+	count := len(inputFiles)
+	attempts := ts.RequestCount()
+	if attempts < count {
+		require.FailNowf(t, "replay did not consume all inputs", "replay consumed %d of %d inputs; first unserved input: %s", attempts, count, inputFiles[attempts])
+	}
+	require.Equal(t, count, attempts, "replay must make exactly one HTTP attempt per input")
+
+	require.NotNil(t, ts.Requests, "test server does not expose captured request inputs")
+	actual := ts.Requests()
+	require.Len(t, actual, count, "replay must capture one Go request per input")
+	expectedPath := filepath.Join(tc.Dir, "expected-requests.jsonl")
+	expected, err := LoadExpectedRequests(expectedPath)
+	require.NoError(t, err, "loading expected request inputs %s", expectedPath)
+	require.Len(t, expected, count, "replay must have one expected request per input in %s", expectedPath)
+	CompareRequestSnapshots(t, expected, actual)
 }
 
 func defaultTestServerFactory(_ *testing.T, tc TestCase) (*TestServer, error) {
