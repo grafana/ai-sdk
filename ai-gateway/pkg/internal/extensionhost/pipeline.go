@@ -360,6 +360,8 @@ loop:
 				closed = true
 				if validator.SegmentFinished() {
 					outcome = extension.OutcomeSuccess
+				} else if ctx.Err() != nil {
+					outcome = extension.OutcomeCancelled
 				}
 				break loop
 			}

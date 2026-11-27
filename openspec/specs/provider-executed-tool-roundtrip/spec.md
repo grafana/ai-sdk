@@ -77,6 +77,17 @@ appendToolResults SHALL build []provider.ContentPart from the step in stream ord
 - **AND** the resulting message list SHALL be suitable as the next-call
   prompt without any reasoning content being dropped
 
+### Requirement: Provider-executed preliminary results stay previews
+
+A provider-executed tool result with `Preliminary` set SHALL be streamed as a `StreamToolResult` with `Preliminary: true` and as a `tool-output-available` chunk with `preliminary: true`. It SHALL NOT enter step tool results, step content, response messages or the next model request; only the final result SHALL. A final result SHALL omit `preliminary`.
+
+#### Scenario: Image generation preview followed by the final image
+
+- **WHEN** a provider stream emits a provider-executed tool call, a preliminary result and then a final result for the same call
+- **THEN** the full stream SHALL carry both results, with only the first marked preliminary
+- **AND** the UI stream SHALL mark only the first `tool-output-available` chunk preliminary
+- **AND** the step content, response messages and an assembled UI message converted back to model messages SHALL contain only the final result
+
 ### Requirement: Tool rounds retain reasoning and provider metadata
 
 In appendToolResults, every tool-call, tool-result and reasoning part SHALL carry ProviderMetadata through to ProviderOptions. Provider-executed inline results SHALL honor ModelOutput. Reasoning and its ProviderOptions, notably Anthropic extended-thinking signatures, SHALL survive every tool-result round.

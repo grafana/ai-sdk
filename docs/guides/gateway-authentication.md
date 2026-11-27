@@ -256,12 +256,30 @@ see [Call a stored stack catalog](#call-a-stored-stack-catalog).
 
 | Call | Self-hosted Grafana | Grafana Cloud |
 |---|---|---|
-| As the app | Refused, because the Gateway needs a user or service account | The configured models once your app is [allowed](#get-your-service-allowed-in-grafana-cloud); refused before |
+| As the app | The configured models once your app is [allowed](#allow-your-app-in-self-hosted-grafana); refused before | The configured models once your app is [allowed](#get-your-service-allowed-in-grafana-cloud); refused before |
 | On behalf of a user | The configured models | The configured models once your app is allowed; before that, your own provider key |
 
 In both environments, a namespace-route call on behalf of a user also needs
 the user to have `plugins.app:access` on `plugins:id:grafana-aigateway-app`.
 Grafana's Viewer role has it by default.
+
+### Allow your app in self-hosted Grafana
+
+An app calling as itself, such as from a background job, has no user, so the
+Gateway refuses it in self-hosted Grafana until the operator allows it. Grafana
+signs each plugin's tokens with the service identity `plugin:<plugin ID>`;
+the operator adds that value to `access_internal_services`:
+
+```ini
+[plugin.grafana-aigateway-app]
+access_mode = self-hosted
+access_internal_services = plugin:my-app
+```
+
+The allowed app gets the configured models as itself and on behalf of a user.
+This needs a Grafana version that signs plugin service identities
+([grafana/grafana#139015](https://github.com/grafana/grafana/pull/139015)); with
+an older Grafana the entry matches nothing and the app's own calls stay refused.
 
 ### Call a stored stack catalog
 
