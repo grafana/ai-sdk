@@ -263,13 +263,17 @@ type converseResponseMessage struct {
 	Content []responseContentBlock `json:"content"`
 }
 
-// responseContentBlock is the response-side content block. Same union as
-// request side, with the addition of reasoning + tool use without input
-// streaming.
 type responseContentBlock struct {
-	Text             string                 `json:"text,omitempty"`
-	ToolUse          *responseToolUseBlock  `json:"toolUse,omitempty"`
-	ReasoningContent *reasoningContentBlock `json:"reasoningContent,omitempty"`
+	Text             *string                        `json:"text,omitempty"`
+	CitationsContent *responseCitationsContentBlock `json:"citationsContent,omitempty"`
+	ToolUse          *responseToolUseBlock          `json:"toolUse,omitempty"`
+	ReasoningContent *reasoningContentBlock         `json:"reasoningContent,omitempty"`
+}
+
+type responseCitationsContentBlock struct {
+	Content []struct {
+		Text *string `json:"text,omitempty"`
+	} `json:"content,omitempty"`
 }
 
 type responseToolUseBlock struct {
