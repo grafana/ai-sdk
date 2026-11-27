@@ -65,7 +65,8 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Check formatting
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -91,7 +92,23 @@ jobs:
 
       - name: Test
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        env:
+          GOFLAGS: -tags=ci_separate_chat_completions_contract
         run: mise run test-short
+
+      - name: Save Go module downloads
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.module-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.go-cache.outputs.module-path }}
+          key: ${{ steps.go-cache.outputs.module-key }}
+
+      - name: Save Go build seed
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.build-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.go-cache.outputs.build-path }}
+          key: ${{ steps.go-cache.outputs.build-key }}
 
   lint:
     needs: changes
@@ -116,22 +133,30 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+      - name: Restore lint analysis seed
+        id: lint-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ runner.temp }}/golangci-lint
-          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-
+          key: golangci-v3-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-${{ steps.go-cache.outputs.build-key }}
+          restore-keys: golangci-v3-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-${{ steps.go-cache.outputs.build-prefix }}
 
       - name: Lint
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         env:
           GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint
         run: mise run lint
+
+      - name: Save lint analysis seed
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.lint-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint
+          key: ${{ steps.lint-cache.outputs.cache-primary-key }}
 
   race:
     needs: changes
@@ -156,11 +181,30 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
+        with:
+          build-flavor: race
 
       - name: Test with the race detector
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        env:
+          GOFLAGS: -tags=ci_separate_chat_completions_contract
         run: mise run test-race
+
+      - uses: ./.github/actions/restore-pnpm-store
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
+
+      - name: Official Gateway Chat Completions command contracts
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        run: mise run test-openai-chat-completions-adapter
+
+      - name: Save Go build seed
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.build-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.go-cache.outputs.build-path }}
+          key: ${{ steps.go-cache.outputs.build-key }}
 
   docs-lint:
     runs-on: ubuntu-latest
@@ -203,11 +247,14 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Test module policy fixtures
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-module-policy
+
+      - uses: ./.github/actions/restore-pnpm-store
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Test CI source and artifact gates
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -248,7 +295,10 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
+
+      - uses: ./.github/actions/restore-pnpm-store
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Validate parity baseline
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -303,7 +353,7 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Resolve pnpm store path
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -311,7 +361,7 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -347,10 +397,12 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Gateway tests
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        env:
+          GOFLAGS: -tags=ci_separate_chat_completions_contract
         run: mise run test-ai-gateway
 
   plugin-build:
@@ -383,9 +435,10 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        id: go-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
         with:
-          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
+          build-flavor: plugin
 
       - name: Resolve pnpm store path
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -393,7 +446,7 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -420,6 +473,13 @@ jobs:
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run validate-ai-gateway-plugin
 
+      - name: Save Go build seed
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' && steps.go-cache.outputs.build-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.go-cache.outputs.build-path }}
+          key: ${{ steps.go-cache.outputs.build-key }}
+
       - name: Resolve Playwright version
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         id: playwright
@@ -430,7 +490,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ~/.cache/ms-playwright
@@ -540,7 +600,7 @@ jobs:
           experimental: true
 
       - uses: ./.github/actions/cache-go
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
 
       - name: Resolve pnpm store path
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
@@ -548,7 +608,7 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}

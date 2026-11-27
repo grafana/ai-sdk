@@ -4,6 +4,13 @@ import subprocess
 import sys
 
 
+GATEWAY_GUIDES = {
+    "ai-gateway/docs/model-catalog.md",
+    "ai-gateway/docs/sources.md",
+    "ai-gateway/docs/text-observability.md",
+}
+
+
 def docs_only(base, head):
     if not all(re.fullmatch(r"[0-9a-f]{40}", ref or "") for ref in (base, head)):
         return False
@@ -21,8 +28,11 @@ def docs_only(base, head):
         if parts[0] not in {":100644", ":000000"} or parts[1] not in {"100644", "000000"}:
             return False
         name = path.decode("utf-8")
-        if not (name in {"README.md", "CONTRIBUTING.md"} or
-                (name.startswith("docs/") and name.endswith(".md"))):
+        if name == "ai-gateway/README.md":
+            if (parts[0], parts[1], parts[4]) != (":100644", "100644", "M"):
+                return False
+        elif not (name in {"README.md", "CONTRIBUTING.md"} or name in GATEWAY_GUIDES or
+                  (name.startswith("docs/") and name.endswith(".md"))):
             return False
     return True
 

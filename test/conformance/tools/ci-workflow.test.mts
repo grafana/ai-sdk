@@ -174,9 +174,7 @@ describe("candidate-source workflow gates", () => {
     assert.equal(browsers.with?.["restore-keys"], undefined, "browsers are restored only for the resolved Playwright version");
     assert.ok(jobSteps.indexOf(browsers) < jobSteps.indexOf(e2e), "browsers are restored before the end-to-end tests");
     const goCache = jobSteps.find((step) => step.uses === "./.github/actions/cache-go")!;
-    assert.ok(goCache, "plugin validation uses isolated module and build caches");
-    assert.equal(normalize(goCache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
-    for (const cache of caches) assert.equal(normalize(cache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
+    assert.equal(goCache?.with?.["build-flavor"], "plugin", "plugin validation isolates its two-architecture build seed");
     const keep = jobSteps.at(-1)!;
     assert.match(keep.uses!, /^actions\/upload-artifact@[0-9a-f]{40}$/);
     assert.equal(normalize(keep.if), pushGuard);
@@ -512,29 +510,162 @@ describe("candidate-source workflow gates", () => {
     }
   });
 
-  it("refreshes isolated build caches for every Go job", () => {
-    const cacheDocument = parseDocument(readFileSync(resolve(root, ".github/actions/cache-go/action.yml"), "utf8"));
+  it("shares Go module downloads from a successful canonical main build and retains rolling build flavors", () => {
+    const action = readFileSync(resolve(root, ".github/actions/cache-go/action.yml"), "utf8");
+    const cacheDocument = parseDocument(action);
     assert.deepEqual(cacheDocument.errors, []);
-    const cache = cacheDocument.toJS() as { inputs: { "lookup-only": { default: string } }; runs: { using: string; steps: Array<{ uses?: string; with?: { key: string; path: string; "restore-keys": string; "lookup-only": string } }> } };
+    const cache = cacheDocument.toJS() as { runs: { using: string; steps: Array<{ uses?: string; with?: { key: string; path: string; "restore-keys"?: string } }> } };
     assert.equal(cache.runs.using, "composite");
-    assert.equal(cache.inputs["lookup-only"].default, "false");
-    const caches = cache.runs.steps.filter((step) => step.uses?.startsWith("actions/cache@"));
-    assert.equal(caches.length, 2);
-    assert.notEqual(caches[0]!.with!.path, caches[1]!.with!.path);
-    for (const step of caches) {
-      assert.equal(step.with!["lookup-only"], "${{ inputs.lookup-only }}");
-      assert.ok(step.with!.key.includes("${{ runner.arch }}"));
-      assert.ok(step.with!.key.includes("${{ github.job }}"));
-      assert.ok(step.with!.key.includes("${{ steps.paths.outputs.version }}"));
-    }
-    assert.ok(!caches[0]!.with!.key.includes("${{ github.sha }}"));
-    assert.ok(caches[1]!.with!.key.endsWith("-${{ github.sha }}"));
-    assert.ok(!caches[1]!.with!["restore-keys"].includes("${{ github.sha }}"));
-    for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test", "gateway-test"]) {
+    const restores = cache.runs.steps.filter((step) => step.uses);
+    assert.equal(restores.length, 2);
+    assert.ok(restores.every((step) => /^actions\/cache\/restore@[0-9a-f]{40}$/.test(step.uses!)));
+    assert.notEqual(restores[0]!.with!.path, restores[1]!.with!.path);
+    assert.deepEqual(restores[0]!.with, {
+      path: "${{ steps.paths.outputs.module-path }}",
+      key: "${{ steps.paths.outputs.module-key }}",
+    });
+    assert.equal(restores[1]!.with?.["restore-keys"], "${{ steps.paths.outputs.build-prefix }}");
+    assert.match(action, /hashFiles\('\*\*\/go.mod', '\*\*\/go.sum'\)/);
+    assert.match(action, /module-key=\$scope-modules-v3-\$MODULE_INPUTS/);
+    assert.match(action, /build-v3-\$BUILD_FLAVOR-/);
+    assert.match(action, /date -u \+%G-W%V/);
+    assert.doesNotMatch(action, /github\.(job|sha)|lookup-only/);
+
+    const expectedFlavors: Record<string, string> = { race: "race", "plugin-build": "plugin" };
+    for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test", "gateway-test", "plugin-build"]) {
+      assert.deepEqual(needs(job), ["changes"], job);
       const jobSteps = steps(job);
       const cacheIndex = jobSteps.findIndex((step) => step.uses === "./.github/actions/cache-go");
-      assert.ok(cacheIndex > jobSteps.findIndex((step) => step.uses?.startsWith("actions/checkout@")), job);
-      assert.ok(cacheIndex < jobSteps.findIndex((step) => step.run && step.name !== "Report documentation-only selection"), job);
+      assert.ok(cacheIndex > jobSteps.findIndex((step) => step.uses?.startsWith("jdx/mise-action@")), job);
+      assert.equal(jobSteps[cacheIndex]!.with?.["build-flavor"], expectedFlavors[job], job);
+    }
+
+    const main = "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk'";
+    const saves = Object.keys(jobs).flatMap((job) => steps(job).filter((step) => step.uses?.startsWith("actions/cache/save@")).map((step) => ({ job, step })));
+    assert.deepEqual(saves.map(({ job, step }) => [job, step.with?.path]), [
+      ["build-test", "${{ steps.go-cache.outputs.module-path }}"],
+      ["build-test", "${{ steps.go-cache.outputs.build-path }}"],
+      ["lint", "${{ runner.temp }}/golangci-lint"],
+      ["race", "${{ steps.go-cache.outputs.build-path }}"],
+      ["plugin-build", "${{ steps.go-cache.outputs.build-path }}"],
+    ]);
+    const lintRestore = steps("lint").find((step) => step.name === "Restore lint analysis seed")!;
+    assert.match(lintRestore.uses!, /^actions\/cache\/restore@[0-9a-f]{40}$/);
+    assert.match(lintRestore.with?.key as string, /^golangci-v3-.*\$\{\{ steps.go-cache.outputs.build-key \}\}$/);
+    assert.doesNotMatch(lintRestore.with?.key as string, /github.sha/);
+    const lintSave = saves.find(({ job }) => job === "lint")!.step;
+    assert.equal(lintSave.if, `\${{ ${main} && steps.lint-cache.outputs.cache-hit != 'true' }}`);
+    assert.deepEqual(lintSave.with, { path: lintRestore.with?.path, key: "${{ steps.lint-cache.outputs.cache-primary-key }}" });
+    const lintIndex = steps("lint").findIndex((step) => step.run === "mise run lint");
+    assert.ok(steps("lint").indexOf(lintRestore) < lintIndex && lintIndex < steps("lint").indexOf(lintSave));
+    for (const { job, step } of saves.filter(({ job }) => job !== "lint")) {
+      const kind = step.with?.path === "${{ steps.go-cache.outputs.module-path }}" ? "module" : "build";
+      const checked = ({
+        "build-test": "mise run test-short",
+        race: "mise run test-openai-chat-completions-adapter",
+        "plugin-build": "mise run validate-ai-gateway-plugin",
+      })[job];
+      assert.match(step.uses!, /^actions\/cache\/save@[0-9a-f]{40}$/);
+      assert.equal(step.if, `\${{ ${main} && steps.go-cache.outputs.${kind}-hit != 'true' }}`);
+      assert.deepEqual(step.with, {
+        key: `\${{ steps.go-cache.outputs.${kind}-key }}`,
+        path: `\${{ steps.go-cache.outputs.${kind}-path }}`,
+      });
+      const jobSteps = steps(job);
+      const producerIndex = jobSteps.findIndex((item) => item.run === checked);
+      assert.ok(producerIndex >= 0 && jobSteps.indexOf(step) > producerIndex, job);
+    }
+  });
+
+  it("restores the existing pnpm download store before workspace installs without adding writers", () => {
+    const actionPath = "./.github/actions/restore-pnpm-store";
+    const actionDoc = parseDocument(readFileSync(resolve(root, actionPath, "action.yml"), "utf8"));
+    assert.deepEqual(actionDoc.errors, []);
+    const action = actionDoc.toJS() as { runs: { using: string; steps: Array<{ id?: string; run?: string; uses?: string; with?: Record<string, unknown> }> } };
+    assert.equal(action.runs.using, "composite");
+    assert.equal(action.runs.steps.length, 2);
+    const [pathStep, restore] = action.runs.steps;
+    assert.equal(pathStep?.id, "pnpm-store");
+    assert.match(pathStep?.run ?? "", /pnpm store path --silent/);
+    assert.match(restore?.uses ?? "", /^actions\/cache\/restore@[0-9a-f]{40}$/);
+    assert.deepEqual(restore?.with, {
+      path: "${{ steps.pnpm-store.outputs.path }}",
+      key: "${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}",
+      "restore-keys": "${{ runner.os }}-pnpm-\n",
+    });
+    const installs = {
+      race: "mise run test-openai-chat-completions-adapter",
+      "module-resolution": "mise run test-ci-workflow",
+      "parity-baseline": "mise run validate-parity-baseline",
+    };
+    const consumers = Object.keys(jobs).filter((job) => steps(job).some((step) => step.uses === actionPath));
+    assert.deepEqual(consumers, Object.keys(installs));
+    for (const [job, install] of Object.entries(installs)) {
+      const jobSteps = steps(job);
+      const index = jobSteps.findIndex((step) => step.uses === actionPath);
+      assert.ok(index > jobSteps.findIndex((step) => step.uses?.startsWith("jdx/mise-action@")), job);
+      assert.ok(index < jobSteps.findIndex((step) => step.run === install), job);
+    }
+    for (const job of ["integration-test", "plugin-build", "conformance-test"]) {
+      const producer = steps(job).find((step) => step.uses?.startsWith("actions/cache@") && step.with?.path === restore?.with?.path);
+      assert.equal(producer?.with?.key, restore?.with?.key, job);
+      assert.equal(producer?.with?.["restore-keys"], restore?.with?.["restore-keys"], job);
+    }
+    const mise = readFileSync(resolve(root, "mise.toml"), "utf8");
+    assert.match(mise.split("[deps.test]")[1]!.split(/\n\[/)[0]!, /run = "pnpm install --frozen-lockfile"/);
+  });
+
+  it("does not exchange Go, mise, pnpm or browser caches on tag builds", () => {
+    const tag = "startsWith(github.ref, 'refs/tags/')";
+    const sourceWork = "github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true'";
+    const combined: string[] = [];
+    for (const job of Object.keys(jobs)) {
+      for (const step of steps(job)) {
+        if (step.uses?.startsWith("jdx/mise-action@")) {
+          assert.equal(step.with?.cache, `\${{ !${tag} }}`, job);
+        } else if (step.uses?.startsWith("actions/cache/save@")) {
+          assert.match(step.if ?? "", /github\.ref == 'refs\/heads\/main'/, job);
+        } else if (step.uses === "./.github/actions/cache-go" || step.uses === "./.github/actions/restore-pnpm-store" || /^actions\/cache(?:\/restore)?@/.test(step.uses ?? "")) {
+          assert.equal(normalize(step.if), `\${{ !${tag} && (${sourceWork}) }}`, job);
+          if (step.uses?.startsWith("actions/cache@")) {
+            combined.push(job);
+            assert.equal(step.with?.["lookup-only"], `\${{ ${tag} }}`, job);
+          }
+        }
+      }
+    }
+    assert.deepEqual(combined, ["integration-test", "plugin-build", "plugin-build", "conformance-test"]);
+  });
+
+  it("runs both official Chat Completions client suites exactly once in the required race job", () => {
+    const command = "mise run test-openai-chat-completions-adapter";
+    const callers = Object.keys(jobs).flatMap((job) => steps(job).filter((step) => step.run === command).map((step) => ({ job, step })));
+    assert.deepEqual(callers.map(({ job }) => job), ["race"]);
+    const contract = callers[0]!.step;
+    assert.equal(contract.if, "${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}");
+    assert.notEqual(jobs.race?.["continue-on-error"], true);
+    assert.notEqual(contract["continue-on-error"], true);
+    assert.equal(contract.env?.GOFLAGS, undefined);
+    for (const [job, task] of [["build-test", "test-short"], ["race", "test-race"], ["gateway-test", "test-ai-gateway"]]) {
+      const other = steps(job!).find((step) => step.run === `mise run ${task}`);
+      assert.equal(other?.env?.GOFLAGS, "-tags=ci_separate_chat_completions_contract", job);
+      assert.notEqual(other?.["continue-on-error"], true);
+    }
+
+    const mise = readFileSync(resolve(root, "mise.toml"), "utf8");
+    const task = mise.split("[tasks.test-openai-chat-completions-adapter]")[1]!.split(/\n\[/)[0]!;
+    assert.match(task, /AI_SDK_CHAT_CONTRACT_BIN_DIR=\$\(mktemp -d\)/);
+    assert.match(task, /build-command-contract.sh[\s\S]*go test -v -race -count=1 \.\/test\/openai-chat-completions-adapter/);
+    assert.match(task, /pnpm --filter @ai-sdk\/openai-chat-completions-adapter-contract test\b/);
+    const build = readFileSync(resolve(root, "ai-gateway/scripts/build-command-contract.sh"), "utf8");
+    assert.match(build, /export GOWORK=off/);
+    assert.deepEqual(build.match(/^go build .*$/gm), [
+      'go build -race -mod=readonly -o "$output/gateway" ./pkg',
+      'go build -race -mod=readonly -o "$output/plugin-host" ./test/platformhost/cmd/plugin-host',
+    ]);
+    for (const file of ["command_test.go", "catalog_test.go"]) {
+      const goContract = readFileSync(resolve(root, "ai-gateway/test/openai-chat-completions-adapter", file), "utf8");
+      assert.match(goContract, /^\/\/go:build !ci_separate_chat_completions_contract/);
     }
   });
 });
@@ -557,7 +688,7 @@ describe("documentation-only CI selection", () => {
           assert.ok(step.run?.startsWith("echo "));
         } else if (["Plugin test host suites", "Archive candidate plugin package", "Keep candidate plugin package"].includes(step.name ?? "")) {
           assert.equal(normalize(step.if), pushGuard);
-        } else {
+        } else if (!step.uses?.startsWith("actions/cache/save@")) {
           assert.ok(step.if?.includes(guard), `${worker}: ${step.name ?? step.uses} lacks fail-closed guard`);
         }
       }
@@ -577,6 +708,9 @@ describe("documentation-only CI selection", () => {
     assert.equal(jobs["docs-lint"]!.if, undefined);
     assert.deepEqual(needs("docs-lint"), []);
     assert.ok(steps("docs-lint").every(step => step.if === undefined));
+    assert.match(commands("docs-lint"), /mise run lint-docs/);
+    assert.match(readFileSync(resolve(root, "mise.toml"), "utf8").split("[tasks.lint-docs]")[1]!.split(/\n\[/)[0]!,
+      /node --test ai-gateway\/scripts\/doc-links\.test\.mjs/);
     const checkout = steps("changes").find(step => step.uses?.startsWith("actions/checkout@"))!;
     assert.equal(checkout.with?.["fetch-depth"], 0);
     const classifier = steps("changes").find(step => step.run?.includes("ci_docs_only.py"))!;
