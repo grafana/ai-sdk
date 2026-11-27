@@ -1,6 +1,7 @@
 model: claude-sonnet-4-5-20250929
 prompt: "Get the weather in Berlin and return it as structured data."
 stopWhenStepCount: 2
+assertOutputValue: true
 responseFormat:
   type: json
   schema:
