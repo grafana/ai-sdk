@@ -476,6 +476,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		if rc != nil {
 			providerThinking := providerThinkingType(opts.ProviderOptions)
 			applyReasoningConfigWithProviderHints(&p, rc, providerThinking)
+			// The effort caps below read anthropicOpts.Effort, so the derived
+			// effort has to go through them as well.
+			if providerThinking != ThinkingDisabled {
+				anthropicOpts.Effort = rc.effort
+			}
 		}
 	}
 
