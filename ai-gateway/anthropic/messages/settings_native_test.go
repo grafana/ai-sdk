@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/providers/anthropic"

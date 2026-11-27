@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/grafana/ai-sdk/provider"
 )
 
