@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
+	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/grafana/ai-sdk/providers/azure/foundry"
+	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,6 +158,101 @@ func TestNewAnthropic_ProtocolAndIdentity(t *testing.T) {
 			assert.Equal(t, 5, *usage.InputTokens.CacheWrite)
 			assert.Equal(t, 3, *usage.OutputTokens.Total)
 		})
+	}
+}
+
+func TestNewAnthropic_SyntheticToolContinuation(t *testing.T) {
+	const secondStream = `event: message_start
+data: {"type":"message_start","message":{"id":"msg_next","type":"message","role":"assistant","model":"test-deployment","content":[],"usage":{"input_tokens":5,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+	requests := make(chan json.RawMessage, 2)
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/anthropic/v1/messages", r.URL.RequestURI())
+		var body struct {
+			Model    string          `json:"model"`
+			Stream   bool            `json:"stream"`
+			Messages json.RawMessage `json:"messages"`
+		}
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		assert.Equal(t, "test-deployment", body.Model)
+		assert.True(t, body.Stream)
+		response := foundrySyntheticStream
+		switch attempts.Add(1) {
+		case 1:
+		case 2:
+			response = secondStream
+		default:
+			t.Error("unexpected continuation request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		requests <- body.Messages
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, err := io.WriteString(w, response)
+		assert.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+	model, err := NewAnthropic(foundry.Config{BaseURL: server.URL, APIKey: "test-key"}, "claude-sonnet-4-6", "test-deployment")
+	require.NoError(t, err)
+	inputSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"service":{"type":"string"}}}`))
+	require.NoError(t, err)
+	result := aisdk.StreamText(t.Context(), model,
+		aisdk.WithModelMessages(provider.UserText("look up the service")), aisdk.WithMaxRetries(0), aisdk.WithMaxOutputTokens(64),
+		aisdk.WithStopWhen(aisdk.StepCountIs(2)),
+		aisdk.WithTools(aisdk.ToolSet{"lookup": {
+			InputSchema: inputSchema,
+			Execute: func(_ context.Context, input json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+				assert.JSONEq(t, `{"service":"api"}`, string(input))
+				return json.RawMessage(`{"available":true}`), nil
+			},
+		}}),
+	)
+	var chunks []aisdk.ChunkType
+	for chunk := range result.ToUIMessageStream() {
+		chunks = append(chunks, chunk.Type)
+	}
+	require.NoError(t, result.Err())
+	require.EqualValues(t, 2, attempts.Load())
+	require.Len(t, requests, 2)
+	assert.JSONEq(t, `[{"role":"user","content":[{"type":"text","text":"look up the service"}]}]`, string(<-requests))
+	assert.JSONEq(t, `[
+		{"role":"user","content":[{"type":"text","text":"look up the service"}]},
+		{"role":"assistant","content":[
+			{"type":"thinking","thinking":"checking","signature":"signature"},
+			{"type":"text","text":"ok"},
+			{"type":"tool_use","id":"tool_1","name":"lookup","input":{"service":"api"}}
+		]},
+		{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool_1","content":[{"type":"text","text":"{\"available\":true}"}]}]}
+	]`, string(<-requests))
+	assert.Contains(t, chunks, aisdk.ChunkToolOutputAvailable)
+	assert.Equal(t, "done", result.Text())
+	assert.Equal(t, provider.FinishReasonStop, result.FinishReason().Unified)
+	steps := result.Steps()
+	require.Len(t, steps, 2)
+	for _, step := range steps {
+		assert.Equal(t, "azure", step.Response.Provider)
+		assert.Equal(t, "claude-sonnet-4-6", step.Response.ModelID)
 	}
 }
 
