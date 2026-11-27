@@ -10,4 +10,4 @@ openai-compatible-refusal.json: unary-refusal
 
 # Non-streaming counterparts to imported streaming fixtures:
 xai-text.json: null
-xai-tool-call.json: null
+xai-tool-call.json: unary-xai-tool-call

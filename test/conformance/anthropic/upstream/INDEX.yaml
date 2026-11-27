@@ -53,7 +53,7 @@ anthropic-web-fetch-tool.error: null
 
 # Non-streaming counterparts to imported streaming fixtures:
 anthropic-clear-thinking.1.json: null
-anthropic-clear-tool-uses.1.json: null
+anthropic-clear-tool-uses.1.json: unary-clear-tool-uses
 anthropic-code-execution-20250825.1.json: null
 anthropic-code-execution-20250825.2.json: null
 anthropic-code-execution-20250825.pptx-skill.json: null
@@ -63,7 +63,7 @@ anthropic-compaction.1.json: null
 anthropic-fallback.json: null
 anthropic-json-other-tool.1.json: null
 anthropic-json-output-format.1.json: null
-anthropic-json-tool.1.json: null
+anthropic-json-tool.1.json: unary-json-tool
 anthropic-mcp.1.json: null
 anthropic-programmatic-tool-calling.1.json: null
 anthropic-refusal.json: null

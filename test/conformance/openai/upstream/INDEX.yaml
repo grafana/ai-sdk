@@ -54,7 +54,7 @@ openai-apply-patch-tool.1.json: null
 openai-client-tool-search.1.json: null
 openai-client-tool-search.2.json: null
 openai-code-interpreter-tool.1.json: null
-openai-compaction.1.json: null
+openai-compaction.1.json: unary-compaction
 openai-custom-tool.1.json: null
 openai-error.1.json: null
 openai-file-search-tool.1.json: null
@@ -66,7 +66,7 @@ openai-mcp-tool-approval.2.json: null
 openai-mcp-tool-approval.3.json: null
 openai-mcp-tool-approval.4.json: null
 openai-mcp-tool.1.json: null
-openai-phase.1.json: null
+openai-phase.1.json: unary-phase
 openai-reasoning-encrypted-content.1.json: null
 openai-shell-container-multiturn.1.json: null
 openai-shell-container.1.json: null

@@ -1,0 +1,58 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "\n\nHere's a comparison of the weather in both cities:\n\n**San Francisco vs New York:**\n\n| Aspect | San Francisco | New York |\n|--------|---------------|----------|\n| **Temperature** | 72°F | 65°F |\n| **Conditions** | Sunny | Cloudy |\n\n**Summary:**\nSan Francisco is warmer than New York by 7 degrees Fahrenheit, and it has better weather conditions with sunny skies compared to New York's cloudy weather. If you're looking for warm and clear weather, San Francisco is the better choice right now!"
+    }
+  ],
+  "finishReason": {
+    "unified": "stop",
+    "raw": "end_turn"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 859,
+      "noCache": 859,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "outputTokens": {
+      "total": 132
+    },
+    "raw": {
+      "service_tier": "standard",
+      "input_tokens": 859,
+      "output_tokens": 132,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "inference_geo": "not_available"
+    }
+  },
+  "providerMetadata": {
+    "anthropic": {
+      "usage": {
+        "service_tier": "standard",
+        "input_tokens": 859,
+        "output_tokens": 132,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "inference_geo": "not_available"
+      },
+      "stopSequence": null,
+      "serviceTier": "standard",
+      "iterations": null,
+      "container": null,
+      "contextManagement": {
+        "appliedEdits": []
+      }
+    }
+  }
+}

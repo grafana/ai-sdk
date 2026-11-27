@@ -1,0 +1,55 @@
+{
+  "content": [
+    {
+      "type": "reasoning",
+      "text": "First, the user is asking about the weather in San Francisco. I have a function available called \"weather\" that retrieves the weather for a given location.\n\nThe function requires a parameter: \"location\", which is a string. The user has provided \"San Francisco\" as the location, so that's clear and inferable.\n\nI should call this function to get the weather information. The format for calling the function is specific: I need to use <function_call> tags with a JSON object like {\"action\": \"function_name\", \"action_input\": {\"parameter\": \"argument\"}}.\n\nFor this, the action is \"weather\", and the action_input should be {\"location\": \"San Francisco\"}.\n\nAfter calling the function, I might need to handle the response in subsequent turns, but for now, this is the logical next step.\n\nMy response should only include the function call if I'm deciding to make one. I shouldn't add any extra text unless necessary.\n\nThe instructions say: \"Keep your response to user clear; please do not make your response verbose!\" So, I should not add any chit-chat; just the function call.\n\nFinally, structure it as: <function_call>{\"action\": \"weather\", \"action_input\": {\"location\": \"San Francisco\"}}</function_call>"
+    },
+    {
+      "type": "tool-call",
+      "toolCallId": "call_46427107",
+      "toolName": "weather",
+      "input": "{\"location\":\"San Francisco\"}"
+    }
+  ],
+  "finishReason": {
+    "unified": "tool-calls",
+    "raw": "tool_calls"
+  },
+  "usage": {
+    "inputTokens": {
+      "total": 307,
+      "noCache": 63,
+      "cacheRead": 244
+    },
+    "outputTokens": {
+      "total": 26,
+      "text": 0,
+      "reasoning": 255
+    },
+    "raw": {
+      "prompt_tokens": 307,
+      "completion_tokens": 26,
+      "total_tokens": 588,
+      "prompt_tokens_details": {
+        "cached_tokens": 244,
+        "text_tokens": 307,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 255,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0,
+        "audio_tokens": 0
+      },
+      "num_sources_used": 0,
+      "cost_in_usd_ticks": 1777000
+    }
+  },
+  "providerMetadata": {
+    "openai-compatible": {
+      "acceptedPredictionTokens": 0,
+      "rejectedPredictionTokens": 0
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# "should parse compaction output item from real fixture" in openai-responses-language-model.test.ts
+operation: generate
+model: gpt-5.2
+prompt: Hello
+providerOptions:
+  openai:
+    store: false
+    contextManagement:
+      - type: compaction
+        compactThreshold: 50000

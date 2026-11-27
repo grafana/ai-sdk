@@ -1,0 +1,4 @@
+# "should parse clear_tool_uses response with context_management" in anthropic-language-model.test.ts
+operation: generate
+model: claude-3-haiku-20240307
+prompt: Hello
