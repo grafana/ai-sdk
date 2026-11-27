@@ -173,6 +173,11 @@ func TestSigningKeys(t *testing.T) {
 	}{
 		{name: "inline keys", env: map[string]string{plugin.EnvVarGrafanaJWKS: string(public)}, valid: true},
 		{name: "keys URL", env: map[string]string{plugin.EnvVarGrafanaJWKSURL: "http://auth.internal/jwks"}, valid: true},
+		{name: "legacy inline keys", env: map[string]string{"GRAFANA_JWKS": string(public)}, valid: true},
+		{name: "legacy keys URL", env: map[string]string{"GRAFANA_JWKS_URL": "http://auth.internal/jwks"}, valid: true},
+		{name: "new name wins over legacy", env: map[string]string{plugin.EnvVarGrafanaJWKS: string(public), "GRAFANA_JWKS": "keys"}, valid: true},
+		{name: "empty new name falls back", env: map[string]string{plugin.EnvVarGrafanaJWKS: "", "GRAFANA_JWKS": string(public)}, valid: true},
+		{name: "new URL with legacy keys", env: map[string]string{plugin.EnvVarGrafanaJWKSURL: "https://auth.test/jwks", "GRAFANA_JWKS": string(public)}},
 		{name: "neither"},
 		{name: "both", env: map[string]string{plugin.EnvVarGrafanaJWKS: string(public), plugin.EnvVarGrafanaJWKSURL: "https://auth.test/jwks"}},
 		{name: "relative URL", env: map[string]string{plugin.EnvVarGrafanaJWKSURL: "/jwks"}},

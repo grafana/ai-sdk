@@ -6,7 +6,7 @@ Define Anthropic MCP server configuration, streamed and non-streamed MCP tool be
 
 ### Requirement: MCP server configuration via provider options
 
-AnthropicOptions.MCPServers SHALL configure entries with Name/URL strings, optional AuthorizationToken *string and optional ToolConfiguration with Enabled *bool and AllowedTools string slice. applyProviderOptions SHALL map them to BetaMessageNewParams.MCPServers, omit absent members and retain existing beta selection. Pointers for explicit values SHALL replace the previous string/bool fields in caller Go structs.
+`AnthropicOptions.MCPServers` SHALL accept name and URL strings, an optional authorization token (`*string`), and optional tool configuration with `Enabled` (`*bool`) and `AllowedTools` (`[]string`). `applyProviderOptions` SHALL map these entries to `BetaMessageNewParams.MCPServers`, omit absent members, and retain MCP beta selection. The outgoing configuration SHALL use that mapping unless a restricted choice is widened as specified below.
 
 #### Scenario: Single MCP server with all fields
 - **WHEN** `AnthropicOptions` contains one `MCPServer` with `Name: "my-server"`, `URL: "https://mcp.example.com"`, `AuthorizationToken` pointing to `"token123"`, and `ToolConfiguration` with `Enabled` pointing to true and `AllowedTools: ["tool_a", "tool_b"]`
@@ -17,7 +17,7 @@ AnthropicOptions.MCPServers SHALL configure entries with Name/URL strings, optio
 - **THEN** `applyProviderOptions()` sets `p.MCPServers` to two entries in order
 
 #### Scenario: MCP server with minimal fields
-- **WHEN** `AnthropicOptions` contains one `MCPServer` with only `Name` and `URL`
+- **WHEN** `AnthropicOptions` contains one `MCPServer` with only `Name` and `URL` and no restricted tool choice is widened
 - **THEN** the optional authorization token and tool configuration SHALL be omitted from the native request
 
 #### Scenario: No MCP servers configured
@@ -25,7 +25,7 @@ AnthropicOptions.MCPServers SHALL configure entries with Name/URL strings, optio
 - **THEN** `applyProviderOptions()` SHALL NOT set `p.MCPServers` or inject the MCP beta header
 
 #### Scenario: Allowed tools without enabled
-- **WHEN** a server sets `ToolConfiguration.AllowedTools` to a non-nil empty or populated slice but leaves `Enabled` nil
+- **WHEN** a server sets `ToolConfiguration.AllowedTools` to a non-nil empty or populated slice but leaves `Enabled` nil, and no restricted tool choice is widened
 - **THEN** the native request SHALL preserve the array and omit `tool_configuration.enabled`, rather than silently disabling the server
 
 #### Scenario: Explicit disabled flag
@@ -35,6 +35,25 @@ AnthropicOptions.MCPServers SHALL configure entries with Name/URL strings, optio
 #### Scenario: Explicit empty token
 - **WHEN** `AuthorizationToken` points to the empty string
 - **THEN** the native request SHALL retain `authorization_token: ""`, distinct from omission
+
+### Requirement: MCP tool availability when a restricted choice is widened
+
+For generation and streaming, the provider SHALL set `tool_configuration.enabled: false` on every MCP server only when a named choice is sent as `auto` or a JSON response tool replaces a named or `none` choice. The override SHALL preserve all other fields, including omitted versus empty `allowed_tools`, server order, and MCP beta selection. It SHALL NOT mutate caller options.
+
+#### Scenario: Named choice falls back to auto
+
+- **WHEN** a model or manual thinking configuration rejects a named tool choice and the request falls back to `auto`
+- **THEN** every MCP server SHALL have `enabled: false`, even if the caller omitted `tool_configuration` or explicitly enabled the connector
+
+#### Scenario: JSON response tool replaces a restricted choice
+
+- **WHEN** an automatic or explicit JSON-tool fallback replaces a named or `none` choice
+- **THEN** every MCP server SHALL have `enabled: false`, with its original `allowed_tools` preserved
+
+#### Scenario: No widening of a restricted choice
+
+- **WHEN** the caller leaves the choice unset, uses `auto` or `required`, or the provider still enforces the caller's named or `none` choice (including with native structured output)
+- **THEN** the request SHALL preserve each connector's configured enabled state and allowlist, including absent fields
 
 ### Requirement: MCP beta header auto-injection
 
@@ -172,7 +191,7 @@ The Anthropic request builder SHALL emit `ToolCallContentPart` entries whose opt
 
 ### Requirement: Anthropic MCP option presence distinctions
 
-Absent authorization token SHALL differ from explicit empty string; absent enabled SHALL differ from explicit false. Non-nil empty AllowedTools SHALL remain an explicitly empty array.
+Absent authorization token SHALL differ from explicit empty string. Unless a widened tool choice overrides `enabled`, absent enabled SHALL differ from explicit false. Non-nil empty AllowedTools SHALL remain an explicitly empty array.
 
 #### Scenario: Anthropic MCP option presence distinctions
 

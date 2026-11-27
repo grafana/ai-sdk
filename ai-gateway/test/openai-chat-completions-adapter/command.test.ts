@@ -1,10 +1,10 @@
 // Synthetic deterministic integration upstreams, not provider recordings.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { accessSync, constants, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
@@ -12,19 +12,19 @@ import { z } from 'zod';
 
 test('official JavaScript SDK against platform plugin: Responses, compatible and Anthropic', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'chat-completions-adapter-js-'));
-  const binary = join(directory, 'gateway');
-  const hostBinary = join(directory, 'plugin-host');
+  const supplied = process.env.AI_SDK_CHAT_CONTRACT_BIN_DIR;
+  const binaries = supplied ?? directory;
+  const binary = join(binaries, 'gateway');
+  const hostBinary = join(binaries, 'plugin-host');
   try {
-    execFileSync('go', ['build', '-race', '-mod=readonly', '-o', binary, './pkg'], {
-      cwd: resolve(import.meta.dirname, '../..'),
-      env: { ...process.env, GOWORK: 'off' },
-      stdio: 'pipe',
-    });
-    execFileSync('go', ['build', '-race', '-mod=readonly', '-o', hostBinary, './test/platformhost/cmd/plugin-host'], {
-      cwd: resolve(import.meta.dirname, '../..'),
-      env: { ...process.env, GOWORK: 'off' },
-      stdio: 'pipe',
-    });
+    assert.ok(isAbsolute(binaries), 'command-contract binary directory must be absolute');
+    if (supplied === undefined) {
+      execFileSync('bash', [resolve(import.meta.dirname, '../../scripts/build-command-contract.sh'), directory], {
+        stdio: 'inherit',
+      });
+    }
+    accessSync(binary, constants.X_OK);
+    accessSync(hostBinary, constants.X_OK);
     for (const backend of ['openai', 'openai-compatible', 'anthropic'] as const) {
       await t.test(backend, async () => {
         const requests: Record<string, any>[] = [];
@@ -283,6 +283,7 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             ([key]) => !['GF_PLUGIN_', 'GRAFANA_', 'AGENTO11Y_', 'SIGIL_'].some((prefix) => key.startsWith(prefix))
           )
         );
+        const raceReport = `${backend}-race-report`;
         const proc = spawn(
           hostBinary,
           [
@@ -303,6 +304,7 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
               GF_PLUGIN_MODEL_CATALOG: readFileSync(config, 'utf8'),
               GF_PLUGIN_ACCESS_MODE: 'self-hosted',
               CHAT_COMPLETIONS_ADAPTER_JS_KEY: 'fake-key',
+              GORACE: `log_path='${join(directory, raceReport)}'`,
             },
             stdio: ['ignore', 'pipe', 'pipe'],
           }
@@ -578,6 +580,10 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           clearTimeout(timer);
           upstream.closeAllConnections();
           await new Promise<void>((r) => upstream.close(() => r()));
+          const reports = readdirSync(directory)
+            .filter((name) => name.startsWith(`${raceReport}.`))
+            .map((name) => readFileSync(join(directory, name), 'utf8'));
+          assert.equal(reports.length, 0, reports.join('\n'));
           assert.equal(code, 0, stderr);
         }
       });
