@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/gatewaytofredom/pjson"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -53,12 +54,15 @@ func buildUIMessageReaderConfig(opts []UIMessageReaderOption) uiMessageReaderCon
 }
 
 type partialToolCallState struct {
-	inputEncoding provider.ToolInputEncoding
-	text          string
-	toolName      string
-	dynamic       bool
-	title         *string
-	toolMetadata  json.RawMessage
+	inputEncoding  provider.ToolInputEncoding
+	text           string
+	parser         *pjson.Parser
+	parserFailed   bool
+	lastValidInput json.RawMessage
+	toolName       string
+	dynamic        bool
+	title          *string
+	toolMetadata   json.RawMessage
 }
 
 type uiMessageReaderState struct {
@@ -123,8 +127,22 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) (*uiMessageReaderState, 
 				if fields.ToolMetadata == nil {
 					toolMetadata = nil
 				}
+				var parser *pjson.Parser
+				var parserFailed bool
+				lastValidInput := cloneRawMessage(fields.Input)
+				if fields.InputEncoding != provider.ToolInputEncodingText {
+					parser = pjson.New(pjson.WithMaxDepth(512), pjson.WithCompleteLiterals())
+					if raw != "" {
+						if _, err := parser.WriteString(raw); err != nil {
+							parserFailed = true
+						} else if snap := parser.CompleteJSON(); len(snap) > 0 && json.Valid(snap) {
+							lastValidInput = cloneRawMessage(json.RawMessage(snap))
+						}
+					}
+				}
 				state.partialToolCalls[fields.ToolCallID] = &partialToolCallState{
-					text: raw, toolName: fields.ToolName, dynamic: dynamic, inputEncoding: fields.InputEncoding,
+					text: raw, parser: parser, parserFailed: parserFailed, lastValidInput: lastValidInput,
+					toolName: fields.ToolName, dynamic: dynamic, inputEncoding: fields.InputEncoding,
 					title: fields.Title, toolMetadata: toolMetadata,
 				}
 			}
@@ -308,9 +326,14 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: invalid tool input encoding %q", chunk.InputEncoding)
 		}
 		dynamic := chunk.Dynamic != nil && *chunk.Dynamic
+		var parser *pjson.Parser
+		if chunk.InputEncoding != provider.ToolInputEncodingText {
+			parser = pjson.New(pjson.WithMaxDepth(512), pjson.WithCompleteLiterals())
+		}
 		s.partialToolCalls[chunk.ToolCallID] = &partialToolCallState{
 			toolName: chunk.ToolName, dynamic: dynamic, inputEncoding: chunk.InputEncoding,
-			title: chunkToolTitle(chunk), toolMetadata: cloneRawMessage(chunk.ToolMetadata),
+			parser: parser,
+			title:  chunkToolTitle(chunk), toolMetadata: cloneRawMessage(chunk.ToolMetadata),
 		}
 		chunk.Input = nil
 		return true, s.upsertToolPart(chunk, dynamic, ToolStateInputStreaming)
@@ -324,8 +347,18 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		var input json.RawMessage
 		if partial.inputEncoding == provider.ToolInputEncodingText {
 			input, _ = json.Marshal(partial.text)
+		} else if !partial.parserFailed && partial.parser != nil {
+			if _, err := partial.parser.WriteString(chunk.InputTextDelta); err != nil {
+				partial.parserFailed = true
+				input = partial.lastValidInput
+			} else if snap := partial.parser.CompleteJSON(); len(snap) > 0 && json.Valid(snap) {
+				input = cloneRawMessage(json.RawMessage(snap))
+				partial.lastValidInput = input
+			} else {
+				input = partial.lastValidInput
+			}
 		} else {
-			input = parsePartialJSONRaw(partial.text)
+			input = partial.lastValidInput
 		}
 		next := UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: chunk.ToolCallID, ToolName: partial.toolName, InputEncoding: partial.inputEncoding, Input: input, ToolMetadata: partial.toolMetadata}
 		if partial.title != nil {
@@ -695,248 +728,6 @@ func (s *uiMessageReaderState) updateToolAt(idx int, update func(*toolPartFields
 		s.message.Parts[idx] = DynamicToolUIPart(fields)
 	}
 }
-
-func parsePartialJSONRaw(text string) json.RawMessage {
-	if raw := parseJSONRaw(text); raw != nil {
-		return raw
-	}
-	return parseJSONRaw(fixPartialJSON(text))
-}
-
-func parseJSONRaw(text string) json.RawMessage {
-	var value any
-	if err := json.Unmarshal([]byte(text), &value); err != nil {
-		return nil
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	return raw
-}
-
-type fixJSONState string
-
-const (
-	fixStateRoot                    fixJSONState = "ROOT"
-	fixStateFinish                  fixJSONState = "FINISH"
-	fixStateInsideString            fixJSONState = "INSIDE_STRING"
-	fixStateInsideStringEscape      fixJSONState = "INSIDE_STRING_ESCAPE"
-	fixStateInsideStringUnicode     fixJSONState = "INSIDE_STRING_UNICODE_ESCAPE"
-	fixStateInsideLiteral           fixJSONState = "INSIDE_LITERAL"
-	fixStateInsideNumber            fixJSONState = "INSIDE_NUMBER"
-	fixStateInsideObjectStart       fixJSONState = "INSIDE_OBJECT_START"
-	fixStateInsideObjectKey         fixJSONState = "INSIDE_OBJECT_KEY"
-	fixStateInsideObjectAfterKey    fixJSONState = "INSIDE_OBJECT_AFTER_KEY"
-	fixStateInsideObjectBeforeValue fixJSONState = "INSIDE_OBJECT_BEFORE_VALUE"
-	fixStateInsideObjectAfterValue  fixJSONState = "INSIDE_OBJECT_AFTER_VALUE"
-	fixStateInsideObjectAfterComma  fixJSONState = "INSIDE_OBJECT_AFTER_COMMA"
-	fixStateInsideArrayStart        fixJSONState = "INSIDE_ARRAY_START"
-	fixStateInsideArrayAfterValue   fixJSONState = "INSIDE_ARRAY_AFTER_VALUE"
-	fixStateInsideArrayAfterComma   fixJSONState = "INSIDE_ARRAY_AFTER_COMMA"
-)
-
-func fixPartialJSON(input string) string {
-	stack := []fixJSONState{fixStateRoot}
-	lastValidIndex := -1
-	literalStart := -1
-	unicodeEscapeDigits := 0
-
-	isHexDigit := func(char byte) bool {
-		return (char >= '0' && char <= '9') || (char >= 'A' && char <= 'F') || (char >= 'a' && char <= 'f')
-	}
-	popPush := func(states ...fixJSONState) {
-		stack = stack[:len(stack)-1]
-		stack = append(stack, states...)
-	}
-	processValueStart := func(char byte, i int, swapState fixJSONState) {
-		switch char {
-		case '"':
-			lastValidIndex = i
-			popPush(swapState, fixStateInsideString)
-		case 'f', 't', 'n':
-			lastValidIndex = i
-			literalStart = i
-			popPush(swapState, fixStateInsideLiteral)
-		case '-':
-			popPush(swapState, fixStateInsideNumber)
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			lastValidIndex = i
-			popPush(swapState, fixStateInsideNumber)
-		case '{':
-			lastValidIndex = i
-			popPush(swapState, fixStateInsideObjectStart)
-		case '[':
-			lastValidIndex = i
-			popPush(swapState, fixStateInsideArrayStart)
-		}
-	}
-	processAfterObjectValue := func(char byte, i int) {
-		switch char {
-		case ',':
-			stack = stack[:len(stack)-1]
-			stack = append(stack, fixStateInsideObjectAfterComma)
-		case '}':
-			lastValidIndex = i
-			stack = stack[:len(stack)-1]
-		}
-	}
-	processAfterArrayValue := func(char byte, i int) {
-		switch char {
-		case ',':
-			stack = stack[:len(stack)-1]
-			stack = append(stack, fixStateInsideArrayAfterComma)
-		case ']':
-			lastValidIndex = i
-			stack = stack[:len(stack)-1]
-		}
-	}
-
-	for i := 0; i < len(input); i++ {
-		char := input[i]
-		currentState := stack[len(stack)-1]
-		switch currentState {
-		case fixStateRoot:
-			processValueStart(char, i, fixStateFinish)
-		case fixStateInsideObjectStart:
-			switch char {
-			case '"':
-				popPush(fixStateInsideObjectKey)
-			case '}':
-				lastValidIndex = i
-				stack = stack[:len(stack)-1]
-			}
-		case fixStateInsideObjectAfterComma:
-			if char == '"' {
-				popPush(fixStateInsideObjectKey)
-			}
-		case fixStateInsideObjectKey:
-			if char == '"' {
-				popPush(fixStateInsideObjectAfterKey)
-			}
-		case fixStateInsideObjectAfterKey:
-			if char == ':' {
-				popPush(fixStateInsideObjectBeforeValue)
-			}
-		case fixStateInsideObjectBeforeValue:
-			processValueStart(char, i, fixStateInsideObjectAfterValue)
-		case fixStateInsideObjectAfterValue:
-			processAfterObjectValue(char, i)
-		case fixStateInsideString:
-			switch char {
-			case '"':
-				stack = stack[:len(stack)-1]
-				lastValidIndex = i
-			case '\\':
-				stack = append(stack, fixStateInsideStringEscape)
-			default:
-				lastValidIndex = i
-			}
-		case fixStateInsideArrayStart:
-			if char == ']' {
-				lastValidIndex = i
-				stack = stack[:len(stack)-1]
-			} else {
-				lastValidIndex = i
-				processValueStart(char, i, fixStateInsideArrayAfterValue)
-			}
-		case fixStateInsideArrayAfterValue:
-			switch char {
-			case ',':
-				stack = stack[:len(stack)-1]
-				stack = append(stack, fixStateInsideArrayAfterComma)
-			case ']':
-				lastValidIndex = i
-				stack = stack[:len(stack)-1]
-			default:
-				lastValidIndex = i
-			}
-		case fixStateInsideArrayAfterComma:
-			processValueStart(char, i, fixStateInsideArrayAfterValue)
-		case fixStateInsideStringEscape:
-			stack = stack[:len(stack)-1]
-			if char == 'u' {
-				unicodeEscapeDigits = 0
-				stack = append(stack, fixStateInsideStringUnicode)
-			} else {
-				lastValidIndex = i
-			}
-		case fixStateInsideStringUnicode:
-			if isHexDigit(char) {
-				unicodeEscapeDigits++
-				if unicodeEscapeDigits == 4 {
-					stack = stack[:len(stack)-1]
-					lastValidIndex = i
-				}
-			}
-		case fixStateInsideNumber:
-			switch char {
-			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-				lastValidIndex = i
-			case 'e', 'E', '-', '.':
-			case ',':
-				stack = stack[:len(stack)-1]
-				if stack[len(stack)-1] == fixStateInsideArrayAfterValue {
-					processAfterArrayValue(char, i)
-				}
-				if stack[len(stack)-1] == fixStateInsideObjectAfterValue {
-					processAfterObjectValue(char, i)
-				}
-			case '}':
-				stack = stack[:len(stack)-1]
-				if stack[len(stack)-1] == fixStateInsideObjectAfterValue {
-					processAfterObjectValue(char, i)
-				}
-			case ']':
-				stack = stack[:len(stack)-1]
-				if stack[len(stack)-1] == fixStateInsideArrayAfterValue {
-					processAfterArrayValue(char, i)
-				}
-			default:
-				stack = stack[:len(stack)-1]
-			}
-		case fixStateInsideLiteral:
-			partialLiteral := input[literalStart : i+1]
-			if !startsWith("false", partialLiteral) && !startsWith("true", partialLiteral) && !startsWith("null", partialLiteral) {
-				stack = stack[:len(stack)-1]
-				if stack[len(stack)-1] == fixStateInsideObjectAfterValue {
-					processAfterObjectValue(char, i)
-				} else if stack[len(stack)-1] == fixStateInsideArrayAfterValue {
-					processAfterArrayValue(char, i)
-				}
-			} else {
-				lastValidIndex = i
-			}
-		}
-	}
-
-	result := ""
-	if lastValidIndex >= 0 {
-		result = input[:lastValidIndex+1]
-	}
-	for i := len(stack) - 1; i >= 0; i-- {
-		switch stack[i] {
-		case fixStateInsideString:
-			result += "\""
-		case fixStateInsideObjectKey, fixStateInsideObjectAfterKey, fixStateInsideObjectAfterComma, fixStateInsideObjectStart, fixStateInsideObjectBeforeValue, fixStateInsideObjectAfterValue:
-			result += "}"
-		case fixStateInsideArrayStart, fixStateInsideArrayAfterComma, fixStateInsideArrayAfterValue:
-			result += "]"
-		case fixStateInsideLiteral:
-			partialLiteral := input[literalStart:]
-			if startsWith("true", partialLiteral) {
-				result += "true"[len(partialLiteral):]
-			} else if startsWith("false", partialLiteral) {
-				result += "false"[len(partialLiteral):]
-			} else if startsWith("null", partialLiteral) {
-				result += "null"[len(partialLiteral):]
-			}
-		}
-	}
-	return result
-}
-
-func startsWith(s, prefix string) bool { return len(prefix) <= len(s) && s[:len(prefix)] == prefix }
 
 func cloneUIMessage(message UIMessage) UIMessage {
 	clone := UIMessage{

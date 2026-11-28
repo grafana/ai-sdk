@@ -3,6 +3,7 @@ module github.com/grafana/ai-sdk
 go 1.27.3
 
 require (
+	github.com/gatewaytofredom/pjson v0.3.0
 	github.com/invopop/jsonschema v0.14.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
