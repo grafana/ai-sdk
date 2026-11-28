@@ -291,7 +291,8 @@ func WithToolApproval(policy ToolApprovalPolicyConfig) Option {
 // WithToolApprovalSecret sets the secret used to sign and verify tool approval requests.
 // Only approvals for locally executed tools are signed and verified; approvals
 // for provider-executed tools are unsigned and passed to the provider unchecked,
-// as upstream does.
+// as upstream does. Requests for automatically denied calls are not signed, so
+// an approved response to one is rejected.
 func WithToolApprovalSecret(secret string) Option {
 	return sharedOption{fn: func(c *baseConfig) {
 		if secret != "" {
@@ -303,7 +304,8 @@ func WithToolApprovalSecret(secret string) Option {
 // WithToolApprovalSecretBytes sets the byte secret used to sign and verify tool approval requests.
 // Only approvals for locally executed tools are signed and verified; approvals
 // for provider-executed tools are unsigned and passed to the provider unchecked,
-// as upstream does.
+// as upstream does. Requests for automatically denied calls are not signed, so
+// an approved response to one is rejected.
 func WithToolApprovalSecretBytes(secret []byte) Option {
 	return sharedOption{fn: func(c *baseConfig) {
 		if len(secret) > 0 {

@@ -1343,6 +1343,87 @@ func TestStreamTextToolApproval_SecretSignsRequests(t *testing.T) {
 	assert.Equal(t, approval.Signature, responseMessages[0].Content[1].Signature)
 }
 
+func TestToolApproval_SecretDoesNotSignAutomaticDenial(t *testing.T) {
+	for _, mode := range []string{"stream", "generate"} {
+		t.Run(mode, func(t *testing.T) {
+			var calls, executed atomic.Int32
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				if calls.Add(1) == 1 {
+					return &provider.StreamResult{Stream: toolCallStreamParts("dangerous", `{"amount":100}`)}, nil
+				}
+				return &provider.StreamResult{Stream: finishStreamParts()}, nil
+			}}
+			status := ToolApprovalDenied
+			opts := []Option{
+				WithGenerateID(func() string { return "apr_1" }),
+				WithToolApprovalSecret("secret"),
+				WithToolApproval(ToolApprovalFunc(func(ToolApprovalOptions) (ToolApprovalDecision, error) {
+					return ToolApprovalDecision{Status: status}, nil
+				})),
+				WithTools(ToolSet{"dangerous": Tool{
+					InputSchema: testMustSchema(t, `{"type":"object"}`),
+					Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+						executed.Add(1)
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+				}}),
+			}
+			run := func(msgs ...provider.Message) ([]StepResult, error) {
+				all := append([]Option{WithModelMessages(msgs...)}, opts...)
+				if mode == "generate" {
+					generateOpts := make([]GenerateOption, len(all))
+					for i, opt := range all {
+						generateOpts[i] = opt
+					}
+					res, err := GenerateText(t.Context(), model, generateOpts...)
+					if err != nil {
+						return nil, err
+					}
+					return res.Steps, nil
+				}
+				streamOpts := make([]StreamOption, len(all))
+				for i, opt := range all {
+					streamOpts[i] = opt
+				}
+				res := StreamText(t.Context(), model, streamOpts...)
+				for part := range res.FullStream() {
+					if p, ok := part.(StreamToolApprovalRequest); ok {
+						assert.Empty(t, p.Signature)
+					}
+				}
+				return res.Steps(), res.Err()
+			}
+
+			prompt := provider.UserText("transfer money")
+			steps, err := run(prompt)
+			require.NoError(t, err)
+			require.Len(t, steps, 1)
+			require.Len(t, steps[0].ToolApprovalRequests, 1)
+			assert.Empty(t, steps[0].ToolApprovalRequests[0].Signature)
+
+			// An unchanged history that ends with the denial still continues.
+			history := append([]provider.Message{prompt}, steps[0].Response.Messages...)
+			_, err = run(history...)
+			require.NoError(t, err)
+
+			// A client turns the denied request into an approved one, with a policy
+			// that now allows the call.
+			status = ToolApprovalApproved
+			_, err = run(
+				prompt,
+				provider.NewAssistantMessage(
+					provider.ToolCallPart("c1", "dangerous", json.RawMessage(`{"amount":100}`)),
+					provider.ContentPart{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "dangerous", Signature: steps[0].ToolApprovalRequests[0].Signature},
+				),
+				provider.NewToolMessage(provider.ToolApprovalResponsePart("apr_1", true, "")),
+			)
+			var signatureErr *InvalidToolApprovalSignatureError
+			require.ErrorAs(t, err, &signatureErr)
+			assert.Equal(t, int32(0), executed.Load())
+		})
+	}
+}
+
 func TestStreamTextToolApproval_SecretVerifiesReplay(t *testing.T) {
 	signature, err := signToolApproval([]byte("secret"), "apr_1", "c1", "dangerous", json.RawMessage(`{"amount":100}`))
 	require.NoError(t, err)

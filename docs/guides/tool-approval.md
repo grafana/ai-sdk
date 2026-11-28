@@ -95,6 +95,9 @@ for provider-executed tools, such as OpenAI MCP calls, are unsigned and go to
 the provider without signature or policy checks, because the provider runs
 those tools.
 
+Requests for calls that the approval policy denied automatically are not signed,
+so an approved response to one is rejected before any tool runs.
+
 Signing prevents message tampering; it does not replace authorization. Recheck
 the current user, tenant, resource permissions, and business invariants inside
 `Execute` immediately before the side effect.
