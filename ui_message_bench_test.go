@@ -54,3 +54,30 @@ func BenchmarkUIMessageReaderToolInputStream(b *testing.B) {
 		})
 	}
 }
+
+
+func TestUIMessageReader_ToolInputPreservesLastValidOnSyntaxError(t *testing.T) {
+	s, err := newUIMessageReaderState(buildUIMessageReaderConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.apply(UIMessageChunk{Type: ChunkToolInputStart, ToolCallID: "call-1", ToolName: "search"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{`{"query":"grafana"`, `,!!!invalid`, `more`} {
+		if _, err := s.apply(UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: "call-1", InputTextDelta: d}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	idx, ok := s.findCurrentStepToolPart("call-1")
+	if !ok {
+		t.Fatal("tool part not found")
+	}
+	tp, ok := s.message.Parts[idx].(ToolInvocationPart)
+	if !ok {
+		t.Fatalf("expected ToolInvocationPart, got %T", s.message.Parts[idx])
+	}
+	if string(tp.Input) != `{"query":"grafana"}` {
+		t.Fatalf("expected last valid snapshot to be preserved, got %q", string(tp.Input))
+	}
+}

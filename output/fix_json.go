@@ -31,14 +31,11 @@ func parsePartialJSONState(text string) (json.RawMessage, partialParseState) {
 	if _, err := p.WriteString(text); err != nil {
 		return nil, partialParseFailed
 	}
-	if p.Done() {
-		if json.Valid([]byte(text)) {
-			return json.RawMessage(text), partialParseSuccessful
-		}
-		return nil, partialParseFailed
+	if p.Done() && json.Valid([]byte(text)) {
+		return json.RawMessage(text), partialParseSuccessful
 	}
 	snap := p.CompleteJSON()
-	if len(snap) == 0 {
+	if len(snap) == 0 || !json.Valid(snap) {
 		return nil, partialParseFailed
 	}
 	return json.RawMessage(snap), partialParseRepaired

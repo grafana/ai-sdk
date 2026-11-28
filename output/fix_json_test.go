@@ -189,3 +189,10 @@ func TestFixJSON_Regression(t *testing.T) {
 			fixJSON(`{"type":"div","children":[{"type":"Card","props":{}`))
 	})
 }
+
+
+func TestParsePartialJSONState_CompleteWithTrailingChars(t *testing.T) {
+	raw, state := parsePartialJSONState(`{"a":1} trailing`)
+	assert.Equal(t, partialParseRepaired, state)
+	assert.JSONEq(t, `{"a":1}`, string(raw))
+}

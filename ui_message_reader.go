@@ -54,14 +54,15 @@ func buildUIMessageReaderConfig(opts []UIMessageReaderOption) uiMessageReaderCon
 }
 
 type partialToolCallState struct {
-	inputEncoding provider.ToolInputEncoding
-	text          string
-	parser        *pjson.Parser
-	parserFailed  bool
-	toolName      string
-	dynamic       bool
-	title         *string
-	toolMetadata  json.RawMessage
+	inputEncoding  provider.ToolInputEncoding
+	text           string
+	parser         *pjson.Parser
+	parserFailed   bool
+	lastValidInput json.RawMessage
+	toolName       string
+	dynamic        bool
+	title          *string
+	toolMetadata   json.RawMessage
 }
 
 type uiMessageReaderState struct {
@@ -128,16 +129,19 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) (*uiMessageReaderState, 
 				}
 				var parser *pjson.Parser
 				var parserFailed bool
+				lastValidInput := cloneRawMessage(fields.Input)
 				if fields.InputEncoding != provider.ToolInputEncodingText {
 					parser = pjson.New(pjson.WithMaxDepth(512), pjson.WithCompleteLiterals())
 					if raw != "" {
 						if _, err := parser.WriteString(raw); err != nil {
 							parserFailed = true
+						} else if snap := parser.CompleteJSON(); len(snap) > 0 && json.Valid(snap) {
+							lastValidInput = json.RawMessage(snap)
 						}
 					}
 				}
 				state.partialToolCalls[fields.ToolCallID] = &partialToolCallState{
-					text: raw, parser: parser, parserFailed: parserFailed,
+					text: raw, parser: parser, parserFailed: parserFailed, lastValidInput: lastValidInput,
 					toolName: fields.ToolName, dynamic: dynamic, inputEncoding: fields.InputEncoding,
 					title: fields.Title, toolMetadata: toolMetadata,
 				}
@@ -346,9 +350,15 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		} else if !partial.parserFailed && partial.parser != nil {
 			if _, err := partial.parser.WriteString(chunk.InputTextDelta); err != nil {
 				partial.parserFailed = true
-			} else if snap := partial.parser.CompleteJSON(); len(snap) > 0 {
+				input = partial.lastValidInput
+			} else if snap := partial.parser.CompleteJSON(); len(snap) > 0 && json.Valid(snap) {
 				input = json.RawMessage(snap)
+				partial.lastValidInput = input
+			} else {
+				input = partial.lastValidInput
 			}
+		} else {
+			input = partial.lastValidInput
 		}
 		next := UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: chunk.ToolCallID, ToolName: partial.toolName, InputEncoding: partial.inputEncoding, Input: input, ToolMetadata: partial.toolMetadata}
 		if partial.title != nil {
