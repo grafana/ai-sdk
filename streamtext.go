@@ -1819,9 +1819,8 @@ func (r *StreamTextResult) executeTools(
 		case ToolApprovalDenied:
 			approvalID := generateConfigID(cfg)
 			req := newToolApprovalRequest(approvalID, tc, true)
-			if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
-				return err
-			}
+			// Left unsigned, as upstream does: the signature does not bind the
+			// decision, so a signed denial could be replayed as approved.
 			resp := newToolApprovalResponse(approvalID, tc, false, decision.Reason)
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
 			step.ToolApprovalResponses = append(step.ToolApprovalResponses, resp)
