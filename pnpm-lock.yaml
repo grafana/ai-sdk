@@ -7,162 +7,172 @@ importers:
     configDependencies: {}
     packageManagerDependencies:
       pnpm:
-        specifier: 12.21.0
-        version: 12.21.0
+        specifier: 12.23.0
+        version: 12.23.0
 
 packages:
 
-  '@pnpm/exe.android-arm64@12.21.0':
-    resolution: {integrity: sha512-iaWidxR5B9NUBpwMznCQu1yUpKB6BjTY5BYX2lORj76VsfINdj8Z8XWSzSNrGI8qlxa28Jzdp5fiaspzOaJZlA==}
+  '@pnpm/exe.android-arm64@12.23.0':
+    resolution: {integrity: sha512-oqZu9yFInENTRA9BKiOnEqOcpr5dNMDbquxq9zKFKJy0nEC385Vw0e4wlsOAlDh90iX94GND6Fc22FVL2O2SmQ==}
     cpu: [arm64]
     os: [android]
 
-  '@pnpm/exe.android-x64@12.21.0':
-    resolution: {integrity: sha512-35e5v3wlwjIYxDywq+R6/z8CE4gLOEgRxt18yqz1tMRLmx2mnW+CFJI2Q8+srTNjn7gykXUC0x1k195JNikC5A==}
+  '@pnpm/exe.android-x64@12.23.0':
+    resolution: {integrity: sha512-fQRjE4Wno8ye0lxhYGmyqdcc6tv+tDGktEmgFzffZ7flp4BG/84VtdXn3i/O4BazgMbNuPdbM75aj7uDZwL7GQ==}
     cpu: [x64]
     os: [android]
 
-  '@pnpm/exe.darwin-arm64@12.21.0':
-    resolution: {integrity: sha512-F5OyMX/6zLSowpTZEQRojbCmPS1Pq+fyRaIinslsIe6Glh3qbyQ52u+Fe0eEzSaRuIbWZkXmAAXSWh6Q5Wrlgg==}
+  '@pnpm/exe.darwin-arm64@12.23.0':
+    resolution: {integrity: sha512-ny5+L92frsfyV3/B3zadYQuU5kBV8o2TXB5WnhBUoJ/9Mz32FVglMr8g1HmUc01yfKkjopZ4rmF1G7vs68JxIg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@pnpm/exe.darwin-x64@12.21.0':
-    resolution: {integrity: sha512-EzpvcsaE6hrrgYeEiAFYd2rSgFybYyxXhkAY7K3y6Hg3loVfcyJ81hHczpFzi8lW5RXtUlFECRPZ8ZAMRFQYYg==}
+  '@pnpm/exe.darwin-x64@12.23.0':
+    resolution: {integrity: sha512-+MNmpJSAzb9yc80d5l4VbZ/3Teh8xtlacATUyTAx6fELUK0xwmgFi05hqzg1sXLdAPij5gcIp82VvrqY5tzPrQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@pnpm/exe.freebsd-x64@12.21.0':
-    resolution: {integrity: sha512-wNjuEnmdLks4aayPu/QZWQ5tQM9Jn+odUp/vwQM8BXRYoulkTZhtZTHoD60N6mUdLWef1hgUeUh8llNGEUsimw==}
+  '@pnpm/exe.freebsd-x64@12.23.0':
+    resolution: {integrity: sha512-AGfkooje58I9hh4xdSDyZCPLKvjrjuvlkKTK2gsTtj6wfhVTw1jz33wB1XbERt2/0odJdEfgnBPUIdalRnb7Fw==}
     cpu: [x64]
     os: [freebsd]
 
-  '@pnpm/exe.linux-arm64-musl@12.21.0':
-    resolution: {integrity: sha512-Ceit9zn4g5ZqCJtx1fV8eJE7p8aeXMrGZ+Dc01vRqZLIUNgNeI+Ur0ruyqxtsnJx6rGADyXzohumxPLHjaJ5AQ==}
+  '@pnpm/exe.linux-arm64-musl@12.23.0':
+    resolution: {integrity: sha512-C09Z3tFnPz7CYiae326dGlJcRUNCBtlJvMc04S9M8YKACebHHyamxCItLAisvGdHVf1BawtU9shV0FngjYxMwA==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/exe.linux-arm64@12.21.0':
-    resolution: {integrity: sha512-4Oj/iF2TDCe2lcH0n4TupPR5sSdrNLclJB6xBElLMPCUOAvBhdf2rRlSaO5M4erJ6g4Fyy7YTXTpcmfFsKyxEA==}
+  '@pnpm/exe.linux-arm64@12.23.0':
+    resolution: {integrity: sha512-RLby8T0CIWAbljrbmjaX6S3PYhMHnLbUp+IDcOmZIY1/+wy8hJoQpjMPZlV4VJIGl8lZKUXtxJcLJ2XZ1z2SVw==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-ppc64@12.21.0':
-    resolution: {integrity: sha512-s2o7rdSDeUTBFsNqxptpZXlTgT6cojmMVUOvTQvFNSv6Easian02ha4tR32fwwD97Au4YzIIjMCwywCF4D82Sw==}
+  '@pnpm/exe.linux-loong64@12.23.0':
+    resolution: {integrity: sha512-XytxNoKD9/PcugxRHmBptRNDxUYwBtQZwBauJ3lKXFJ3sqHPZSjjFxIMX4HTWQn7FqCVnQlF+tbewjUnvQz0dQ==}
+    cpu: [loong64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-ppc64@12.23.0':
+    resolution: {integrity: sha512-1h9+mBpdmlFA5LW6fAfd5UnLgHakNkEsS1R67mEXY1J6WLLnZcWFJs7Cbde0BD034CRTUa99MaILAuSs2ERf7Q==}
     cpu: [ppc64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-riscv64@12.21.0':
-    resolution: {integrity: sha512-EYv3GzxeBTITCuM3yGHHbpRFpUvyulkXpQ6LsjKAQNL3iaba1E6h9iDmlouLb3Io4AMMsfdk0/uG6poQ41uewA==}
+  '@pnpm/exe.linux-riscv64@12.23.0':
+    resolution: {integrity: sha512-SlPz2UxUshIxgyBRKT0PHncYr2pIoFOxf6WR68HCkhGmASGljYlYYwRVfefgoIPM603x4Fcge9/B1Z3aIq1bSQ==}
     cpu: [riscv64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-s390x@12.21.0':
-    resolution: {integrity: sha512-8VXGNGVNEfs7pL9GTZOzFxjFEnMt4WL3rLOADR5/kPQ7ROTV9GfpVI2DPO/zArXFSkvfc9Zad/WypHLbvzoaTQ==}
+  '@pnpm/exe.linux-s390x@12.23.0':
+    resolution: {integrity: sha512-Hk8jKY0i9sjyKPJFYC71lu7Mq5ahb5sWT2zCqNxzzBCrivvCqv5GVfZurLETC5TsSusE9TRWFpynLgG+iaXmSA==}
     cpu: [s390x]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-x64-musl@12.21.0':
-    resolution: {integrity: sha512-MnC5vpIXYubhDZCgCwlfJMg7Cg6HupN2IuouT9gD/tUmOfVdQYqeyYccWbthyo/Jeto8de1oQlxeRN1+1Hl2DQ==}
+  '@pnpm/exe.linux-x64-musl@12.23.0':
+    resolution: {integrity: sha512-7+9bD4LBQ5r+7nLnIhDgMnvMm7a7cfc28NogU3NY1sM0+0Jz7K+IwxZb4BJDY/AN1s3F26TgZ3az/bjeCshmXA==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/exe.linux-x64@12.21.0':
-    resolution: {integrity: sha512-8eufCjHXspKbNS/kh8q4Q0gqJoOuvC4Q5pgos6XS8By/nAMtP+jf8F1Cw9er840kfAX+PJ/ts+A9qnLE91rvXQ==}
+  '@pnpm/exe.linux-x64@12.23.0':
+    resolution: {integrity: sha512-vu/N1nUJxLA0IIumbxL/rR6leGA+++SQY0XL+5KPJ1O2kyvzJoLQYL1ibLGO7TRqsZ90wclboEdhIIWvr3Qsig==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.netbsd-x64@12.21.0':
-    resolution: {integrity: sha512-eyh1M8hQZCkLWxuva7S/fc1SbFbgqg0/5di0dgWmyiuc2Io3dbWVihDun8X+XM8zsR5uhIDvvZpbS9aZQbCovg==}
+  '@pnpm/exe.netbsd-x64@12.23.0':
+    resolution: {integrity: sha512-c85UPtAJfPR5+ghXS8UGRQlgxwqvz2PFaPaEzIVwUdBU+5DB4X2iuMAMlMXWS6hJ/OjqhKM6tpwyEc4Kkz40Fg==}
     cpu: [x64]
     os: [netbsd]
 
-  '@pnpm/exe.win32-arm64@12.21.0':
-    resolution: {integrity: sha512-7xTxxUXo/grRLivSeIl6B21gnsz7ooe5EMPcJmQqwxc8WLJVReN8MzrlHru8bqXfVr4X3+6ZGZscntKenlCBqQ==}
+  '@pnpm/exe.win32-arm64@12.23.0':
+    resolution: {integrity: sha512-lx0B8HPaUEG/ovIC0PmA6HhMhXh6ud0pAWVTDNxZvAfAzuGm0RM78SCT/oBY80lbJnwA9al4sTUroqozZK9hVA==}
     cpu: [arm64]
     os: [win32]
 
-  '@pnpm/exe.win32-x64@12.21.0':
-    resolution: {integrity: sha512-9TpkJemVApxJ1Z1w0ZFGN+AuSx4nJOqXSJUqMqDvaXTYwGOzvBiiWdFP9GN0ketiWCQS1Q0/pza2E7I3pP0OBQ==}
+  '@pnpm/exe.win32-x64@12.23.0':
+    resolution: {integrity: sha512-OnbBaQWQcw31m5APFNKcM8kdmM6H7k8MoaOnA2m1LsWAHX7AZKB5cdJfNwhHGBfkURcwWk1bnMXBdllujMiCFw==}
     cpu: [x64]
     os: [win32]
 
-  pnpm@12.21.0:
-    resolution: {integrity: sha512-Zv2CeO4ok1zpUXktNDZ/869cQyonVkRYIwKVM4NbjaUpu+C+UTCv1W7QcT+4eJ5Hutgtk71a4v5UsVVi1idu8A==}
+  pnpm@12.23.0:
+    resolution: {integrity: sha512-AtqU/68TP0YHQyKv5VL5DUC19xriWa77zNrMUIWx1hfpjWXgEx9XSLm2dEWXjuUFXX1ZpHPx7vDVBIVP781ZdQ==}
     engines: {node: '>=18'}
     hasBin: true
 
 snapshots:
 
-  '@pnpm/exe.android-arm64@12.21.0':
+  '@pnpm/exe.android-arm64@12.23.0':
     optional: true
 
-  '@pnpm/exe.android-x64@12.21.0':
+  '@pnpm/exe.android-x64@12.23.0':
     optional: true
 
-  '@pnpm/exe.darwin-arm64@12.21.0':
+  '@pnpm/exe.darwin-arm64@12.23.0':
     optional: true
 
-  '@pnpm/exe.darwin-x64@12.21.0':
+  '@pnpm/exe.darwin-x64@12.23.0':
     optional: true
 
-  '@pnpm/exe.freebsd-x64@12.21.0':
+  '@pnpm/exe.freebsd-x64@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-arm64-musl@12.21.0':
+  '@pnpm/exe.linux-arm64-musl@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-arm64@12.21.0':
+  '@pnpm/exe.linux-arm64@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-ppc64@12.21.0':
+  '@pnpm/exe.linux-loong64@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-riscv64@12.21.0':
+  '@pnpm/exe.linux-ppc64@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-s390x@12.21.0':
+  '@pnpm/exe.linux-riscv64@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-x64-musl@12.21.0':
+  '@pnpm/exe.linux-s390x@12.23.0':
     optional: true
 
-  '@pnpm/exe.linux-x64@12.21.0':
+  '@pnpm/exe.linux-x64-musl@12.23.0':
     optional: true
 
-  '@pnpm/exe.netbsd-x64@12.21.0':
+  '@pnpm/exe.linux-x64@12.23.0':
     optional: true
 
-  '@pnpm/exe.win32-arm64@12.21.0':
+  '@pnpm/exe.netbsd-x64@12.23.0':
     optional: true
 
-  '@pnpm/exe.win32-x64@12.21.0':
+  '@pnpm/exe.win32-arm64@12.23.0':
     optional: true
 
-  pnpm@12.21.0:
+  '@pnpm/exe.win32-x64@12.23.0':
+    optional: true
+
+  pnpm@12.23.0:
     optionalDependencies:
-      '@pnpm/exe.android-arm64': 12.21.0
-      '@pnpm/exe.android-x64': 12.21.0
-      '@pnpm/exe.darwin-arm64': 12.21.0
-      '@pnpm/exe.darwin-x64': 12.21.0
-      '@pnpm/exe.freebsd-x64': 12.21.0
-      '@pnpm/exe.linux-arm64': 12.21.0
-      '@pnpm/exe.linux-arm64-musl': 12.21.0
-      '@pnpm/exe.linux-ppc64': 12.21.0
-      '@pnpm/exe.linux-riscv64': 12.21.0
-      '@pnpm/exe.linux-s390x': 12.21.0
-      '@pnpm/exe.linux-x64': 12.21.0
-      '@pnpm/exe.linux-x64-musl': 12.21.0
-      '@pnpm/exe.netbsd-x64': 12.21.0
-      '@pnpm/exe.win32-arm64': 12.21.0
-      '@pnpm/exe.win32-x64': 12.21.0
+      '@pnpm/exe.android-arm64': 12.23.0
+      '@pnpm/exe.android-x64': 12.23.0
+      '@pnpm/exe.darwin-arm64': 12.23.0
+      '@pnpm/exe.darwin-x64': 12.23.0
+      '@pnpm/exe.freebsd-x64': 12.23.0
+      '@pnpm/exe.linux-arm64': 12.23.0
+      '@pnpm/exe.linux-arm64-musl': 12.23.0
+      '@pnpm/exe.linux-loong64': 12.23.0
+      '@pnpm/exe.linux-ppc64': 12.23.0
+      '@pnpm/exe.linux-riscv64': 12.23.0
+      '@pnpm/exe.linux-s390x': 12.23.0
+      '@pnpm/exe.linux-x64': 12.23.0
+      '@pnpm/exe.linux-x64-musl': 12.23.0
+      '@pnpm/exe.netbsd-x64': 12.23.0
+      '@pnpm/exe.win32-arm64': 12.23.0
+      '@pnpm/exe.win32-x64': 12.23.0
 
 ---
 lockfileVersion: '9.0'
@@ -181,20 +191,20 @@ importers:
         specifier: 11.13.5
         version: 11.13.5(supports-color@8.1.1)
       '@grafana/data':
-        specifier: 13.3.1
-        version: 13.3.1(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+        specifier: 13.3.2
+        version: 13.3.2(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
       '@grafana/i18n':
-        specifier: 13.3.1
-        version: 13.3.1(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+        specifier: 13.3.2
+        version: 13.3.2(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
       '@grafana/runtime':
-        specifier: 13.3.1
-        version: 13.3.1(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+        specifier: 13.3.2
+        version: 13.3.2(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
       '@grafana/schema':
-        specifier: 13.3.1
-        version: 13.3.1
+        specifier: 13.3.2
+        version: 13.3.2
       '@grafana/ui':
-        specifier: 13.3.1
-        version: 13.3.1(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+        specifier: 13.3.2
+        version: 13.3.2(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
       react:
         specifier: ^19.0.0
         version: 19.3.1
@@ -1169,14 +1179,14 @@ packages:
   '@formatjs/intl-localematcher@0.9.0':
     resolution: {integrity: sha512-Z7TD3ssNry1Av1dVDoq/mzpxGyxqWwU0ClWEo+BB3k0JQTeQvUGmeK9WZGYvlqStS0UqkaKXk3dfjsb6NaHAxw==}
 
-  '@grafana/data@13.3.1':
-    resolution: {integrity: sha512-KdWFGYIA64wK9MEYE7RgC3SDZvZrfOsc03mcfrN0oH6ZI0ZuB21kntyw+KsYnWoto9aXuhKaWt0RyhENZ3Tv5A==}
+  '@grafana/data@13.3.2':
+    resolution: {integrity: sha512-HVKnafw0s438NorzqAfSwFzay19WpjON/4evAbILtOlcxDVCLc9Kh5m6/o0CcHOW+yoa4M2FFHHuwtzzCRfg1g==}
     peerDependencies:
       react: '>=19'
       react-dom: '>=19'
 
-  '@grafana/e2e-selectors@13.3.1':
-    resolution: {integrity: sha512-bmBWYbTBEOh9fJmlVl+lQw2xLDfSdEIvvSbKKxncKO4RcLgtF6u9Uu+cig+tua4JZZvTRNFNGNi8zNmoag6hjQ==}
+  '@grafana/e2e-selectors@13.3.2':
+    resolution: {integrity: sha512-vVb/6u+49u4hitn9eHgtJONzIrIiw8O36hdUQqy+D1MXikclD7pdxSSOKigABX9Tdt50KhlNwmTtg6EwB4yk/w==}
 
   '@grafana/eslint-config@10.0.0':
     resolution: {integrity: sha512-KdPghPTEkpT1bfph/HLRe0rWJuAEeQMy3wF8xXOHkwhqf/o9IS4d0GT3K/tW0TxXHD0AKZB/OQBo7mZwvvaq7Q==}
@@ -1197,8 +1207,8 @@ packages:
   '@grafana/faro-web-sdk@2.12.1':
     resolution: {integrity: sha512-JnpZy/ztfkP3UZ3AW0DzUxVgMRTBvYz+m0oZuVi+KRpGTYz0GGF0umi0S0pAemnaUbQBo6umGdCm5CL6n8BAWQ==}
 
-  '@grafana/i18n@13.3.1':
-    resolution: {integrity: sha512-MeFrAW9/HHj3h+xqV7KTmpYvqXqHOKnhvSt1nrtPWpxRVeNTjVlKSnInJiaBfrkqKj/B2FrP2HPNxSGsUdc+sQ==}
+  '@grafana/i18n@13.3.2':
+    resolution: {integrity: sha512-M5TMu/ajgTrVs/mpuDXGvja4f0lzY9l/aWVSytgJkWNGdhVvAuZqpsRgoZ9KMZijTYIRCub/buJyMmJvdDF6Jw==}
     peerDependencies:
       react: '>=19'
 
@@ -1218,14 +1228,14 @@ packages:
       react: ^19.2
       react-dom: ^19.2
 
-  '@grafana/runtime@13.3.1':
-    resolution: {integrity: sha512-55oLJdBWJbfKZeszEv+Yl1rhuxghHeQ0fqgGeewUuJVrVTiawJ1yoExaXSkg5IJjQtipviDNyfFEdh1a2oFdNw==}
+  '@grafana/runtime@13.3.2':
+    resolution: {integrity: sha512-Wm1cdyu3dgOn0A6Frh0uVj+oQE4PMxk3gqCABQQRQ9RfOdowVfb+G6UhUEBeN0waP6VI5umO7CGBljVidqx43g==}
     peerDependencies:
       react: '>=19'
       react-dom: '>=19'
 
-  '@grafana/schema@13.3.1':
-    resolution: {integrity: sha512-MsU6vLEm39rH8x+rMB/xiUKKLEtXrlhnGauaHLPBy5R0V25ZlMZeu7YwA7p2w3WrmGAw6GPkz9zHTApgW7JuyQ==}
+  '@grafana/schema@13.3.2':
+    resolution: {integrity: sha512-SFEs4riXiXcMzjX0XdVlb2BnEfGvEMcfUy5EMU+61svosuS8DC7mKPy2eqVco9CFKYGcXPsGn1xoDSAPDb1Gvg==}
 
   '@grafana/sign-plugin@3.3.3':
     resolution: {integrity: sha512-bCdRRCYB8NccQbEnmDcLqZrODLP1R4nhYwOzYGtQMTh7xISf7ddj2HlpPN4DeX1aPhV9yCNxcCyLZm3N6zjATQ==}
@@ -1235,8 +1245,8 @@ packages:
   '@grafana/tsconfig@2.2.0':
     resolution: {integrity: sha512-hhhXetqhSKTfgErStfWVPhqo4JPi+lNqBJNhBF6RT4ZIM4vwKxEfnfsyswT+NwHIXNrOz23xoOGeKWPpxmaHWQ==}
 
-  '@grafana/ui@13.3.1':
-    resolution: {integrity: sha512-oYyiXL6eoYHvGdEhIB6ya9B9UfEDxdG6HoN3s/oq5TIi4Puejq0q0kCm3LOZ6kJ+IceNanh9qeaVomTvyr7QsA==}
+  '@grafana/ui@13.3.2':
+    resolution: {integrity: sha512-wV36dPXPrvbvuf/0N4CThNNb1Sj2RkUTLMC8SJoJVxj8FUgWx507X0I65QrGpPGlDgB4lvVcqteObAd7PRaImg==}
     peerDependencies:
       react: '>=19'
       react-dom: '>=19'
@@ -6861,11 +6871,11 @@ snapshots:
     dependencies:
       '@formatjs/fast-memoize': 3.1.7
 
-  '@grafana/data@13.3.1(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
+  '@grafana/data@13.3.2(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
     dependencies:
       '@braintree/sanitize-url': 7.1.2
-      '@grafana/i18n': 13.3.1(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
-      '@grafana/schema': 13.3.1
+      '@grafana/i18n': 13.3.2(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+      '@grafana/schema': 13.3.2
       '@leeoniya/ufuzzy': 1.0.19
       '@react-hookz/web': 25.3.0(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@types/d3-interpolate': 3.0.4
@@ -6900,7 +6910,7 @@ snapshots:
       - supports-color
       - typescript
 
-  '@grafana/e2e-selectors@13.3.1':
+  '@grafana/e2e-selectors@13.3.2':
     dependencies:
       semver: 7.8.5
 
@@ -6927,7 +6937,7 @@ snapshots:
       ua-parser-js: 1.0.41
       web-vitals: 6.2.3
 
-  '@grafana/i18n@13.3.1(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
+  '@grafana/i18n@13.3.2(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
     dependencies:
       '@formatjs/intl-durationformat': 0.11.1
       '@typescript-eslint/utils': 8.71.2(eslint@9.39.5(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3)
@@ -6955,13 +6965,13 @@ snapshots:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
-  '@grafana/runtime@13.3.1(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
+  '@grafana/runtime@13.3.2(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
     dependencies:
-      '@grafana/data': 13.3.1(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
-      '@grafana/e2e-selectors': 13.3.1
+      '@grafana/data': 13.3.2(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+      '@grafana/e2e-selectors': 13.3.2
       '@grafana/faro-web-sdk': 2.12.1
-      '@grafana/schema': 13.3.1
-      '@grafana/ui': 13.3.1(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+      '@grafana/schema': 13.3.2
+      '@grafana/ui': 13.3.2(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
       '@openfeature/core': 1.12.0
       '@openfeature/localstorage-provider': 0.1.2(@openfeature/web-sdk@1.10.0(@openfeature/core@1.12.0))
       '@openfeature/ofrep-web-provider': 0.4.3(@openfeature/core@1.12.0)(@openfeature/web-sdk@1.10.0(@openfeature/core@1.12.0))
@@ -6990,7 +7000,7 @@ snapshots:
       - supports-color
       - typescript
 
-  '@grafana/schema@13.3.1': {}
+  '@grafana/schema@13.3.2': {}
 
   '@grafana/sign-plugin@3.3.3(supports-color@8.1.1)':
     dependencies:
@@ -7001,7 +7011,7 @@ snapshots:
 
   '@grafana/tsconfig@2.2.0': {}
 
-  '@grafana/ui@13.3.1(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
+  '@grafana/ui@13.3.2(@babel/runtime@8.0.7)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/theme-one-dark@6.1.3)(@types/react@19.3.0)(codemirror@6.0.2)(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)':
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/lang-go': 6.0.1
@@ -7020,12 +7030,12 @@ snapshots:
       '@emotion/react': 11.14.0(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
       '@emotion/serialize': 1.3.3
       '@floating-ui/react': 0.27.20(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@grafana/data': 13.3.1(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
-      '@grafana/e2e-selectors': 13.3.1
+      '@grafana/data': 13.3.2(eslint@9.39.5(supports-color@8.1.1))(js-cookie@3.0.8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+      '@grafana/e2e-selectors': 13.3.2
       '@grafana/faro-web-sdk': 2.12.1
-      '@grafana/i18n': 13.3.1(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
+      '@grafana/i18n': 13.3.2(eslint@9.39.5(supports-color@8.1.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)(typescript@5.9.3)
       '@grafana/react-data-grid': 7.0.0-beta.60(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@grafana/schema': 13.3.1
+      '@grafana/schema': 13.3.2
       '@hello-pangea/dnd': 18.0.1(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@lezer/highlight': 1.2.5
       '@monaco-editor/react': 4.7.0(monaco-editor@0.34.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
