@@ -136,7 +136,7 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) (*uiMessageReaderState, 
 						if _, err := parser.WriteString(raw); err != nil {
 							parserFailed = true
 						} else if snap := parser.CompleteJSON(); len(snap) > 0 && json.Valid(snap) {
-							lastValidInput = json.RawMessage(snap)
+							lastValidInput = cloneRawMessage(json.RawMessage(snap))
 						}
 					}
 				}
@@ -352,7 +352,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 				partial.parserFailed = true
 				input = partial.lastValidInput
 			} else if snap := partial.parser.CompleteJSON(); len(snap) > 0 && json.Valid(snap) {
-				input = json.RawMessage(snap)
+				input = cloneRawMessage(json.RawMessage(snap))
 				partial.lastValidInput = input
 			} else {
 				input = partial.lastValidInput
